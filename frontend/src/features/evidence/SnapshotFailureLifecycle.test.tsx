@@ -6,7 +6,8 @@ import { RelationshipGraphView } from "@/features/graph/RelationshipGraphView"
 import type { GraphSelection } from "@/features/graph/graphProjection"
 import { actualEvent, demoEndpoint, surfaceSnapshot } from "@/features/parameter-map/parameterMapFixtures"
 import { SurfacePage } from "@/features/surface/SurfacePage"
-import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
+import { anonymousInspectionFixture } from "@/test/fixtures"
+import { createTestQueryClient, renderWithQueryClient, seedHumanRun } from "@/test/render"
 import { EvidencePage } from "./EvidencePage"
 vi.mock("@/features/graph/useGraphWorkspace", async () => ({ useGraphWorkspace: (await import("@/test/graphWorkspace")).useMemoryGraphWorkspace }))
 
@@ -19,7 +20,7 @@ const snapshot = {
   ...surfaceSnapshot({ endpoints: [demoEndpoint()], events: [event] }),
   cells: [{ idn: event.idn, op: event.op, resource: event.resource, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [event.eventId] }],
 }
-const draft = { eventId: event.eventId, service: "https://demo.test:443", request: "PATCH /orders/101 HTTP/1.1", response: "retained response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: event.idn, reusableSession: "NONE", message: "draft" }
+const draft = { eventId: event.eventId, service: "https://demo.test:443", request: "PATCH /orders/101 HTTP/1.1\nHost: demo.test\n\n", response: "retained response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: event.idn, reusableSession: "NONE", message: "draft" }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 
 beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }))
@@ -31,10 +32,11 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     const path = String(input)
     if (path === "/api/snapshot") return Promise.resolve(failed ? json({ success: false, message: "snapshot unavailable" }, 503) : json(snapshot))
     if (path.startsWith("/api/evidence?")) return Promise.resolve(json({ records: [], total: 0, offset: 0, limit: 200, hasMore: false }))
+    if (path === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
     return Promise.resolve(json(draft))
   })
   vi.stubGlobal("fetch", fetch)
-  const client = createTestQueryClient()
+  const client = seedHumanRun(createTestQueryClient(), anonymousInspectionFixture)
   client.setQueryDefaults(["snapshot"], { retryDelay: 0 })
   renderWithQueryClient(kind === "evidence" ? <EvidencePage /> : kind === "surface" ? <SurfacePage /> : <RelationshipGraphView />, client)
   await waitFor(() => expect(client.getQueryState(["snapshot"])?.status).toBe("success"))
@@ -59,9 +61,10 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     }
   }
   await select()
-  await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "원문 보기" : "Request Lab 열기" }))
+  await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "Request Lab에서 보내기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
+  // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")
 
@@ -77,7 +80,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(client.getQueryData(["snapshot"])).toEqual(snapshot)
   if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
   if (kind === "surface") expect(screen.getAllByText("/orders/{id}").length).toBeGreaterThan(0)
-  if (kind.startsWith("graph")) expect(screen.getByRole("button", { name: "현재 세션으로 Repeater", hidden: true })).toBeDisabled()
+  if (kind.startsWith("graph")) expect(screen.getByRole("button", { name: "Request Lab에서 보내기", hidden: true })).toBeDisabled()
   else expect(screen.getByLabelText("필수 역할 지정")).toBeDisabled()
   expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(1)
 
@@ -87,7 +90,8 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
   expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled()
-  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("인증 선택")
-  expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+  // 복구되면 열 때 정한 비로그인 그대로 다시 보낼 수 있다.
+  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인")
+  expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
   await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(2))
 })

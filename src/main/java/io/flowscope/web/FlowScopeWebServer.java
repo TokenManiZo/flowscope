@@ -248,7 +248,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public record RequestLabDraft(String eventId, String service, String request, String response,
                                   boolean rawRequestRetained, boolean rawResponseRetained, boolean requestEditable,
                                   String requestCharset, String responseCharset, String observedIdentity,
-                                  String reusableSession, String reusableAccountId, String message) {}
+                                  String reusableSession, String reusableAccountId, String message,
+                                  String observedAccountId) {}
 
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
@@ -512,6 +513,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 body.put("observedIdentity", draft.observedIdentity());
                 body.put("reusableSession", draft.reusableSession());
                 body.put("reusableAccountId", draft.reusableAccountId());
+                body.put("observedAccountId", draft.observedAccountId());
                 body.put("message", draft.message());
                 if (!"exclude".equals(form(target.getRawQuery()).get("workspace"))) {
                     body.set("workspace", json.valueToTree(state.requestLabWorkspace(draft.eventId())));

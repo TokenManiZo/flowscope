@@ -154,3 +154,29 @@ it("reveals and highlights observed search cards in the compact list", async () 
   expect(card).toHaveAttribute("data-graph-node-id", `observed-operation:${observed().op}`)
   expect(card.className).toContain("outline-dashed")
 })
+
+it("switches to a separate resend graph of Request Lab and Repeater sends without touching the saved collected layout", async () => {
+  const resendOp = `${service} GET /api/orders/{id}`
+  const repeater = { ...observed(), eventId: "rep-1", idn: "USER B", op: resendOp, path: "/api/orders/3", resource: "orders:3", sourceDetail: "BURP_REPEATER", phase: "BASELINE", status: 403 } as EventRecord
+  state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [repeater], manualVerifications: [{ eventId: "lab-1", originEvidenceId: "ev-0", operation: cells[0].op, resource: "orders:0", identity: "anon", identityId: "anon", timestamp: 2, status: 401, durationMs: 5 }] })
+  render(<RelationshipGraphView />)
+  expect(screen.getByText("재전송 2건은 이 그래프에 없음")).toBeVisible()
+  expect(screen.getByTestId("search-canvas").dataset.nodes).not.toContain("resend-operation:")
+  const changes = state.changes.mock.calls.length
+
+  await userEvent.click(screen.getByRole("button", { name: "재전송 보기" }))
+
+  const nodes = screen.getByTestId("search-canvas").dataset.nodes!.split(String.fromCharCode(10))
+  expect(nodes).toEqual(expect.arrayContaining([`resend-operation:lab:${cells[0].op}`, `resend-operation:repeater:${resendOp}`, "identity:anon", "identity:USER B"]))
+  expect(nodes.some(id => id.startsWith("target:") || id.startsWith("api-group:"))).toBe(false)
+  expect(screen.getByRole("status")).toHaveTextContent("Repeater는 원본을 알 수 없어 응답 코드만 보여 줍니다")
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+
+  await userEvent.click(screen.getByRole("checkbox", { name: /Repeater/ }))
+  expect(screen.getByTestId("search-canvas").dataset.nodes).not.toContain("resend-operation:repeater:")
+
+  await userEvent.click(screen.getByRole("button", { name: "수집 그래프로" }))
+  expect(screen.getByTestId("search-canvas").dataset.nodes).toContain(`target:${service}`)
+  expect(state.changes.mock.calls.length).toBe(changes)
+})
+

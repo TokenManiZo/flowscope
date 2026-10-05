@@ -8,7 +8,9 @@ import burp.api.montoya.internal.ObjectFactoryLocator;
 import com.sun.net.httpserver.HttpServer;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
+import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RunPhase;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.integration.SessionBroker;
@@ -28,6 +30,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -97,6 +100,30 @@ class FlowScopeRequestLabCredentialsTest {
         } finally {
             ObjectFactoryLocator.FACTORY = previous;
             server.stop(0);
+        }
+    }
+
+    @Test
+    void requestLabResponsesNeverChangeTheAccountSessionOrCredentialOwnership() throws Exception {
+        String service = "https://api.example.test:443";
+        var extension = new FlowScopeExtension();
+        try {
+            var broker = (SessionBroker) field("sessionBroker").get(extension);
+            var config = (AnalysisConfig) field("analysisConfig").get(extension);
+            var user = new AccountProfile("user-1", "USER 1", service, AccessRole.USER);
+            config.upsertAccount(user);
+            broker.registerAssertedSession(user, Map.of("Authorization", "Bearer user-1"), Instant.now());
+            // 값을 바꿔 보낸 요청이 401을 받아도 점검 중인 세션은 그대로 쓸 수 있어야 한다.
+            var denied = new RequestRecord(Source.HUMAN, service, "GET", "/orders/7", 401, "sub:user-1");
+            denied.hasResponse = true;
+            denied.phase = RunPhase.VALIDATION;
+            extension.recordRequestLabResponse(denied, "user-1", 0, () -> {});
+
+            assertEquals(SessionBroker.Status.ACTIVE, broker.views().get(0).status());
+            assertTrue(config.boundAccount(service, "sub:user-1").isEmpty());
+            assertEquals("user-1", extension.analyzedRecord(denied).idn);
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
         }
     }
 

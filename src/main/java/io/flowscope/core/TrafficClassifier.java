@@ -13,10 +13,12 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 
 /** 표준 요청 문맥과 저장된 Evidence만 사용하는 보수적 비파괴 분류기. */
 public final class TrafficClassifier {
-    public static final int VERSION = 8;
+    public static final int VERSION = 9;
 
     /** Reason set on HUMAN API traffic captured while no exploration pass was active (D-071). The snapshot reads it to guide a pass start (D-155). */
     public static final String HUMAN_OUTSIDE_EXPLORATION_RUN = "HUMAN_OUTSIDE_EXPLORATION_RUN";
+    /** Burp Repeater·Intruder로 사람이 직접 고쳐 보낸 요청. 수집 실행 중이어도 판정·Gap에 쓰지 않는다. */
+    public static final String MANUAL_TOOL_RESEND = "MANUAL_TOOL_RESEND";
 
     private static final Set<String> ASSET_DESTINATIONS = Set.of(
             "audio", "font", "image", "manifest", "script", "style", "track", "video");
@@ -51,6 +53,10 @@ public final class TrafficClassifier {
         }
         if (record.phase == RunPhase.SESSION_SETUP) {
             return result(TrafficClass.AUTH_SESSION, Disposition.EXCLUDE, false, "SESSION_SETUP");
+        }
+        // 값을 고쳐 다시 보낸 요청은 깨끗한 관측이 아니다. 사용자 포함 설정보다 먼저 빼서 판정에 섞이지 않게 한다.
+        if (record.sourceDetail == SourceDetail.BURP_REPEATER || record.sourceDetail == SourceDetail.BURP_INTRUDER) {
+            return result(inferredClass(record), Disposition.EXCLUDE, false, MANUAL_TOOL_RESEND);
         }
         if (record.source == Source.HUMAN && record.phase == RunPhase.BASELINE) {
             return result(inferredClass(record), Disposition.EXCLUDE, false,

@@ -2012,7 +2012,7 @@ final class FlowScopeWebServerTest {
             return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
                     "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
                     "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
-                    "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문");
+                    "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문", "user-a");
         }
         @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
                 String evidenceId, String request, FlowScopeWebServer.CredentialMode mode, String accountId) {

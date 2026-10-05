@@ -1,9 +1,10 @@
-import { screen, within } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 
 import type { ManagedSession, Snapshot } from "@/lib/api/types"
-import { renderWithQueryClient } from "@/test/render"
+import { anonymousInspectionFixture } from "@/test/fixtures"
+import { createTestQueryClient, renderWithQueryClient, seedHumanRun } from "@/test/render"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
 import { navigateHierarchy, projectHierarchy } from "./graphHierarchy"
@@ -24,7 +25,7 @@ const session: ManagedSession = { handle: "opaque", accountId: "acct-1", account
 const draft = (extra: Record<string, unknown> = {}) => ({ eventId: "ev-1", service: "https://api.example.test", request: secret, response: "RAW-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", reusableAccountId: "acct-1", message: "draft", ...extra })
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
 function stubFetch(body = draft()) {
-  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/replay" ? { success: true, message: "", status: 200, replayId: "r-1", openedDraft: true } : body)))
+  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/request-lab/credentials" ? { headers: [] } : body)))
   vi.stubGlobal("fetch", fetch)
   return fetch
 }
@@ -44,39 +45,24 @@ it("shows only the selected operation and its 관측 기록 rows, without verdic
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
 })
 
-it("opens the raw request in Request Lab without sending anything", async () => {
-  const fetch = stubFetch()
-  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)
-  await userEvent.click(screen.getByRole("button", { name: "원문 보기" }))
-  expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
-  expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
-  // 원문 조회(GET)만 있고 전송(POST)은 없다.
+it("opens Request Lab ready to send without logging in, and sends nothing until asked", async () => {
+  const fetch = stubFetch(draft({ request: `${secret}\n\n` }))
+  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />, seedHumanRun(createTestQueryClient(), anonymousInspectionFixture))
+  await userEvent.click(screen.getByRole("button", { name: "Request Lab에서 보내기" }))
+  await screen.findByLabelText("Request Lab 요청 원문")
+  // 비로그인으로 점검 중이면 원본에서 비로그인 편집본이 바로 준비된다: 관리 인증 헤더(Cookie)가 빠진다.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("GET /orders/1 HTTP/1.1\n\n")
+  expect(screen.queryByRole("button", { name: "Original" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /Repeater/ })).not.toBeInTheDocument()
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-1")
-  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([])
-})
-
-it("opens the observed identity's current session in Repeater without keeping raw text in the query cache", async () => {
-  const fetch = stubFetch()
-  const { client } = renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, managedSessions: [session] }} />)
-  await userEvent.click(screen.getByRole("button", { name: "현재 세션으로 Repeater" }))
-  expect(await screen.findByRole("status")).toHaveTextContent("Repeater에 열었습니다")
-  const replay = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
-  expect(new URLSearchParams(String(replay?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "ev-1", request: secret, credentialMode: "ACCOUNT", accountId: "acct-1" }))
-  expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("SECRET-RAW")
-})
-
-it("explains a missing current session instead of opening Repeater", async () => {
-  const fetch = stubFetch(draft({ reusableAccountId: undefined }))
-  renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, managedSessions: [session] }} />)
-  await userEvent.click(screen.getByRole("button", { name: "현재 세션으로 Repeater" }))
-  expect(await screen.findByRole("status")).toHaveTextContent("현재 세션이 없습니다")
-  expect(fetch.mock.calls.some(([input]) => String(input) === "/api/replay")).toBe(false)
+  // 대상 서버로 보내는 요청(POST /api/request-lab)은 없다. 인증 적용 미리보기만 있다.
+  expect(fetch.mock.calls.filter(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toEqual([])
 })
 
 it("locks 관측 기록 actions while the snapshot is suspended", () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} suspended />)
-  expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
-  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Request Lab에서 보내기" })).toBeDisabled()
 })
 
 it("links Request Lab POST replay status to its original node without adding a verdict", () => {
@@ -114,10 +100,10 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   await userEvent.click(within(human).getByRole("button", { name: "요청 2건 펼치기" }))
   const requests = within(human).getByRole("list", { name: "alice · HUMAN 요청 목록" })
   expect(within(requests).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["관측 기록 #2", "관측 기록 #1"])
-  expect(within(requests).getByRole("button", { name: "#1 원문 보기" })).toBeVisible()
+  expect(within(requests).getByRole("button", { name: "#1 Request Lab에서 보내기" })).toBeVisible()
 
-  // 줄의 원문 보기는 그 출처의 가장 최근 요청(ev-2)을 연다.
-  await userEvent.click(within(human).getByRole("button", { name: "원문 보기" }))
+  // 줄의 보내기 버튼은 그 출처의 가장 최근 요청(ev-2)을 Request Lab으로 연다.
+  await userEvent.click(within(human).getByRole("button", { name: "Request Lab에서 보내기" }))
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
 })
 

@@ -2246,15 +2246,17 @@ public final class FlowScopeExtension implements BurpExtension {
                         : analysisConfig.account(record.laneAccountId);
                 String observedIdentity = observedAccount.map(io.flowscope.core.AccountProfile::label)
                         .orElse(record.idn == null ? "미확정" : record.idn);
+                // 요청 헤더를 만드는 SessionBroker.headers()와 같은 기준: ACTIVE이거나, 그 계정으로 점검 중이고 인증된 응답을 이미 받은 세션.
                 var reusable = observedAccount
                         .flatMap(account -> sessionBroker.viewForAccount(account.id()))
-                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE);
-                String reusableSession = reusable.map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
+                        .filter(SessionBroker.SessionView::replayReady);
+                String reusableSession = reusable.map(view -> view.accountLabel() + " · 사용 가능").orElse("없음");
                 String reusableAccountId = reusable.map(SessionBroker.SessionView::accountId).orElse("");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
                         request, response, rawRequest, rawResponse, decodedRequest.editable(),
                         decodedRequest.charset(), decodedResponse.charset(), observedIdentity,
-                        reusableSession, reusableAccountId, message);
+                        reusableSession, reusableAccountId, message,
+                        observedAccount.map(io.flowscope.core.AccountProfile::id).orElse(""));
             }
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
@@ -2785,16 +2787,8 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.orchestrator = Orchestrator.HUMAN;
             record.tool = ToolKind.BURP;
-            appendRequestLabRecord(record, epoch, () -> retainRawExchange(record, exchange.request(), response));
-            if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
-                analysisConfig.bindSession(record.service, record.fp, accountId);
-                List<String> setCookies = response.headers().stream()
-                        .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
-                        .map(HttpHeader::value).toList();
-                sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
-                        response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
-                        java.time.Instant.now());
-            }
+            recordRequestLabResponse(record, credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT ? accountId : null,
+                    epoch, () -> retainRawExchange(record, exchange.request(), response));
             RequestRecord published = analyzedRecord(record);
             synchronized (records) {
                 if (!retainedEvidence(evidenceId) || !retainedEvidence(published.evidenceId)) {
@@ -3414,6 +3408,15 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /** 방금 추가한 레코드의 분석본. 다른 재분석이 먼저 게시돼도 Evidence ID는 내용 해시라 다음 게시와 같다. */
+    /**
+     * Request Lab 응답을 화면에 보여 줄 기록으로만 남긴다. 값을 바꿔 보낸 요청의 401·403은 점검 결과일 수 있으므로
+     * 응답으로 계정 세션 상태(인증값 만료)나 인증값 주인(세션 연결)을 바꾸지 않는다. 계정으로 보냈으면 신원은 고른 계정으로 적는다.
+     */
+    void recordRequestLabResponse(RequestRecord record, String accountId, long epoch, Runnable retainExchange) {
+        record.laneAccountId = emptyToNull(accountId);
+        appendRequestLabRecord(record, epoch, retainExchange);
+    }
+
     RequestRecord analyzedRecord(RequestRecord record) {
         return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
                 .findFirst().orElseThrow(() -> new IllegalStateException("검증 Evidence를 분석 결과에서 찾지 못했습니다."));

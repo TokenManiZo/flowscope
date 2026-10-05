@@ -61,6 +61,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
         : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
       {!structural && !selection.routeCandidate && unjudgedCount > 0 && <p className="mb-4 text-xs text-muted-foreground">인가 판정에 포함되지 않은 관측 기록 {unjudgedCount}건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>}
+      {node?.kind === "resend-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">Request Lab·Repeater로 값을 바꿔 다시 보낸 요청입니다. 판정과 Gap에 쓰지 않습니다.</p>}
       {node?.kind === "observed-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했습니다. 이 노드는 API 존재나 접근 허용·취약점 판정이 아닙니다.</p>}
       {manual.length > 0 && <section aria-label="Request Lab 재현" className="mb-4 border-b pb-4 text-sm">
         <h3 className="font-medium">Request Lab 재현 · {manual.length}건</h3>

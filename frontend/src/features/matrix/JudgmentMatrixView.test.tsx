@@ -24,7 +24,6 @@ const runAuthorizationReplay = vi.fn(async (itemId: string, armed: boolean) => (
   run: { runId: "authorization-replay-ui", armed, sent: 1, drafted: 0, skipped: 0, items: [{ operation: `${service} GET /api/orders/{id}`, targetIdentity: "b", basisIdentity: "a", basisEvidenceId: "ev-a", outcome: "SENT", reason: "CONTROLLED_RESPONSE_RECORDED" }] },
 }))
 
-const draftAuthorizationReplay = vi.fn(async (itemId: string) => ({ success: true, message: `draft ${itemId}` }))
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
@@ -39,9 +38,8 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   saveResourcePolicy: (target: string, policy: string) => saveResourcePolicy(target, policy),
   saveRole: (identity: string, role: string) => saveRole(identity, role),
   runAuthorizationReplay: (itemId: string, armed: boolean) => runAuthorizationReplay(itemId, armed),
-  draftAuthorizationReplay: (itemId: string) => draftAuthorizationReplay(itemId),
 }))
-vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: () => null }))
+vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: ({ event }: { event: { eventId: string } }) => <div role="dialog" aria-label="Request Lab">{event.eventId}</div> }))
 
 const service = "https://demo.test:443"
 const confidence = (code: string, level: number, label = code) => ({ code, level, label, basis: `${code} basis` })
@@ -78,7 +76,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); draftAuthorizationReplay.mockClear(); })
+beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); })
 
 it("renders the compact server summary and matrix without row subtitles or P/E/O cell chips", async () => {
   renderView(<JudgmentMatrixView />)
@@ -133,9 +131,9 @@ it("opens the recommendation detail, saves a human review against the server cel
   expect(within(table).queryByText(`${service} orders:101 · 소유 A`)).not.toBeInTheDocument()
   await user.click(within(table).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
-  // 상세는 역할·정책 지정, Repeater 전송, 사람 최종 판정 세 칸뿐이다.
-  expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["정책·역할 지정", "Burp Repeater 전송", "사람 최종 판정"])
-  expect(within(inspector).getByRole("region", { name: "Burp Repeater 전송" })).toHaveTextContent("A → B")
+  // 상세는 역할·정책 지정, Request Lab 전송, 사람 최종 판정 세 칸뿐이다.
+  expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["정책·역할 지정", "Request Lab 전송", "사람 최종 판정"])
+  expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("A → B: Request Lab의 전송 인증에서 B을(를) 고르세요.")
   expect(inspector).not.toHaveTextContent("ev-a")
   expect(within(inspector).queryByRole("region", { name: "독립 신뢰도 축" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "테스트 유효성 게이트" })).not.toBeInTheDocument()
@@ -152,22 +150,21 @@ it("opens the recommendation detail, saves a human review against the server cel
   await waitFor(() => expect(saveReview).toHaveBeenLastCalledWith("object-b", "DISMISSED", "repeater reproduced"))
 })
 
-it("opens the selected recommendation in Burp Repeater as an unsent draft without the removed auto-replay controls", async () => {
+it("opens the recommendation's basis record in Request Lab without the removed auto-replay controls", async () => {
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(screen.getByRole("button", { name: "BFLA 수동 테스트 추천: B · GET /api/admin/export" }))
   expect(screen.queryByRole("region", { name: "안전 능동 재전송" })).not.toBeInTheDocument()
   expect(screen.queryByRole("checkbox", { name: "안전 자동 재전송 허용 (이번 1회)" })).not.toBeInTheDocument()
-  const replay = screen.getByRole("region", { name: "Burp Repeater 전송" })
-  await user.click(within(replay).getByRole("button", { name: "Burp Repeater로 전송" }))
-  // 추천 여부와 무관하게 초안만 여는 draft API를 쓰고, 자동 재전송(run)은 부르지 않는다.
-  await waitFor(() => expect(draftAuthorizationReplay).toHaveBeenCalledWith("function-b"))
+  expect(screen.queryByRole("button", { name: /Repeater/ })).not.toBeInTheDocument()
+  const lab = screen.getByRole("region", { name: "Request Lab 전송" })
+  await user.click(within(lab).getByRole("button", { name: "Request Lab에서 보내기" }))
+  // 추천의 근거 기록(ev-a)을 Request Lab으로 연다. 자동 재전송(run)은 부르지 않는다.
+  expect(await screen.findByRole("dialog", { name: "Request Lab" })).toHaveTextContent("ev-a")
   expect(runAuthorizationReplay).not.toHaveBeenCalled()
-  // HUMAN 탐색이 꺼진 안내와 전송 결과가 함께 보인다.
-  expect(await within(replay).findAllByRole("status")).toHaveLength(2)
 })
 
-it("keeps the same sections on non-reviewable observed cells, locks review, and still allows a Repeater draft", async () => {
+it("keeps the same sections on non-reviewable observed cells, locks review, and still opens Request Lab", async () => {
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
@@ -178,8 +175,8 @@ it("keeps the same sections on non-reviewable observed cells, locks review, and 
   expect(within(review).getByRole("button", { name: "판정 저장" })).toBeDisabled()
   expect(within(review).getByLabelText("검증 메모")).toBeDisabled()
   expect(review).toHaveTextContent("검토할 추천이 없는 셀입니다.")
-  // 추천이 없는 셀도 대상 신원 자격의 Repeater 초안은 열 수 있다(D-169).
-  expect(within(inspector).getByRole("button", { name: "Burp Repeater로 전송" })).toBeEnabled()
+  // 추천이 없는 셀도 그 칸의 기록을 Request Lab으로 열 수 있다.
+  expect(within(inspector).getByRole("button", { name: "Request Lab에서 보내기" })).toBeEnabled()
   expect(within(inspector).queryByRole("region", { name: "대상 관측 기록" })).not.toBeInTheDocument()
 })
 
@@ -198,7 +195,7 @@ it("filters attention rows with a separate switch and clears a selection whose s
   await waitFor(() => expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument())
 })
 
-it("marks confirmed cells red and keeps gap replay and review actions available", async () => {
+it("marks confirmed cells red, keeps review available, and explains a gap without any request record", async () => {
   const user = userEvent.setup()
   current = { ...snapshot, authorizationMatrix: { ...matrix, functions: [
     { ...matrix.functions[0], reviewStatus: "CONFIRMED" },
@@ -209,7 +206,9 @@ it("marks confirmed cells red and keeps gap replay and review actions available"
   expect(within(table).getByRole("button", { name: "기대 허용 관측 · 사용자 확정: A · GET /api/admin/export" })).toHaveClass("border-red-500/50", "bg-red-500/10")
   await user.click(within(table).getByRole("button", { name: "교차 실행 공백: B · GET /api/admin/export" }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
-  expect(within(inspector).getByRole("button", { name: "Burp Repeater로 전송" })).toBeEnabled()
+  // 이 API를 요청한 기록이 하나도 없으면 Request Lab을 열 수 없다고 알린다.
+  expect(within(inspector).getByRole("button", { name: "Request Lab에서 보내기" })).toBeDisabled()
+  expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("이 API의 요청 기록이 없어 Request Lab을 열 수 없습니다.")
   const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
   expect(within(review).getByRole("checkbox", { name: "취약점으로 확정" })).toBeEnabled()
   expect(within(review).getByRole("button", { name: "판정 저장" })).toBeEnabled()
@@ -335,28 +334,6 @@ it("hides the blocking-layer subtitle and saves an object policy from the object
   await user.selectOptions(within(assignment).getByRole("combobox", { name: "객체 접근 정책" }), "PUBLIC")
   await user.click(within(assignment).getByRole("button", { name: "객체 정책 저장" }))
   await waitFor(() => expect(saveResourcePolicy).toHaveBeenCalledWith(`${service} orders:101`, "PUBLIC"))
-})
-
-it("tells the operator whether a Repeater confirmation will count, and routes to start a HUMAN pass when it is off", async () => {
-  const user = userEvent.setup()
-  renderView(<JudgmentMatrixView />)
-  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
-  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
-  const guidance = screen.getByRole("status", { name: "확인 재전송 조건" })
-  expect(guidance).toHaveTextContent("브라우저 수집이 꺼져 있어 결과가 이 셀에 반영되지 않습니다.")
-  expect(guidance).not.toHaveTextContent("D-071")
-  await user.click(within(guidance).getByRole("button", { name: "브라우저 열기" }))
-  expect(window.location.hash).toBe("#accounts")
-})
-
-it("shows no HUMAN-pass notice while a HUMAN pass is active", async () => {
-  humanRunActive = true
-  const user = userEvent.setup()
-  renderView(<JudgmentMatrixView />)
-  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
-  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
-  expect(screen.getByRole("region", { name: "Burp Repeater 전송" })).toBeVisible()
-  expect(screen.queryByRole("status", { name: "확인 재전송 조건" })).not.toBeInTheDocument()
 })
 
 it("keeps the operation column unpinned and wraps long paths into two lines inside a bounded block", () => {

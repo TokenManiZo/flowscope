@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { ReviewStatus } from "@/lib/api/types"
+import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
-import { useAuthorizationReplayDraftMutation, useHumanRunQuery, useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, quietStatusLabel, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -79,25 +80,20 @@ function PolicyAssignment({ item, requiredRole: currentRequiredRole, identityKin
   </section>
 }
 
-/** Repeater 재전송은 활성 HUMAN 탐색(run) 안에서만 관측으로 반영된다(D-071). 꺼져 있을 때만 한 줄로 알린다. */
-function HumanRunGuidance({ disabled }: { disabled: boolean }) {
-  const humanRun = useHumanRunQuery()
-  if (humanRun.data?.active !== false) return null
-  return <p role="status" aria-label="확인 재전송 조건" className="flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-300">브라우저 수집이 꺼져 있어 결과가 이 셀에 반영되지 않습니다.<Button type="button" size="sm" variant="outline" className="h-7" disabled={disabled} onClick={() => { window.location.hash = "#accounts" }}>브라우저 열기</Button></p>
-}
-
-function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: JudgmentItem; requiredRole: string | undefined; identity: { kind: string; role: string } | undefined; disabled: boolean }) {
+function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { item: JudgmentItem; requiredRole: string | undefined; identity: { kind: string; role: string } | undefined; disabled: boolean; snapshot: Snapshot | undefined }) {
   const review = useReviewMutation()
-  const replay = useAuthorizationReplayDraftMutation()
+  const [labOpen, setLabOpen] = useState(false)
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
   const [note, setNote] = useState(item.reviewNote)
   const [message, setMessage] = useState<string | null>(null)
-  const [replayMessage, setReplayMessage] = useState<string | null>(null)
   // 같은 cell·검토 Evidence 안에서 저장된 서버 값을 반영한다. 선택 문맥이 바뀌면 부모 key가 폼과 진행 중 응답을 분리한다.
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
   const recommendation = item.recommendation
-  // 추천 여부와 무관하게 모든 셀을 대상 신원 자격의 Burp Repeater 초안으로 연다(D-169, 자동 전송 없음).
+  // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 인증에서 고른다(자동 전송 없음).
+  const basisId = recommendation?.basisEvidenceIds[0] ?? item.evidenceIds[0]
+  const basisEvent = (basisId ? snapshot?.events.find(event => event.eventId === basisId || event.clusterEvidenceIds?.includes(basisId)) : undefined)
+    ?? snapshot?.events.filter(event => event.op === item.operation).sort((left, right) => right.timestamp - left.timestamp)[0]
   // 사람 판정은 추천·공백·수동 검토 셀에서만 저장된다. 다른 셀은 같은 자리에 두되 입력을 잠근다.
   const reviewable = isReviewable(item) || judgmentTone(item.status) === "gap"
   const submit = async (status: ReviewStatus) => {
@@ -109,25 +105,16 @@ function JudgmentDetail({ item, requiredRole, identity, disabled }: { item: Judg
       setMessage(error instanceof Error ? error.message : "판정 저장 실패")
     }
   }
-  const openRepeater = async () => {
-    setReplayMessage(null)
-    try {
-      const result = await replay.mutateAsync(item.id)
-      setReplayMessage(result.message || "Repeater에 초안을 열었습니다. 아직 보내지 않았습니다.")
-    } catch (error) {
-      setReplayMessage(error instanceof Error ? error.message : "Repeater로 보내지 못했습니다.")
-    }
-  }
   return <div className="grid gap-4 p-4 text-sm">
     <header><h2 className="text-base font-semibold">{item.statusLabel}{reviewSuffix(item.reviewStatus)}</h2><p className="break-all text-xs text-muted-foreground">{item.identityLabel} · {withoutService(item.operation)}{resource ? ` · ${resource}` : ""}</p></header>
     <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}:${"resourcePolicy" in item ? item.resourcePolicy : ""}:${identity?.role ?? ""}`} item={item} requiredRole={requiredRole} identityKind={identity?.kind} identityRole={identity?.role} disabled={disabled} />
-    <section aria-label="Burp Repeater 전송" className="grid gap-2 rounded-md border border-border/70 p-3">
-      <h3 className="text-sm font-semibold">Burp Repeater 전송</h3>
-      {recommendation && <p className="text-xs">{recommendation.basisIdentityLabel} → {recommendation.testIdentityLabel}{recommendation.stateChanging ? " · 상태 변경 요청, 직접 확인 후 전송" : ""}</p>}
-      <Button type="button" size="sm" className="w-fit" disabled={disabled || replay.isPending} onClick={() => void openRepeater()}>Burp Repeater로 전송</Button>
-      <HumanRunGuidance disabled={disabled} />
-      {replayMessage && <p role="status" className="text-xs">{replayMessage}</p>}
+    <section aria-label="Request Lab 전송" className="grid gap-2 rounded-md border border-border/70 p-3">
+      <h3 className="text-sm font-semibold">Request Lab 전송</h3>
+      {recommendation && <p className="text-xs">{recommendation.basisIdentityLabel} → {recommendation.testIdentityLabel}: Request Lab의 전송 인증에서 {recommendation.testIdentityLabel}을(를) 고르세요.{recommendation.stateChanging ? " 상태를 바꾸는 요청이니 직접 확인한 뒤 보내세요." : ""}</p>}
+      <Button type="button" size="sm" className="w-fit" disabled={disabled || !basisEvent} onClick={() => setLabOpen(true)}>Request Lab에서 보내기</Button>
+      {!basisEvent && <p className="text-xs text-muted-foreground">이 API의 요청 기록이 없어 Request Lab을 열 수 없습니다.</p>}
     </section>
+    {labOpen && basisEvent && snapshot && <RequestLabDialog open onOpenChange={open => { if (!open) setLabOpen(false) }} event={basisEvent} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={snapshot.datasetRevision ?? snapshot.identityRevision ?? 0} snapshotRevision={snapshot.revision} suspended={disabled} />}
     <section aria-label="사람 최종 판정" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">사람 최종 판정</h3>
       <label className="flex items-start gap-2 text-xs"><Checkbox className="mt-0.5" checked={confirmed} disabled={disabled || !reviewable} onCheckedChange={(checked) => setConfirmed(checked === true)} /><span>취약점으로 확정</span></label>
@@ -164,7 +151,7 @@ function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnT
       <Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-auto w-full justify-between px-0 py-1 hover:bg-transparent" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">주의 항목만</span><span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-4" : "translate-x-0"}`} /></span></Button>
     </div>
   </section>
-  const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} requiredRole={snapshot.data?.requiredRoles[selected.operation]} identity={matrix.identities.find((identity) => identity.id === selected.identity)} disabled={disabled} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하세요.</p>
+  const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} requiredRole={snapshot.data?.requiredRoles[selected.operation]} identity={matrix.identities.find((identity) => identity.id === selected.identity)} disabled={disabled} snapshot={snapshot.data} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하세요.</p>
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={context} contextTitle={false} inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="grid gap-4 p-3" aria-labelledby="judgment-title">

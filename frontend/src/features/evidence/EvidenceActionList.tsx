@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react"
-import { Bot, ChevronDown, ChevronRight, CircleHelp, FileText, Loader2, ScanLine, Send, UserRound } from "lucide-react"
+import { Bot, ChevronDown, ChevronRight, CircleHelp, ScanLine, Send, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { MethodBadge, StatusBadge } from "@/features/graph/httpBadges"
 import { matrixVerdictTone } from "@/features/matrix/MatrixVerdictCell"
-import { getRequestLabDraft, openReplay } from "@/lib/api/endpoints"
 import type { EventRecord, Snapshot, Source, Verdict } from "@/lib/api/types"
 import { evidenceOrdinalLabel, stripOrigin } from "@/lib/display/operationLabel"
-import { activeAccounts, RequestLabDialog } from "./RequestLabDialog"
+import { RequestLabDialog } from "./RequestLabDialog"
 
 /** 출처 아이콘. 색은 그래프 강조색과 같은 계열(HUMAN 파랑·SCANNER 빨강·LLM 노랑)이고, 이름은 툴팁과 접근 이름으로 준다. */
 export const SOURCE_MARK: Record<Source, { Icon: typeof UserRound; label: string; className: string }> = {
@@ -44,14 +43,11 @@ interface Props {
 }
 
 /**
- * 선택 항목에 연결된 실제 관측 기록. 신원마다 카드 하나로 묶고 카드 안에 출처별 한 줄을 둔다. 줄의 원문 보기(Request Lab)·현재 세션
- * Repeater는 그 출처의 가장 최근 요청을 대상으로 하고, 요청이 여럿이면 펼쳐서 요청마다 같은 작업을 할 수 있다.
- * 현재 세션은 관측 신원의 재사용 가능한 ACTIVE 세션이며, 원문은 요청 동안만 지역 변수로 다루고 캐시에 두지 않는다.
+ * 선택 항목에 연결된 실제 관측 기록. 신원마다 카드 하나로 묶고 카드 안에 출처별 한 줄을 둔다. 줄의 보내기 버튼은 그 출처의 가장 최근
+ * 요청을 Request Lab으로 열고, 요청이 여럿이면 펼쳐서 요청마다 열 수 있다. 재전송은 Request Lab에서만 한다(Burp Repeater로 보내지 않는다).
  */
 export function EvidenceActionList({ events, snapshot, disabled = false, onOpenRequestLab, identityVerdicts }: Props) {
   const [labContext, setLabContext] = useState<string | null>(null)
-  const [pendingId, setPendingId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Readonly<Record<string, string>>>({})
   const [openGroups, setOpenGroups] = useState<readonly string[]>([])
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision ?? 0
   // 데이터셋 교체나 Evidence 좌표 변경은 열린 초안을 닫는다(D-140). 사라졌다 돌아온 Evidence도 다시 열리지 않는다.
@@ -59,25 +55,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
   const labEvent = events.find(event => contextOf(event) === labContext) ?? null
   useEffect(() => { if (labContext && !labEvent) setLabContext(null) }, [labContext, labEvent])
   const sorted = [...events].sort((left, right) => right.timestamp - left.timestamp)
-  const note = (eventId: string, message: string) => setMessages(current => ({ ...current, [eventId]: message }))
-
-  async function sendToRepeater(event: EventRecord) {
-    if (disabled || pendingId) return
-    setPendingId(event.eventId)
-    note(event.eventId, "")
-    try {
-      const draft = await getRequestLabDraft(event.eventId)
-      const account = activeAccounts(snapshot.managedSessions, draft.service).find(session => session.accountId === draft.reusableAccountId)
-      if (!draft.rawRequestRetained || !draft.request) { note(event.eventId, "요청 원문이 보존되지 않아 보낼 수 없습니다."); return }
-      if (!account) { note(event.eventId, "현재 세션이 없습니다. 원문 보기에서 계정을 고르세요."); return }
-      const result = await openReplay({ eventId: event.eventId, request: draft.request, credentialMode: "ACCOUNT", accountId: account.accountId })
-      note(event.eventId, result.openedDraft ? "Repeater에 열었습니다. 아직 보내지 않았습니다." : result.message)
-    } catch (reason) {
-      note(event.eventId, reason instanceof Error ? reason.message : "Repeater로 보내지 못했습니다.")
-    } finally {
-      setPendingId(null)
-    }
-  }
+  const openLab = (event: EventRecord) => { onOpenRequestLab?.(); setLabContext(contextOf(event)) }
 
   if (!sorted.length && !identityVerdicts?.size) return <p className="text-sm text-muted-foreground">연결된 관측 기록이 없습니다.</p>
   const cards = groupByIdentity(sorted, identityVerdicts?.keys() ?? [])
@@ -105,8 +83,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
                 ? <button type="button" aria-expanded={open} aria-label={`요청 ${row.events.length}건 ${open ? "접기" : "펼치기"}`} onClick={() => toggle(row.key)} className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-[13px] text-muted-foreground hover:bg-muted">{row.events.length}건{open ? <ChevronDown className="size-4" aria-hidden="true" /> : <ChevronRight className="size-4" aria-hidden="true" />}</button>
                 : <span className="shrink-0 px-1 text-[13px] text-muted-foreground">1건</span>}
               <span className="ms-auto flex shrink-0 gap-1">
-                <Button type="button" size="icon-sm" variant="outline" aria-label="원문 보기" title="원문 보기" disabled={disabled} onClick={() => { onOpenRequestLab?.(); setLabContext(contextOf(latest)) }}><FileText className="size-4" /></Button>
-                <Button type="button" size="icon-sm" variant="outline" aria-label="현재 세션으로 Repeater" title="현재 세션으로 Repeater" disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(latest)}>{pendingId === latest.eventId ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}</Button>
+                <Button type="button" size="icon-sm" variant="outline" aria-label="Request Lab에서 보내기" title="Request Lab에서 보내기" disabled={disabled} onClick={() => openLab(latest)}><Send className="size-4" /></Button>
               </span>
             </div>
             {open && <ul aria-label={`${card.idn} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
@@ -114,11 +91,9 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
               <StatusBadge code={event.status} />
               <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>
               <span className="flex gap-0.5">
-                <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 원문 보기`} title="원문 보기" disabled={disabled} onClick={() => { onOpenRequestLab?.(); setLabContext(contextOf(event)) }}><FileText className="size-4" /></Button>
-                <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} 현재 세션으로 Repeater`} title="현재 세션으로 Repeater" disabled={disabled || pendingId !== null} onClick={() => void sendToRepeater(event)}><Send className="size-4" /></Button>
+                <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} Request Lab에서 보내기`} title="Request Lab에서 보내기" disabled={disabled} onClick={() => openLab(event)}><Send className="size-4" /></Button>
               </span>
             </li>)}</ul>}
-            {row.events.filter(event => messages[event.eventId]).map(event => <p key={event.eventId} role="status" className="text-xs text-muted-foreground">{row.events.length > 1 ? `${ordinal(event)} · ` : ""}{messages[event.eventId]}</p>)}
           </div>
         })}
       </li>
