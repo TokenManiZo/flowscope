@@ -102,7 +102,9 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
+    // 출처·검색을 먼저 적용해야 다른 출처의 새 기록이 기존 Human 기록을 밀어내지 않는다.
     return items.filter((item) => (source === "전체" || item.sourceLabel === source) && (!normalized || [item.ordinal ?? item.id, item.badge, item.title, item.detail ?? "", item.status, item.sourceLabel ?? ""].some((value) => value.toLocaleLowerCase().includes(normalized))))
+      .slice(0, 200)
   }, [items, query, source])
 
   return <>

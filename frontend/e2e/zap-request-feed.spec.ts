@@ -85,6 +85,20 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("tab", { name: "ZAP 스캔" }).click()
     await expect(page.getByText("아직 기록된 ZAP 요청이 없습니다.")).toBeVisible()
     await expect(page.getByLabel("ZAP 요청 기록 건수")).toHaveText("0건")
+    events = [
+      ...Array.from({ length: 23 }, (_, index) => event(`human-${index}`, "human", "BROWSER", index)),
+      ...Array.from({ length: 336 }, (_, index) => event(`zap-${index}`, "scanner", "ZAP_CLIENT_SPIDER", 1000 + index)),
+    ]
+    await page.reload()
+    await expect(list.getByRole("button")).toHaveCount(200)
+    await page.getByLabel("수집 출처 필터").getByRole("button", { name: "Human", exact: true }).click()
+    await expect(list.getByRole("button")).toHaveCount(23)
+    await expect(list.getByRole("button").first()).toHaveAccessibleName(/human-22/)
+    await page.screenshot({ path: testInfo.outputPath(`human-records-after-zap-${theme}.png`), fullPage: true, animations: "disabled" })
+    await page.getByRole("tab", { name: "ZAP 스캔" }).click()
+    await expect(list.getByRole("button")).toHaveCount(200)
+    await expect(page.getByLabel("ZAP 요청 기록 건수")).toHaveText("200건")
+    await expect(list.getByRole("button", { name: /human-/ })).toHaveCount(0)
     expect(mutations).toEqual([])
     expect(errors).toEqual([])
   })

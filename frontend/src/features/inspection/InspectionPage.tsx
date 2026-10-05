@@ -156,7 +156,7 @@ export function InspectionPage() {
   }
 
   const collectedFeed = useMemo<readonly SourceFeedItem[]>(() => events.slice()
-    .sort((a, b) => b.timestamp - a.timestamp).slice(0, 200).map(feedItem),
+    .sort((a, b) => b.timestamp - a.timestamp).map(feedItem),
     [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
   // 저장된 수집 방식으로 ZAP 요청을 먼저 고른 뒤 최근 200건을 표시한다.
