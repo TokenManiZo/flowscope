@@ -121,13 +121,13 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
 })
 
-it("shows unjudged account evidence without borrowing another account's verdict", () => {
-  const bob = { ...event, eventId: "bob-unjudged", clusterEvidenceIds: ["bob-unjudged"], idn: "bob", resource: null, trafficDisposition: "REVIEW", verdict: "untested" as const }
+it.each(["UNKNOWN", "POLLING"])("shows unjudged account evidence in API detail without borrowing another account's verdict (%s)", trafficClass => {
+  const bob = { ...event, eventId: "bob-unjudged", clusterEvidenceIds: ["bob-unjudged"], idn: "bob", resource: null, trafficClass, trafficDisposition: "REVIEW", verdict: "untested" as const }
   const data = { ...snapshot, events: [event, bob] }
-  const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: false, includeRouteCandidates: false, expanded: false }
+  const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: true, includeRouteCandidates: false, expanded: false }
   const navigation = { level: "site" as const, groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
   const site = projectHierarchy(data, filters, navigation)
-  const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "group", site.groups[0].id))
+  const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "operation", site.groups[0].id, event.op))
   const node = graph.nodes.find(node => node.kind === "operation")!
   renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
   const alice = screen.getByRole("listitem", { name: "alice 관측 기록 1건" })

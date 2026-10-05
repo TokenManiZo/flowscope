@@ -348,6 +348,30 @@ describe("API hierarchy", () => {
     expect(edge.selection.cells).toEqual([])
   })
 
+  it("keeps support identities and evidence in API detail without changing authorization", () => {
+    const judged = cell({ evidenceIds: ["judged-a"] })
+    const support = [event({ eventId: "poll-b", op: get, idn: "USER B", clusterEvidenceIds: ["poll-b", "poll-b-old"] }), event({ eventId: "poll-b-2", op: get, idn: "USER B" })]
+    const snapshot = targetSnapshot({ cells: [judged], events: support })
+    const before = JSON.stringify(snapshot)
+    const enabled = { ...filters, includeSupportTraffic: true }
+    const group = projectHierarchy(snapshot, enabled, groupNav())
+    const detail = projectHierarchy(snapshot, enabled, operationNav())
+    expect(detail.operations[0].selection.evidenceIds).toEqual(group.operations[0].selection.evidenceIds)
+    expect(detail.operations[0]).toMatchObject({ verdict: "allow", selection: { cells: [judged], cellKeys: [JSON.stringify([judged.idn, judged.op, judged.resource])] } })
+    expect(detail.identities.find(node => node.selection.identity === "USER B")).toMatchObject({ verdict: "unknown", selection: { cells: [], evidenceIds: ["poll-b", "poll-b-2", "poll-b-old"] } })
+    const edges = detail.edges.filter(edge => edge.relation === "support")
+    expect(edges).toHaveLength(2)
+    expect(new Set(edges.map(edge => edge.id)).size).toBe(2)
+    expect(edges.every(edge => edge.targetId === `operation:${get}` && edge.selection.cells.length === 0 && edge.selection.cellKeys.length === 0)).toBe(true)
+    expect(detail.groups[0]).toMatchObject({ endpointCount: 1, observedCount: 0, sourceCounts: { human: 1, scanner: 0, llm: 0 } })
+    const disabled = projectHierarchy(snapshot, filters, operationNav())
+    expect(disabled.identities.some(node => node.selection.identity === "USER B")).toBe(false)
+    expect(disabled.operations[0].selection.evidenceIds).toEqual(["judged-a"])
+    const excluded = projectHierarchy({ ...snapshot, events: support.map(event => ({ ...event, classificationOverride: true, classificationReasons: ["USER_EXCLUDE"] })) }, enabled, operationNav())
+    expect(excluded.edges.some(edge => edge.relation === "support")).toBe(false)
+    expect(JSON.stringify(snapshot)).toBe(before)
+  })
+
   it("does not restore user-excluded records through the support toggle", () => {
     const hidden = event({ classificationOverride: true, classificationReasons: ["USER_EXCLUDE"] })
     const graph = projectHierarchy({ ...data(), events: [hidden] }, { ...filters, includeSupportTraffic: true }, groupNav())

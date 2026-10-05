@@ -179,3 +179,17 @@ it("indexes and reveals enabled route candidates with their existing IDs", () =>
   const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
   expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.routeCandidate?.pathTemplate).toBe(routes[18].pathTemplate)
 })
+
+it("opens a support-only identity on a judged API in compact search", () => {
+  const snapshot = targetSnapshot({ cells: [cell()], events: [captured({ eventId: "poll-b", trafficClass: "POLLING", trafficDisposition: "EXCLUDE" })] })
+  const enabled = { ...filters, includeSupportTraffic: true }
+  const index = snapshotSearchIndex(snapshot, enabled)
+  const entry = index.byKey.get(searchKey("identity", service, "USER B"))!
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), true)
+  expect(destination.navigation.level).toBe("operation")
+  const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
+  const target = graph.nodes.find(node => node.id === destination.nodeId)!
+  expect(target).toBeDefined()
+  expect(target.selection).toMatchObject({ identity: "USER B", cells: [], cellKeys: [], evidenceIds: ["poll-b"] })
+  expect(searchHighlights(graph, new Set([entry.key])).get(target.id)).toBe("direct")
+})

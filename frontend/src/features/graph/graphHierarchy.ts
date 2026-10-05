@@ -262,6 +262,15 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
   }
 
+  const addSupport = (events: readonly EventRecord[], node: HierarchyNode) => {
+    node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText) }
+    for (const event of events) {
+      const identity = addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
+      identity.selection = { ...identity.selection, evidenceIds: [...new Set([...identity.selection.evidenceIds, ...eventEvidenceIds(event)])].sort(compareText) }
+      addEdge("support", identity.id, node.id, { ...emptySelection(), identity: event.idn, operation: node.selection.operation, source: event.source, evidenceIds: eventEvidenceIds(event) }, 0, event.eventId)
+    }
+  }
+
   // 그룹 화면에서는 객체를 종류별 묶음으로 둔다. 접힌 묶음은 노드 하나와 API→묶음 엣지(출처별)만, 펼친 묶음은 머리 노드 바로 아래에 개별 객체를 둔다.
   // 묶이지 않는 객체(":" 없음)만 objectLimit로 접고 "더 보기"로 펼친다. API 하나를 연 화면(grouped=false)은 객체를 하나씩 그린다(목록 모드에도 펼칠 버튼이 없다).
   // 반환값은 개별 객체 노드로 그린 객체다.
@@ -401,13 +410,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
         const events = supportEvents.filter(event => event.op === op)
         const existing = nodes.find(node => ["operation", "observed-operation"].includes(node.kind) && node.selection.operation === op)
         const node = existing ?? addNode("support-operation", op, { ...emptySelection(), operation: op })
-        node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText) }
         if (!existing) listItems.push(node)
-        for (const event of events) {
-          const identity = addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
-          identity.selection = { ...identity.selection, evidenceIds: [...new Set([...identity.selection.evidenceIds, ...eventEvidenceIds(event)])].sort(compareText) }
-          addEdge("support", identity.id, node.id, { ...emptySelection(), identity: event.idn, operation: op, source: event.source, evidenceIds: eventEvidenceIds(event) }, 0, event.eventId)
-        }
+        addSupport(events, node)
       }
     }
     groupOperations(visible, related)
@@ -425,6 +429,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addAccess(related)
     addObserved((observedByGroup.get(group.id) ?? []).filter(event => event.op === operation), operationNode)
+    addSupport(contents.supportEvents.filter(event => event.op === operation), operationNode)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
       .sort((left, right) => Number(graphCellKey(right) === resolved.focusCandidateKey) - Number(graphCellKey(left) === resolved.focusCandidateKey))

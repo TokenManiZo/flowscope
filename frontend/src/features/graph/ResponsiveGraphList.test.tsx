@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest"
 import { ResponsiveGraphList } from "./ResponsiveGraphList"
 import type { GraphProjection, GraphFilters } from "./graphProjection"
 import { projectHierarchy, type GraphNavigation } from "./graphHierarchy"
+import { buildGraphSearchIndex, searchDestination, searchKey } from "./graphSearch"
 import { targetSnapshot } from "@/test/fixtures"
 
 const hierarchyFilters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
@@ -78,4 +79,22 @@ it("keeps observed-only GET nodes selectable in the compact group list", async (
   render(<ResponsiveGraphList projection={group} snapshot={snapshot} onSelect={select} />)
   await userEvent.click(screen.getByRole("button", { name: /응답 관측/ }))
   expect(select).toHaveBeenCalledWith(expect.objectContaining({ operation: op, evidenceIds: ["observed-1"] }), `observed-operation:${op}`)
+})
+
+it("selects support-only identity evidence after compact API search", async () => {
+  const snapshot = targetSnapshot({ cells: [rawCell], events: [{
+    eventId: "poll-b", method: "GET", path: "/api/orders/1", status: 200, fp: "", idn: "USER B", role: "USER", source: "human", op: rawCell.op, resource: null, timestamp: 1,
+    sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "POLLING", trafficDisposition: "EXCLUDE", coverageEligible: false,
+    classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["poll-b"], objects: [], verdict: "untested",
+  }] })
+  const filters = { ...hierarchyFilters, includeSupportTraffic: true }
+  const entry = buildGraphSearchIndex(snapshot, filters).byKey.get(searchKey("identity", "Target", "USER B"))!
+  const destination = searchDestination(entry, operationNavigation, projectHierarchy(snapshot, filters, operationNavigation), true)
+  const graph = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
+  const select = vi.fn()
+  render(<ResponsiveGraphList projection={graph} snapshot={snapshot} revealNodeId={destination.nodeId} onSelect={select} />)
+  const button = screen.getByRole("button", { name: /USER B/ })
+  expect(button).toHaveAttribute("data-graph-node-id", "identity:USER B")
+  await userEvent.click(button)
+  expect(select).toHaveBeenCalledWith(expect.objectContaining({ identity: "USER B", cells: [], cellKeys: [], evidenceIds: ["poll-b"] }), "identity:USER B")
 })
