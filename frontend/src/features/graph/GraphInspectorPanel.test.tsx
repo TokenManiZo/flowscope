@@ -121,7 +121,7 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
 })
 
-it.each(["UNKNOWN", "POLLING"])("shows unjudged account evidence in API detail without borrowing another account's verdict (%s)", trafficClass => {
+it.each(["UNKNOWN", "POLLING"])("preserves unjudged account records without assigning the judged account verdict (%s)", trafficClass => {
   const bob = { ...event, eventId: "bob-unjudged", clusterEvidenceIds: ["bob-unjudged"], idn: "bob", resource: null, trafficClass, trafficDisposition: "REVIEW", verdict: "untested" as const }
   const data = { ...snapshot, events: [event, bob] }
   const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: true, includeRouteCandidates: false, expanded: false }
@@ -131,8 +131,29 @@ it.each(["UNKNOWN", "POLLING"])("shows unjudged account evidence in API detail w
   const node = graph.nodes.find(node => node.kind === "operation")!
   renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
   const alice = screen.getByRole("listitem", { name: "alice 관측 기록 1건" })
-  const bobCard = screen.getByRole("listitem", { name: "bob 관측 기록 1건" })
   expect(alice).toHaveTextContent("ALLOW")
-  expect(bobCard).not.toHaveTextContent("ALLOW")
-  expect(screen.getByText("인가 판정에 포함되지 않은 관측 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
+  const bobRecord = screen.getByRole("listitem", { name: "bob 관측 기록 1건" })
+  expect(bobRecord).not.toHaveTextContent("ALLOW")
+  expect(node.selection.cells).toEqual(snapshot.cells)
+  expect(graph.edges.find(edge => edge.selection.identity === "bob")?.selection.cells).toEqual([])
+  expect(data.events).toContain(bob)
+})
+
+it.each(["UNKNOWN", "POLLING"])("shows B's neutral evidence in a folded quiet-group detail (%s)", trafficClass => {
+  const bob = { ...event, eventId: "bob-quiet", clusterEvidenceIds: ["bob-quiet"], idn: "bob", resource: null, trafficClass, trafficDisposition: "REVIEW", verdict: "untested" as const }
+  const data = { ...snapshot, events: [event, bob] }
+  const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: true, includeRouteCandidates: false, expanded: false }
+  const navigation = { level: "site" as const, groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
+  const site = projectHierarchy(data, filters, navigation)
+  const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "group", site.groups[0].id))
+  const node = graph.nodes.find(node => node.kind === "quiet-group")!
+  expect(node.objectGroup?.expanded).toBe(false)
+  expect(graph.identities).toEqual([])
+  expect(graph.edges).toEqual([])
+  expect(node.selection.cells).toEqual(snapshot.cells)
+  expect(node.selection.evidenceIds).toEqual(["bob-quiet", "ev-1"])
+  renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
+  expect(screen.getByRole("listitem", { name: "alice 관측 기록 1건" })).toBeVisible()
+  expect(screen.getByRole("listitem", { name: "bob 관측 기록 1건" })).not.toHaveTextContent("ALLOW")
+  expect(screen.getByText(/인가 판정에 포함되지 않은 관측 기록 1건/)).toBeVisible()
 })
