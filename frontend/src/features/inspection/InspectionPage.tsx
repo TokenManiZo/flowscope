@@ -30,7 +30,7 @@ const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
 ]
 
 const ANONYMOUS_HUMAN_ACCOUNT = "__flowscope_anonymous__"
-const RELEASES_URL = "https://github.com/choewonwoo1817/testflowscope/releases"
+const RELEASES_URL = "https://github.com/TokenManiZo/flowscope/releases"
 const ZAP_COMMANDS: ReadonlyArray<[string, string]> = [["macOS · Linux", "./scripts/zap-up.sh"], ["Windows", ".\\scripts\\zap-up.ps1"]]
 
 function errorMessage(error: unknown): string {

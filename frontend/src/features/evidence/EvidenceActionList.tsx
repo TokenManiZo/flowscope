@@ -123,6 +123,6 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
         })}
       </li>
     })}</ul>
-    {labEvent && <RequestLabDialog key={labContext} open onOpenChange={open => { if (!open) setLabContext(null) }} event={labEvent} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
+    {labEvent && <RequestLabDialog key={labContext} open onOpenChange={open => { if (!open) setLabContext(null) }} event={labEvent} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
   </section>
 }

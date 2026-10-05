@@ -499,7 +499,7 @@ describe("unified inspection hub", () => {
     expect(howTo).toHaveTextContent("FlowScope 폴더에서 실행")
     expect(howTo).toHaveTextContent("./scripts/zap-up.sh")
     expect(howTo).toHaveTextContent(".\\scripts\\zap-up.ps1")
-    expect(within(howTo).getByRole("link", { name: "전체 파일 받기" })).toHaveAttribute("href", expect.stringContaining("/releases"))
+    expect(within(howTo).getByRole("link", { name: "전체 파일 받기" })).toHaveAttribute("href", "https://github.com/TokenManiZo/flowscope/releases")
   })
 
   it("offers every registered account of the target because the HUMAN pass captures the session itself", async () => {
