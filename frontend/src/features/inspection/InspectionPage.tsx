@@ -159,12 +159,11 @@ export function InspectionPage() {
     .sort((a, b) => b.timestamp - a.timestamp).map(feedItem),
     [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
-  // 저장된 수집 방식으로 ZAP 요청을 먼저 고른 뒤 최근 200건을 표시한다.
+  // 저장된 수집 방식으로 확인된 ZAP 요청을 개수 제한 없이 최신순으로 표시한다.
   const scannerFeedItems = useMemo<readonly SourceFeedItem[]>(() => events
     .filter(isZapRequest)
     .slice()
     .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 200)
     .map(feedItem),
     [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
@@ -259,7 +258,7 @@ export function InspectionPage() {
             feedTitle="ZAP 요청 기록"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
             emptyHint="아직 기록된 ZAP 요청이 없습니다."
-            feedContent={(view) => <HumanRequestFeed view={view} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
           />
         </TabsContent>
 
