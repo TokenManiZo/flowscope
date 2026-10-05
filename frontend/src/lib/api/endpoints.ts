@@ -31,7 +31,7 @@ const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ?
 export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
 export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
   apiFetch<EvidencePage>(`/api/evidence?${new URLSearchParams({ operation, offset: String(offset), limit: String(limit) })}` as `/api/${string}`, formSignal(signal))
-export const openReplay = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }) =>
+export const openReplay = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"; accountId: string }) =>
   postForm<ReplayResult>("/api/replay", values)
 export const runAuthorizationReplay = (itemId: string, armed: boolean) =>
   postForm<AuthorizationReplayResult>("/api/authorization-replay", { action: "run", itemId, armed: String(armed) })
@@ -43,10 +43,10 @@ export const stopLiveAuthorizationReplay = () =>
   postForm<LiveAuthorizationReplayEnvelope>("/api/authorization-replay", { action: "stop-live" })
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal, includeWorkspace = true) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams(includeWorkspace ? { eventId } : { eventId, workspace: "exclude" })}` as `/api/${string}`, formSignal(signal))
-export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
+export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"; accountId: string }, signal?: AbortSignal) =>
   // 서버는 operationId로 같은 전송의 중복 실행을 막는다. 누르기마다 새 값을 쓴다.
   postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
-export const previewRequestLabCredentials = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string; datasetRevision: number }, signal?: AbortSignal) =>
+export const previewRequestLabCredentials = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"; accountId: string; datasetRevision: number }, signal?: AbortSignal) =>
   postForm<{ headers: RequestLabCredentialHeader[] }>("/api/request-lab/credentials", { ...values, datasetRevision: String(values.datasetRevision) }, undefined, signal)
 export const saveRequestLabWorkspace = (values: { eventId: string; datasetRevision: number; revision: number; change: import("./types").RequestLabWorkspaceChange }, signal?: AbortSignal) =>
   postForm<{ datasetRevision: number; revision: number; persisted: boolean }>("/api/request-lab/workspace", {

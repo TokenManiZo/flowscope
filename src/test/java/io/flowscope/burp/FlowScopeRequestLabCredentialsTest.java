@@ -127,6 +127,30 @@ class FlowScopeRequestLabCredentialsTest {
         }
     }
 
+    @Test
+    void rawModeSendsTheEditedAuthenticationHeaderVerbatim() throws Exception {
+        String service = "http://target.test:80";
+        MontoyaObjectFactory previous = ObjectFactoryLocator.FACTORY;
+        var extension = new FlowScopeExtension();
+        try {
+            ObjectFactoryLocator.FACTORY = valueObjectFactory();
+            field("scope").set(extension, ScopePolicy.parse(service + "/"));
+            var seed = new RequestRecord(Source.HUMAN, service, "GET", "/orders/7", 200, "test");
+            String edited = "GET /orders/7 HTTP/1.1\r\nHost: target.test\r\n"
+                    + "Authorization: Bearer typed-by-hand\r\nCookie: sid=keep\r\nConnection: close\r\n\r\n";
+            var prepare = FlowScopeExtension.class.getDeclaredMethod("prepareHumanRequest", RequestRecord.class,
+                    String.class, CredentialMode.class, String.class);
+            prepare.setAccessible(true);
+            // 직접 입력: 손으로 쓴 인증 헤더가 지워지거나 교체되지 않고 그대로 나가야 한다(계정 모드와 다름).
+            HttpRequest prepared = (HttpRequest) prepare.invoke(extension, seed, edited, CredentialMode.RAW, "");
+            assertEquals("Bearer typed-by-hand", prepared.headerValue("Authorization"));
+            assertEquals("sid=keep", prepared.headerValue("Cookie"));
+        } finally {
+            ObjectFactoryLocator.FACTORY = previous;
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
     private static Field field(String name) throws Exception {
         Field field = FlowScopeExtension.class.getDeclaredField(name);
         field.setAccessible(true);
