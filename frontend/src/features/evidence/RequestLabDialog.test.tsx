@@ -96,6 +96,7 @@ afterAll(() => {
 
 function authenticationLabel(value: string) {
   if (value === "ANONYMOUS") return "비로그인"
+  if (value === "RAW") return "직접 입력"
   if (value === "ORIGINAL" || value === "") return /인증 (다시 )?선택/
   return registeredAccounts.find(account => value === `ACCOUNT:${account.id}`)!.label
 }
@@ -210,6 +211,28 @@ describe("RequestLabDialog", () => {
     const sends = fetch.mock.calls.filter(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
     expect(sends).toHaveLength(3)
     expect(sends.map(([, init]) => new URLSearchParams(String(init?.body)).get("credentialMode"))).toEqual(["ANONYMOUS", "ANONYMOUS", "ANONYMOUS"])
+  })
+
+  it("keeps the request untouched and sends credentialMode RAW in 직접 입력 mode", async () => {
+    const fetch = installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    const editor = await openDraft() as HTMLTextAreaElement
+    // 계정·비로그인에서는 인증 헤더가 교체된다고 안내한다.
+    expect(screen.getByText(/고른 전송 인증으로 바뀝니다/)).toBeInTheDocument()
+    const text = editor.value
+    const credsBefore = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab/credentials").length
+    await chooseAuthentication(user, "RAW")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("직접 입력"))
+    // 직접 입력은 인증 교체 미리보기를 부르지 않고 요청 본문을 그대로 둔다.
+    expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab/credentials").length).toBe(credsBefore)
+    expect((screen.getByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement).value).toBe(text)
+    expect(screen.getByText(/그대로 보냅니다/)).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await waitFor(() => expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(true))
+    const sent = fetch.mock.calls.find(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
+    expect(new URLSearchParams(String(sent?.[1]?.body)).get("credentialMode")).toBe("RAW")
+    expect(await screen.findByRole("button", { name: "수정된 요청 1 · 직접 입력 · 200" })).toBeInTheDocument()
   })
 
   it("sends with an account that is being checked right now", async () => {

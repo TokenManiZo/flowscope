@@ -184,6 +184,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   }, [view, draft])
 
   const authLabel = (item: RequestLabEntry) => item.credentialMode === "ANONYMOUS" ? "비로그인"
+    : item.credentialMode === "RAW" ? "직접 입력"
     : item.credentialMode === "ACCOUNT" ? accounts.find(account => account.id === item.accountId)?.label ?? "계정" : "인증 선택 전"
   const tabLabel = (item: RequestLabEntry) => item.result
     ? `${item.name} · ${authLabel(item)} · ${item.result.status || "실패"}`
@@ -400,6 +401,16 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     if (!draft || !targetEntry || targetEntry.editRejected || busy || suspended || context.current.preview || unchanged) return
     const selected = accountOptions.find(option => option.account.id === nextAccountId && option.ready)
     if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 세션이 아직 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하면 쓸 수 있습니다."); return }
+    // 직접 입력: 요청의 인증 헤더를 바꾸지 않는다. 미리보기(인증 교체)를 부르지 않고 모드만 바꾼다.
+    if (nextMode === "RAW") {
+      targetEntry.credentialMode = "RAW"
+      targetEntry.accountId = ""
+      targetEntry.restored = false
+      persistence.current?.changed(targetEntry, ["credentialMode", "dirty"])
+      setError("")
+      setVersion(value => value + 1)
+      return
+    }
     if (!raw.current.canSend(targetEntry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
     const controller = new AbortController()
     const generation = ++context.current.generation
@@ -555,11 +566,13 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
               if (!entry) return
               // 보낸 탭의 인증을 바꾸면 그 기록은 두고 새 탭에서 바꾼다.
               const target = entry.result ? forkFrom(entry) : entry
-              if (target) void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), target) : changeCredentials("ANONYMOUS", "", target))
+              if (target) void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), target)
+                : value === "RAW" ? changeCredentials("RAW", "", target) : changeCredentials("ANONYMOUS", "", target))
             }}>
               <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
                 <SelectItem value="ANONYMOUS">비로그인</SelectItem>
+                <SelectItem value="RAW">직접 입력</SelectItem>
                 {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 점검 시작 후 사용 가능" : ""}</SelectItem>)}
                 {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
               </SelectContent>
@@ -594,6 +607,9 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다.</p>}
           {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 신원(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
           {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
+          {/* 전송 인증 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
+          {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 인증으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}
+          {entry && view !== "original" && mode === "RAW" && <p className="px-3 py-1.5 text-xs text-muted-foreground">직접 입력: 요청에 쓴 인증 헤더를 바꾸지 않고 그대로 보냅니다.</p>}
           {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
         </div>
         {draft && <>
