@@ -1,5 +1,5 @@
 import type { EventRecord, Source } from "@/lib/api/types"
-import { operationGroup, type HierarchyProjection } from "./graphHierarchy"
+import { operationGroup, type graphContents, type HierarchyProjection } from "./graphHierarchy"
 
 /**
  * 그래프 강조 필터. 같은 축 안에서는 하나라도 맞으면(OR), 축끼리는 모두 맞아야(AND) 강조한다.
@@ -93,7 +93,7 @@ export function projectHighlight(edges: readonly HighlightEdge[], events: readon
 }
 
 /** Site Overview의 구조 엣지는 API 묶음의 셀·표시 가능한 관측 기록으로 판정하고 기존 색을 유지한다. */
-export function projectSiteHighlight(graph: HierarchyProjection, events: readonly EventRecord[], highlight: GraphHighlight, additionalEvents: readonly EventRecord[] = []): ReadonlyMap<string, string> | null {
+export function projectSiteHighlight(graph: HierarchyProjection, events: readonly EventRecord[], highlight: GraphHighlight, contents: ReturnType<typeof graphContents>): ReadonlyMap<string, string> | null {
   if (!highlightActive(highlight)) return null
   const index = highlight.statuses.length ? indexEventsByEvidence(events) : null
   const groups = new Set(graph.groups.filter(group => group.cells.some(cell => {
@@ -104,11 +104,11 @@ export function projectSiteHighlight(graph: HierarchyProjection, events: readonl
     return !index || cell.evidenceIds.some(id => (index.get(id) ?? []).some(event => event.idn === cell.idn && sources.includes(event.source) && highlight.statuses.includes(event.status)))
   })).map(group => group.id))
   // 판정 전 관측·보조 요청도 같은 요청 안에서 모든 조건을 만족해야 한다.
-  for (const event of additionalEvents) {
+  for (const event of [...contents.observedEvents, ...contents.attachedEvents]) {
     if (highlight.identities.length && !highlight.identities.includes(event.idn)) continue
     if (highlight.sources.length && !highlight.sources.includes(event.source)) continue
     if (highlight.statuses.length && !highlight.statuses.includes(event.status)) continue
-    groups.add(operationGroup(event.op).id)
+    groups.add(operationGroup(event.op, contents.resolveGroup).id)
   }
   const nodes = new Set(graph.nodes.filter(node => node.kind === "api-group" && node.groupId && groups.has(node.groupId)).map(node => node.id))
   return new Map(graph.edges.filter(edge => edge.relation === "target-group" && nodes.has(edge.targetId)).map(edge => [edge.id, edge.color]))

@@ -273,7 +273,7 @@ it("applies highlight filters on Site Overview and retains them inside an API gr
 
 it("dims unmatched Site Overview list cards and restores them when the filter is cleared", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [...snapshot.cells, { ...hierarchyCell, op: "GET /api/products", idn: "bob", perSource: { scanner: "allow" } }] }
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [...snapshot.cells, { ...hierarchyCell, op: "GET /api/products/list", idn: "bob", perSource: { scanner: "allow" } }] }
   render(<CurrentGraphPage />)
   await userEvent.click(screen.getByRole("button", { name: "목록" }))
   const list = screen.getByRole("region", { name: "공격면 API 목록" })

@@ -21,7 +21,8 @@ import { emptyGraphView, emptyGraphWorkspace, graphView, graphViewKey, mergeGrap
 import { useGraphWorkspace } from "./useGraphWorkspace"
 import { EMPTY_HIGHLIGHT, nodeStatusCodes, projectHighlight, projectSiteHighlight, statusGroups, statusHighlightColors, type GraphHighlight } from "./graphHighlight"
 import { graphCellKey, graphCellSelection, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
-import { GRAPH_PAGE_SIZE, graphContents, navigateHierarchy, stepBack, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection, isObservedTraffic } from "./graphHierarchy"import { ResponsiveGraphList } from "./ResponsiveGraphList"
+import { GRAPH_PAGE_SIZE, graphContents, navigateHierarchy, stepBack, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection, isObservedTraffic } from "./graphHierarchy"
+import { ResponsiveGraphList } from "./ResponsiveGraphList"
 import { operationParts } from "./relationshipNodeCard"
 
 const allSources: readonly Source[] = ["human", "scanner", "llm", "unknown"]
@@ -199,8 +200,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const edgeHighlight = useMemo(() => {
     if (!graph || !snapshot.data) return null
     if (graph.kind !== "site") return projectHighlight(graph.edges, snapshot.data.events, highlight)
-    const { observedEvents, supportEvents } = graphContents(snapshot.data, filters)
-    return projectSiteHighlight(graph, snapshot.data.events, highlight, [...observedEvents, ...supportEvents])
+    return projectSiteHighlight(graph, snapshot.data.events, highlight, graphContents(snapshot.data, filters))
   }, [graph, snapshot.data, filters, highlight])
   const statusesByNode = useMemo(() => graph && snapshot.data ? nodeStatusCodes(graph.nodes, snapshot.data.events) : undefined, [graph, snapshot.data])
   const statusColors = useMemo(() => statusHighlightColors(highlight), [highlight])

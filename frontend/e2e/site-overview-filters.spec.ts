@@ -6,15 +6,15 @@ import { emptyGraphWorkspace } from "../src/features/graph/graphWorkspace"
 
 const first = "https://one.invalid", second = "https://two.invalid"
 const groupId = (service: string, name: string) => `api-group:${JSON.stringify([service, name])}`
-const cell = (op: string, idn: string, perSource: Cell["perSource"], evidenceIds: string[]): Cell => ({ op, idn, resource: null, perSource, evidenceIds, reasons: {}, overall: "allow", conflict: false, missedSources: [] })
+const cell = (op: string, idn: string, perSource: Cell["perSource"], evidenceIds: string[]): Cell => ({ op, idn, resource: null, perSource, evidenceIds, reasons: {}, overall: "undecided", conflict: false, missedSources: [] })
 const cells = [
-  cell(`${first} GET /api/orders`, "alice", { human: "allow", scanner: "deny" }, ["order-a", "order-scan"]),
-  cell(`${first} GET /api/orders`, "bob", { human: "deny" }, ["order-b"]),
-  cell(`${first} GET /api/products`, "bob", { scanner: "deny" }, ["product"]),
-  cell(`${second} GET /api/orders`, "carol", { llm: "allow" }, ["other-order"]),
+  cell(`${first} GET /api/orders/list`, "alice", { human: "allow", scanner: "deny" }, ["order-a", "order-scan"]),
+  cell(`${first} GET /api/orders/list`, "bob", { human: "deny" }, ["order-b"]),
+  cell(`${first} GET /api/products/list`, "bob", { scanner: "deny" }, ["product"]),
+  cell(`${second} GET /api/orders/list`, "carol", { llm: "allow" }, ["other-order"]),
 ]
 const event = (eventId: string, source: Source, idn: string, status: number, op: string): EventRecord => ({ eventId, source, idn, status, op, method: "GET", path: op.split(" GET ")[1], resource: null, fp: "", role: "USER", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "run", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: eventId, repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: [eventId], objects: [], verdict: "untested" })
-const events = [event("order-a", "human", "alice", 200, cells[0].op), event("order-scan", "scanner", "alice", 500, cells[0].op), event("order-b", "human", "bob", 403, cells[1].op), event("product", "scanner", "bob", 403, cells[2].op), event("other-order", "llm", "carol", 302, cells[3].op), event("observed-product", "human", "bob", 201, `${first} GET /api/products/preview`)]
+const events = [event("order-a", "human", "alice", 200, cells[0].op), event("order-scan", "scanner", "alice", 500, cells[0].op), event("order-b", "human", "bob", 403, cells[1].op), event("product", "scanner", "bob", 403, cells[2].op), event("other-order", "llm", "carol", 302, cells[3].op), event("observed-product", "human", "bob", 201, cells[2].op)]
 
 // 실제 그래프 렌더러와 합성 API 응답만 사용하며, 대상 서버에는 요청하지 않는다.
 for (const theme of ["dark", "light"] as const) {
