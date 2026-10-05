@@ -258,18 +258,40 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   expect(success).not.toBeChecked()
 })
 
-it("ignores highlight filters on Site Overview and applies them inside an API group", async () => {
+it("applies highlight filters on Site Overview and retains them inside an API group", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
   const filters = screen.getByRole("complementary", { name: "분석 필터" })
   await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
-  // Site Overview(대상 → API 묶음)에는 필터와 맞는 엣지가 없어, 강조를 켜면 전부 흐려진다.
-  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "off")
+  expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
   await userEvent.click(screen.getByRole("button", { name: "목록" }))
   await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   await userEvent.click(screen.getByRole("button", { name: "그래프" }))
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
+})
+
+it("dims unmatched Site Overview list cards and restores them when the filter is cleared", async () => {
+  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [...snapshot.cells, { ...hierarchyCell, op: "GET /api/products/list", idn: "bob", perSource: { scanner: "allow" } }] }
+  render(<CurrentGraphPage />)
+  await userEvent.click(screen.getByRole("button", { name: "목록" }))
+  const list = screen.getByRole("region", { name: "공격면 API 목록" })
+  const orders = within(list).getByRole("button", { name: /ORDERS APIs/ })
+  const products = within(list).getByRole("button", { name: /PRODUCTS APIs/ })
+  const filters = screen.getByRole("complementary", { name: "분석 필터" })
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  expect(orders).not.toHaveClass("opacity-30")
+  expect(products).toHaveClass("opacity-30")
+  expect(products).toBeEnabled()
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  expect(products).not.toHaveClass("opacity-30")
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /LLM\s*0/ }))
+  expect(orders).toHaveClass("opacity-30")
+  expect(products).toHaveClass("opacity-30")
+  await userEvent.click(within(filters).getByRole("button", { name: "초기화" }))
+  expect(orders).not.toHaveClass("opacity-30")
+  expect(products).not.toHaveClass("opacity-30")
 })
 
 it("moves back and forward through graph levels from the toolbar", async () => {
