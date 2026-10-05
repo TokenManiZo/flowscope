@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react"
+import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 
@@ -24,7 +24,7 @@ const session: ManagedSession = { handle: "opaque", accountId: "acct-1", account
 const draft = (extra: Record<string, unknown> = {}) => ({ eventId: "ev-1", service: "https://api.example.test", request: secret, response: "RAW-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", reusableAccountId: "acct-1", message: "draft", ...extra })
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
 function stubFetch(body = draft()) {
-  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/replay" ? { success: true, message: "", status: 200, replayId: "r-1", openedDraft: true } : body)))
+  const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/request-lab/credentials" ? { headers: [] } : body)))
   vi.stubGlobal("fetch", fetch)
   return fetch
 }
@@ -44,15 +44,19 @@ it("shows only the selected operation and its 관측 기록 rows, without verdic
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
 })
 
-it("opens the raw request in Request Lab without sending anything", async () => {
-  const fetch = stubFetch()
+it("opens Request Lab ready to send without logging in, and sends nothing until asked", async () => {
+  const fetch = stubFetch(draft({ request: `${secret}\n\n` }))
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />)
   await userEvent.click(screen.getByRole("button", { name: "Request Lab에서 보내기" }))
-  expect(await screen.findByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
-  expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
-  // 원문 조회(GET)만 있고 전송(POST)은 없다.
+  await screen.findByLabelText("Request Lab 요청 원문")
+  // 원본에서 비로그인 편집본이 바로 준비된다: 관리 인증 헤더(Cookie)가 빠진다.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("GET /orders/1 HTTP/1.1\n\n")
+  expect(screen.queryByRole("button", { name: "Original" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /Repeater/ })).not.toBeInTheDocument()
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-1")
-  expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toEqual([])
+  // 대상 서버로 보내는 요청(POST /api/request-lab)은 없다. 인증 적용 미리보기만 있다.
+  expect(fetch.mock.calls.filter(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toEqual([])
 })
 
 it("locks 관측 기록 actions while the snapshot is suspended", () => {

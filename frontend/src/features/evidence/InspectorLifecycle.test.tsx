@@ -15,7 +15,7 @@ const second = { ...event, eventId: "second", op: "PATCH /profiles/{id}", resour
 const account = (id: string, target: string) => ({ id, label: id, role: "USER", target, color: "", authArtifactCount: 0 })
 const snapshot = targetSnapshot({ events: [event, second], accounts: [account("alice", "GET"), account("bob", "GET"), account("carol", "GET"), account("dave", "PATCH")], requiredRoles: { [event.op]: "USER", [second.op]: "ADMIN" }, owners: { "order:1": "alice", "profile:2": "dave" }, ownerOverrides: { "order:1": "alice", "profile:2": "dave" } })
 const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } })
-const draft = { eventId: "first", service: "https://api.example.test", request: "GET /original HTTP/1.1", response: "original response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "NONE", message: "draft" }
+const draft = { eventId: "first", service: "https://api.example.test", request: "GET /original HTTP/1.1\nHost: api.example.test\n\n", response: "original response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "NONE", message: "draft" }
 afterEach(() => vi.unstubAllGlobals())
 
 const previousHasPointerCapture = Object.getOwnPropertyDescriptor(Element.prototype, "hasPointerCapture")
@@ -131,7 +131,8 @@ it.each(["evidence", "graph"] as const)("preserves %s Request Lab requests/lates
   const view = mount(kind)
   await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
+  // 열면 비로그인 편집본이 바로 준비된다.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   const edited = "GET /edited HTTP/1.1\nHost: api.example.test\n\n"
   await userEvent.type(screen.getByLabelText("Request Lab 요청 원문"), edited)
@@ -163,13 +164,16 @@ it.each([loadSample, () => openProject("demo"), resetProjectTraffic])("scrubs an
 it.each([loadSample, () => openProject("missing"), resetProjectTraffic, () => startProject({ name: "next", scope: "https://api.example.test" })])("keeps an open editor when the requested dataset replacement fails", async replace => {
   let replacementSignals = 0
   window.addEventListener("flowscope:dataset-replacing", () => { replacementSignals += 1 }, { once: true })
-  vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => String(input) === "/api/request-lab/credentials"
+    ? Promise.resolve(json({ headers: [] }))
+    : init?.method === "POST"
     ? Promise.resolve(new Response(JSON.stringify({ success: false, message: "project switch failed" }), { status: 500, headers: { "Content-Type": "application/json" } }))
     : Promise.resolve(json(draft))))
   mount("evidence")
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
   const editor = await screen.findByLabelText("Request Lab 요청 원문")
-  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
+  // 열면 비로그인 편집본이 바로 준비된다.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(editor)
   await userEvent.type(editor, "unsaved operator edit")
 

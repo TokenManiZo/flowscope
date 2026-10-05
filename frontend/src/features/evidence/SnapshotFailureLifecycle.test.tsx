@@ -19,7 +19,7 @@ const snapshot = {
   ...surfaceSnapshot({ endpoints: [demoEndpoint()], events: [event] }),
   cells: [{ idn: event.idn, op: event.op, resource: event.resource, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [event.eventId] }],
 }
-const draft = { eventId: event.eventId, service: "https://demo.test:443", request: "PATCH /orders/101 HTTP/1.1", response: "retained response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: event.idn, reusableSession: "NONE", message: "draft" }
+const draft = { eventId: event.eventId, service: "https://demo.test:443", request: "PATCH /orders/101 HTTP/1.1\nHost: demo.test\n\n", response: "retained response", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: event.idn, reusableSession: "NONE", message: "draft" }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 
 beforeEach(() => vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} }))
@@ -31,6 +31,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     const path = String(input)
     if (path === "/api/snapshot") return Promise.resolve(failed ? json({ success: false, message: "snapshot unavailable" }, 503) : json(snapshot))
     if (path.startsWith("/api/evidence?")) return Promise.resolve(json({ records: [], total: 0, offset: 0, limit: 200, hasMore: false }))
+    if (path === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
     return Promise.resolve(json(draft))
   })
   vi.stubGlobal("fetch", fetch)
@@ -61,7 +62,8 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await select()
   await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "Request Lab에서 보내기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
+  // 열면 비로그인 편집본이 바로 준비된다.
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")
 
@@ -87,7 +89,8 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
   expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled()
-  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("인증 선택")
-  expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+  // 복구되면 열 때 정한 비로그인 그대로 다시 보낼 수 있다.
+  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인")
+  expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
   await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(2))
 })
