@@ -210,6 +210,7 @@ export function InspectionPage() {
               {scanner.data?.run.error && <Alert variant="destructive"><AlertDescription>{scanner.data.run.error}</AlertDescription></Alert>}
             </>}
             control={<div className="grid gap-4">
+              {zap.data?.proxyListenerWarning && <Alert variant="destructive"><AlertDescription>{zap.data.proxyListenerWarning}</AlertDescription></Alert>}
               {zapConnected
                 ? <div className="flex min-h-10 items-center gap-2 rounded-lg bg-emerald-500/10 px-3 text-sm" aria-label="ZAP 상태"><span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />ZAP 연결됨</div>
                 : <div title={zap.data?.message} className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-sm" aria-label="ZAP 상태">

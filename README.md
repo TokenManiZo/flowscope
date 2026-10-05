@@ -84,7 +84,7 @@ Burp에서 **Extensions → Installed → Add**를 누릅니다. 열린 창에�
 
 Burp **Settings → Tools → Proxy → Proxy listeners**에서 Burp 브라우저가 쓰는 리스너(보통 `127.0.0.1:8080`)가 켜져 있는지 봅니다. 따로 만들 필요는 없습니다.
 
-ZAP을 쓸 거라면 **Add**를 눌러 포트 `8081`, **Loopback only**로 리스너를 하나 더 만듭니다. ZAP이 보내는 요청은 이 리스너를 거쳐야 FlowScope에 기록됩니다. Linux에서 Docker Engine을 쓴다면 Docker bridge IP에도 `8081` 리스너가 하나 더 필요합니다([자세히](docs/guide/inspection-flow.md#상세-동작과-정확성-경계)).
+ZAP용 `127.0.0.1:8081` 리스너는 FlowScope를 불러올 때 자동으로 만들어집니다(**Loopback only**). 이미 `8081` 리스너가 있으면 그대로 쓰고, 꺼져 있으면 켭니다. FlowScope가 만든 리스너는 확장을 내릴 때 지웁니다. ZAP이 보내는 요청은 이 리스너를 거쳐야 FlowScope에 기록됩니다. 다른 프로그램이 `8081`을 쓰고 있어 열지 못하면 Burp **Extensions → Output**과 점검 시작 화면에 알림이 뜹니다. 그때는 그 프로그램을 끄거나 **Add**로 리스너를 직접 만드세요. Linux에서 Docker Engine을 쓴다면 Docker bridge IP에도 `8081` 리스너가 하나 더 필요합니다([자세히](docs/guide/inspection-flow.md#상세-동작과-정확성-경계)).
 
 ![Burp Proxy listeners. 127.0.0.1:8080과 127.0.0.1:8081의 Running이 모두 선택돼 있다.](docs/images/burp-proxy-listeners.png)
 

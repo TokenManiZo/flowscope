@@ -307,6 +307,14 @@ describe("unified inspection hub", () => {
     expect((call?.[1] as RequestInit).body?.toString()).toBe(`target=${encodeURIComponent(target)}&accounts=&anonymous=true`)
   })
 
+  it("warns when the ZAP proxy listener could not be opened in Burp", async () => {
+    const user = userEvent.setup()
+    renderInspection({ zap: { connected: true, state: "CONNECTED", message: "ZAP 연결됨", proxyListenerWarning: "ZAP용 Burp 프록시 리스너 8081을(를) 열지 못했습니다." } })
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    expect(await screen.findByText("ZAP용 Burp 프록시 리스너 8081을(를) 열지 못했습니다.")).toBeVisible()
+  })
+
   it("can cancel a running ZAP campaign", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ scanner: {
