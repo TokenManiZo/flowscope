@@ -162,7 +162,7 @@ describe("unified inspection hub", () => {
   it("labels anonymous verification as Scanner and separates it from ZAP using saved provenance", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent,
-      { ...humanEvent, eventId: "zap", path: "/api/zap", idn: "anon", source: "scanner", sourceDetail: "OTHER_SCANNER" },
+      { ...humanEvent, eventId: "zap", path: "/api/zap", idn: "anon", source: "scanner", sourceDetail: "ZAP_SPIDER", tool: "ZAP" },
       { ...humanEvent, eventId: "auto-phase", path: "/api/auto-phase", laneAccountId: "anon", source: "scanner", phase: "AUTHORIZATION_REPLAY" },
       { ...humanEvent, eventId: "auto-detail", path: "/api/auto-detail", idn: "anon", source: "scanner", sourceDetail: "AUTHORIZATION_REPLAY" },
     ] })
@@ -190,6 +190,106 @@ describe("unified inspection hub", () => {
     expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
   })
 
+  it("shows only ZAP provenance in the ZAP feed while retaining other traffic in collected records", async () => {
+    const user = userEvent.setup()
+    const zapDetails = ["ZAP_AUTHENTICATION", "ZAP_API_IMPORT", "ZAP_SPIDER", "ZAP_AJAX_SPIDER", "ZAP_CLIENT_SPIDER", "ZAP_PASSIVE_SCAN", "ZAP_ACTIVE_SCAN", "HAR_IMPORT"]
+    const zapEvents = zapDetails.map((sourceDetail, index) => ({ ...humanEvent, eventId: `zap-${index}`, path: `/api/zap/${index}`, source: "scanner", sourceDetail, tool: "ZAP", orchestrator: index === 0 ? "LLM" : "SYSTEM", timestamp: index + 1 }))
+    const otherEvents = [humanEvent,
+      { ...humanEvent, eventId: "llm", source: "llm", sourceDetail: "LLM_EXPLORER", tool: "CODEX" },
+      // Older capture records can label a non-ZAP scanner's tool as ZAP.
+      { ...humanEvent, eventId: "burp-scanner", source: "scanner", sourceDetail: "OTHER_SCANNER", tool: "ZAP" },
+      { ...humanEvent, eventId: "unknown", source: "scanner", sourceDetail: "UNKNOWN", tool: "ZAP" },
+      { ...humanEvent, eventId: "xml", source: "scanner", sourceDetail: "XML_IMPORT" },
+      { ...humanEvent, eventId: "auto-detail", source: "scanner", sourceDetail: "AUTHORIZATION_REPLAY", tool: "ZAP" },
+      { ...zapEvents[0], eventId: "auto-phase", phase: "AUTHORIZATION_REPLAY" },
+      { ...zapEvents[0], eventId: "wrong-source", source: "human" },
+    ]
+    const { fetchStub } = renderInspection({ humanEvents: [...otherEvents, ...zapEvents] })
+    await user.click(await screen.findByRole("tab", { name: "ZAP 스캔" }))
+    const list = screen.getByLabelText("기록된 요청 목록")
+    expect(within(list).getAllByRole("button")).toHaveLength(zapEvents.length)
+    expect(within(list).getAllByRole("button").map(row => row.querySelector("[title]")?.getAttribute("title"))).toEqual(zapEvents.map(event => event.eventId).reverse())
+    expect(screen.getByText("ZAP 전용")).toBeVisible()
+    expect(screen.getByLabelText("ZAP 요청 기록 건수")).toHaveTextContent("8건")
+    expect(screen.getByText("이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.")).toBeVisible()
+    await user.click(screen.getByRole("tab", { name: "수집 기록" }))
+    expect(within(screen.getByLabelText("기록된 요청 목록")).getAllByRole("button")).toHaveLength(otherEvents.length + zapEvents.length)
+    expect(screen.queryByText("ZAP 전용")).not.toBeInTheDocument()
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
+  it("shows all ZAP records, searches older requests, and preserves raw viewing", async () => {
+    const user = userEvent.setup()
+    const zapEvents = Array.from({ length: 201 }, (_, index) => ({ ...humanEvent, eventId: `zap-${index}`, path: `/api/zap/${index}`, source: "scanner", sourceDetail: "ZAP_CLIENT_SPIDER", tool: "ZAP", timestamp: index }))
+    const browserEvents = Array.from({ length: 205 }, (_, index) => ({ ...humanEvent, eventId: `human-${index}`, path: `/browser/${index}`, timestamp: 1000 + index }))
+    const { fetchStub } = renderInspection({ humanEvents: [...zapEvents, ...browserEvents] })
+    await user.click(await screen.findByRole("tab", { name: "ZAP 스캔" }))
+    const list = screen.getByLabelText("기록된 요청 목록")
+    expect(within(list).getAllByRole("button")).toHaveLength(201)
+    expect(within(list).getAllByRole("button")[0]).toHaveAccessibleName(/\/api\/zap\/200 /)
+    expect(screen.getByLabelText("ZAP 요청 기록 건수")).toHaveTextContent("201건")
+    expect(within(list).getByRole("button", { name: /\/api\/zap\/0 / })).toBeInTheDocument()
+    expect(screen.getByText("전체 저장 기록")).toBeVisible()
+    expect(screen.queryByText(/최대 200건/)).not.toBeInTheDocument()
+    const search = screen.getByLabelText("ZAP 작업 피드 검색")
+    await user.type(search, "/api/zap/0")
+    expect(within(list).getAllByRole("button")).toHaveLength(1)
+    expect(screen.getByLabelText("표시된 요청 건수")).toHaveTextContent("1 / 201건 표시")
+    await user.click(screen.getByRole("button", { name: "작업 피드 접기" }))
+    expect(screen.queryByLabelText("기록된 요청 목록")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "작업 피드 펼치기" }))
+    await user.click(within(screen.getByLabelText("기록된 요청 목록")).getByRole("button"))
+    expect(await screen.findByRole("dialog", { name: "원문 보기" })).toBeVisible()
+    expect(fetchStub.mock.calls.some(([path]) => path === "/api/request-lab?eventId=zap-0")).toBe(true)
+    await user.click(screen.getByRole("button", { name: "닫기" }))
+    await user.clear(search)
+    await user.type(search, "/browser/")
+    expect(screen.getByText("검색 결과가 없습니다.")).toBeVisible()
+    expect(screen.getByLabelText("표시된 요청 건수")).toHaveTextContent("0 / 201건 표시")
+    await user.click(screen.getByRole("tab", { name: "수집 기록" }))
+    expect(within(screen.getByLabelText("기록된 요청 목록")).getAllByRole("button")).toHaveLength(200)
+    await user.click(within(screen.getByLabelText("수집 출처 필터")).getByRole("button", { name: "Human" }))
+    expect(within(screen.getByLabelText("기록된 요청 목록")).getAllByRole("button")).toHaveLength(200)
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
+  it("keeps older Human and LLM records accessible after more than 200 newer ZAP requests", async () => {
+    const user = userEvent.setup()
+    const humanEvents = Array.from({ length: 23 }, (_, index) => ({ ...humanEvent, eventId: `human-${index}`, path: `/api/human/${index}`, timestamp: index }))
+    const llmEvents = Array.from({ length: 3 }, (_, index) => ({ ...humanEvent, eventId: `llm-${index}`, path: `/api/llm/${index}`, source: "llm", timestamp: 50 + index }))
+    const zapEvents = Array.from({ length: 336 }, (_, index) => ({ ...humanEvent, eventId: `zap-${index}`, path: `/api/zap/${index}`, source: "scanner", sourceDetail: "ZAP_SPIDER", tool: "ZAP", timestamp: 1000 + index }))
+    const { fetchStub } = renderInspection({ humanEvents: [...humanEvents, ...llmEvents, ...zapEvents] })
+    const list = await screen.findByLabelText("기록된 요청 목록")
+    await waitFor(() => expect(within(list).getAllByRole("button")).toHaveLength(200))
+    const filters = within(screen.getByLabelText("수집 출처 필터"))
+    await user.click(filters.getByRole("button", { name: "Human" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(23)
+    expect(within(list).getAllByRole("button")[0]).toHaveAccessibleName(/\/api\/human\/22 /)
+    await user.click(filters.getByRole("button", { name: "LLM" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(3)
+    await user.click(filters.getByRole("button", { name: "ZAP" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(200)
+    await user.click(filters.getByRole("button", { name: "전체" }))
+    const search = screen.getByLabelText("수집 기록 검색")
+    await user.click(search)
+    await user.paste("/api/human/0")
+    expect(within(list).getAllByRole("button")).toHaveLength(1)
+    expect(within(list).getByRole("button")).toHaveAccessibleName(/\/api\/human\/0 /)
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
+  it("shows a ZAP-specific empty state and updates its count when new records arrive", async () => {
+    const user = userEvent.setup()
+    const { client, fetchStub } = renderInspection({ humanEvents: [humanEvent] })
+    await user.click(await screen.findByRole("tab", { name: "ZAP 스캔" }))
+    expect(screen.getByText("아직 기록된 ZAP 요청이 없습니다.")).toBeVisible()
+    expect(screen.getByLabelText("ZAP 요청 기록 건수")).toHaveTextContent("0건")
+    await act(async () => { client.setQueryData(queryKeys.snapshot, { ...snapshotFixture, revision: 2, events: [humanEvent, { ...humanEvent, eventId: "new-zap", source: "scanner", sourceDetail: "ZAP_SPIDER", tool: "ZAP" }] }) })
+    await waitFor(() => expect(screen.getByLabelText("ZAP 요청 기록 건수")).toHaveTextContent("1건"))
+    expect(within(screen.getByLabelText("기록된 요청 목록")).getAllByRole("button")).toHaveLength(1)
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
   it("filters and collapses the bounded HUMAN request feed without loading raw data", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
@@ -209,7 +309,7 @@ describe("unified inspection hub", () => {
   it.each(["human", "scanner"])("enlarges %s records in place, preserves search and scroll, and leaves traffic untouched", async (source) => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [
-      { ...humanEvent, source }, { ...humanEvent, source, eventId: "profile-event", path: "/api/profile" },
+      { ...humanEvent, source, sourceDetail: source === "scanner" ? "ZAP_SPIDER" : "BROWSER" }, { ...humanEvent, source, sourceDetail: source === "scanner" ? "ZAP_SPIDER" : "BROWSER", eventId: "profile-event", path: "/api/profile" },
     ] })
     if (source === "human") await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
     if (source === "scanner") await user.click(await screen.findByRole("tab", { name: "ZAP 스캔" }))

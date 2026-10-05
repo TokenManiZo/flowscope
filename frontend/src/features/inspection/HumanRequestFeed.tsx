@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronUp, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -93,7 +94,7 @@ function HumanRawDialog({ eventId, open, onOpenChange }: { eventId: string | nul
 const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_7rem_3.5rem_5rem] items-center gap-3"
 
 /** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 마스킹 원문을 연다. */
-export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", searchLabel = "HUMAN 작업 피드 검색", view, context, showSource = false }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; searchLabel?: string; view?: RecordView; context?: string; showSource?: boolean }) {
+export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", titleBadge, showCount = false, showAll = false, searchLabel = "HUMAN 작업 피드 검색", view, context, showSource = false }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; titleBadge?: string; showCount?: boolean; showAll?: boolean; searchLabel?: string; view?: RecordView; context?: string; showSource?: boolean }) {
   const columns = showSource ? "grid min-w-[920px] grid-cols-[3.5rem_4.5rem_minmax(12rem,1fr)_3rem_10rem_7rem_3.5rem_5rem] items-center gap-3" : FEED_COLUMNS
   const [source, setSource] = useState("전체")
   const [query, setQuery] = useState("")
@@ -101,14 +102,16 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null)
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
-    return items.filter((item) => (source === "전체" || item.sourceLabel === source) && (!normalized || [item.ordinal ?? item.id, item.badge, item.title, item.detail ?? "", item.status, item.sourceLabel ?? ""].some((value) => value.toLocaleLowerCase().includes(normalized))))
-  }, [items, query, source])
+    // 출처·검색을 먼저 적용해야 다른 출처의 새 기록이 기존 Human 기록을 밀어내지 않는다.
+    const matching = items.filter((item) => (source === "전체" || item.sourceLabel === source) && (!normalized || [item.ordinal ?? item.id, item.badge, item.title, item.detail ?? "", item.status, item.sourceLabel ?? ""].some((value) => value.toLocaleLowerCase().includes(normalized))))
+    return showAll ? matching : matching.slice(0, 200)
+  }, [items, query, source, showAll])
 
   return <>
     <Card className={view?.focused ? "flex min-h-0 flex-1 flex-col gap-0 overflow-hidden py-0" : "gap-0 overflow-hidden py-0"}>
       <CardHeader className="border-b py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><CardTitle className="text-base">{title}</CardTitle>{view?.focused && <p className="mt-1 text-xs text-muted-foreground">{context} · 최근 저장 기록 최대 200건</p>}{description && <CardDescription>{description}</CardDescription>}</div>
+          <div><div className="flex flex-wrap items-center gap-2"><CardTitle className="text-base">{title}</CardTitle>{titleBadge && <Badge variant="outline">{titleBadge}</Badge>}{showCount && <span aria-label={`${title} 건수`} className="text-xs tabular-nums text-muted-foreground">{items.length}건</span>}</div>{view?.focused && <p className="mt-1 text-xs text-muted-foreground">{context} · {showAll ? "전체 저장 기록" : "최근 저장 기록 최대 200건"}</p>}{description && <CardDescription>{description}</CardDescription>}</div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
             <div className="relative min-w-0 flex-1 sm:w-64"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="번호·메서드·경로·계정·상태 검색" className="pl-8" /></div>
             {view && <RecordViewButton view={view} onExpand={() => setExpanded(true)} />}
@@ -132,6 +135,7 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
           </button>) : <p className="py-10 text-center text-sm text-muted-foreground">{items.length ? "검색 결과가 없습니다." : emptyHint}</p>}
         </div>
       </CardContent>}
+      {showCount && expanded && <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2 text-xs text-muted-foreground"><span>{showAll ? "전체 저장 기록" : "최근 저장 기록 · 최대 200건"}</span><span aria-label="표시된 요청 건수" className="tabular-nums">{filtered.length} / {items.length}건 표시</span></div>}
     </Card>
     <HumanRawDialog eventId={selectedEventId} open={selectedEventId !== null} onOpenChange={(open) => { if (!open) setSelectedEventId(null) }} />
   </>
