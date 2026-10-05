@@ -44,6 +44,10 @@ public final class RunContextRegistry {
         if (active != null || source == Source.HUMAN && !humanRuns.isEmpty()) {
             throw new IllegalStateException(source + " run already active");
         }
+        if (source == Source.SCANNER && contexts.containsKey(Source.LLM)
+                || source == Source.LLM && contexts.containsKey(Source.SCANNER)) {
+            throw new IllegalStateException("SCANNER와 LLM은 동시에 실행할 수 없습니다.");
+        }
         if (context.phase() == RunPhase.EXPLORATION
                 && (source == Source.HUMAN || source == Source.SCANNER || source == Source.LLM)) {
             completedExplorations.remove(source);
