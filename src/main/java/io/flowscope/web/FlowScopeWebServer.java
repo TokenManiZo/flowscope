@@ -886,19 +886,28 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     state.humanRunStarted(runId);
                 } catch (RuntimeException failure) {
                     RunContextRegistry.Context failed = state.contexts().current(Source.HUMAN, runId);
-                    state.contexts().abort(Source.HUMAN, runId);
+                    state.contexts().pauseHuman(runId, true);
                     String handle = humanCaptureHandle(failed);
                     if (handle != null) state.sessions().revoke(handle);
-                    state.humanRunStopped(runId);
+                    try { state.humanRunStopped(runId); }
+                    catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); throw failure; }
+                    state.contexts().abort(Source.HUMAN, runId);
                     throw failure;
                 }
             } else if (action.equals("pause") || action.equals("resume")) {
                 String runId = validatedRunId(required(form, "runId"));
+                if (action.equals("resume") && !state.humanBrowserAlive(runId)) {
+                    throw new IllegalStateException("종료 중인 수집은 다시 시작할 수 없습니다. 정리가 끝난 뒤 시작하세요.");
+                }
                 state.contexts().pauseHuman(runId, action.equals("pause"));
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
                 RunContextRegistry.Context active = state.contexts().current(Source.HUMAN, runId);
+                state.contexts().pauseHuman(runId, true);
                 Pipeline.Result snapshot = state.completionSnapshot();
+                String handle = humanCaptureHandle(active);
+                try { state.humanRunStopped(runId); }
+                finally { if (handle != null) state.sessions().endCapture(handle); }
                 // A pass ended before any trusted response Evidence is aborted (not completed) instead of
                 // staying stuck on an error; completion still requires Evidence.
                 if (LaneCompletionPolicy.evaluate(Source.HUMAN, runId, snapshot).eligible()) {
@@ -906,9 +915,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 } else if (!state.contexts().abort(Source.HUMAN, runId)) {
                     throw new IllegalArgumentException("run_id가 활성 exploration run과 일치하지 않습니다.");
                 }
-                String handle = humanCaptureHandle(active);
-                try { state.humanRunStopped(runId); }
-                finally { if (handle != null) state.sessions().endCapture(handle); }
             } else {
                 throw new IllegalArgumentException("action은 begin, pause, resume 또는 end여야 합니다.");
             }
@@ -921,10 +927,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response humanRunState() throws IOException {
         for (RunContextRegistry.Context active : state.contexts().activeHumanRuns()) {
             if (!state.humanBrowserAlive(active.runId())) {
-                state.contexts().abort(Source.HUMAN, active.runId());
+                state.contexts().pauseHuman(active.runId(), true);
                 String handle = humanCaptureHandle(active);
                 try { state.humanRunStopped(active.runId()); }
                 finally { if (handle != null) state.sessions().endCapture(handle); }
+                state.contexts().abort(Source.HUMAN, active.runId());
             }
         }
         List<RunContextRegistry.Context> runs = state.contexts().activeHumanRuns();
@@ -1226,8 +1233,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             synchronized (state.contexts()) {
                 for (var active : state.contexts().activeHumanRuns()) {
                     if (id.equals(active.accountId())) {
-                        state.contexts().abort(Source.HUMAN, active.runId());
+                        state.contexts().pauseHuman(active.runId(), true);
                         state.humanRunStopped(active.runId());
+                        state.contexts().abort(Source.HUMAN, active.runId());
                     }
                 }
             }

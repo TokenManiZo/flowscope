@@ -15,7 +15,7 @@ final class HumanBrowserSessions implements AutoCloseable {
     @FunctionalInterface interface Launcher {
         HumanChromiumBrowser.Window open(URI target, int port) throws IOException;
     }
-    private record Session(RunContextRegistry.Context context, int port, HumanChromiumBrowser.Window window) {}
+    private record Session(RunContextRegistry.Context context, int port, HumanChromiumBrowser.Window window, boolean stopping) {}
     private final HumanProxyListeners listeners;
     private final Launcher launcher;
     private final Map<String, Session> sessions = new LinkedHashMap<>();
@@ -29,20 +29,19 @@ final class HumanBrowserSessions implements AutoCloseable {
     synchronized void start(RunContextRegistry.Context context, URI target) throws IOException {
         int port = listeners.open();
         usedPorts.add(port);
-        sessions.put(context.runId(), new Session(context, port, null));
+        sessions.put(context.runId(), new Session(context, port, null, false));
         try {
             var window = launcher.open(target, port);
-            sessions.put(context.runId(), new Session(context, port, window));
+            sessions.put(context.runId(), new Session(context, port, window, false));
         } catch (IOException | RuntimeException failure) {
-            sessions.remove(context.runId());
-            try { listeners.remove(port); }
-            catch (IOException | RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+            try { stop(context.runId()); }
+            catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
             throw failure;
         }
     }
 
     synchronized RunContextRegistry.Context context(int port) {
-        return sessions.values().stream().filter(session -> session.port() == port)
+        return sessions.values().stream().filter(session -> session.port() == port && !session.stopping())
                 .map(Session::context).findFirst().orElse(null);
     }
     synchronized boolean ownsPort(int port) { return usedPorts.contains(port); }
@@ -53,14 +52,22 @@ final class HumanBrowserSessions implements AutoCloseable {
     }
     synchronized boolean alive(String runId) {
         Session session = sessions.get(runId);
-        return session != null && session.window() != null && session.window().alive();
+        return session != null && !session.stopping() && session.window() != null && session.window().alive();
     }
     synchronized void stop(String runId) {
-        Session session = sessions.remove(runId);
+        Session session = sessions.get(runId);
         if (session == null) return;
-        if (session.window() != null) session.window().close();
+        sessions.put(runId, new Session(session.context(), session.port(), session.window(), true));
+        RuntimeException failure = null;
+        try { if (session.window() != null) session.window().close(); }
+        catch (RuntimeException error) { failure = error; }
         try { listeners.remove(session.port()); }
-        catch (IOException error) { throw new IllegalStateException("수집 프록시 정리를 완료하지 못했습니다.", error); }
+        catch (IOException | RuntimeException error) {
+            if (failure == null) failure = new IllegalStateException("수집 프록시 정리를 완료하지 못했습니다.", error);
+            else failure.addSuppressed(error);
+        }
+        if (failure != null) throw failure;
+        sessions.remove(runId);
     }
     @Override public synchronized void close() {
         for (String runId : Set.copyOf(sessions.keySet())) {

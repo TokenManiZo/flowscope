@@ -600,9 +600,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     : humanListeners.resolve(request.listenerInterface(), request.url(), scope,
                     humanRun, loginCaptureHandle, linkedHumanAsset);
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
-            if (profile.source() == Source.HUMAN && humanRun != null && runContexts.humanPaused(humanRun.runId())) {
+            long captureGeneration = profile.source() == Source.HUMAN && humanRun != null
+                    ? runContexts.humanCaptureGeneration(humanRun.runId()) : -1;
+            if (profile.source() == Source.HUMAN && humanRun != null && captureGeneration < 0) {
                 rememberObservation(proxyObservations, request.messageId(), humanRun, null,
-                        true, "프록시", profile, observedPort);
+                        true, "프록시", profile, observedPort, captureGeneration);
                 return managed != null ? ProxyRequestReceivedAction.doNotIntercept(request)
                         : ProxyRequestReceivedAction.continueWith(request);
             }
@@ -616,7 +618,7 @@ public final class FlowScopeExtension implements BurpExtension {
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 boolean captureSuppressed = managed != null && captureHandle == null;
                 rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
-                        captureSuppressed, "프록시", profile, observedPort);
+                        captureSuppressed, "프록시", profile, observedPort, captureGeneration);
                 if (captureHandle != null) {
                     sessionBroker.observeRequest(captureHandle, URI.create(request.url()), headersOf(request.headers()),
                             java.time.Instant.now());
@@ -845,20 +847,28 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.supportingPageUrl = supportingPage;
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
-        synchronized (records) {
-            // 초기화/프로젝트 교체가 record 변환 도중 일어났다면 이전 데이터셋의 늦은 응답을 버린다.
-            if (shuttingDown.get() || staleObservation(observation)) return false;
-            if (records.size() >= MAX_RECORDS) {
-                recordDroppedAtCapacity();
-                return false;
+        java.util.function.BooleanSupplier commit = () -> {
+            synchronized (records) {
+                // 초기화/프로젝트 교체가 record 변환 도중 일어났다면 이전 데이터셋의 늦은 응답을 버린다.
+                if (shuttingDown.get() || staleObservation(observation)) return false;
+                if (records.size() >= MAX_RECORDS) {
+                    recordDroppedAtCapacity();
+                    return false;
+                }
+                records.add(rec);
+                retainRawExchange(rec, req, response);
+                if (liveCrossIdentityReplay != null
+                        && liveCrossIdentityReplay.acceptingCaptures(rec)) {
+                    pendingLiveReplays.add(rec.runtimeId());
+                }
+                return true;
             }
-            records.add(rec);
-            retainRawExchange(rec, req, response);
-            if (liveCrossIdentityReplay != null
-                    && liveCrossIdentityReplay.acceptingCaptures(rec)) {
-                pendingLiveReplays.add(rec.runtimeId());
-            }
-        }
+        };
+        boolean captured = observation != null && observation.context() != null
+                && observation.source() == Source.HUMAN && observation.detail() == SourceDetail.BROWSER
+                ? runContexts.captureHumanIfCurrent(runId, observation.humanCaptureGeneration(), commit)
+                : commit.getAsBoolean();
+        if (!captured) return false;
         if (supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
                 && String.valueOf(response.headerValue("Content-Type")).toLowerCase(Locale.ROOT)
                 .contains("text/html")) {
@@ -1114,14 +1124,22 @@ public final class FlowScopeExtension implements BurpExtension {
                                      RunContextRegistry.Context context, String humanCaptureAccountId,
                                      boolean humanCaptureSuppressed, String channel,
                                      PortProfile profile, int listenerPort) {
+        long generation = context != null && profile != null && profile.source() == Source.HUMAN
+                && profile.detail() == SourceDetail.BROWSER ? runContexts.humanCaptureGeneration(context.runId()) : -1;
+        rememberObservation(tracker, messageId, context, humanCaptureAccountId, humanCaptureSuppressed,
+                channel, profile, listenerPort, generation);
+    }
+
+    private void rememberObservation(InFlightRequestTracker tracker, int messageId,
+                                     RunContextRegistry.Context context, String humanCaptureAccountId,
+                                     boolean humanCaptureSuppressed, String channel,
+                                     PortProfile profile, int listenerPort, long generation) {
         long now = System.currentTimeMillis();
         if (!tracker.remember(messageId, context, humanCaptureAccountId,
                 humanCaptureSuppressed, datasetEpoch.get(), now,
                 profile == null ? Source.UNKNOWN : profile.source(),
                 profile == null ? SourceDetail.UNKNOWN : profile.detail(), listenerPort,
-                context != null && profile != null && profile.source() == Source.HUMAN
-                        && profile.detail() == SourceDetail.BROWSER
-                        ? runContexts.humanCaptureGeneration(context.runId()) : -1)) {
+                generation)) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }

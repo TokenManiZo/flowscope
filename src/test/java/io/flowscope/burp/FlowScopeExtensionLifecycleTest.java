@@ -359,6 +359,36 @@ class FlowScopeExtensionLifecycleTest {
             contexts.abort(Source.HUMAN, "a");
             assertEquals(false, capture.invoke(extension, request, response, profile, tracker.remove(6)));
             assertEquals(List.of("a", "b", "a"), records.stream().map(record -> record.runId).toList());
+            // Pause must wait for a response already committing, then reject every later response.
+            contexts.activateHuman(a);
+            var committing = new CountDownLatch(1);
+            var releaseCommit = new CountDownLatch(1);
+            List<RequestRecord> blockedRecords = new ArrayList<>() {
+                @Override public boolean add(RequestRecord value) {
+                    committing.countDown();
+                    try { releaseCommit.await(); }
+                    catch (InterruptedException error) { throw new RuntimeException(error); }
+                    return super.add(value);
+                }
+            };
+            field("records").set(extension, blockedRecords);
+            remember.invoke(extension, tracker, 7, a, null, true, "test", profile, 18080);
+            var committingObservation = tracker.remove(7);
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                var saving = executor.submit(() -> capture.invoke(extension, request, response, profile, committingObservation));
+                assertTrue(committing.await(2, TimeUnit.SECONDS));
+                var pauseStarted = new CountDownLatch(1);
+                var pausing = executor.submit(() -> { pauseStarted.countDown(); contexts.pauseHuman("a", true); });
+                try {
+                    assertTrue(pauseStarted.await(2, TimeUnit.SECONDS));
+                    assertThrows(java.util.concurrent.TimeoutException.class, () -> pausing.get(100, TimeUnit.MILLISECONDS));
+                } finally { releaseCommit.countDown(); }
+                assertEquals(true, saving.get(2, TimeUnit.SECONDS));
+                pausing.get(2, TimeUnit.SECONDS);
+                assertEquals(false, capture.invoke(extension, request, response, profile, committingObservation));
+                assertEquals(1, blockedRecords.size());
+            }
+
         } finally {
             ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
         }

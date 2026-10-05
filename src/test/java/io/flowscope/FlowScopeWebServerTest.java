@@ -886,6 +886,26 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void failedHumanEndKeepsAPausedRunUntilCleanupSucceeds() throws Exception {
+        state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
+        start();
+        json(post("/api/human-run", "action=begin&runId=a&account=user-a", token));
+        state.failHumanStop = true;
+        assertEquals(400, post("/api/human-run", "action=end&runId=a", token).statusCode());
+        assertNotNull(state.contexts.current(Source.HUMAN, "a"));
+        assertTrue(state.contexts.humanPaused("a"));
+        assertEquals(400, post("/api/human-run", "action=begin&runId=a-new&account=user-a", token).statusCode());
+        state.closedHumanBrowser = "a";
+        assertEquals(400, post("/api/human-run", "action=resume&runId=a", token).statusCode());
+        assertEquals(500, get("/api/human-run", token, origin()).statusCode());
+        assertNotNull(state.contexts.current(Source.HUMAN, "a"));
+        state.failHumanStop = false;
+        assertFalse(json(get("/api/human-run", token, origin())).path("active").asBoolean());
+        assertFalse(state.sessions.viewForAccount("user-a").orElseThrow().capturing());
+        assertEquals(200, post("/api/human-run", "action=begin&runId=a-new&account=user-a", token).statusCode());
+    }
+
+    @Test
     void humanBrowserStartFailureRollsBackTheRunAndCredentials() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
         state.failHumanBrowser = true;
@@ -1606,6 +1626,7 @@ final class FlowScopeWebServerTest {
         private volatile boolean scannerAnonymous;
         private volatile int observedHumanPort = -1;
         private boolean failHumanBrowser;
+        private boolean failHumanStop;
         private String closedHumanBrowser = "";
         private final List<String> startedHumanBrowsers = new ArrayList<>();
         private final List<String> stoppedHumanBrowsers = new ArrayList<>();
@@ -1702,7 +1723,10 @@ final class FlowScopeWebServerTest {
             if (failHumanBrowser) throw new IllegalStateException("browser failed");
             startedHumanBrowsers.add(runId);
         }
-        @Override public void humanRunStopped(String runId) { stoppedHumanBrowsers.add(runId); }
+        @Override public void humanRunStopped(String runId) {
+            if (failHumanStop) throw new IllegalStateException("cleanup failed");
+            stoppedHumanBrowsers.add(runId);
+        }
         @Override public boolean humanBrowserAlive(String runId) { return !runId.equals(closedHumanBrowser); }
         @Override public int humanListenerPort(String runId) { return observedHumanPort; }
         @Override public int otherHumanListenerPort(String runId) { return otherHumanPort; }

@@ -73,6 +73,58 @@ class HumanBrowserSessionsTest {
         }
     }
 
+    @Test void failedListenerRemovalRetainsOnlyCleanupStateAndCanBeRetried() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
+            sessions.start(context("a", "A"), URI.create("http://localhost/"));
+            int port = sessions.port("a");
+            burp.failNextImport = true;
+            assertThrows(IllegalStateException.class, () -> sessions.stop("a"));
+            assertTrue(sessions.contains("a"));
+            assertFalse(sessions.alive("a"));
+            assertNull(sessions.context(port), "A closing listener must not collect more requests");
+            assertEquals(2, burp.entries().size());
+            sessions.stop("a");
+            assertFalse(sessions.contains("a"));
+            assertEquals(1, burp.entries().size());
+        }
+    }
+
+    @Test void windowCloseFailureStillRemovesTheListenerAndRetainsARetry() throws Exception {
+        var failClose = new java.util.concurrent.atomic.AtomicBoolean(true);
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new HumanChromiumBrowser.Window() {
+                    @Override public boolean alive() { return true; }
+                    @Override public void close() { if (failClose.getAndSet(false)) throw new IllegalStateException("close failed"); }
+                })) {
+            sessions.start(context("a", "A"), URI.create("http://localhost/"));
+            assertThrows(IllegalStateException.class, () -> sessions.stop("a"));
+            assertTrue(sessions.contains("a"));
+            assertFalse(sessions.alive("a"));
+            assertEquals(1, burp.entries().size());
+            sessions.stop("a");
+            assertFalse(sessions.contains("a"));
+        }
+    }
+
+    @Test void launchAndCleanupFailureKeepTheListenerForALaterRetry() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> {
+                    burp.failNextImport = true;
+                    throw new IOException("launch failed");
+                })) {
+            IOException failure = assertThrows(IOException.class,
+                    () -> sessions.start(context("a", "A"), URI.create("http://localhost/")));
+            assertEquals(1, failure.getSuppressed().length);
+            assertTrue(sessions.contains("a"));
+            assertFalse(sessions.alive("a"));
+            assertNull(sessions.context(sessions.port("a")));
+            sessions.stop("a");
+            assertFalse(sessions.contains("a"));
+            assertEquals(1, burp.entries().size());
+        }
+    }
+
     @Test void listenerBindFailureIsRetriedBeforeLaunchingTheBrowser() throws Exception {
         try (var burp = new FakeBurp(); var listeners = new HumanProxyListeners(burp.api, Set.of(8080))) {
             burp.failNextBind = true;
@@ -149,6 +201,7 @@ class HumanBrowserSessionsTest {
         ObjectNode config = JSON.createObjectNode();
         Map<Integer, ServerSocket> sockets = new HashMap<>();
         boolean failNextBind;
+        boolean failNextImport;
         final BurpSuite api;
         FakeBurp() { this(false); }
         FakeBurp(boolean modern) {
@@ -165,6 +218,7 @@ class HumanBrowserSessionsTest {
                             return config.toString();
                         }
                         if (method.getName().equals("importProjectOptionsFromJson")) {
+                            if (failNextImport) { failNextImport = false; throw new IllegalStateException("import failed"); }
                             var importedConfig = JSON.readTree((String) args[0]);
                             var imported = (modern ? importedConfig : importedConfig.path("project_options"))
                                     .path("proxy").path("request_listeners");
