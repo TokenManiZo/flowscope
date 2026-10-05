@@ -1,8 +1,9 @@
 import type { EventRecord, Source } from "@/lib/api/types"
+import { operationGroup, type HierarchyProjection } from "./graphHierarchy"
 
 /**
  * 그래프 강조 필터. 같은 축 안에서는 하나라도 맞으면(OR), 축끼리는 모두 맞아야(AND) 강조한다.
- * 비어 있는 축은 조건이 없다는 뜻이다. 데이터를 숨기지 않고 색·굵기만 바꾸므로 노드 배치는 그대로다.
+ * 비어 있는 축은 조건이 없다는 뜻이다. 데이터를 숨기지 않고 표시만 바꾸므로 노드 배치는 그대로다.
  */
 export interface GraphHighlight {
   sources: readonly Source[]
@@ -89,6 +90,28 @@ export function projectHighlight(edges: readonly HighlightEdge[], events: readon
     }
   }
   return matched
+}
+
+/** Site Overview의 구조 엣지는 API 묶음의 셀·표시 가능한 관측 기록으로 판정하고 기존 색을 유지한다. */
+export function projectSiteHighlight(graph: HierarchyProjection, events: readonly EventRecord[], highlight: GraphHighlight, additionalEvents: readonly EventRecord[] = []): ReadonlyMap<string, string> | null {
+  if (!highlightActive(highlight)) return null
+  const index = highlight.statuses.length ? indexEventsByEvidence(events) : null
+  const groups = new Set(graph.groups.filter(group => group.cells.some(cell => {
+    if (highlight.identities.length && !highlight.identities.includes(cell.idn)) return false
+    const sources = (Object.keys(cell.perSource) as Source[]).filter(source => cell.perSource[source] !== undefined && (!highlight.sources.length || highlight.sources.includes(source)))
+    if (!sources.length) return false
+    // 상태 코드는 같은 신원·출처의 요청에서 확인한다. 서로 다른 요청의 조건을 섞어 일치시키지 않는다.
+    return !index || cell.evidenceIds.some(id => (index.get(id) ?? []).some(event => event.idn === cell.idn && sources.includes(event.source) && highlight.statuses.includes(event.status)))
+  })).map(group => group.id))
+  // 판정 전 관측·보조 요청도 같은 요청 안에서 모든 조건을 만족해야 한다.
+  for (const event of additionalEvents) {
+    if (highlight.identities.length && !highlight.identities.includes(event.idn)) continue
+    if (highlight.sources.length && !highlight.sources.includes(event.source)) continue
+    if (highlight.statuses.length && !highlight.statuses.includes(event.status)) continue
+    groups.add(operationGroup(event.op).id)
+  }
+  const nodes = new Set(graph.nodes.filter(node => node.kind === "api-group" && node.groupId && groups.has(node.groupId)).map(node => node.id))
+  return new Map(graph.edges.filter(edge => edge.relation === "target-group" && nodes.has(edge.targetId)).map(edge => [edge.id, edge.color]))
 }
 
 /** API 노드별 관측 응답 코드(오름차순). 노드는 여러 출처·신원을 합친 것이라 Evidence 전체의 코드를 모은다. */
