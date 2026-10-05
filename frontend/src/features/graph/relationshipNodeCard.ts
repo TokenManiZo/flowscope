@@ -66,15 +66,6 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     }
   }
 
-  if (node.kind === "quiet-group" && "objectGroup" in node && node.objectGroup) {
-    // 의심·충돌·확인 필요·쓰기 신호가 없는 기능과 관측만 된 기능을 접어 둔 카드.
-    const { members, expanded } = node.objectGroup
-    return {
-      kind: "operation", badge: "FOLDED", title: `${expanded ? "▾" : "▸"} ${node.label}`, detail: "", footer: "의심·충돌·확인 필요·쓰기 아님", icon: "none",
-      accessibleLabel: `${node.label}; ${members.length}개; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
-    }
-  }
-
   if (node.kind === "object-group" && "objectGroup" in node && node.objectGroup) {
     const { key, members, expanded } = node.objectGroup
     return {

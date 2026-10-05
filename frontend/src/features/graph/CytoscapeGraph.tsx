@@ -138,8 +138,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
   }
   // 펼친 객체 묶음의 멤버 노드는 어느 묶음에서 나왔는지 표시한다(배경 띠·강조 테두리).
   const memberOf = new Map<string, string>()
-  // "신호 없는 기능" 묶음에는 판정 기능(operation)과 관측만 된 기능(support-operation)이 함께 들어 있다.
-  const memberKinds = (kind: HierarchyNode["kind"]) => kind === "quiet-group" ? ["operation", "observed-operation", "support-operation"] : kind === "operation-group" ? ["operation"] : ["resource"]
+  const memberKinds = (kind: HierarchyNode["kind"]) => kind === "operation-group" ? ["operation"] : ["resource"]
   for (const node of hierarchy?.nodes ?? []) if (node.objectGroup?.expanded) for (const member of node.objectGroup.members) for (const kind of memberKinds(node.kind)) memberOf.set(`${kind}:${member}`, node.id)
   // 접힌 API 묶음의 멤버는 그리지 않는다(엣지는 이미 묶음 노드로 모였다).
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate" && !node.hiddenInGraph) : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {

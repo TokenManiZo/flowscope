@@ -142,10 +142,6 @@ export function searchHighlights(projection: HierarchyProjection, keys: Readonly
   const matches = new Map<string, "direct" | "member">()
   const service = projection.groups.find(group => group.id === projection.navigation.groupId)?.service ?? "Target"
   for (const node of projection.nodes) {
-    if (node.kind === "quiet-group") {
-      if (node.objectGroup?.members.some(member => ["operation", "observed-operation"].some(kind => keys.has(searchKey(kind as SearchKind, service, member))))) matches.set(node.id, "member")
-      continue
-    }
     if (node.hiddenInGraph || !kinds.includes(node.kind as SearchKind)) continue
     const kind = node.kind as SearchKind
     const value = kind === "api-group" ? node.groupId! : kind === "route-candidate" ? node.id : node.id.slice(kind.length + 1)
