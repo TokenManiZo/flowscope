@@ -2199,15 +2199,17 @@ public final class FlowScopeExtension implements BurpExtension {
                         : analysisConfig.account(record.laneAccountId);
                 String observedIdentity = observedAccount.map(io.flowscope.core.AccountProfile::label)
                         .orElse(record.idn == null ? "미확정" : record.idn);
+                // 요청 헤더를 만드는 SessionBroker.headers()와 같은 기준: ACTIVE이거나, 그 계정으로 점검 중이고 인증된 응답을 이미 받은 세션.
                 var reusable = observedAccount
                         .flatMap(account -> sessionBroker.viewForAccount(account.id()))
-                        .filter(view -> view.status() == SessionBroker.Status.ACTIVE);
-                String reusableSession = reusable.map(view -> view.accountLabel() + " · ACTIVE").orElse("없음");
+                        .filter(SessionBroker.SessionView::replayReady);
+                String reusableSession = reusable.map(view -> view.accountLabel() + " · 사용 가능").orElse("없음");
                 String reusableAccountId = reusable.map(SessionBroker.SessionView::accountId).orElse("");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
                         request, response, rawRequest, rawResponse, decodedRequest.editable(),
                         decodedRequest.charset(), decodedResponse.charset(), observedIdentity,
-                        reusableSession, reusableAccountId, message);
+                        reusableSession, reusableAccountId, message,
+                        observedAccount.map(io.flowscope.core.AccountProfile::id).orElse(""));
             }
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,

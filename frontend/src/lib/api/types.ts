@@ -661,6 +661,8 @@ export interface RequestLabDraft {
   observedIdentity: string
   reusableSession: string
   reusableAccountId?: string
+  /** 이 기록과 연결된 등록 계정. 연결되지 않은 기록(로그인 전 요청 등)은 빈 문자열이다. */
+  observedAccountId?: string
   message: string
 }
 

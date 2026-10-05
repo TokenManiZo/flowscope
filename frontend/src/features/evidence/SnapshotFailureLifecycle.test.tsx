@@ -59,7 +59,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     }
   }
   await select()
-  await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "원문 보기" : "Request Lab 열기" }))
+  await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "Request Lab에서 보내기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
   await userEvent.clear(request)
@@ -77,7 +77,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(client.getQueryData(["snapshot"])).toEqual(snapshot)
   if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
   if (kind === "surface") expect(screen.getAllByText("/orders/{id}").length).toBeGreaterThan(0)
-  if (kind.startsWith("graph")) expect(screen.getByRole("button", { name: "현재 세션으로 Repeater", hidden: true })).toBeDisabled()
+  if (kind.startsWith("graph")) expect(screen.getByRole("button", { name: "Request Lab에서 보내기", hidden: true })).toBeDisabled()
   else expect(screen.getByLabelText("필수 역할 지정")).toBeDisabled()
   expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(1)
 

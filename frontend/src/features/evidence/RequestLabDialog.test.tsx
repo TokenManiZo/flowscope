@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { useState } from "react"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 
-import { RequestLabDialog } from "./RequestLabDialog"
+import { activeAccounts, RequestLabDialog } from "./RequestLabDialog"
 import { OperationDetail } from "./OperationDetail"
 import { renderWithQueryClient } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
@@ -108,6 +108,39 @@ async function openDraft(currentSession: boolean | null = false) {
 }
 
 describe("RequestLabDialog", () => {
+  it("lets the original view pick the send identity, creating an edit copy, and uses an account that is being checked", async () => {
+    const fetch = installReusableTransport()
+    const user = userEvent.setup()
+    const capturing: ManagedSession = { ...activeSession, status: "CAPTURING", capturing: true, replayReady: true }
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[capturing]} />)
+    await screen.findByLabelText("Request Lab 요청 원문")
+    const note = await screen.findByRole("note")
+    expect(note).toHaveTextContent("원본은 읽기 전용입니다. 위의 전송 인증에서 계정이나 비로그인을 고르면 편집본이 만들어지고")
+    expect(note).toHaveTextContent("이 기록의 신원(alice) 세션을 지금 쓸 수 있습니다.")
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled()
+
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
+
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("관리자"))
+    expect(screen.getByRole("combobox", { name: "편집 요청 선택" })).toHaveValue("1")
+    expect(screen.queryByRole("note")).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await waitFor(() => expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(true))
+    const sent = fetch.mock.calls.find(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
+    expect(new URLSearchParams(String(sent?.[1]?.body)).get("credentialMode")).toBe("ACCOUNT")
+    expect(new URLSearchParams(String(sent?.[1]?.body)).get("accountId")).toBe("acct-1")
+    expect(activeAccounts([capturing, { ...capturing, accountId: "acct-2", replayReady: false }], activeSession.service).map(item => item.accountId)).toEqual(["acct-1"])
+  })
+
+  it("tells how to send as the record's identity when its session is not ready yet", async () => {
+    const fetch = vi.fn((input: RequestInfo | URL) => Promise.resolve(json(String(input) === "/api/manual-attempts" ? [] : { ...requestLabDraft(), observedIdentity: "USER B", observedAccountId: "acct-2" })))
+    vi.stubGlobal("fetch", fetch)
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    expect(await screen.findByRole("note")).toHaveTextContent("USER B로 보내려면 계정·세션에서 USER B의 점검 시작을 누르고 로그인하세요.")
+  })
+
   it("offers an account dropdown without original identity and requires a choice before sending", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()
@@ -127,7 +160,7 @@ describe("RequestLabDialog", () => {
     expect(within(options).queryByRole("option", { name: /원문|anon|인증.*선택/ })).not.toBeInTheDocument()
     expect(within(options).getByRole("option", { name: "비로그인" })).toBeVisible()
     expect(within(options).getByRole("option", { name: "관리자" })).toBeVisible()
-    expect(within(options).getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    expect(within(options).getByRole("option", { name: "USER C · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
     await user.keyboard("{Escape}")
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
     await chooseAuthentication(user, "ANONYMOUS")
@@ -675,7 +708,7 @@ describe("RequestLabDialog", () => {
     expect(await openDraft(true)).toHaveValue(secret)
     await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
     for (const label of ["USER B", "USER C", "비활성", "다른 서비스"]) {
-      expect(screen.getByRole("option", { name: `${label} · 사용 가능한 인증 없음` })).toHaveAttribute("aria-disabled", "true")
+      expect(screen.getByRole("option", { name: `${label} · 점검 시작 후 사용 가능` })).toHaveAttribute("aria-disabled", "true")
     }
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
@@ -751,7 +784,7 @@ describe("RequestLabDialog", () => {
     const { unmount } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
     await openDraft(null)
     await userEvent.click(screen.getByRole("combobox", { name: "전송 인증" }))
-    expect(screen.getByRole("option", { name: "관리자 · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("option", { name: "관리자 · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
     await userEvent.keyboard("{Escape}")
     expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ORIGINAL"))
     unmount()
@@ -872,7 +905,7 @@ describe("RequestLabDialog", () => {
     expect(authentication).toHaveTextContent(authenticationLabel("ORIGINAL"))
     await user.click(authentication)
     expect(screen.getByRole("option", { name: "USER B" })).not.toHaveAttribute("aria-disabled", "true")
-    expect(screen.getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("option", { name: "USER C · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
     await chooseAuthentication(user, "ACCOUNT:acct-2")
     await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2")))
     await waitFor(() => expect(authentication).toBeEnabled())

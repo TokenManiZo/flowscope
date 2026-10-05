@@ -35,8 +35,8 @@ function mount(kind: "evidence" | "graph") {
   const view = render(tree(event, snapshot))
   return { ...view, client, change: (selected: EventRecord | null, current = snapshot) => view.rerender(tree(selected, current)) }
 }
-// 그래프 선택 상세는 Evidence 목록의 "원문 보기"로 Request Lab을 연다. 정책 편집은 Evidence 상세에만 남아 있다.
-const labButton = (kind: string) => kind === "graph" ? "원문 보기" : "Request Lab 열기"
+// 그래프 선택 상세는 Evidence 목록의 보내기 버튼(Request Lab에서 보내기)으로 Request Lab을 연다. 정책 편집은 Evidence 상세에만 남아 있다.
+const labButton = (kind: string) => kind === "graph" ? "Request Lab에서 보내기" : "Request Lab 열기"
 
 it.each(["evidence"] as const)("isolates %s policy values, submit targets and late mutation errors across two selections", async kind => {
   let finish!: (response: Response) => void

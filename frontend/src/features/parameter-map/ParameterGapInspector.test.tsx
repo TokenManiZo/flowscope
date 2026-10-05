@@ -44,7 +44,7 @@ it("opens the read-only raw request from a row without sending anything", async 
   const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json(String(input) === "/api/manual-attempts" ? [] : { eventId: "observed-a", service: demoEndpointKey.service, request: "MASKED-REQUEST", response: "MASKED-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: false, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "observed-a", reusableSession: "none", message: "draft" })))
   vi.stubGlobal("fetch", fetch)
   const { client } = renderWithQueryClient(<ParameterGapInspector {...propsFor(actualSnapshot(["observed-a"]))} />)
-  await userEvent.click(screen.getByRole("button", { name: "원문 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "Request Lab에서 보내기" }))
   expect(await screen.findByLabelText("Request Lab 응답 원문")).toHaveValue("MASKED-RESPONSE")
   expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
   // 초안과 검증 이력 조회(GET)만 있고 전송(POST)은 없다.
@@ -55,8 +55,7 @@ it("opens the read-only raw request from a row without sending anything", async 
 
 it("locks row actions while the snapshot is suspended and shows an empty state without actual 관측 기록", () => {
   const { unmount } = renderWithQueryClient(<ParameterGapInspector {...propsFor(actualSnapshot(["observed-a"]))} suspended />)
-  expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
-  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Request Lab에서 보내기" })).toBeDisabled()
   unmount()
   renderWithQueryClient(<ParameterGapInspector {...propsFor(actualSnapshot([], { events: [] }))} />)
   expect(screen.getByText("연결된 관측 기록이 없습니다.")).toBeVisible()

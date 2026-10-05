@@ -103,7 +103,7 @@ it("links only actual events of the exact operation and offers raw view from the
   const rows = within(screen.getByRole("region", { name: "관측 기록" })).getAllByRole("listitem")
   // 관측 기록은 신원별 카드로 묶인다. 다른 operation의 witness-a는 목록에 없다.
   expect(rows.map(row => row.getAttribute("aria-label"))).toEqual(["USER A 관측 기록 1건"])
-  expect(within(rows[0]).getByRole("button", { name: "원문 보기" })).toBeEnabled()
+  expect(within(rows[0]).getByRole("button", { name: "Request Lab에서 보내기" })).toBeEnabled()
 })
 
 it("filters only display state and clears a stale selected Gap on refresh", async () => {
@@ -184,8 +184,7 @@ it("distinguishes initial errors and preserves a selected refresh-error inspecto
   rerender()
   expect(screen.getByRole("alert")).toHaveTextContent("refresh failed")
   expect(screen.getByRole("region", { name: "Parameter Gap 상세" })).toBeVisible()
-  expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
-  expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Request Lab에서 보내기" })).toBeDisabled()
 })
 
 it.each(["empty", "definitions", "diagnostic"])("gives one next action for %s without fabricated results", (kind) => {

@@ -1,5 +1,6 @@
 import { operationShapeKey } from "./graphPathShape"
 import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
+import { manualResendDetails } from "./resendGraph"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
 export const GRAPH_PAGE_SIZE = 18
@@ -28,7 +29,7 @@ export interface ApiGroup extends ApiGroupDescriptor {
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "observed-operation" | "object-group" | "operation-group" | "quiet-group" | "support-operation"
+  kind: GraphNode["kind"] | "target" | "api-group" | "observed-operation" | "object-group" | "operation-group" | "quiet-group" | "support-operation" | "resend-operation"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -39,9 +40,11 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   objectGroup?: { key: string; members: readonly string[]; owners: Readonly<Record<string, string | null>>; expanded: boolean }
   /** 접힌 API 묶음의 멤버. 그래프에서는 그리지 않고 목록·선택 상세에서만 쓴다. */
   hiddenInGraph?: boolean
+  /** 재전송 그래프의 API 카드: 도구, 보낸 횟수, 최근 응답 코드, 원본 응답 코드(Request Lab만, 없으면 null). */
+  resend?: { tool: "lab" | "repeater"; count: number; status: number; originalStatus: number | null }
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
-  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
+  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support" | "resend"
   source: Source | null
   structural: boolean
   selection: HierarchySelection
@@ -75,14 +78,15 @@ const nonCollectionPhases = new Set(["SESSION_SETUP", "AUTHORIZATION_REPLAY", "C
 const staticExtension = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|bmp|woff2?|ttf|eot|mp3|mp4|webm)$/i
 
 /**
- * 그래프에 그릴 정상 수집 요청인지 본다. 값을 바꿔 다시 보낸 요청(Request Lab)과 FlowScope가 재전송한 요청은 출처가 아니므로(D-008)
- * 그리지 않는다. 응답 없는 시도, 사용자가 직접 제외한 요청, 출처·실행 환경을 확인하지 못한 요청도 뺀다.
+ * 그래프에 그릴 정상 수집 요청인지 본다. 값을 바꿔 다시 보낸 요청(Request Lab, Burp Repeater·Intruder)과 FlowScope가 재전송한 요청은
+ * 출처가 아니므로(D-008) 그리지 않는다. Request Lab·Repeater 전송은 재전송 그래프(resendGraph)에서 따로 본다. 응답 없는 시도, 사용자가 직접 제외한 요청, 출처·실행 환경을 확인하지 못한 요청도 뺀다.
  */
 export function isObservedTraffic(event: Snapshot["events"][number]): boolean {
   return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME" && !nonCollectionPhases.has(event.phase)
     && event.status >= 100 && event.status <= 599 && !event.classificationReasons.includes("NO_RESPONSE")
     && !event.classificationReasons.includes("USER_EXCLUDE") && !(event.classificationOverride && event.trafficDisposition === "EXCLUDE")
     && !hiddenTrafficClasses.has(event.trafficClass) && !staticExtension.test(event.path.split("?")[0])
+    && !manualResendDetails.has(event.sourceDetail)
 }
 
 /** 묶음 기준 칸(api·rest·버전 다음 첫 칸)과, 그 칸이 경로의 마지막 칸인지(/login.php처럼 한 칸짜리 주소인지). */

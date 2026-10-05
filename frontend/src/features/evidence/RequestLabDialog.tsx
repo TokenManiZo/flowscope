@@ -36,7 +36,8 @@ const MANUAL_ATTEMPTS = ["manual-attempts"] as const
 const EDIT_REJECTED_MESSAGE = "요청이 너무 크거나 메모리가 부족해 편집에 반영하지 않았습니다. 내용을 줄이거나 사용하지 않는 요청을 삭제해 주세요."
 export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
-  for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
+  // 서버가 인증값을 넣어 주는 기준(SessionBroker.headers)과 같다: ACTIVE이거나, 그 계정으로 점검 중이고 인증된 응답을 이미 받은 세션.
+  for (const session of sessions) if (session.service === service && !session.credentialConflict && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing)) && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]
 }
 
@@ -183,6 +184,15 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     }
   }, [view, draft])
 
+  /** 원본은 읽기 전용이다. 원본 화면에서 전송 인증을 고르면 편집본을 만들어 그 인증을 바로 적용한다. */
+  function editWithCredentials(value: string) {
+    if (busy || suspended || !draft?.requestEditable) return
+    const next = raw.current.addRequest(displayedRequest, "ORIGINAL", "")
+    if (!next) { setError(`요청을 더 만들 수 없습니다. 최대 ${REQUEST_LAB_MAX_REQUESTS}개이며, 메모리가 부족하면 사용하지 않는 요청을 삭제해 주세요.`); return }
+    persistence.current?.changed(next, ["name", "request", "credentialMode", "result", "dirty"])
+    changeView(next.id)
+    void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), next) : changeCredentials("ANONYMOUS", "", next))
+  }
   function addRequest() {
     if (busy || suspended || !(entry || draft?.requestEditable) || editRejected) return
     const next = raw.current.addRequest(displayedRequest, mode, accountId)
@@ -295,7 +305,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         || (original.rawRequestRetained && !next.rawRequestRetained)
         || (original.rawResponseRetained && !next.rawResponseRetained)
         || (original.requestEditable && !next.requestEditable)
-        || next.reusableSession !== original.reusableSession) close()
+        || (original.reusableSession !== "없음" && next.reusableSession !== original.reusableSession)) close()
     }).catch(() => { if (!controller.signal.aborted) close() })
     return () => controller.abort()
   }, [open, event.eventId, snapshotRevision, suspended])
@@ -352,29 +362,31 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     onOpenChange(false)
   }
 
-  async function changeCredentials(nextMode: RequestLabCredentialMode, nextAccountId = "") {
-    if (!draft || !entry || !editable || editRejected || busy || suspended || context.current.preview || (nextMode === mode && nextAccountId === accountId && !credentialsRequired)) return
+  async function changeCredentials(nextMode: RequestLabCredentialMode, nextAccountId = "", targetEntry = entry) {
+    // 같은 편집본에 같은 인증을 다시 고르면 아무 일도 하지 않는다. 원본 화면에서 새로 만든 편집본은 항상 적용한다.
+    const unchanged = targetEntry === entry && nextMode === mode && nextAccountId === accountId && !credentialsRequired
+    if (!draft || !targetEntry || targetEntry.editRejected || busy || suspended || context.current.preview || unchanged) return
     const selected = accountOptions.find(option => option.account.id === nextAccountId && option.ready)
-    if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
-    if (!raw.current.canSend(entry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
+    if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 세션이 아직 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하면 쓸 수 있습니다."); return }
+    if (!raw.current.canSend(targetEntry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
     const controller = new AbortController()
     const generation = ++context.current.generation
     context.current.sendController = controller
     context.current.preview = { mode: nextMode, accountId: nextAccountId, sessionHandle: selected?.session?.handle }
-    const submitted = { request: entry.request }
+    const submitted = { request: targetEntry.request }
     context.current.submission = submitted
     setApplyingCredentials(true)
     setError("")
     try {
       const preview = await previewRequestLabCredentials({ eventId: event.eventId, request: submitted.request, credentialMode: nextMode, accountId: nextMode === "ACCOUNT" ? nextAccountId : "", datasetRevision }, controller.signal)
       try {
-        if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(entry) || entry.request !== submitted.request) return
+        if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(targetEntry) || targetEntry.request !== submitted.request) return
         const next = applyRequestLabCredentials(submitted.request, preview.headers)
-        if (!raw.current.canSend(next) || !raw.current.editRequest(entry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
-        entry.credentialMode = nextMode
-        entry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
-        entry.restored = false
-        persistence.current?.changed(entry, ["request", "credentialMode", "dirty"])
+        if (!raw.current.canSend(next) || !raw.current.editRequest(targetEntry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
+        targetEntry.credentialMode = nextMode
+        targetEntry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
+        targetEntry.restored = false
+        persistence.current?.changed(targetEntry, ["request", "credentialMode", "dirty"])
         setJsonView(current => ({ ...current, request: false }))
         setVersion(value => value + 1)
       } finally {
@@ -526,13 +538,14 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
-            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!editable || editRejected || suspended || busy} onValueChange={value => {
+            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={(editable ? editRejected : !draft?.requestEditable) || suspended || busy} onValueChange={value => {
+              if (!editable) { editWithCredentials(value); return }
               void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8)) : changeCredentials("ANONYMOUS"))
             }}>
               <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
                 <SelectItem value="ANONYMOUS">비로그인</SelectItem>
-                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 사용 가능한 인증 없음" : ""}</SelectItem>)}
+                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 점검 시작 후 사용 가능" : ""}</SelectItem>)}
                 {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
               </SelectContent>
             </Select></div>
@@ -577,7 +590,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 인증을 사용할 수 없습니다. 계정 또는 인증 방식을 다시 선택해 주세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
+          {draft && !editable && draft.requestEditable && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">원본은 읽기 전용입니다. 위의 전송 인증에서 계정이나 비로그인을 고르면 편집본이 만들어지고, 바로 요청 재전송이나 Repeater로 보낼 수 있습니다.{draft.reusableAccountId ? ` 이 기록의 신원(${draft.observedIdentity}) 세션을 지금 쓸 수 있습니다.` : draft.observedAccountId ? ` ${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.` : ""}</p>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
           {replayMessage && <p role="status" className="rounded-md border p-2 text-sm">{replayMessage}</p>}
           {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
         </div>
