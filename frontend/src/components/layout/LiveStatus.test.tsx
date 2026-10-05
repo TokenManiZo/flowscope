@@ -125,3 +125,11 @@ it("continues to show the other account recording while one browser is paused", 
   render(<SidebarLiveStatus />)
   expect(screen.getByRole("status", { name: "HUMAN 기록 계정" })).toHaveTextContent("기록 중 USER B")
 })
+
+it("reports final HUMAN analysis without claiming the closed browser is recording", async () => {
+  queryState.human = { data: { active: true, completed: false, runs: [{ accountId: "user-a", paused: true, analyzing: true }] }, isPending: false, isError: false }
+  render(<SidebarLiveStatus />)
+  expect(screen.queryByRole("status", { name: "HUMAN 기록 계정" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "실시간 상태" }))
+  expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("기록 분석 중")
+})

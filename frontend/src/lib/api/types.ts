@@ -727,6 +727,7 @@ export interface LiveAuthorizationReplayEnvelope extends ApiSuccess {
 
 export interface HumanBrowserRun {
   paused?: boolean
+  analyzing?: boolean
   runId: string
   accountId: string
   proxy: string
@@ -737,6 +738,8 @@ export interface HumanBrowserRun {
 
 export interface HumanRun {
   paused?: boolean
+  analyzing?: boolean
+  endedRuns?: Array<{ runId: string; accountId: string; analyzing: boolean; message: string }>
   active: boolean
   completed: boolean
   runs?: HumanBrowserRun[]

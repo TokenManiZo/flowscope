@@ -12,7 +12,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,17 +24,20 @@ final class HumanProxyListeners implements AutoCloseable {
     private int nextPort = 18080;
     private final BurpSuite burp;
     private final Set<Integer> reserved;
-    private final Map<Integer, JsonNode> owned = new HashMap<>();
+    private final Map<Integer, JsonNode> owned = new ConcurrentHashMap<>();
 
     HumanProxyListeners(BurpSuite burp, Set<Integer> reserved) {
         this.burp = burp;
         this.reserved = Set.copyOf(reserved);
     }
 
-    synchronized int open() throws IOException {
+    synchronized int open() throws IOException { return open(-1); }
+
+    synchronized int open(int preferredPort) throws IOException {
         for (int attempt = 0; attempt < 8; attempt++) {
             ArrayNode listeners = listeners();
-            int port = availablePort(listeners);
+            int port = attempt == 0 && preferredPort >= 18080 && portAvailable(preferredPort, listeners)
+                    ? preferredPort : availablePort(listeners);
             ObjectNode entry = JSON.createObjectNode().put("listen_mode", "loopback_only")
                     .put("listener_port", port).put("running", true).put("certificate_mode", "per_host")
                     .put("enable_http2", true);
@@ -55,6 +58,13 @@ final class HumanProxyListeners implements AutoCloseable {
         throw new IOException("수집용 프록시 포트를 열지 못했습니다. Burp 리스너 상태를 확인하세요.");
     }
 
+    private boolean portAvailable(int port, ArrayNode listeners) throws IOException {
+        if (reserved.contains(port) || contains(listeners, port)) return false;
+        try (var candidate = new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"))) {
+            return true;
+        } catch (BindException occupied) { return false; }
+    }
+
     private int availablePort(ArrayNode listeners) throws IOException {
         while (nextPort <= 65535) {
             int port = nextPort++;
@@ -68,7 +78,7 @@ final class HumanProxyListeners implements AutoCloseable {
         throw new IOException("18080 이상에서 사용할 수 있는 수집 프록시 포트가 없습니다.");
     }
 
-    synchronized boolean owns(int port) { return owned.containsKey(port); }
+    boolean owns(int port) { return owned.containsKey(port); }
 
     synchronized void remove(int port) throws IOException {
         JsonNode entry = owned.get(port);
@@ -126,5 +136,6 @@ final class HumanProxyListeners implements AutoCloseable {
             try { remove(port); }
             catch (IOException | RuntimeException ignored) { /* Keep ownership so a later cleanup can retry. */ }
         }
+        if (owned.isEmpty()) nextPort = 18080;
     }
 }

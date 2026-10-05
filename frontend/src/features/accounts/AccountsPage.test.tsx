@@ -208,7 +208,7 @@ describe("account and session management", () => {
     const user = userEvent.setup()
     renderAccounts({ "/api/human-run": "수집 변경 실패" }, snapshot(), [{ runId: "a-run", accountId: "account-a", proxy: "" }])
     await user.click(await screen.findByRole("button", { name: "계정 A 일시 정지" }))
-    expect(await screen.findByText("수집 변경 실패")).toBeVisible()
+    expect(await screen.findByText("수집 상태를 변경하지 못했습니다. 상태를 확인한 뒤 다시 시도해 주세요.")).toBeVisible()
     expect(screen.getByRole("button", { name: "계정 A 수집 종료" })).toBeVisible()
     expect(screen.queryByText("수집 일시 정지")).not.toBeInTheDocument()
   })
@@ -219,9 +219,50 @@ describe("account and session management", () => {
     const login = within(card).getByRole("button", { name: "계정 A 수집 시작" })
     await waitFor(() => expect(login).toBeEnabled())
     await user.click(login)
-    expect(await screen.findByText("Chromium을 찾지 못했습니다.")).toBeVisible()
+    expect(await screen.findByText("수집 브라우저를 열지 못했습니다. Chrome 설치와 점검 범위를 확인해 주세요.")).toBeVisible()
+    expect(screen.queryByText("Chromium을 찾지 못했습니다.")).not.toBeInTheDocument()
+    expect(within(await screen.findByRole("article", { name: "비로그인 계정" })).queryByRole("alert")).not.toBeInTheDocument()
     expect(window.location.hash).toBe("")
     expect(sessionStorage.getItem("flowscope.inspectionRecords")).toBeNull()
+  })
+
+  it("shows ending feedback and the acknowledged analysis state before polling finishes", async () => {
+    const user = userEvent.setup()
+    const fetchStub = renderAccounts({}, snapshot(), [{ runId: "a-run", accountId: "account-a", proxy: "" }])
+    const card = within(await screen.findByRole("article", { name: "계정 A 계정" }))
+    let acknowledge!: (value: Response) => void
+    const original = fetchStub.getMockImplementation()!
+    fetchStub.mockImplementation((path, init) => {
+      if (path === "/api/human-run" && init?.method === "POST") return new Promise<Response>((resolve) => { acknowledge = resolve })
+      if (path === "/api/human-run" && !init?.method) return new Promise<Response>(() => {})
+      return original(path, init)
+    })
+    await user.click(card.getByRole("button", { name: "계정 A 수집 종료" }))
+    expect(card.getByRole("button", { name: "계정 A 수집 종료" })).toHaveTextContent("종료 중…")
+    acknowledge(response({ active: true, completed: false, runs: [{ runId: "a-run", accountId: "account-a", proxy: "", paused: true, analyzing: true }] }))
+    expect(await card.findByText("기록 분석 중")).toBeVisible()
+    expect(card.getByRole("button", { name: "계정 A 수집 시작" })).toBeDisabled()
+    expect(card.getByRole("button", { name: "계정 A 수집 종료" })).toBeDisabled()
+    expect(card.queryByRole("alert")).not.toBeInTheDocument()
+  })
+
+  it("refreshes a failed end and removes its alert once the server confirms closure", async () => {
+    const user = userEvent.setup()
+    const runs = [{ runId: "a-run", accountId: "account-a", proxy: "" }]
+    const fetchStub = renderAccounts({}, snapshot(), runs)
+    const card = within(await screen.findByRole("article", { name: "계정 A 계정" }))
+    const original = fetchStub.getMockImplementation()!
+    fetchStub.mockImplementation((path, init) => {
+      if (path === "/api/human-run" && init?.method === "POST") {
+        runs.splice(0)
+        return Promise.resolve(response({ success: false, message: "활성 수집 실행을 찾지 못했습니다." }, 400))
+      }
+      return original(path, init)
+    })
+    await user.click(card.getByRole("button", { name: "계정 A 수집 종료" }))
+    await waitFor(() => expect(card.getByRole("button", { name: "계정 A 수집 시작" })).toBeEnabled())
+    expect(card.queryByRole("alert")).not.toBeInTheDocument()
+    expect(screen.queryByText("활성 수집 실행을 찾지 못했습니다.")).not.toBeInTheDocument()
   })
 
   it("shows an already open account capture without opening another browser", async () => {

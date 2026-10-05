@@ -1916,6 +1916,15 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public Pipeline.Result completionSnapshot() { rebuildImmediately(); return latest; }
             @Override public long revision() { return revision.get(); }
             @Override public long datasetRevision() { return datasetEpoch.get(); }
+            @Override public java.util.concurrent.CompletableFuture<Pipeline.Result> humanCompletionSnapshot(String runId) {
+                long epoch = datasetEpoch.get();
+                RunContextRegistry.Context context = runContexts.current(Source.HUMAN, runId);
+                return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    if (shuttingDown.get() || datasetEpoch.get() != epoch
+                            || runContexts.current(Source.HUMAN, runId) != context) throw new DatasetReplacedException();
+                    return rebuildImmediately();
+                }, worker);
+            }
             @Override public GraphWorkspace.State graphWorkspace() {
                 return runProjectTask(() -> new GraphWorkspace.State(datasetEpoch.get(), graphWorkspaceRevision, graphWorkspace));
             }

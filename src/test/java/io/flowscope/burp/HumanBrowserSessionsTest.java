@@ -63,6 +63,22 @@ class HumanBrowserSessionsTest {
         }
     }
 
+    @Test void reusesTheSameAccountPortAfterRestartWithoutChangingAnotherAccount() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
+            URI target = URI.create("http://localhost/");
+            sessions.start(context("a", "A"), target);
+            sessions.start(context("b", "B"), target);
+            int a = sessions.port("a"), b = sessions.port("b");
+            sessions.stop("a");
+            sessions.start(context("a-restarted", "A"), target);
+            assertEquals(a, sessions.port("a-restarted"));
+            assertEquals(b, sessions.port("b"));
+            assertEquals("a-restarted", sessions.context(a).runId());
+            assertTrue(sessions.alive("b"));
+        }
+    }
+
     @Test void releasesOwnershipWhilePreservingAUserModifiedListener() throws Exception {
         try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
                 new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
@@ -74,6 +90,59 @@ class HumanBrowserSessionsTest {
             assertFalse(sessions.ownsPort(port));
             assertEquals(2, burp.entries().size());
             assertEquals("user_modified", burp.entries().get(1).path("certificate_mode").asText());
+        }
+    }
+
+    @Test void listenerCleanupDoesNotHoldLocksNeededByProxyCallbacks() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
+            URI target = URI.create("http://localhost/");
+            sessions.start(context("a", "A"), target);
+            sessions.start(context("b", "B"), target);
+            int a = sessions.port("a"), b = sessions.port("b");
+            burp.beforeImport = () -> assertTimeoutPreemptively(java.time.Duration.ofSeconds(2), () -> {
+                assertNull(sessions.context(a));
+                assertEquals("B", sessions.context(b).accountId());
+                assertTrue(sessions.ownsPort(b));
+            });
+            try { sessions.stop("a"); }
+            finally { burp.beforeImport = () -> {}; }
+            assertTrue(sessions.alive("b"));
+            assertFalse(sessions.ownsPort(a));
+        }
+    }
+
+    @Test void restartingAnAccountSkipsItsPortWhenTheOperatorKeptTheListener() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
+            URI target = URI.create("http://localhost/");
+            sessions.start(context("a", "A"), target);
+            int original = sessions.port("a");
+            ((ObjectNode) burp.entries().get(1)).put("certificate_mode", "user_modified");
+            sessions.stop("a");
+            sessions.start(context("again", "A"), target);
+            assertNotEquals(original, sessions.port("again"));
+            assertEquals("user_modified", burp.entries().get(1).path("certificate_mode").asText());
+            assertEquals(original, burp.entries().get(1).path("listener_port").asInt());
+        }
+    }
+
+    @Test void restartingAnAccountSkipsItsPortWhenAnotherProcessUsesIt() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
+            URI target = URI.create("http://localhost/");
+            sessions.start(context("a", "A"), target);
+            int original = sessions.port("a");
+            sessions.stop("a");
+            try (var occupied = new ServerSocket(original, 1, InetAddress.getByName("127.0.0.1"))) {
+                sessions.start(context("again", "A"), target);
+                int replacement = sessions.port("again");
+                assertNotEquals(original, replacement);
+                sessions.stop("again");
+                sessions.start(context("third", "A"), target);
+                assertEquals(replacement, sessions.port("third"));
+                assertFalse(occupied.isClosed());
+            }
         }
     }
 
@@ -216,6 +285,7 @@ class HumanBrowserSessionsTest {
         Map<Integer, ServerSocket> sockets = new HashMap<>();
         boolean failNextBind;
         boolean failNextImport;
+        Runnable beforeImport = () -> {};
         final BurpSuite api;
         FakeBurp() { this(false); }
         FakeBurp(boolean modern) {
@@ -232,6 +302,7 @@ class HumanBrowserSessionsTest {
                             return config.toString();
                         }
                         if (method.getName().equals("importProjectOptionsFromJson")) {
+                            beforeImport.run();
                             if (failNextImport) { failNextImport = false; throw new IllegalStateException("import failed"); }
                             var importedConfig = JSON.readTree((String) args[0]);
                             var imported = (modern ? importedConfig : importedConfig.path("project_options"))

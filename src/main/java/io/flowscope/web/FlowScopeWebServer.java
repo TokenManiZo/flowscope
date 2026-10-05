@@ -62,6 +62,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public interface State {
         Pipeline.Result snapshot();
         default Pipeline.Result completionSnapshot() { return snapshot(); }
+        default CompletableFuture<Pipeline.Result> humanCompletionSnapshot(String runId) {
+            return CompletableFuture.completedFuture(completionSnapshot());
+        }
         long revision();
         default long datasetRevision() { return revision(); }
         default GraphWorkspace.State graphWorkspace() {
@@ -262,6 +265,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private final ClasspathWebAssets webAssets = new ClasspathWebAssets(ClasspathWebAssets.DefaultUi.REACT);
     private final Map<String, RequestLabOperation> requestLabOperations = new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> requestLabOperationOrder = new ConcurrentLinkedDeque<>();
+    private record HumanEnd(RunContextRegistry.Context context, boolean analyzing, String message) {}
+    private final Object humanRunLock = new Object();
+    private final Map<String, HumanEnd> humanEnds = new LinkedHashMap<>();
+    private long humanEndsDataset = -1;
+    private volatile boolean closed;
     private final LoopbackHttpServer server;
 
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
@@ -853,7 +861,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response humanRun(LoopbackHttpServer.Request request) throws IOException {
-        synchronized (state.contexts()) { return humanRunLocked(request); }
+        synchronized (humanRunLock) {
+            if (humanEndsDataset != state.datasetRevision()) {
+                humanEnds.clear();
+                humanEndsDataset = state.datasetRevision();
+            }
+            return humanRunLocked(request);
+        }
     }
 
     private LoopbackHttpServer.Response humanRunLocked(LoopbackHttpServer.Request request) throws IOException {
@@ -869,7 +883,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         java.util.Objects.equals(active.accountId(), accountId.isBlank() ? null : accountId))) {
                     throw new IllegalStateException("이 계정은 이미 HUMAN 수집 중입니다.");
                 }
-                if (state.contexts().current(Source.HUMAN, runId) != null) {
+                if (state.contexts().current(Source.HUMAN, runId) != null || humanEnds.containsKey(runId)) {
                     throw new IllegalArgumentException("이미 사용 중인 HUMAN runId입니다.");
                 }
                 if (!accountId.isBlank()) {
@@ -900,6 +914,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 }
             } else if (action.equals("pause") || action.equals("resume")) {
                 String runId = validatedRunId(required(form, "runId"));
+                if (humanEnds.containsKey(runId)) {
+                    throw new IllegalStateException("수집이 종료되었습니다. 분석이 끝난 뒤 새로 시작하세요.");
+                }
                 if (action.equals("resume") && !state.humanBrowserAlive(runId)) {
                     throw new IllegalStateException("종료 중인 수집은 다시 시작할 수 없습니다. 정리가 끝난 뒤 시작하세요.");
                 }
@@ -907,18 +924,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             } else if (action.equals("end")) {
                 String runId = validatedRunId(required(form, "runId"));
                 RunContextRegistry.Context active = state.contexts().current(Source.HUMAN, runId);
-                state.contexts().pauseHuman(runId, true);
-                Pipeline.Result snapshot = state.completionSnapshot();
-                String handle = humanCaptureHandle(active);
-                try { state.humanRunStopped(runId); }
-                finally { if (handle != null) state.sessions().endCapture(handle); }
-                // A pass ended before any trusted response Evidence is aborted (not completed) instead of
-                // staying stuck on an error; completion still requires Evidence.
-                if (LaneCompletionPolicy.evaluate(Source.HUMAN, runId, snapshot).eligible()) {
-                    LaneCompletionPolicy.complete(state.contexts(), Source.HUMAN, runId, snapshot);
-                } else if (!state.contexts().abort(Source.HUMAN, runId)) {
-                    throw new IllegalArgumentException("run_id가 활성 exploration run과 일치하지 않습니다.");
+                if (active == null && !humanEnds.containsKey(runId)) {
+                    throw new IllegalArgumentException("수집 상태가 변경되었습니다. 상태를 확인한 뒤 다시 시도하세요.");
                 }
+                if (active != null && !humanEnds.containsKey(runId)) finishHumanRun(active);
             } else {
                 throw new IllegalArgumentException("action은 begin, pause, resume 또는 end여야 합니다.");
             }
@@ -928,14 +937,60 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
     }
 
+    /** Cut off capture and close the browser before scheduling the final analysis. */
+    private void finishHumanRun(RunContextRegistry.Context active) {
+        String runId = active.runId();
+        String handle;
+        long dataset = humanEndsDataset;
+        synchronized (state.contexts()) {
+            if (state.contexts().current(Source.HUMAN, runId) != active) return;
+            state.contexts().pauseHuman(runId, true);
+            handle = humanCaptureHandle(active);
+        }
+        try { state.humanRunStopped(runId); }
+        finally { if (handle != null) state.sessions().endCapture(handle); }
+        if (dataset != state.datasetRevision() || state.contexts().current(Source.HUMAN, runId) != active) return;
+        humanEnds.put(runId, new HumanEnd(active, true, ""));
+        try {
+            state.humanCompletionSnapshot(runId).whenComplete((snapshot, failure) ->
+                    finishHumanAnalysis(active, dataset, snapshot, failure));
+        } catch (RuntimeException failure) {
+            finishHumanAnalysis(active, dataset, null, failure);
+        }
+    }
+
+    private void finishHumanAnalysis(RunContextRegistry.Context active, long dataset,
+                                     Pipeline.Result snapshot, Throwable failure) {
+        synchronized (humanRunLock) {
+            synchronized (state.contexts()) {
+                if (closed || dataset != state.datasetRevision()
+                        || state.contexts().current(Source.HUMAN, active.runId()) != active) return;
+                String message = "";
+                try {
+                    if (failure != null) throw new CompletionException(failure);
+                    if (LaneCompletionPolicy.evaluate(Source.HUMAN, active.runId(), snapshot).eligible()) {
+                        LaneCompletionPolicy.complete(state.contexts(), Source.HUMAN, active.runId(), snapshot);
+                    } else state.contexts().abort(Source.HUMAN, active.runId());
+                } catch (RuntimeException error) {
+                    state.contexts().abort(Source.HUMAN, active.runId());
+                    message = "수집은 종료됐지만 기록 분석을 완료하지 못했습니다. 기존 기록을 확인해 주세요.";
+                }
+                humanEnds.put(active.runId(), new HumanEnd(active, false, message));
+            }
+            // Keep recent ends for duplicate clicks without growing a process-lifetime history.
+            while (humanEnds.size() > 256) {
+                String oldest = humanEnds.entrySet().stream().filter(entry -> !entry.getValue().analyzing())
+                        .map(Map.Entry::getKey).findFirst().orElse(null);
+                if (oldest == null) break;
+                humanEnds.remove(oldest);
+            }
+        }
+    }
+
     private LoopbackHttpServer.Response humanRunState() throws IOException {
         for (RunContextRegistry.Context active : state.contexts().activeHumanRuns()) {
-            if (!state.humanBrowserAlive(active.runId())) {
-                state.contexts().pauseHuman(active.runId(), true);
-                String handle = humanCaptureHandle(active);
-                try { state.humanRunStopped(active.runId()); }
-                finally { if (handle != null) state.sessions().endCapture(handle); }
-                state.contexts().abort(Source.HUMAN, active.runId());
+            if (!humanEnds.containsKey(active.runId()) && !state.humanBrowserAlive(active.runId())) {
+                finishHumanRun(active);
             }
         }
         List<RunContextRegistry.Context> runs = state.contexts().activeHumanRuns();
@@ -944,6 +999,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("completed", state.contexts().completedExplorations().contains(Source.HUMAN));
         var list = body.putArray("runs");
         runs.forEach(context -> list.add(humanRunJson(context)));
+        var ends = body.putArray("endedRuns");
+        humanEnds.values().forEach(end -> ends.addObject()
+                .put("runId", end.context().runId())
+                .put("accountId", end.context().accountId() == null ? "" : end.context().accountId())
+                .put("analyzing", end.analyzing()).put("message", end.message()));
         return json(200, body);
     }
 
@@ -952,6 +1012,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("runId", context == null ? "" : context.runId());
         body.put("accountId", context == null || context.accountId() == null ? "" : context.accountId());
         body.put("paused", context != null && state.contexts().humanPaused(context.runId()));
+        body.put("analyzing", context != null && humanEnds.containsKey(context.runId())
+                && humanEnds.get(context.runId()).analyzing());
         int port = context == null ? -1 : state.humanListenerPort(context.runId());
         body.put("proxy", port > 0 ? "http://127.0.0.1:" + port : "실제 리스너 감지 대기");
         body.put("listenerPort", port);
@@ -1234,14 +1296,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String id = required(form, "id");
             // removeAccount also drops this account's session bindings; records fall back to unresolved identities.
             if (state.config().account(id).isEmpty()) throw new IllegalArgumentException("존재하지 않는 계정입니다.");
-            synchronized (state.contexts()) {
+            synchronized (humanRunLock) {
                 for (var active : state.contexts().activeHumanRuns()) {
                     if (id.equals(active.accountId())) {
                         state.contexts().pauseHuman(active.runId(), true);
-                        state.humanRunStopped(active.runId());
+                        if (!humanEnds.containsKey(active.runId())) state.humanRunStopped(active.runId());
                         state.contexts().abort(Source.HUMAN, active.runId());
                     }
                 }
+                humanEnds.values().removeIf(end -> id.equals(end.context().accountId()));
             }
             if (state.sessions() != null) state.sessions().viewForAccount(id)
                     .ifPresent(view -> state.sessions().revoke(view.handle()));
@@ -1812,5 +1875,5 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return HexFormat.of().formatHex(bytes);
     }
 
-    @Override public void close() { server.close(); }
+    @Override public void close() { closed = true; server.close(); }
 }

@@ -18,6 +18,7 @@ final class HumanBrowserSessions implements AutoCloseable {
     private final HumanProxyListeners listeners;
     private final Launcher launcher;
     private final Map<String, Session> sessions = new LinkedHashMap<>();
+    private final Map<String, Integer> accountPorts = new LinkedHashMap<>();
 
     HumanBrowserSessions(HumanProxyListeners listeners, Launcher launcher) {
         this.listeners = listeners;
@@ -25,7 +26,9 @@ final class HumanBrowserSessions implements AutoCloseable {
     }
 
     synchronized void start(RunContextRegistry.Context context, URI target) throws IOException {
-        int port = listeners.open();
+        String account = context.accountId() == null ? "" : context.accountId();
+        int port = listeners.open(accountPorts.getOrDefault(account, -1));
+        accountPorts.put(account, port);
         sessions.put(context.runId(), new Session(context, port, null, false));
         try {
             var window = launcher.open(target, port);
@@ -42,7 +45,7 @@ final class HumanBrowserSessions implements AutoCloseable {
         return sessions.values().stream().filter(session -> session.port() == port && !session.stopping())
                 .map(Session::context).findFirst().orElse(null);
     }
-    synchronized boolean ownsPort(int port) { return listeners.owns(port); }
+    boolean ownsPort(int port) { return listeners.owns(port); }
     synchronized boolean contains(String runId) { return sessions.containsKey(runId); }
     synchronized int port(String runId) {
         Session session = sessions.get(runId);
@@ -52,10 +55,15 @@ final class HumanBrowserSessions implements AutoCloseable {
         Session session = sessions.get(runId);
         return session != null && !session.stopping() && session.window() != null && session.window().alive();
     }
-    synchronized void stop(String runId) {
-        Session session = sessions.get(runId);
-        if (session == null) return;
-        sessions.put(runId, new Session(session.context(), session.port(), session.window(), true));
+    void stop(String runId) {
+        Session session;
+        Session stopping;
+        synchronized (this) {
+            session = sessions.get(runId);
+            if (session == null) return;
+            stopping = new Session(session.context(), session.port(), session.window(), true);
+            sessions.put(runId, stopping);
+        }
         RuntimeException failure = null;
         try { if (session.window() != null) session.window().close(); }
         catch (RuntimeException error) { failure = error; }
@@ -65,7 +73,7 @@ final class HumanBrowserSessions implements AutoCloseable {
             else failure.addSuppressed(error);
         }
         if (failure != null) throw failure;
-        sessions.remove(runId);
+        synchronized (this) { sessions.remove(runId, stopping); }
     }
     @Override public synchronized void close() {
         for (String runId : Set.copyOf(sessions.keySet())) {
@@ -73,5 +81,6 @@ final class HumanBrowserSessions implements AutoCloseable {
             catch (RuntimeException ignored) { /* Continue disposing every browser; retry listeners below. */ }
         }
         listeners.close();
+        accountPorts.clear();
     }
 }
