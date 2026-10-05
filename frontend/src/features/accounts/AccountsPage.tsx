@@ -49,16 +49,11 @@ export function AccountsPage() {
   if (snapshot.isLoading) return unavailableWorkspace(<section className="p-3" aria-label="계정·세션 콘텐츠">불러오는 중…</section>)
   if (snapshot.isError) return unavailableWorkspace(<Alert className="m-3" variant="destructive" aria-label={errorMessage(snapshot.error) ?? "계정·세션을 불러오지 못했습니다."}><AlertDescription>{errorMessage(snapshot.error) ?? "계정·세션을 불러오지 못했습니다."}</AlertDescription></Alert>)
 
-  const totals = accountObservations(snapshot.data?.events ?? [], accounts.map((account) => account.id))
+  const cardAccounts = [{ id: "anon", label: "비로그인", role: "Anonymous", target: scanner.data?.scope?.[0] ?? "" }, ...accounts]
+  const events = snapshot.data?.events ?? []
+  const totals = accountObservations(events, cardAccounts.map((account) => account.id))
+  const zapTotals = accountObservations(events.filter((event) => event.sourceDetail !== "AUTHORIZATION_REPLAY" && event.phase !== "AUTHORIZATION_REPLAY"), cardAccounts.map((account) => account.id))
   const activeRuns = human.data?.runs ?? (human.data?.active ? [human.data] : [])
-  const anonymousRun = activeRuns.find((run) => !run.accountId)
-  const collectAs = async (accountId: string) => {
-    if (!activeRuns.some((run) => run.accountId === accountId)) {
-      try { await login.mutateAsync({ action: "begin", account: accountId }); return }
-      catch { return }
-    }
-    viewRecords()
-  }
   const viewRecords = () => {
     try { sessionStorage.setItem(INSPECTION_RECORD_HANDOFF, "records") } catch { /* 저장소가 막히면 계정 미리 선택만 생략한다. */ }
     window.location.hash = "#inspection"
@@ -67,36 +62,40 @@ export function AccountsPage() {
   return <ReferenceAnalysisWorkspace ariaLabel="계정·세션 작업 영역" context={null} inspector={null}><section className="space-y-5 p-3" aria-labelledby="accounts-title">
     <div className="flex flex-wrap items-end justify-between gap-3"><div><div className="flex items-center gap-2"><h1 id="accounts-title" className="text-2xl font-semibold">계정·세션</h1><InfoHint label="트래픽 수집">시작을 누르면 별도 브라우저가 열려요. 그 창에서 로그인하고 사용하세요. 일시 정지는 기록만 멈추고, 종료는 브라우저를 닫아요. 기존 기록은 유지돼요.</InfoHint></div><p className="mt-1 text-sm text-muted-foreground">테스트 계정을 등록하세요.</p></div><Button className="bg-brand text-brand-foreground hover:bg-brand/90" onClick={() => setRegistrationOpen(true)}><Plus aria-hidden="true" />계정 등록</Button></div>
     <AnonymousAutoVerification />
-    <div className="flex flex-wrap items-center gap-2"><Button variant="outline" disabled={login.isPending || human.isPending || human.isError} onClick={() => void collectAs("")}>{anonymousRun ? "비로그인 수집 보기" : "비로그인으로 수집"}</Button>{anonymousRun && <Button variant="outline" disabled={login.isPending} aria-label="비로그인 수집 종료" onClick={() => login.mutate({ action: "end", runId: anonymousRun.runId })}>종료</Button>}</div>
     {login.isError && <Alert variant="destructive"><AlertDescription>{errorMessage(login.error) ?? "수집 브라우저를 열지 못했습니다."}</AlertDescription></Alert>}
     {human.isError && <Alert variant="destructive"><AlertDescription>{errorMessage(human.error) ?? "수집 상태를 확인하지 못했습니다."}</AlertDescription></Alert>}
     <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3" aria-label="등록 계정 목록">
-      {accounts.map((account) => {
-        const activeRun = activeRuns.find((run) => run.accountId === account.id)
+      {cardAccounts.map((account) => {
+        const isAnonymous = account.id === "anon"
+        const captureAccountId = isAnonymous ? "" : account.id
+        const activeRun = activeRuns.find((run) => isAnonymous ? !run.accountId : run.accountId === account.id)
         const collecting = activeRun !== undefined
-        const settings = accountSettings[account.id]
+        const settings = isAnonymous ? undefined : accountSettings[account.id]
         const observations = totals.get(account.id)!
         const last = Math.max(...Object.values(observations.last))
         const lastRecorded = last ? clockTime(new Date(last).toISOString()) : "—"
         const lanes: Array<[string, StatusMeta | null, string]> = [
           ["Human", { label: collecting ? activeRun.paused ? "수집 일시 정지" : "수집 중" : "수집 대기", tone: collecting && !activeRun.paused ? "warn" : "idle" }, `${observations.counts.human.toLocaleString("ko-KR")}건`],
-          ["ZAP", settings ? settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : NOT_USED : null, `${observations.counts.scanner.toLocaleString("ko-KR")}건`],
-          ["LLM", settings ? settings.llm.enabled ? EXPLORER_STATUS_META[settings.llm.status] : NOT_USED : null, `${observations.counts.llm.toLocaleString("ko-KR")}건`],
+          ["ZAP", isAnonymous ? NOT_USED : settings ? settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : NOT_USED : null, `${zapTotals.get(account.id)!.counts.scanner.toLocaleString("ko-KR")}건`],
+          ["LLM", isAnonymous ? NOT_USED : settings ? settings.llm.enabled ? EXPLORER_STATUS_META[settings.llm.status] : NOT_USED : null, `${observations.counts.llm.toLocaleString("ko-KR")}건`],
         ]
         return <article key={account.id} aria-label={`${account.label} 계정`} className="flex flex-col rounded-xl border border-border bg-card">
           <header className="flex items-center gap-3 px-4 pt-4 pb-3">
             <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-sm font-semibold">{initials(account.label)}</span>
-            <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><strong className="truncate text-sm">{account.label}</strong><span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">{account.role}</span></div><p className="truncate font-mono text-xs text-muted-foreground">{account.target.replace(/^https?:\/\//, "")}</p></div>
-            <div className="ml-auto flex shrink-0 gap-2">
-              <Button className="h-10" variant="outline" disabled={login.isPending || !activeRun || activeRun.paused} aria-label={`${account.label} 일시 정지`} onClick={() => activeRun && login.mutate({ action: "pause", runId: activeRun.runId })}><Pause aria-hidden="true" />일시 정지</Button>
-              <Button className="h-10" variant="outline" disabled={login.isPending || human.isPending || human.isError} aria-label={`${account.label} ${collecting && !activeRun.paused ? "수집 종료" : "수집 시작"}`} onClick={() => login.mutate(activeRun ? { action: activeRun.paused ? "resume" : "end", runId: activeRun.runId } : { action: "begin", account: account.id })}>{collecting && !activeRun.paused ? <Square aria-hidden="true" /> : <Play aria-hidden="true" />}{login.isPending && login.variables?.action === "begin" && login.variables.account === account.id ? "여는 중…" : collecting && !activeRun.paused ? "종료" : "시작"}</Button>
-            </div>
+            <div className="min-w-0 flex-1"><div className="flex items-center gap-1.5"><strong className="truncate text-sm">{account.label}</strong><span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">{account.role}</span></div><p className="truncate font-mono text-xs text-muted-foreground">{account.target ? account.target.replace(/^https?:\/\//, "").replace(/\/$/, "") : "점검 범위"}</p></div>
+            {!isAnonymous && <Button className="h-10" variant="outline" aria-label={`${account.label} 관리`} onClick={() => setSettingsAccountId(account.id)}>관리</Button>}
           </header>
+          <p className="px-4 pb-3 text-sm text-muted-foreground">{isAnonymous ? "로그인하지 않고 탐색하세요. 로그인 수집은 계정 카드를 사용하세요." : `이 브라우저에서는 ${account.label} 계정으로만 로그인하세요.`}</p>
           <dl aria-label={`${account.label} 연결 상태`} className="grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-t border-border px-4 py-3 text-sm">
             {lanes.map(([lane, meta, value]) => <div key={lane} className="contents"><dt className="text-muted-foreground">{lane}</dt><dd className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", toneDot(meta))} /><span className="truncate">{meta?.label ?? "확인 중"}</span></dd><dd className="text-right tabular-nums text-muted-foreground">{value}</dd></div>)}
           </dl>
           <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-sm"><span className="text-muted-foreground">마지막 기록</span><span className="font-mono tabular-nums">{lastRecorded}</span></div>
-          <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 px-4 pt-1 pb-4"><Button className="h-10" onClick={viewRecords}>수집 보기</Button><Button variant="outline" aria-label={`${account.label} 관리`} onClick={() => setSettingsAccountId(account.id)}>관리</Button></div>
+          <footer className="mt-auto grid grid-cols-[1fr_1.3fr_1fr_1.2fr] gap-2 px-4 pt-1 pb-4">
+            <Button className="h-10 px-2" disabled={login.isPending || human.isPending || human.isError || (collecting && !activeRun.paused)} aria-label={`${account.label} 수집 시작`} onClick={() => login.mutate(activeRun ? { action: "resume", runId: activeRun.runId } : { action: "begin", account: captureAccountId })}><Play aria-hidden="true" />{login.isPending && login.variables?.action === "begin" && login.variables.account === captureAccountId ? "여는 중…" : "시작"}</Button>
+            <Button className="h-10 px-2" variant="outline" disabled={login.isPending || human.isError || !activeRun || activeRun.paused} aria-label={`${account.label} 일시 정지`} onClick={() => activeRun && login.mutate({ action: "pause", runId: activeRun.runId })}><Pause aria-hidden="true" />일시 정지</Button>
+            <Button className="h-10 px-2" variant="outline" disabled={login.isPending || !activeRun} aria-label={`${account.label} 수집 종료`} onClick={() => activeRun && login.mutate({ action: "end", runId: activeRun.runId })}><Square aria-hidden="true" />종료</Button>
+            <Button className="h-10 px-2" variant="outline" onClick={viewRecords}>수집 보기</Button>
+          </footer>
         </article>
       })}
       <button type="button" onClick={() => setRegistrationOpen(true)} className="grid min-h-56 place-items-center rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:border-ring/60 hover:text-foreground"><span className="flex items-center gap-2"><Plus className="size-4" aria-hidden="true" />계정 추가</span></button>

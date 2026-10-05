@@ -80,6 +80,64 @@ describe("account and session management", () => {
     expect(document.body.textContent).not.toContain("never-render-this")
   })
 
+  it("always places the anonymous card first with four footer controls and per-browser instructions", async () => {
+    renderAccounts()
+    const list = await screen.findByLabelText("등록 계정 목록")
+    const cards = within(list).getAllByRole("article")
+    expect(cards.map(card => card.getAttribute("aria-label"))).toEqual(["비로그인 계정", "계정 A 계정", "다른 서비스 계정"])
+    expect(within(cards[0]).getByText(/로그인하지 않고 탐색하세요/)).toBeVisible()
+    expect(within(cards[1]).getByText(/이 브라우저에서는 계정 A 계정으로만 로그인하세요/)).toBeVisible()
+    expect(screen.queryByRole("button", { name: "비로그인으로 수집" })).not.toBeInTheDocument()
+    for (const card of cards) {
+      const footer = card.querySelector("footer")!
+      expect(within(footer).getAllByRole("button").map(button => button.textContent)).toEqual(["시작", "일시 정지", "종료", "수집 보기"])
+    }
+    const anonymous = within(cards[0])
+    expect(anonymous.getByRole("button", { name: "비로그인 수집 시작" })).toBeEnabled()
+    expect(anonymous.getByRole("button", { name: "비로그인 일시 정지" })).toBeDisabled()
+    expect(anonymous.getByRole("button", { name: "비로그인 수집 종료" })).toBeDisabled()
+    expect(anonymous.queryByRole("button", { name: /관리/ })).not.toBeInTheDocument()
+  })
+
+  it("keeps the anonymous card available before any test account is registered", async () => {
+    renderAccounts({}, { ...snapshot(), accounts: [] })
+    const list = await screen.findByLabelText("등록 계정 목록")
+    expect(within(list).getAllByRole("article")).toHaveLength(1)
+    expect(within(list).getByRole("article", { name: "비로그인 계정" })).toBeVisible()
+    expect(screen.getByRole("button", { name: "계정 추가" })).toBeVisible()
+  })
+
+  it("starts, pauses, resumes and ends anonymous capture while leaving the account run and records intact", async () => {
+    const user = userEvent.setup()
+    const data = snapshot()
+    data.events = [{ ...snapshotFixture.events[0], idn: "anon", source: "human", status: 200 },
+      { ...snapshotFixture.events[0], idn: "anon", source: "scanner", status: 401, sourceDetail: "AUTHORIZATION_REPLAY", phase: "AUTHORIZATION_REPLAY" }]
+    const fetchStub = renderAccounts({}, data, [{ runId: "a-run", accountId: "account-a", proxy: "" }])
+    const card = await screen.findByRole("article", { name: "비로그인 계정" })
+    const controls = within(card)
+    await user.click(controls.getByRole("button", { name: "비로그인 수집 시작" }))
+    await waitFor(() => expect(controls.getByRole("button", { name: "비로그인 수집 시작" })).toBeDisabled())
+    await user.click(controls.getByRole("button", { name: "비로그인 일시 정지" }))
+    await waitFor(() => expect(controls.getByRole("button", { name: "비로그인 수집 시작" })).toBeEnabled())
+    expect(controls.getByRole("button", { name: "비로그인 수집 종료" })).toBeEnabled()
+    await user.click(controls.getByRole("button", { name: "비로그인 수집 시작" }))
+    await waitFor(() => expect(controls.getByRole("button", { name: "비로그인 일시 정지" })).toBeEnabled())
+    await user.click(controls.getByRole("button", { name: "비로그인 일시 정지" }))
+    await waitFor(() => expect(controls.getByRole("button", { name: "비로그인 수집 시작" })).toBeEnabled())
+    await user.click(controls.getByRole("button", { name: "비로그인 수집 종료" }))
+    await waitFor(() => expect(controls.getByRole("button", { name: "비로그인 수집 종료" })).toBeDisabled())
+    expect(controls.getByRole("button", { name: "비로그인 수집 시작" })).toBeEnabled()
+    expect(controls.getByRole("button", { name: "비로그인 일시 정지" })).toBeDisabled()
+    expect(controls.getByText("1건")).toBeVisible()
+    expect(controls.getByLabelText("비로그인 연결 상태")).toHaveTextContent(/ZAP\s*사용 안 함\s*0건/)
+    expect(screen.getByRole("button", { name: "계정 A 수집 종료" })).toBeEnabled()
+    expect(within(screen.getByLabelText("등록 계정 목록")).getAllByRole("article")[0]).toBe(card)
+    expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=begin&account=", "action=pause&runId=created-run", "action=resume&runId=created-run", "action=pause&runId=created-run", "action=end&runId=created-run"])
+    await user.click(controls.getByRole("button", { name: "수집 보기" }))
+    expect(window.location.hash).toBe("#inspection")
+    expect(postBodies(fetchStub, "/api/authorization-replay")).toEqual([])
+  })
+
   it("shows stored counts even when LLM is disabled, independent of lane identity and repeatCount", async () => {
     const data = snapshot()
     data.events = [
