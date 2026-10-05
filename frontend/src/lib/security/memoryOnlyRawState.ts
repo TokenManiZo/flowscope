@@ -16,6 +16,7 @@ export interface RequestLabEntry {
   name: string
   request: string
   credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+  accountId: string
   result: RequestLabResult | null
   restored?: boolean
   dirty: boolean
@@ -31,7 +32,7 @@ export interface MemoryOnlyRawState {
   readonly response: string
   jsonViews: { request: { text: string; message: string } | null; response: { text: string; message: string } | null }
   requests: RequestLabEntry[]
-  addRequest(request: string, credentialMode: RequestLabEntry["credentialMode"]): RequestLabEntry | null
+  addRequest(request: string, credentialMode: RequestLabEntry["credentialMode"], accountId?: string): RequestLabEntry | null
   editRequest(entry: RequestLabEntry, request: string): boolean
   replaceResult(entry: RequestLabEntry, result: RequestLabResult | null): boolean
   restoreRequests(entries: (Pick<RequestLabEntry, "id" | "name" | "request" | "credentialMode" | "result" | "dirty">)[], nextId: number, selectedId: number): boolean
@@ -45,7 +46,7 @@ export interface MemoryOnlyRawState {
 export function createMemoryOnlyRawState(initial: { request?: string; response?: string } = {}): MemoryOnlyRawState {
   let sequence = 0
   const scrubResult = (result: RequestLabResult | null) => { if (result) { result.response = ""; result.failure = "" } }
-  const scrubEntry = (entry: RequestLabEntry) => { entry.name = ""; entry.request = ""; scrubResult(entry.result); entry.result = null }
+  const scrubEntry = (entry: RequestLabEntry) => { entry.name = ""; entry.request = ""; entry.accountId = ""; scrubResult(entry.result); entry.result = null }
   // Reserve formatter outputs and one in-flight submitted request conservatively as UTF-16.
   const bytes = () => 6 * REQUEST_LAB_MAX_BYTES + 2 * (state.originalRequest.length + state.originalResponse.length
     + state.requests.reduce((size, entry) => size + entry.request.length + (entry.result?.response.length ?? 0) + (entry.result?.failure?.length ?? 0), 0))
@@ -57,10 +58,10 @@ export function createMemoryOnlyRawState(initial: { request?: string; response?:
     get response() { return state.selectedId === null ? state.originalResponse : state.requests.find(entry => entry.id === state.selectedId)?.result?.response ?? "" },
     jsonViews: { request: null, response: null },
     requests: [],
-    addRequest(request, credentialMode) {
+    addRequest(request, credentialMode, accountId = "") {
       if (state.requests.length >= REQUEST_LAB_MAX_REQUESTS || request.length > REQUEST_LAB_MAX_BYTES || bytes() + 2 * request.length > REQUEST_LAB_WORKSPACE_BYTES) return null
       const id = ++sequence
-      const entry: RequestLabEntry = { id, name: `요청 ${id}`, request, credentialMode, result: null, dirty: false, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }
+      const entry: RequestLabEntry = { id, name: `요청 ${id}`, request, credentialMode, accountId: credentialMode === "ACCOUNT" ? accountId : "", result: null, dirty: false, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }
       state.requests.push(entry)
       return entry
     },
@@ -71,7 +72,7 @@ export function createMemoryOnlyRawState(initial: { request?: string; response?:
         || selectedId !== 0 && !entries.some(entry => entry.id === selectedId)
         || bytes() + 2 * entries.reduce((size, entry) => size + entry.request.length + (entry.result?.response.length ?? 0), 0) > REQUEST_LAB_WORKSPACE_BYTES) return false
       for (const entry of state.requests) scrubEntry(entry)
-      state.requests = entries.map(entry => ({ ...entry, result: entry.result ? { ...entry.result } : null, restored: true, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }))
+      state.requests = entries.map(entry => ({ ...entry, accountId: "", result: entry.result ? { ...entry.result } : null, restored: true, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }))
       state.selectedId = selectedId || null
       sequence = nextId - 1
       return true

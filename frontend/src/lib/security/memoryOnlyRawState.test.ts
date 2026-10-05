@@ -7,6 +7,21 @@ const secret = "RAW-SECRET-REQUEST"
 describe("memoryOnlyRawState", () => {
   afterEach(() => vi.restoreAllMocks())
 
+  it("keeps account choices in independent live tabs and requires reselection after restoring saved requests", () => {
+    const raw = createMemoryOnlyRawState()
+    const first = raw.addRequest("first", "ACCOUNT", "acct-a")!
+    const second = raw.addRequest("second", "ACCOUNT", "acct-b")!
+    expect(first.accountId).toBe("acct-a")
+    expect(second.accountId).toBe("acct-b")
+    expect(raw.addRequest("anonymous", "ANONYMOUS", "acct-a")!.accountId).toBe("")
+    expect(raw.restoreRequests([{ id: 1, name: "saved", request: "masked", credentialMode: "ACCOUNT", result: null, dirty: false }], 2, 1)).toBe(true)
+    expect(raw.requests[0]?.accountId).toBe("")
+    expect(raw.requests[0]?.restored).toBe(true)
+    expect(first.accountId).toBe("")
+    expect(second.accountId).toBe("")
+    raw.clear()
+  })
+
   it("copies independent requests without storage/logging and scrubs originals, entries, results and derived views", () => {
     const storage = vi.spyOn(Storage.prototype, "setItem")
     const log = vi.spyOn(console, "log")

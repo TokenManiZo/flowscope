@@ -5,8 +5,9 @@ import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getRequestLabDraft, openReplay, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
-import type { EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
+import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, REQUEST_LAB_MAX_REQUESTS, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { DATASET_REPLACING, DATASET_WILL_REPLACE } from "@/lib/security/datasetBoundary"
@@ -20,6 +21,7 @@ interface Props {
   open: boolean
   onOpenChange(open: boolean): void
   event: EventRecord
+  accounts: readonly Account[]
   sessions: readonly ManagedSession[]
   datasetRevision?: number
   snapshotRevision?: number
@@ -32,28 +34,16 @@ interface Props {
 
 const MANUAL_ATTEMPTS = ["manual-attempts"] as const
 const EDIT_REJECTED_MESSAGE = "요청이 너무 크거나 메모리가 부족해 편집에 반영하지 않았습니다. 내용을 줄이거나 사용하지 않는 요청을 삭제해 주세요."
-/**
- * 현재 세션 = 지금 수집 중이거나 가장 최근에 트래픽이 기록된 신원의 세션.
- * 원 요청을 보낸 계정과 다를 수 있다(그게 목적). 교차 신원 검증은 이 규칙과 별개다.
- */
-export function currentSessionFor(sessions: readonly ManagedSession[], service: string): ManagedSession | null {
-  const usable = sessions.filter(session => session.service === service
-    && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing && !session.credentialConflict)))
-  const recency = (session: ManagedSession) => Date.parse(session.lastRecordedAt ?? session.lastUsedAt ?? session.createdAt) || 0
-  return usable.reduce<ManagedSession | null>((best, session) => !best || recency(session) > recency(best)
-    || (recency(session) === recency(best) && session.capturing && !best.capturing) ? session : best, null)
-}
-
 export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
   for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]
 }
 
-export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
+export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
   const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
-  const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
+  const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string; sessionHandle?: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
   const [, setVersion] = useState(0)
   const persistence = useRef<RequestLabPersistence | null>(null)
   const [saveStatus, setSaveStatus] = useState<RequestLabSaveStatus | null>(null)
@@ -88,16 +78,21 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   const splitRef = useRef(50)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
 
-  const currentSession = useMemo(() => currentSessionFor(sessions, draft?.service ?? ""), [draft?.service, sessions])
-  const accountId = currentSession?.accountId ?? ""
-  const selectedAccountValid = currentSession !== null
+  const accountOptions = useMemo(() => accounts.map(account => {
+    const session = sessions.find(value => value.accountId === account.id && value.service === draft?.service)
+    const ready = !!session && !session.credentialConflict
+      && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing))
+    return { account, session, ready }
+  }), [accounts, sessions, draft?.service])
   const entry = raw.current.requests.find(item => item.id === view)
+  const accountId = entry?.accountId ?? ""
+  const selectedAccountValid = accountOptions.some(option => option.account.id === accountId && option.ready)
   const mode = entry?.credentialMode ?? "ORIGINAL"
   const editRejected = entry?.editRejected ?? false
   const displayedRequest = raw.current.request
   const displayedResponse = raw.current.response
   const editable = !!entry
-  const credentialsRequired = !!entry && ((entry.restored && mode !== "ANONYMOUS") || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
+  const credentialsRequired = !!entry && (mode === "ORIGINAL" || (entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
   const busy = sending || openingRepeater || applyingCredentials || deleting || closing
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
   const controlClass = "h-7 rounded-md border border-input bg-background px-2 text-[0.8rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
@@ -190,7 +185,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
 
   function addRequest() {
     if (busy || suspended || !(entry || draft?.requestEditable) || editRejected) return
-    const next = raw.current.addRequest(displayedRequest, mode)
+    const next = raw.current.addRequest(displayedRequest, mode, accountId)
     if (!next) { setError(`요청을 더 만들 수 없습니다. 최대 ${REQUEST_LAB_MAX_REQUESTS}개이며, 메모리가 부족하면 사용하지 않는 요청을 삭제해 주세요.`); return }
     next.restored = entry?.restored
     persistence.current?.changed(next, ["name", "request", "credentialMode", "result", "dirty"])
@@ -307,17 +302,17 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
 
   // 세션이 사라지면 진행 중 전송을 끊고 전송을 잠근다. 다른 방식으로 조용히 바꾸지 않는다.
   useEffect(() => {
-    if (mode === "ACCOUNT" && draft && !selectedAccountValid) { invalidateSend(); setSending(false); setOpeningRepeater(false); setApplyingCredentials(false) }
+    if (mode === "ACCOUNT" && draft && !selectedAccountValid && !context.current.preview) { invalidateSend(); setSending(false); setOpeningRepeater(false); setApplyingCredentials(false) }
   }, [draft, mode, selectedAccountValid])
 
   useEffect(() => {
     const preview = context.current.preview
-    if (preview && (suspended || (preview.mode === "ACCOUNT" && preview.accountId !== accountId))) {
+    if (preview && (suspended || (preview.mode === "ACCOUNT" && !accountOptions.some(option => option.account.id === preview.accountId && option.ready && option.session?.handle === preview.sessionHandle)))) {
       invalidateSend()
       setApplyingCredentials(false)
-      setError("현재 세션이 바뀌었습니다. 인증을 다시 선택해 주세요.")
+      setError("선택한 계정의 세션이 바뀌었습니다. 인증을 다시 선택해 주세요.")
     }
-  }, [accountId, suspended])
+  }, [accountOptions, suspended])
 
   useEffect(() => {
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -357,25 +352,27 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     onOpenChange(false)
   }
 
-  async function changeCredentials(nextMode: RequestLabCredentialMode) {
-    if (!draft || !entry || !editable || editRejected || busy || suspended || context.current.preview || (nextMode === mode && !credentialsRequired)) return
-    if (nextMode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+  async function changeCredentials(nextMode: RequestLabCredentialMode, nextAccountId = "") {
+    if (!draft || !entry || !editable || editRejected || busy || suspended || context.current.preview || (nextMode === mode && nextAccountId === accountId && !credentialsRequired)) return
+    const selected = accountOptions.find(option => option.account.id === nextAccountId && option.ready)
+    if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
     if (!raw.current.canSend(entry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
     const controller = new AbortController()
     const generation = ++context.current.generation
     context.current.sendController = controller
-    context.current.preview = { mode: nextMode, accountId }
+    context.current.preview = { mode: nextMode, accountId: nextAccountId, sessionHandle: selected?.session?.handle }
     const submitted = { request: entry.request }
     context.current.submission = submitted
     setApplyingCredentials(true)
     setError("")
     try {
-      const preview = await previewRequestLabCredentials({ eventId: event.eventId, request: submitted.request, credentialMode: nextMode, accountId: nextMode === "ACCOUNT" ? accountId : "", datasetRevision }, controller.signal)
+      const preview = await previewRequestLabCredentials({ eventId: event.eventId, request: submitted.request, credentialMode: nextMode, accountId: nextMode === "ACCOUNT" ? nextAccountId : "", datasetRevision }, controller.signal)
       try {
         if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(entry) || entry.request !== submitted.request) return
         const next = applyRequestLabCredentials(submitted.request, preview.headers)
         if (!raw.current.canSend(next) || !raw.current.editRequest(entry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
         entry.credentialMode = nextMode
+        entry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
         entry.restored = false
         persistence.current?.changed(entry, ["request", "credentialMode", "dirty"])
         setJsonView(current => ({ ...current, request: false }))
@@ -401,7 +398,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   async function send() {
     if (suspended || !draft || !entry || !editable || editRejected || credentialsRequired || busy) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
     const controller = new AbortController()
     const generation = context.current.generation + 1
     context.current.generation = generation
@@ -445,7 +442,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   async function openInRepeater() {
     if (suspended || !draft || !editable || editRejected || credentialsRequired || busy) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
     const generation = context.current.generation
     setOpeningRepeater(true)
     setError("")
@@ -529,7 +526,16 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
-            <label className="flex items-center gap-2">전송 인증<select aria-label="전송 인증" className={`${settingClass} min-w-[180px] max-w-[224px]`} value={credentialsRequired ? "" : mode} disabled={!editable || editRejected || suspended || busy} onChange={event => void changeCredentials(event.target.value as RequestLabCredentialMode)}>{credentialsRequired && <option value="" disabled>인증 다시 선택</option>}<option value="ORIGINAL" disabled={!draft?.requestEditable}>원문 · {draft?.observedIdentity ?? "—"}</option><option value="ANONYMOUS">비로그인</option><option value="ACCOUNT" disabled={!currentSession}>현재 세션 · {currentSession?.accountLabel || "없음"}</option></select></label>
+            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!editable || editRejected || suspended || busy} onValueChange={value => {
+              void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8)) : changeCredentials("ANONYMOUS"))
+            }}>
+              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
+              <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
+                <SelectItem value="ANONYMOUS">비로그인</SelectItem>
+                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 사용 가능한 인증 없음" : ""}</SelectItem>)}
+                {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
+              </SelectContent>
+            </Select></div>
             <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
@@ -571,7 +577,7 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요.</p>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 인증을 사용할 수 없습니다. 계정 또는 인증 방식을 다시 선택해 주세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
           {replayMessage && <p role="status" className="rounded-md border p-2 text-sm">{replayMessage}</p>}
           {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
         </div>

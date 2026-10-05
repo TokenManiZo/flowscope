@@ -29,7 +29,7 @@ const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
   { step: "review", label: "결과 비교" },
 ]
 
-const RELEASES_URL = "https://github.com/choewonwoo1817/testflowscope/releases"
+const RELEASES_URL = "https://github.com/TokenManiZo/flowscope/releases"
 const ZAP_COMMANDS: ReadonlyArray<[string, string]> = [["macOS · Linux", "./scripts/zap-up.sh"], ["Windows", ".\\scripts\\zap-up.ps1"]]
 
 function isAuthorizationReplay(event: EventRecord): boolean {
