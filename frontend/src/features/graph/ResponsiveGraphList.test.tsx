@@ -81,7 +81,7 @@ it("keeps observed-only GET nodes selectable in the compact group list", async (
   expect(select).toHaveBeenCalledWith(expect.objectContaining({ operation: op, evidenceIds: ["observed-1"] }), `observed-operation:${op}`)
 })
 
-it("does not expose excluded support identity as a compact search destination", async () => {
+it("preserves support identity as a search destination", async () => {
   const snapshot = targetSnapshot({ cells: [rawCell], events: [{
     eventId: "poll-b", method: "GET", path: "/api/orders/1", status: 200, fp: "", idn: "USER B", role: "USER", source: "human", op: rawCell.op, resource: null, timestamp: 1,
     sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "POLLING", trafficDisposition: "EXCLUDE", coverageEligible: false,
@@ -89,6 +89,6 @@ it("does not expose excluded support identity as a compact search destination", 
   }] })
   const filters = { ...hierarchyFilters, includeSupportTraffic: true }
   const index = buildGraphSearchIndex(snapshot, filters)
-  expect(index.byKey.has(searchKey("identity", "Target", "USER B"))).toBe(false)
+  expect(index.byKey.has(searchKey("identity", "Target", "USER B"))).toBe(true)
   expect(snapshot.events[0].eventId).toBe("poll-b")
 })

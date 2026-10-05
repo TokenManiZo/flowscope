@@ -246,7 +246,7 @@ describe("API hierarchy", () => {
       event(), event({ eventId: "review-api", clusterEvidenceIds: ["review-api"], trafficClass: "API", trafficDisposition: "REVIEW" }),
       event({ eventId: "elsewhere", clusterEvidenceIds: ["elsewhere"], op: `${service} GET /api/users/poll` }),
       event({ eventId: "unverified", clusterEvidenceIds: ["unverified"], op: `${service} GET /api/orders/include`, trafficDisposition: "INCLUDE", source: "llm" }),
-      event({ eventId: "judged", clusterEvidenceIds: ["judged"], op: get, trafficClass: "NAVIGATION" }),
+      event({ eventId: "h-101", clusterEvidenceIds: ["h-101"], op: get, trafficClass: "NAVIGATION" }),
       event({ eventId: "style", clusterEvidenceIds: ["style"], op: `${service} GET /api/orders/app.css`, path: "/api/orders/app.css?v=2", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW" }),
       event({ eventId: "preflight", clusterEvidenceIds: ["preflight"], op: `${service} OPTIONS /api/orders/preflight`, trafficClass: "PREFLIGHT" }),
     ] }
@@ -397,4 +397,39 @@ describe("API hierarchy", () => {
     expect(open.nodes.some(node => node.hiddenInGraph)).toBe(false)
     expect(open.edges.some(edge => edge.targetId === `operation:${one}`)).toBe(true)
   })
+})
+
+
+it.each(["UNKNOWN", "POLLING"])("keeps B evidence neutral on A's existing API in group and API detail (%s)", trafficClass => {
+  const bob = event({ eventId: "bob-1", clusterEvidenceIds: ["bob-1", "bob-2"], idn: "USER B", op: get, trafficClass, trafficDisposition: "REVIEW" })
+  const snapshot = targetSnapshot({ cells: [cell()], events: [bob,
+    event({ eventId: "h-101", clusterEvidenceIds: ["h-101"], op: get, trafficClass: "UNKNOWN" }),
+    ...["USER_EXCLUDE", "NO_RESPONSE"].map(reason => event({ eventId: reason, clusterEvidenceIds: [reason], idn: "USER B", op: get, classificationReasons: [reason] })),
+  ] })
+  const before = JSON.stringify(snapshot)
+  const enabled = unfold({ ...filters, includeSupportTraffic: true })
+  for (const navigation of [groupNav(), operationNav()]) {
+    const graph = projectHierarchy(snapshot, enabled, navigation)
+    const api = graph.nodes.find(node => node.id === `operation:${get}`)!
+    expect(api.selection.evidenceIds).toEqual(["bob-1", "bob-2", "h-101"])
+    expect(api.selection.cells).toEqual(snapshot.cells)
+    expect(api.verdict).toBe("allow")
+    expect(graph.nodes.some(node => node.kind === "observed-operation")).toBe(false)
+    expect(graph.identities.find(node => node.selection.identity === "USER B")?.verdict).toBe("unknown")
+    expect(graph.edges.filter(edge => edge.relation === "support")).toEqual([expect.objectContaining({ targetId: api.id, selection: expect.objectContaining({ identity: "USER B", evidenceIds: ["bob-1", "bob-2"], cells: [], cellKeys: [], gapIds: [] }) })])
+    expect(graph.groups[0]).toMatchObject({ endpointCount: 1, observedCount: 0, sourceCounts: { human: 1, scanner: 0, llm: 0 } })
+  }
+  expect(JSON.stringify(snapshot)).toBe(before)
+})
+
+it("retains neutral evidence and identity when API shape cards are folded", () => {
+  const first = `${service} POST /api/orders/101`, second = `${service} POST /api/orders/102`
+  const snapshot = targetSnapshot({ cells: [cell({ op: first }), cell({ op: second })], events: [
+    event({ eventId: "bob-101", clusterEvidenceIds: ["bob-101"], idn: "USER B", op: first }),
+    event({ eventId: "bob-102", clusterEvidenceIds: ["bob-102"], idn: "USER B", op: second }),
+  ] })
+  const graph = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
+  const shape = graph.nodes.find(node => node.kind === "operation-group")!
+  expect(shape.selection.evidenceIds).toEqual(["bob-101", "bob-102", "h-101"])
+  expect(graph.edges.find(edge => edge.relation === "support")).toMatchObject({ targetId: shape.id, count: 2, selection: { identity: "USER B", evidenceIds: ["bob-101", "bob-102"], cells: [], cellKeys: [] } })
 })

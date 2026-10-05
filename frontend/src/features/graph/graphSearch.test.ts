@@ -154,7 +154,7 @@ it("indexes only graph-eligible records and keeps one searchable card per operat
   const snapshot = targetSnapshot({ cells: [cell()], events: [captured(), captured({ eventId: "poll", trafficClass: "POLLING" }), captured({ eventId: "hidden", op: `${service} GET /api/orders/hidden`, classificationOverride: true, classificationReasons: ["USER_EXCLUDE"], trafficDisposition: "EXCLUDE" }), captured({ eventId: "asset", op: `${service} GET /api/orders/app.js`, trafficClass: "STATIC_ASSET" }), captured({ eventId: "replay", op: `${service} POST /api/orders/replay`, phase: "VALIDATION" })] })
   const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
   expect(index.entries.filter(entry => ["operation", "observed-operation", "support-operation"].includes(entry.kind))).toEqual([expect.objectContaining({ kind: "operation", value: operation })])
-  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(false)
+  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(true)
 })
 
 it("searches enabled support cards outside the page limit and skips disabled support", () => {
@@ -180,11 +180,18 @@ it("indexes and reveals enabled route candidates with their existing IDs", () =>
   expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.routeCandidate?.pathTemplate).toBe(routes[18].pathTemplate)
 })
 
-it("excludes other-account observations of a judged API from graph search", () => {
+it("preserves other-account observations of a judged API in graph search", () => {
   const event = captured({ eventId: "poll-b", trafficClass: "POLLING", trafficDisposition: "EXCLUDE" })
   const snapshot = targetSnapshot({ cells: [cell()], events: [event] })
   const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
-  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(false)
+  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(true)
+  const entry = index.byKey.get(searchKey("identity", service, "USER B"))!
+  const enabled = { ...filters, includeSupportTraffic: true }
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), false)
+  const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
+  expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.evidenceIds).toEqual(["poll-b"])
+  expect(graph.nodes.filter(node => node.selection.operation === operation && ["operation", "observed-operation"].includes(node.kind))).toHaveLength(1)
+  expect(graph.edges.find(edge => edge.selection.identity === "USER B")?.selection.cells).toEqual([])
   expect(snapshot.events).toContain(event)
 })
 

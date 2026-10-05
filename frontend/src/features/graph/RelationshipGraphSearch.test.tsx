@@ -122,7 +122,7 @@ it("refreshes event-only search results and selects an observed API outside the 
   await waitFor(() => expect(screen.queryByTestId("search-detail")).not.toBeInTheDocument())
 })
 
-it("keeps judged selection updated without adding excluded other-account evidence", async () => {
+it("keeps judged and other-account evidence updated on the same API card", async () => {
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed({ op: cells[0].op })] })
   const view = render(<RelationshipGraphView />)
   await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
@@ -134,7 +134,7 @@ it("keeps judged selection updated without adding excluded other-account evidenc
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells: cells.map(cell => ({ ...cell, evidenceIds: [...cell.evidenceIds, "new-judged"] })), events: [observed({ op: cells[0].op })] })
   view.rerender(<RelationshipGraphView />)
   await waitFor(() => expect(screen.getByTestId("search-detail").dataset.evidence).toContain("new-judged"))
-  expect(screen.getByTestId("search-detail").dataset.evidence).not.toContain("observed")
+  expect(screen.getByTestId("search-detail").dataset.evidence).toContain("observed")
 })
 
 it("reveals and highlights observed search cards in the compact list", async () => {

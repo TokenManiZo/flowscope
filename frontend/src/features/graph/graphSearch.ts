@@ -22,7 +22,7 @@ export const searchKey = (kind: SearchKind, service: string, value: string) => J
 const compare = (left: string, right: string) => left.localeCompare(right, "en")
 /** 제한·접힘 전 그래프 데이터에서 식별자와 이동 문맥만 보관한다. */
 export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters): GraphSearchIndex {
-  const { cells, observedEvents, routeCandidates, resolveGroup } = graphContents(snapshot, filters)
+  const { cells, observedEvents, attachedEvents, routeCandidates, resolveGroup } = graphContents(snapshot, filters)
   const entries = new Map<string, Omit<GraphSearchEntry, "contexts" | "name" | "text"> & { contexts: Map<string, SearchContext> }>()
   const shapes = new Map<string, { service: string; shape: string; operations: Set<string> }>()
   const add = (kind: SearchKind, service: string, value: string, title: string, context: SearchContext) => {
@@ -50,7 +50,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
   }
   const operationKinds = new Map<string, SearchKind>(cells.map(cell => [cell.op, "operation"]))
   for (const event of observedEvents) if (!operationKinds.has(event.op)) operationKinds.set(event.op, "observed-operation")
-  for (const event of observedEvents) {
+  for (const event of [...observedEvents, ...attachedEvents]) {
     const group = operationGroup(event.op, resolveGroup), kind = operationKinds.get(event.op)!
     const context = { groupId: group.id, groupLabel: group.label, operation: event.op, nodeKind: kind }
     add("target", group.service, group.service, group.service, context)
