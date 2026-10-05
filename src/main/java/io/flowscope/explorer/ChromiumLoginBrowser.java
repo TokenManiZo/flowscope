@@ -336,6 +336,15 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             return thread;
         });
         private Consumer<Exchange> recorder = exchange -> { };
+        private Consumer<JsonNode> targetObserver = message -> { };
+        private boolean attachPages = true;
+
+        /** HUMAN uses only target lifetime events; no page attachment, raw traffic or auth headers. */
+        void watchTargets(Consumer<JsonNode> observer) throws IOException {
+            targetObserver = observer;
+            attachPages = false;
+            call("Target.setDiscoverTargets", JSON.createObjectNode().put("discover", true));
+        }
         private WebSocket socket;
 
         /** Event handling without a socket, so the recording rules can be tested against raw CDP frames. */
@@ -420,11 +429,12 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         private void onEvent(JsonNode message) {
             String method = message.path("method").asText("");
             JsonNode params = message.path("params");
+            if (method.startsWith("Target.")) targetObserver.accept(message);
             switch (method) {
                 case "Target.targetCreated", "Target.targetInfoChanged" -> {
                     JsonNode info = params.path("targetInfo");
                     String targetId = info.path("targetId").asText("");
-                    if ("page".equals(info.path("type").asText()) && attached.add(targetId)) {
+                    if (attachPages && "page".equals(info.path("type").asText()) && attached.add(targetId)) {
                         fireAndForget(null, "Target.attachToTarget",
                                 JSON.createObjectNode().put("targetId", targetId).put("flatten", true));
                     }

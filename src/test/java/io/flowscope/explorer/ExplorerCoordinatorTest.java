@@ -15,6 +15,49 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerCoordinatorTest {
     @Test
+    void humanAccountsDoNotBlockExplorerAndRemainActiveAfterCancellation() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        for (String account : List.of("A", "B")) {
+            contexts.activateHuman(new RunContextRegistry.Context(io.flowscope.core.SourceDetail.BROWSER,
+                    io.flowscope.core.Orchestrator.HUMAN, io.flowscope.core.ToolKind.BROWSER,
+                    RunPhase.EXPLORATION, "human-" + account, account));
+        }
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("gateway transport should not be called"); }, provider,
+                contexts, value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true));
+            await(() -> provider.request.get() != null);
+            assertNotNull(contexts.current(Source.LLM));
+            contexts.activateHuman(new RunContextRegistry.Context(io.flowscope.core.SourceDetail.BROWSER,
+                    io.flowscope.core.Orchestrator.HUMAN, io.flowscope.core.ToolKind.BROWSER,
+                    RunPhase.EXPLORATION, "human-anon", null));
+            coordinator.cancel();
+            assertNull(contexts.current(Source.LLM));
+            assertEquals(3, contexts.activeHumanRuns().size());
+        }
+    }
+
+    @Test
+    void scannerBlocksExplorerBeforeTheProviderStarts() {
+        FakeProvider provider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        contexts.activate(Source.SCANNER, new RunContextRegistry.Context(io.flowscope.core.SourceDetail.ZAP_CLIENT_SPIDER,
+                io.flowscope.core.Orchestrator.SYSTEM, io.flowscope.core.ToolKind.ZAP, RunPhase.EXPLORATION, "scanner"));
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("gateway transport should not be called"); }, provider,
+                contexts, value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            assertThrows(IllegalStateException.class, () -> coordinator.start(
+                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true)));
+            assertNull(provider.request.get());
+            assertNull(contexts.current(Source.LLM));
+            assertEquals("scanner", contexts.current(Source.SCANNER).runId());
+        }
+    }
+
+    @Test
     void selectedModelIsValidatedBeforeTheRunAndPreservedInRunStatus() throws Exception {
         FakeProvider provider = new FakeProvider();
         RunContextRegistry contexts = new RunContextRegistry();
