@@ -242,7 +242,7 @@ describe("API hierarchy", () => {
     const snapshot = { ...data(), events: [event(), event({ eventId: "review-api", trafficClass: "API", trafficDisposition: "REVIEW" }), event({ eventId: "elsewhere", op: `${service} GET /api/users/poll` }), event({ eventId: "included", op: `${service} GET /api/orders/include`, trafficDisposition: "INCLUDE" })] }
     expect(projectHierarchy(snapshot, filters, groupNav()).nodes.some(node => node.kind === "support-operation")).toBe(false)
     const group = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
-    expect(group.nodes.filter(node => node.kind === "support-operation").map(node => node.selection.operation)).toEqual([`${service} GET /api/orders/poll`])
+    expect(group.nodes.filter(node => node.selection.operation === `${service} GET /api/orders/poll`)).toEqual([expect.objectContaining({ kind: "observed-operation" })])
     expect(group.edges.filter(edge => edge.relation === "support")).toEqual([expect.objectContaining({ source: "human", selection: expect.objectContaining({ evidenceIds: ["support-1"], cellKeys: [] }) })])
     expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 } })
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "support-operation")).toBe(false)
@@ -319,6 +319,39 @@ describe("API hierarchy", () => {
     expect(edge.targetId).toBe(`operation-group:${service} GET /api/orders/{id}`)
     expect(edge.selection.evidenceIds).toContain("bob")
     expect(edge.selection.cells).toEqual([])
+  })
+
+  it("uses one operation card for observed and support records while retaining both categories", () => {
+    const observed = event({ eventId: "navigation", op: get, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE" })
+    const polling = event({ eventId: "polling", op: get, trafficClass: "POLLING", trafficDisposition: "EXCLUDE" })
+    const snapshot = targetSnapshot({ events: [observed, polling] })
+    const graph = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
+    const operations = graph.nodes.filter(node => node.selection.operation === get && ["operation", "observed-operation", "support-operation"].includes(node.kind))
+    expect(operations).toHaveLength(1)
+    expect(operations[0].selection.evidenceIds).toEqual(["navigation", "polling"])
+    expect(graph.edges.map(edge => [edge.relation, edge.targetId, edge.selection.evidenceIds])).toEqual([
+      ["observed", operations[0].id, ["navigation"]], ["support", operations[0].id, ["polling"]],
+    ])
+    const withoutSupport = projectHierarchy(snapshot, filters, groupNav())
+    expect(withoutSupport.nodes.find(node => node.kind === "observed-operation")?.selection.evidenceIds).toEqual(["navigation"])
+    expect(withoutSupport.edges.some(edge => edge.relation === "support")).toBe(false)
+  })
+
+  it("retains support evidence on an existing judged API and through its folded group", () => {
+    const one = `${service} GET /api/orders/101`, two = `${service} GET /api/orders/202`
+    const snapshot = targetSnapshot({ cells: [cell({ op: one, resource: null }), cell({ op: two, resource: null })], events: [event({ eventId: "poll", op: one })] })
+    const graph = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
+    expect(graph.nodes.some(node => node.kind === "support-operation")).toBe(false)
+    const edge = graph.edges.find(edge => edge.relation === "support")!
+    expect(edge.targetId).toBe(`operation-group:${service} GET /api/orders/{id}`)
+    expect(edge.selection.evidenceIds).toEqual(["poll"])
+    expect(edge.selection.cells).toEqual([])
+  })
+
+  it("does not restore user-excluded records through the support toggle", () => {
+    const hidden = event({ classificationOverride: true, classificationReasons: ["USER_EXCLUDE"] })
+    const graph = projectHierarchy({ ...data(), events: [hidden] }, { ...filters, includeSupportTraffic: true }, groupNav())
+    expect(graph.edges.some(edge => edge.relation === "support")).toBe(false)
   })
 
   it("never mutates the input snapshot, filters, or navigation", () => {

@@ -114,6 +114,7 @@ const observedSources = (cell: Cell) => (Object.keys(cell.perSource) as Source[]
 const isPartial = (cell: Cell) => cell.missedSources.length > 0
 const emptySelection = (): HierarchySelection => ({ ...graphCellSelection([]), gapIds: [] })
 const nonFunctionTraffic = new Set(["STATIC_ASSET", "DISCOVERY_METADATA", "PREFLIGHT", "POLLING", "BACKGROUND", "TELEMETRY_CANDIDATE", "AUTH_SESSION"])
+const explicitlyExcluded = (event: EventRecord) => event.classificationReasons.includes("USER_EXCLUDE") || event.classificationOverride && event.trafficDisposition === "EXCLUDE"
 const nonDiscoveryPhases = new Set(["VALIDATION", "COACH_PROBE", "SESSION_SETUP", "AUTHORIZATION_REPLAY"])
 
 /** 실제 응답을 받은 요청만 중립 노드 후보로 둔다. 분류·상태 코드는 존재/권한 판정이 아니다. */
@@ -121,8 +122,7 @@ function observedFunction(event: EventRecord): boolean {
   return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME"
     && event.status >= 100 && event.status <= 599
     && !event.classificationReasons.includes("NO_RESPONSE")
-    && !event.classificationReasons.includes("USER_EXCLUDE")
-    && !(event.classificationOverride && event.trafficDisposition === "EXCLUDE")
+    && !explicitlyExcluded(event)
     && !nonFunctionTraffic.has(event.trafficClass)
     && !nonDiscoveryPhases.has(event.phase)
 }
@@ -372,23 +372,28 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     hiddenObjectCount = objects.hidden
     hiddenOperationCount = operations.length - visible.length + observedOps.length - visibleObserved.length
-    groupOperations(visible, related)
     routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {
       const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-      const supportEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !observedFunction(event) && operationGroup(event.op).id === group.id)
-      const supportOps = [...new Set(supportEvents.map(event => event.op).filter(op => !visible.includes(op)))].slice(0, resolved.operationLimit)
-      const supportEvidence = (event: Snapshot["events"][number]) => event.clusterEvidenceIds?.length ? event.clusterEvidenceIds : [event.eventId]
+      const supportEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !explicitlyExcluded(event) && !observedFunction(event) && operationGroup(event.op).id === group.id)
+      const shown = [...visible, ...visibleObserved]
+      const supportOnly = [...new Set(supportEvents.map(event => event.op))].filter(op => !group.operations.includes(op) && !observedOps.includes(op)).slice(0, resolved.operationLimit)
+      const supportOps = [...new Set([...shown.filter(op => supportEvents.some(event => event.op === op)), ...supportOnly])]
       for (const op of supportOps) {
         const events = supportEvents.filter(event => event.op === op)
-        addNode("support-operation", op, { ...emptySelection(), operation: op, evidenceIds: [...new Set(events.flatMap(supportEvidence))].sort(compareText) })
-      }
-      for (const event of supportEvents.filter(event => supportOps.includes(event.op))) {
-        addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
-        addEdge("support", `identity:${event.idn}`, `support-operation:${event.op}`, { ...emptySelection(), identity: event.idn, operation: event.op, source: event.source, evidenceIds: supportEvidence(event) }, 0, event.eventId)
+        const existing = nodes.find(node => ["operation", "observed-operation"].includes(node.kind) && node.selection.operation === op)
+        const node = existing ?? addNode("support-operation", op, { ...emptySelection(), operation: op })
+        node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText) }
+        if (!existing) listItems.push(node)
+        for (const event of events) {
+          const identity = addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
+          identity.selection = { ...identity.selection, evidenceIds: [...new Set([...identity.selection.evidenceIds, ...eventEvidenceIds(event)])].sort(compareText) }
+          addEdge("support", identity.id, node.id, { ...emptySelection(), identity: event.idn, operation: op, source: event.source, evidenceIds: eventEvidenceIds(event) }, 0, event.eventId)
+        }
       }
     }
+    groupOperations(visible, related)
   } else if (group) {
     const operation = resolved.operation
     const related = group.cells.filter(cell => cell.op === operation)
