@@ -423,9 +423,9 @@ describe("EvidencePage", () => {
     expect(await screen.findByRole("button", { name: "XML 가져오기 실행" })).toBeEnabled()
   })
 
-  it.each([900, 600])("keeps 관측 기록 filters and selected detail functional at compact %ipx", async (width) => {
+  it.each([600, 390])("keeps 관측 기록 filters and selected detail functional at compact %ipx", async (width) => {
     const previousMatchMedia = window.matchMedia
-    window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("1279") && width < 1280, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
+    window.matchMedia = vi.fn((query: string) => ({ matches: query.startsWith("(max-width:") && width <= Number(query.match(/\d+/)?.[0]), media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
     installFetch([event({ eventId: "compact-evidence" })])
     const user = userEvent.setup()
     renderWithQueryClient(<EvidencePage />)

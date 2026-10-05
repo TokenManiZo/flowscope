@@ -127,6 +127,18 @@ export function SurfacePage() {
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
   const evidence = useEvidenceQuery(selectedEvent?.op ?? null, evidenceOffset, 200, datasetRevision)
   const selectedRecord = evidence.data?.records.find(record => record.eventId === selectedEvent?.eventId)
+  useEffect(() => {
+    if (selectedId === null) return
+    const dismissOnBlankSpace = (event: PointerEvent) => {
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      const target = event.target
+      if (!(target instanceof Element) || target.closest('[data-surface-inspector], [role="menu"], [role="listbox"], [role="separator"], button, a, input, select, textarea, label, summary, tr')) return
+      setSelectedId(null)
+    }
+    document.addEventListener("pointerdown", dismissOnBlankSpace)
+    return () => document.removeEventListener("pointerdown", dismissOnBlankSpace)
+  }, [selectedId])
+
   function selectEvidence(id: string) {
     if (snapshot.isError) return
     const event = snapshot.data?.events.find(candidate => candidate.eventId === id)
@@ -202,7 +214,7 @@ export function SurfacePage() {
   )
 
   const inspector = selected ? (
-    <InspectorPanel title="API 상세" tabs={null} description={<><span className="mt-2 flex items-start gap-2"><MethodBadge method={selected.key.method} /><span className="min-w-0 break-all font-mono text-sm text-foreground">{selected.key.pathTemplate}</span></span><span className="mt-1 block break-all text-xs">{selected.key.service}</span></>}>
+    <div data-surface-inspector><InspectorPanel title="API 상세" tabs={null} description={<><span className="mt-2 flex items-start gap-2"><MethodBadge method={selected.key.method} /><span className="min-w-0 break-all font-mono text-sm text-foreground">{selected.key.pathTemplate}</span></span><span className="mt-1 block break-all text-xs">{selected.key.service}</span></>}>
       <div className="grid gap-5">
       <div><dl className="grid min-w-0 flex-1 grid-cols-3 divide-x rounded-md border bg-muted/20">{[["관측", selected.observations.length], ["선언", selected.declarations.length], ["입력", selected.parameters.length]].map(([name, count]) => <div className="px-3 py-2" key={name}><dt className="text-[11px] text-muted-foreground">{name}</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{count}</dd></div>)}</dl></div>
       <div role="tablist" aria-label="API 상세 보기" className="flex gap-3 border-b">{[["inputs", "입력 비교"], ["observations", "관측 기록"], ["declarations", "선언 정보"]].map(([value,label]) => <button type="button" role="tab" aria-selected={detailTab === value} className={`border-b-2 py-2 text-xs ${detailTab === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`} key={value} onClick={() => setDetailTab(value)}>{label}</button>)}</div>
@@ -228,11 +240,11 @@ export function SurfacePage() {
       <p className="text-xs text-muted-foreground">입력 차이는 관측·선언의 차이이며 취약점 판정이 아닙니다.</p>
       <details className="border-t pt-3 text-xs"><summary className="cursor-pointer font-medium">기록 연결 정보</summary><div className="mt-2 grid gap-1">{[...new Set([...selected.observations.map((item) => item.evidenceId), ...selected.declarations.map((item) => item.evidenceId)])].map((id) => <p className="break-all font-mono text-xs" key={id}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, id)}</p>)}</div></details>
       </div>
-    </InspectorPanel>
+    </InspectorPanel></div>
   ) : <section className="grid gap-2 p-4"><h2 className="font-semibold">선택 상세</h2><p className="text-sm text-muted-foreground">항목을 선택하면 실제 응답과 산출물 근거를 분리해 표시합니다.</p></section>
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={selected !== null} inspectorRevealKey={inspectorRevealKey} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
+    <ReferenceAnalysisWorkspace compactMediaQuery="(max-width: 767px)" ariaLabel="API·입력 차이 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={selected !== null} inspectorRevealKey={inspectorRevealKey} onInspectorOpenChange={(open) => { if (!open) setSelectedId(null) }}>
       <section className="grid gap-4 p-3" aria-labelledby="surface-title">
         <h1 id="surface-title" className="text-2xl font-semibold">API·입력 차이</h1>
         {!snapshot.isError && surface.endpoints.length === 0 && runGapCount(snapshot.data) > 0 && <RunGapHint count={runGapCount(snapshot.data)} />}

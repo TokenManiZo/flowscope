@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
@@ -52,6 +52,10 @@ it("opens API details on every click, including the same row after collapsing th
     await user.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
     await user.click(details[1])
     expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/orders")
+    fireEvent.pointerDown(screen.getByRole("complementary", { name: "API 상세" }))
+    expect(screen.getByRole("complementary", { name: "API 상세" })).toBeVisible()
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "API·입력 차이" }))
+    expect(screen.queryByRole("complementary", { name: "API 상세" })).not.toBeInTheDocument()
   } finally {
     window.matchMedia = originalMatchMedia
   }
