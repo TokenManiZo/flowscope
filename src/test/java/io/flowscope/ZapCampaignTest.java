@@ -248,6 +248,58 @@ final class ZapCampaignTest {
             assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
             assertTrue(terminal.path("error").asText().contains("독립 계정 세션"), terminal.toString());
             assertEquals("FAILED", fixture.accounts.view("user-a").status().name());
+            assertEquals(1, terminal.path("captured_records").asInt(), terminal.toString());
+            assertEquals(1, terminal.at("/lanes/0/captured_records").asInt(), terminal.toString());
+            assertNull(fixture.contexts.current(Source.SCANNER));
+            assertEquals("", fixture.capabilityRun.get());
+        }
+    }
+
+    @Test
+    void authenticationOnlyFailurePreservesResponsesCapturedBeforeTheApiFailed() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            fixture.server.removeContext("/JSON/users/action/authenticateAsUser/");
+            fixture.server.createContext("/JSON/users/action/authenticateAsUser/", exchange -> {
+                fixture.observe("/assets/root.js");
+                byte[] body = "authentication transport failed".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(503, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.close();
+            });
+
+            campaign.startAuthenticationOnly("user-a");
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            assertTrue(terminal.path("error").asText().contains("HTTP 503"), terminal.toString());
+            assertEquals(1, terminal.path("captured_records").asInt(), terminal.toString());
+            assertEquals(1, terminal.at("/lanes/0/captured_records").asInt(), terminal.toString());
+            assertEquals(1, fixture.started.getCount(), "failed login must not start a crawler");
+            assertNull(fixture.contexts.current(Source.SCANNER));
+            assertEquals("", fixture.capabilityRun.get());
+        }
+    }
+
+    @Test
+    void authenticationOnlyCleanupFailurePreservesCapturedResponses() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.addAuthenticatedAccount("user-a");
+            fixture.server.removeContext("/JSON/replacer/action/removeRule/");
+            fixture.server.createContext("/JSON/replacer/action/removeRule/", exchange ->
+                    zapReply(exchange, "{\"Result\":\"FAIL\"}"));
+
+            campaign.startAuthenticationOnly("user-a");
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            assertTrue(terminal.path("error").asText().contains("capability cleanup failed"), terminal.toString());
+            assertEquals(1, terminal.path("captured_records").asInt(), terminal.toString());
+            assertEquals(1, terminal.at("/lanes/0/captured_records").asInt(), terminal.toString());
+            assertNull(fixture.contexts.current(Source.SCANNER));
+            assertEquals("", fixture.capabilityRun.get());
         }
     }
 

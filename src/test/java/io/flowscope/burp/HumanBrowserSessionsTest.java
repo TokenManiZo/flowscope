@@ -269,6 +269,23 @@ class HumanBrowserSessionsTest {
         try (var socket = firstAvailableSocket(20_000)) { return socket.getLocalPort(); }
     }
 
+    @Test void separateScannerListenerSurvivesHumanCleanupAndIsNotTreatedAsHuman() throws Exception {
+        try (var burp = new FakeBurp(); var scanner = new HumanProxyListeners(burp.api, Set.of(8080))) {
+            int port = freePort();
+            scanner.ensure(port);
+            try (var sessions = new HumanBrowserSessions(new HumanProxyListeners(burp.api, Set.of(8080, port)),
+                    (target, humanPort) -> new FakeWindow())) {
+                sessions.start(context("human", "A"), URI.create("http://127.0.0.1:9999/"));
+                assertTrue(sessions.ownsPort(sessions.port("human")));
+                assertFalse(sessions.ownsPort(port));
+            }
+            assertTrue(burp.sockets.containsKey(port), "Project HUMAN cleanup must preserve the ZAP listener");
+            assertEquals(2, burp.entries().size());
+            scanner.close();
+            assertFalse(burp.sockets.containsKey(port), "Extension unload must remove the owned ZAP listener");
+        }
+    }
+
     @Test void createsAMissingFixedScannerListenerOnceAndRemovesOnlyThatListenerOnClose() throws Exception {
         try (var burp = new FakeBurp()) {
             int port = freePort();

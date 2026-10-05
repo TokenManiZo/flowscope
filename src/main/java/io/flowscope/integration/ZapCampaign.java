@@ -391,15 +391,18 @@ public final class ZapCampaign implements AutoCloseable {
             state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.FAILED, detail);
             replaceZapAuthentication(0, new ZapAuthenticationResult(
                     "FAILED", ZapClient.CLIENT_BROWSER, detail));
+            long authenticationRecords = state.capturedCount(Source.SCANNER, runId,
+                    SourceDetail.ZAP_AUTHENTICATION);
             replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
-                    0, 0, 0, 0, false, false, -1, "", detail));
+                    authenticationRecords, 0, 0, 0, false, false, -1, "", detail));
             deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED",
-                    "", "", 0, 0, 0, detail));
+                    "", "", authenticationRecords, 0, 0, detail));
         } finally {
             state.scannerDirectAuthentication(runId, false);
             RuntimeException capabilityFailure = removeScannerCapability(runId);
             if (capabilityFailure != null) {
-                deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "", 0, 0, 0,
+                deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "",
+                        state.capturedCount(Source.SCANNER, runId, SourceDetail.ZAP_AUTHENTICATION), 0, 0,
                         "ZAP scanner capability cleanup failed: " + capabilityFailure.getMessage()));
             }
             state.contexts().abort(Source.SCANNER, runId);
