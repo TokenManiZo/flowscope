@@ -94,7 +94,7 @@ const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_7rem_3.5rem_5r
 
 /** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 마스킹 원문을 연다. */
 export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", searchLabel = "HUMAN 작업 피드 검색", view, context, showSource = false }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; searchLabel?: string; view?: RecordView; context?: string; showSource?: boolean }) {
-  const columns = showSource ? "grid min-w-[760px] grid-cols-[3.5rem_4.5rem_minmax(12rem,1fr)_3rem_7rem_3.5rem_5rem] items-center gap-3" : FEED_COLUMNS
+  const columns = showSource ? "grid min-w-[920px] grid-cols-[3.5rem_4.5rem_minmax(12rem,1fr)_3rem_10rem_7rem_3.5rem_5rem] items-center gap-3" : FEED_COLUMNS
   const [source, setSource] = useState("전체")
   const [query, setQuery] = useState("")
   const [expanded, setExpanded] = useState(true)
@@ -116,16 +116,16 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
           </div>
         </div>
       </CardHeader>
-      {showSource && <div aria-label="수집 출처 필터" className="flex flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", "LLM"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
+      {showSource && <div aria-label="수집 출처 필터" className="flex flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
       {expanded && <CardContent className={view?.focused ? "flex min-h-0 flex-1 flex-col overflow-x-auto p-0" : "overflow-x-auto p-0"}>
-        <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <span>출처</span>}<span>계정</span><span>상태</span><span className="text-right">시각</span></div>
-        <div data-record-list aria-label="기록된 요청 목록" className={`${showSource ? "min-w-[760px] " : ""}${view?.focused ? "min-h-0 flex-1 overflow-auto" : "max-h-96 overflow-auto"}`}>
+        <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <><span>출처</span><span>수집 방식</span></>}<span>계정</span><span>상태</span><span className="text-right">시각</span></div>
+        <div data-record-list aria-label="기록된 요청 목록" className={`${showSource ? "min-w-[920px] " : ""}${view?.focused ? "min-h-0 flex-1 overflow-auto" : "max-h-96 overflow-auto"}`}>
           {filtered.length ? filtered.map((item) => <button key={item.id} type="button" onClick={() => setSelectedEventId(item.id)} aria-label={`${item.badge} ${item.title} ${item.detail ?? ""} HTTP ${item.status} 원문 보기`}
             className={`${columns} w-full border-t border-border px-4 py-2 text-left text-sm first:border-t-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none`}>
             <span className="truncate font-mono text-xs text-muted-foreground" title={item.id}>{item.ordinal ?? "—"}</span>
             <MethodBadge method={item.badge} />
             <span className="truncate font-mono text-xs" title={item.title}>{item.title}</span>
-            {showSource && <span className="truncate text-xs text-foreground" title={item.sourceLabel}>{item.sourceLabel === "Human" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—"}</span>}
+            {showSource && <><span className="truncate text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "Human" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
             <span className={`truncate ${item.mutedDetail ? "text-muted-foreground" : ""}`} title={item.detail}>{item.detail}</span>
             <HttpStatusBadge status={item.status} />
             <span className="text-right font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>

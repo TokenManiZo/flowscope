@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useScannerCancelMutation, useScannerRunMutation, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
+import type { EventRecord } from "@/lib/api/types"
 import { clockTime, INSPECTION_RECORD_HANDOFF } from "./inspectionState"
 import { LlmPass } from "./LlmPass"
 import { durationLabel, runStatusLabel, scannerStageLabel } from "@/lib/display/runStatus"
@@ -30,6 +31,10 @@ const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
 
 const RELEASES_URL = "https://github.com/choewonwoo1817/testflowscope/releases"
 const ZAP_COMMANDS: ReadonlyArray<[string, string]> = [["macOS · Linux", "./scripts/zap-up.sh"], ["Windows", ".\\scripts\\zap-up.ps1"]]
+
+function isAuthorizationReplay(event: EventRecord): boolean {
+  return event.sourceDetail === "AUTHORIZATION_REPLAY" || event.phase === "AUTHORIZATION_REPLAY"
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 완료하지 못했습니다."
@@ -135,9 +140,12 @@ export function InspectionPage() {
     }
   }, [snapshot.data?.accounts, events])
   const feedItem = (event: (typeof events)[number]): SourceFeedItem => {
-    const who = identityLabel(event.laneAccountId?.trim() || event.idn)
+    const identity = event.laneAccountId?.trim() || event.idn
+    const who = identityLabel(identity)
     return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
-      sourceLabel: event.source === "human" ? "Human" : event.source === "scanner" ? "ZAP" : event.source === "llm" ? "LLM" : "미확인",
+      sourceCode: event.source === "human" ? "H" : event.source === "scanner" ? "S" : event.source === "llm" ? "L" : "—",
+      sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인 자동 검증" : "자동 검증")
+        : event.source === "human" ? "Human" : event.source === "scanner" ? "ZAP" : event.source === "llm" ? "LLM" : "미확인",
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 
@@ -145,9 +153,9 @@ export function InspectionPage() {
     .sort((a, b) => b.timestamp - a.timestamp).slice(0, 200).map(feedItem),
     [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
-  // ZAP 작업 피드 = SCANNER 소스로 관측된 요청. HUMAN과 같은 표를 쓴다.
+  // ZAP 작업 피드는 권한 자동 검증을 제외한 SCANNER 요청을 표시한다.
   const scannerFeedItems = useMemo<readonly SourceFeedItem[]>(() => events
-    .filter((event) => event.source === "scanner")
+    .filter((event) => event.source === "scanner" && !isAuthorizationReplay(event))
     .slice()
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 200)

@@ -151,12 +151,43 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
     const list = screen.getByLabelText("기록된 요청 목록")
     expect(within(list).getByText("H")).toHaveAttribute("title", "Human")
-    expect(within(list).getByText("S")).toHaveAttribute("title", "ZAP")
+    expect(within(list).getByText("S")).toHaveAttribute("title", "비로그인 자동 검증")
     expect(screen.queryByRole("button", { name: "HUMAN pass 시작" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "HUMAN pass 종료" })).not.toBeInTheDocument()
     await user.click(within(screen.getByLabelText("수집 출처 필터")).getByRole("button", { name: "ZAP" }))
-    expect(within(screen.getByLabelText("기록된 요청 목록")).getAllByRole("button")).toHaveLength(1)
+    expect(within(screen.getByLabelText("기록된 요청 목록")).queryAllByRole("button")).toHaveLength(0)
     expect(fetchStub.mock.calls.some(([path]) => path === "/api/human-run")).toBe(false)
+  })
+
+  it("labels anonymous verification as Scanner and separates it from ZAP using saved provenance", async () => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ humanEvents: [humanEvent,
+      { ...humanEvent, eventId: "zap", path: "/api/zap", idn: "anon", source: "scanner", sourceDetail: "OTHER_SCANNER" },
+      { ...humanEvent, eventId: "auto-phase", path: "/api/auto-phase", laneAccountId: "anon", source: "scanner", phase: "AUTHORIZATION_REPLAY" },
+      { ...humanEvent, eventId: "auto-detail", path: "/api/auto-detail", idn: "anon", source: "scanner", sourceDetail: "AUTHORIZATION_REPLAY" },
+    ] })
+    const list = await screen.findByLabelText("기록된 요청 목록")
+    const phaseRow = await within(list).findByRole("button", { name: /api\/auto-phase/ })
+    const detailRow = within(list).getByRole("button", { name: /api\/auto-detail/ })
+    for (const row of [phaseRow, detailRow]) {
+      expect(within(row).getByText("S")).toBeVisible()
+      expect(within(row).getByText("비로그인 자동 검증")).toBeVisible()
+      expect(within(row).getByText("비로그인")).toBeVisible()
+    }
+    const filters = screen.getByLabelText("수집 출처 필터")
+    await user.click(within(filters).getByRole("button", { name: "비로그인 자동 검증" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(2)
+    await user.click(within(filters).getByRole("button", { name: "ZAP" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(1)
+    expect(within(list).getByRole("button", { name: /api\/zap/ })).toBeVisible()
+    await user.click(within(filters).getByRole("button", { name: "전체" }))
+    await user.type(screen.getByLabelText("수집 기록 검색"), "비로그인 자동 검증")
+    expect(within(list).getAllByRole("button")).toHaveLength(2)
+    await user.click(screen.getByRole("tab", { name: "ZAP 스캔" }))
+    const zapList = screen.getByLabelText("기록된 요청 목록")
+    expect(within(zapList).getAllByRole("button")).toHaveLength(1)
+    expect(within(zapList).getByRole("button", { name: /api\/zap/ })).toBeVisible()
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
   })
 
   it("filters and collapses the bounded HUMAN request feed without loading raw data", async () => {

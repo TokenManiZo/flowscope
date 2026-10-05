@@ -14,6 +14,7 @@ export interface SourceFeedItem {
   id: string
   badge: string
   sourceLabel?: string
+  sourceCode?: "H" | "S" | "L" | "—"
   ordinal?: string
   title: string
   status: string
