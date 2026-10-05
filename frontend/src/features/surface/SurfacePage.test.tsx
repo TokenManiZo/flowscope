@@ -5,7 +5,10 @@ import { expect, it, vi } from "vitest"
 import { AppProviders } from "@/app/AppProviders"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { snapshotFixture } from "@/test/fixtures"
-import { SurfacePage } from "./SurfacePage"
+import { SurfacePage, inputComparisonStatus } from "./SurfacePage"
+import { openEvidenceSelection } from "@/features/evidence/evidenceNavigation"
+
+vi.mock("@/features/evidence/evidenceNavigation", async (importOriginal) => ({ ...await importOriginal<typeof import("@/features/evidence/evidenceNavigation")>(), openEvidenceSelection: vi.fn() }))
 
 vi.mock("@/lib/query/hooks", () => ({
   useEvidenceQuery: () => ({ data: { records: [] }, isSuccess: true, isError: false, isLoading: false }),
@@ -195,3 +198,34 @@ it("does not show the run-gap hint when endpoints exist but are only hidden by a
   await user.click(button)
   expect(screen.getByRole("checkbox", { name: "L · LLM" })).not.toBeChecked()
  })
+
+
+it("opens existing observations when inputs are empty and makes linked ordinals open exact retained evidence", async () => {
+  const ids = [96, 102, 182, 412, 509, 606, 703]
+  const events = ids.map(id => ({ ...surfaceEvent, eventId: `ev-${id}` }))
+  const endpoint = {
+    key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" },
+    observedSources: ["HUMAN" as const],
+    observations: events.map(event => ({ evidenceId: event.eventId, source: "HUMAN" as const, runId: "human-1", identity: "anon", status: 200 })),
+    declarations: [], parameters: [], deltaState: "ONE_SOURCE_OBSERVED" as const,
+  }
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = {
+    ...snapshotFixture, events, evidenceOrdinals: Object.fromEntries(ids.map(id => [`ev-${id}`, id])),
+    surface: { extractions: [], probes: [], endpoints: [endpoint] },
+  }
+  const user = userEvent.setup()
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  expect(screen.getByRole("columnheader", { name: "비교 상태" })).toBeVisible()
+  expect(inputComparisonStatus(endpoint)).toBe("선언 근거 없음")
+  expect(inputComparisonStatus({ ...endpoint, observations: [] })).toBe("미관측")
+  await user.click(screen.getByRole("button", { name: /API 상세$/ }))
+  expect(screen.getByRole("tab", { name: "관측 기록" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.getAllByRole("button", { name: /관측 기록 상세/ })).toHaveLength(7)
+  await user.click(screen.getByRole("tab", { name: "입력 비교" }))
+  expect(screen.getByText("비교할 입력 필드가 추출되지 않았습니다.")).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "관측 기록 7건 보기" }))
+  expect(screen.getByRole("tab", { name: "관측 기록" })).toHaveAttribute("aria-selected", "true")
+  await user.click(screen.getByText("기록 연결 정보"))
+  await user.click(screen.getByRole("button", { name: "연결 관측 기록 #703 보기" }))
+  expect(openEvidenceSelection).toHaveBeenLastCalledWith("ev-703", surfaceEvent.op, snapshotFixture.datasetRevision ?? snapshotFixture.identityRevision ?? 0)
+})
