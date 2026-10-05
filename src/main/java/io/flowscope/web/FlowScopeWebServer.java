@@ -235,7 +235,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
     }
 
-    public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT }
+    // RAW: 편집한 인증 헤더를 바꾸지 않고 그대로 보낸다(직접 입력). ANONYMOUS·ACCOUNT만 인증 헤더를 지우거나 교체한다.
+    public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT, RAW }
 
     /** Safe metadata plus the stored masked request/response text. Raw credential values never cross the local API. */
     public record AccountRequestCandidate(String id, int status, String method, String path, String mime,

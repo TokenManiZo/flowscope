@@ -630,7 +630,7 @@ export interface AuthorizationReplayResult extends ApiSuccess {
 export interface SavedRequestLabEntry {
   name: string
   request: string
-  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"
   result: { response: string; status: number; durationMs: number; requestBytes: number; responseBytes: number } | null
   dirty: boolean
 }

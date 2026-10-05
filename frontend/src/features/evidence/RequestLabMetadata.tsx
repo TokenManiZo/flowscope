@@ -3,7 +3,7 @@ import type { ReactNode } from "react"
 import { InfoHint } from "@/components/ui/info-hint"
 import { cn } from "@/lib/utils"
 
-export type RequestLabCredentialMode = "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+export type RequestLabCredentialMode = "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"
 
 /** 인증 방식 단어(Bearer 등)와 앞 4자만 남긴다. 서버 SessionBroker.preview와 같은 규칙. */
 export function credentialPreview(value: string): string {

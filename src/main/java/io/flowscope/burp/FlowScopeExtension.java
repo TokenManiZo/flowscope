@@ -3087,7 +3087,10 @@ public final class FlowScopeExtension implements BurpExtension {
             throw new IllegalArgumentException("편집 요청 경로가 현재 exact scope 밖입니다.");
         }
 
-        if (credentialMode != FlowScopeWebServer.CredentialMode.ORIGINAL) {
+        // ANONYMOUS는 인증 헤더를 모두 지우고, ACCOUNT는 지운 뒤 계정 세션값으로 채운다.
+        // ORIGINAL·RAW(직접 입력)는 편집한 인증 헤더를 그대로 둔다.
+        if (credentialMode == FlowScopeWebServer.CredentialMode.ANONYMOUS
+                || credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT) {
             for (String header : SessionBroker.managedHeaderNames()) {
                 request = request.withRemovedHeader(header);
             }
