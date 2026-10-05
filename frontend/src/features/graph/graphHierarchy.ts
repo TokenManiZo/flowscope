@@ -470,7 +470,10 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
     if (quietMembers.length) {
       const label = `신호 없는 기능 ${quietMembers.length}개`
-      addNode("quiet-group", group.id, selectionFor(group.cells.filter(cell => quietMembers.includes(cell.op))), { label, wrappedLabel: label, objectGroup: { key: "신호 없는 기능", members: quietMembers, owners: {}, expanded: quietOpen } })
+      const selection = selectionFor(group.cells.filter(cell => quietMembers.includes(cell.op)))
+      const events = [...attachedEvents, ...observedEvents].filter(event => quietMembers.includes(event.op))
+      selection.evidenceIds = [...new Set([...selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText)
+      addNode("quiet-group", group.id, selection, { label, wrappedLabel: label, objectGroup: { key: "신호 없는 기능", members: quietMembers, owners: {}, expanded: quietOpen } })
     }
   } else if (group) {
     const operation = resolved.operation

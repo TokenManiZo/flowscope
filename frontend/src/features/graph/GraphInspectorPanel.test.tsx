@@ -138,3 +138,22 @@ it.each(["UNKNOWN", "POLLING"])("preserves unjudged account records without assi
   expect(graph.edges.find(edge => edge.selection.identity === "bob")?.selection.cells).toEqual([])
   expect(data.events).toContain(bob)
 })
+
+it.each(["UNKNOWN", "POLLING"])("shows B's neutral evidence in a folded quiet-group detail (%s)", trafficClass => {
+  const bob = { ...event, eventId: "bob-quiet", clusterEvidenceIds: ["bob-quiet"], idn: "bob", resource: null, trafficClass, trafficDisposition: "REVIEW", verdict: "untested" as const }
+  const data = { ...snapshot, events: [event, bob] }
+  const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: true, includeRouteCandidates: false, expanded: false }
+  const navigation = { level: "site" as const, groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
+  const site = projectHierarchy(data, filters, navigation)
+  const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "group", site.groups[0].id))
+  const node = graph.nodes.find(node => node.kind === "quiet-group")!
+  expect(node.objectGroup?.expanded).toBe(false)
+  expect(graph.identities).toEqual([])
+  expect(graph.edges).toEqual([])
+  expect(node.selection.cells).toEqual(snapshot.cells)
+  expect(node.selection.evidenceIds).toEqual(["bob-quiet", "ev-1"])
+  renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
+  expect(screen.getByRole("listitem", { name: "alice 관측 기록 1건" })).toBeVisible()
+  expect(screen.getByRole("listitem", { name: "bob 관측 기록 1건" })).not.toHaveTextContent("ALLOW")
+  expect(screen.getByText(/인가 판정에 포함되지 않은 관측 기록 1건/)).toBeVisible()
+})

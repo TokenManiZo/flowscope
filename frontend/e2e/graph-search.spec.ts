@@ -166,7 +166,7 @@ test("B polling search preserves neutral evidence on A's API at 1280px", async (
   await page.setViewportSize({ width: 1280, height: 1080 })
   const responses: Record<string, unknown> = {
     "/api/snapshot": targetSnapshot({ datasetRevision: 7, cells, events: [event] }),
-    "/api/graph-workspace": { datasetRevision: 7, revision: 0, workspace: emptyGraphWorkspace },
+    "/api/graph-workspace": { datasetRevision: 7, revision: 0, workspace: { ...emptyGraphWorkspace, navigation } },
     "/api/projects": { directory: "/tmp/synthetic-account-evidence", active: null, projects: [], saveState: "UNMANAGED", lastSavedAt: "", saveError: "" },
     "/api/human-run": humanRunFixture, "/api/zap-status": zapStatusFixture, "/api/scanner-run": scannerRunFixture,
   }
@@ -180,9 +180,17 @@ test("B polling search preserves neutral evidence on A's API at 1280px", async (
   await page.goto("./#graph")
   await page.getByRole("button", { name: "관측 전체", exact: true }).click()
   const input = page.getByRole("combobox", { name: "프로젝트 전체 노드 검색" })
+  const canvas = page.getByLabel("공격면 Cytoscape 그래프", { exact: true })
+  await expect.poll(() => canvas.evaluate((element, id) => {
+    const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
+    const quiet = cy.getElementById(id)
+    if (!quiet.length) return false
+    quiet.emit("tap")
+    return quiet.data("groupState") === "closed" && cy.getElementById("identity:USER B").length === 0
+  }, `quiet-group:${navigation.groupId}`)).toBe(true)
+  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
   await input.fill("USER B")
   await page.getByRole("option", { name: /^신원 USER B/ }).click()
-  const canvas = page.getByLabel("공격면 Cytoscape 그래프", { exact: true })
   await expect.poll(() => canvas.evaluate(element => {
     const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
     const b = cy.getElementById("identity:USER B")

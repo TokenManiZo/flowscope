@@ -433,3 +433,18 @@ it("retains neutral evidence and identity when API shape cards are folded", () =
   expect(shape.selection.evidenceIds).toEqual(["bob-101", "bob-102", "h-101"])
   expect(graph.edges.find(edge => edge.relation === "support")).toMatchObject({ targetId: shape.id, count: 2, selection: { identity: "USER B", evidenceIds: ["bob-101", "bob-102"], cells: [], cellKeys: [] } })
 })
+
+
+it("includes observed-only quiet API evidence in the folded group with source/identity filters", () => {
+  const snapshot = targetSnapshot({ events: [
+    event({ eventId: "b-quiet", clusterEvidenceIds: ["b-quiet"], idn: "USER B" }),
+    event({ eventId: "scanner-quiet", clusterEvidenceIds: ["scanner-quiet"], idn: "USER B", source: "scanner" }),
+    event({ eventId: "a-quiet", clusterEvidenceIds: ["a-quiet"], idn: "USER A" }),
+  ] })
+  const graph = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true, source: ["human"], identity: ["USER B"] }, groupNav())
+  const quiet = graph.nodes.find(node => node.kind === "quiet-group")!
+  expect(quiet.selection.evidenceIds).toEqual(["b-quiet"])
+  expect(quiet.selection.cells).toEqual([])
+  expect(graph.identities).toEqual([])
+  expect(graph.edges).toEqual([])
+})
