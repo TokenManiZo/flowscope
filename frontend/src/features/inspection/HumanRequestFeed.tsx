@@ -118,17 +118,17 @@ export function HumanRequestFeed({ items, description, emptyHint, title = "기�
       </CardHeader>
       {showSource && <div aria-label="수집 출처 필터" className="flex flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
       {expanded && <CardContent className={view?.focused ? "flex min-h-0 flex-1 flex-col overflow-x-auto p-0" : "overflow-x-auto p-0"}>
-        <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <><span className="text-center">출처</span><span>수집 방식</span></>}<span>계정</span><span>상태</span><span className="text-center">시각</span></div>
+        <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <><span className="text-center">출처</span><span className="text-center">수집 방식</span></>}<span>계정</span><span>상태</span><span className="text-center">시각</span></div>
         <div data-record-list aria-label="기록된 요청 목록" className={`${showSource ? "min-w-[920px] " : ""}${view?.focused ? "min-h-0 flex-1 overflow-auto" : "max-h-96 overflow-auto"}`}>
           {filtered.length ? filtered.map((item) => <button key={item.id} type="button" onClick={() => setSelectedEventId(item.id)} aria-label={`${item.badge} ${item.title} ${item.detail ?? ""} HTTP ${item.status} 원문 보기`}
             className={`${columns} w-full border-t border-border px-4 py-2 text-left text-sm first:border-t-0 hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none`}>
             <span className="truncate font-mono text-xs text-muted-foreground" title={item.id}>{item.ordinal ?? "—"}</span>
             <MethodBadge method={item.badge} />
             <span className="truncate font-mono text-xs" title={item.title}>{item.title}</span>
-            {showSource && <><span className="truncate text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "Human" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
+            {showSource && <><span className="truncate text-center text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "Human" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-center text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
             <span className={`truncate ${item.mutedDetail ? "text-muted-foreground" : ""}`} title={item.detail}>{item.detail}</span>
             <HttpStatusBadge status={item.status} />
-            <span className="text-right font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>
+            <span className="text-center font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>
           </button>) : <p className="py-10 text-center text-sm text-muted-foreground">{items.length ? "검색 결과가 없습니다." : emptyHint}</p>}
         </div>
       </CardContent>}
