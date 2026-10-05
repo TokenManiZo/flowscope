@@ -102,7 +102,7 @@ describe("project relationship search", () => {
   it("marks matching folded members without opening their group and removes vanished results", () => {
     const cells = [cell(), cell({ resource: "orders:202" })], snapshot = targetSnapshot({ cells })
     const navigation = { ...initial, level: "group" as const, groupId: operationGroup(operation).id }
-    const graph = projectHierarchy(snapshot, filters, navigation)
+    const graph = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [`quiet-group:${navigation.groupId}`] }, navigation)
     const keys = new Set([searchKey("resource", service, "orders:202")])
     expect(searchHighlights(graph, keys).get("object-group:|orders")).toBe("member")
     expect(graph.resources).toHaveLength(0)
@@ -139,11 +139,11 @@ it("distinguishes same host and port with different schemes without affecting re
 it("indexes and reveals off-page observed functions using their actual node IDs", () => {
   const events = Array.from({ length: 19 }, (_, index) => captured({ eventId: `o-${index}`, op: `${service} GET /api/orders/${String(index).padStart(2, "0")}` }))
   const snapshot = targetSnapshot({ events })
-  const index = snapshotSearchIndex(snapshot, filters)
+  const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
   const entry = index.byKey.get(searchKey("observed-operation", service, events[18].op))!
   expect(entry).toBeDefined()
-  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, filters, initial), false)
-  const revealed = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial), false)
+  const revealed = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, destination.navigation, destination.reveal)
   expect(revealed.nodes.find(node => node.id === destination.nodeId)?.selection.evidenceIds).toEqual(["o-18"])
   expect(revealed.revealedNodeCount).toBe(1)
   expect(searchHighlights(revealed, new Set([entry.key])).get(destination.nodeId)).toBe("direct")
@@ -154,7 +154,7 @@ it("indexes only graph-eligible records and keeps one searchable card per operat
   const snapshot = targetSnapshot({ cells: [cell()], events: [captured(), captured({ eventId: "poll", trafficClass: "POLLING" }), captured({ eventId: "hidden", op: `${service} GET /api/orders/hidden`, classificationOverride: true, classificationReasons: ["USER_EXCLUDE"], trafficDisposition: "EXCLUDE" }), captured({ eventId: "asset", op: `${service} GET /api/orders/app.js`, trafficClass: "STATIC_ASSET" }), captured({ eventId: "replay", op: `${service} POST /api/orders/replay`, phase: "VALIDATION" })] })
   const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
   expect(index.entries.filter(entry => ["operation", "observed-operation", "support-operation"].includes(entry.kind))).toEqual([expect.objectContaining({ kind: "operation", value: operation })])
-  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(true)
+  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(false)
 })
 
 it("searches enabled support cards outside the page limit and skips disabled support", () => {
@@ -163,7 +163,7 @@ it("searches enabled support cards outside the page limit and skips disabled sup
   expect(snapshotSearchIndex(snapshot, filters).entries.some(entry => entry.kind === "support-operation")).toBe(false)
   const enabled = { ...filters, includeSupportTraffic: true }
   const index = snapshotSearchIndex(snapshot, enabled)
-  const entry = index.byKey.get(searchKey("support-operation", service, events[18].op))!
+  const entry = index.byKey.get(searchKey("observed-operation", service, events[18].op))!
   const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), true)
   const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
   expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.evidenceIds).toEqual(["p-18"])
@@ -180,16 +180,36 @@ it("indexes and reveals enabled route candidates with their existing IDs", () =>
   expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.routeCandidate?.pathTemplate).toBe(routes[18].pathTemplate)
 })
 
-it("opens a support-only identity on a judged API in compact search", () => {
-  const snapshot = targetSnapshot({ cells: [cell()], events: [captured({ eventId: "poll-b", trafficClass: "POLLING", trafficDisposition: "EXCLUDE" })] })
-  const enabled = { ...filters, includeSupportTraffic: true }
-  const index = snapshotSearchIndex(snapshot, enabled)
-  const entry = index.byKey.get(searchKey("identity", service, "USER B"))!
-  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), true)
-  expect(destination.navigation.level).toBe("operation")
-  const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
-  const target = graph.nodes.find(node => node.id === destination.nodeId)!
-  expect(target).toBeDefined()
-  expect(target.selection).toMatchObject({ identity: "USER B", cells: [], cellKeys: [], evidenceIds: ["poll-b"] })
-  expect(searchHighlights(graph, new Set([entry.key])).get(target.id)).toBe("direct")
+it("excludes other-account observations of a judged API from graph search", () => {
+  const event = captured({ eventId: "poll-b", trafficClass: "POLLING", trafficDisposition: "EXCLUDE" })
+  const snapshot = targetSnapshot({ cells: [cell()], events: [event] })
+  const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
+  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(false)
+  expect(snapshot.events).toContain(event)
+})
+
+it("uses the displayed ROOT group for API and group search destinations", () => {
+  const op = `${service} POST /login`
+  const snapshot = targetSnapshot({ cells: [cell({ op, resource: null })] })
+  const index = snapshotSearchIndex(snapshot, filters)
+  const root = JSON.stringify([service, "root"])
+  const api = index.byKey.get(searchKey("operation", service, op))!
+  expect(api.contexts[0].groupId).toBe(root)
+  const site = projectHierarchy(snapshot, filters, initial)
+  const destination = searchDestination(api, initial, site, false)
+  expect(projectHierarchy(snapshot, filters, destination.navigation, destination.reveal).nodes.some(node => node.id === destination.nodeId)).toBe(true)
+  const group = index.byKey.get(searchKey("api-group", service, root))!
+  expect(searchDestination(group, initial, site, false).nodeId).toBe(`api-group:${root}`)
+  expect(index.byKey.has(searchKey("api-group", service, JSON.stringify([service, "login"])))).toBe(false)
+})
+
+it("reveals a quiet API without changing the group's saved fold state", () => {
+  const snapshot = targetSnapshot({ cells: [cell({ resource: null })] })
+  const entry = snapshotSearchIndex(snapshot, filters).byKey.get(searchKey("operation", service, operation))!
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, filters, initial), false)
+  const graph = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
+  expect(graph.nodes.find(node => node.id === destination.nodeId)?.hiddenInGraph).not.toBe(true)
+  expect(graph.nodes.find(node => node.kind === "quiet-group")?.objectGroup?.expanded).toBe(false)
+  expect(searchHighlights(graph, new Set([entry.key])).get(`quiet-group:${destination.navigation.groupId}`)).toBe("member")
+  expect(projectHierarchy(snapshot, filters, destination.navigation).nodes.find(node => node.id === destination.nodeId)?.hiddenInGraph).toBe(true)
 })

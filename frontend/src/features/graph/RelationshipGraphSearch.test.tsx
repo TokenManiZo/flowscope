@@ -75,7 +75,7 @@ it("replaces disappeared results with an empty state and resets search on datase
 
 it("keeps object expansion transient and folds it on background, outside selection, Lab and remount", async () => {
   const navigation = { ...emptyGraphWorkspace.navigation, level: "group" as const, groupId: operationGroup(cells[0].op).id }
-  state.workspace = { ...emptyGraphWorkspace, navigation, views: { [graphViewKey(navigation)]: { positions: {}, sizes: {}, viewport: null, expandedGroups: ["object-group:|orders"] } } }
+  state.workspace = { ...emptyGraphWorkspace, navigation, views: { [graphViewKey(navigation)]: { positions: {}, sizes: {}, viewport: null, expandedGroups: ["object-group:|orders", `quiet-group:${navigation.groupId}`] } } }
   let view = render(<RelationshipGraphView />)
   const canvas = () => screen.getByTestId("search-canvas")
   expect(canvas()).toHaveAttribute("data-open-object", "")
@@ -104,6 +104,7 @@ const observed = (changes: Partial<EventRecord> = {}): EventRecord => ({ eventId
 
 it("refreshes event-only search results and selects an observed API outside the page limit", async () => {
   const view = render(<RelationshipGraphView />)
+  await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
   await userEvent.type(screen.getByRole("combobox"), "/orders/observed")
   await screen.findByText("검색 결과가 없습니다. 검색어를 바꿔 보세요.")
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed()] })
@@ -121,31 +122,35 @@ it("refreshes event-only search results and selects an observed API outside the 
   await waitFor(() => expect(screen.queryByTestId("search-detail")).not.toBeInTheDocument())
 })
 
-it("keeps unjudged account evidence selected when Cells update", async () => {
+it("keeps judged selection updated without adding excluded other-account evidence", async () => {
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed({ op: cells[0].op })] })
   const view = render(<RelationshipGraphView />)
+  await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
   await userEvent.type(screen.getByRole("combobox"), "/orders/00")
   const option = await screen.findByRole("option", { name: /^API\s*GET \/api\/orders\/00/ })
   await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
   await userEvent.click(option)
-  await waitFor(() => expect(screen.getByTestId("search-detail").dataset.evidence).toContain("observed"))
+  await waitFor(() => expect(screen.getByTestId("search-detail").dataset.evidence).toContain("ev-0"))
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells: cells.map(cell => ({ ...cell, evidenceIds: [...cell.evidenceIds, "new-judged"] })), events: [observed({ op: cells[0].op })] })
   view.rerender(<RelationshipGraphView />)
   await waitFor(() => expect(screen.getByTestId("search-detail").dataset.evidence).toContain("new-judged"))
-  expect(screen.getByTestId("search-detail").dataset.evidence).toContain("observed")
+  expect(screen.getByTestId("search-detail").dataset.evidence).not.toContain("observed")
 })
 
 it("reveals and highlights observed search cards in the compact list", async () => {
   window.matchMedia = vi.fn(query => ({ matches: true, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed()] })
   render(<RelationshipGraphView />)
+  await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
+  await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
+  await userEvent.click(screen.getByRole("button", { name: "Close" }))
   await userEvent.type(screen.getByRole("combobox"), "/orders/observed")
   const option = await screen.findByRole("option", { name: /^관측 API/ })
   await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
   await userEvent.click(option)
   expect(await screen.findByTestId("search-detail")).toHaveAttribute("data-evidence", "observed")
   await userEvent.click(screen.getByRole("button", { name: "Close" }))
-  const card = await screen.findByRole("button", { name: /응답 관측/ })
+  const card = await screen.findByRole("button", { name: /Observed operation/ })
   expect(card).toHaveAttribute("data-graph-node-id", `observed-operation:${observed().op}`)
   expect(card.className).toContain("outline-dashed")
 })

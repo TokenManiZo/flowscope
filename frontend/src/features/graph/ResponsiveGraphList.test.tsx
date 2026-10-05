@@ -5,7 +5,7 @@ import { expect, it, vi } from "vitest"
 import { ResponsiveGraphList } from "./ResponsiveGraphList"
 import type { GraphProjection, GraphFilters } from "./graphProjection"
 import { projectHierarchy, type GraphNavigation } from "./graphHierarchy"
-import { buildGraphSearchIndex, searchDestination, searchKey } from "./graphSearch"
+import { buildGraphSearchIndex, searchKey } from "./graphSearch"
 import { targetSnapshot } from "@/test/fixtures"
 
 const hierarchyFilters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
@@ -74,27 +74,21 @@ it("keeps observed-only GET nodes selectable in the compact group list", async (
     sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", coverageEligible: false,
     classificationOverride: false, classificationReasons: ["AMBIGUOUS_KEEP"], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["observed-1"], objects: [], verdict: "untested",
   }] })
-  const group = projectHierarchy(snapshot, hierarchyFilters, { level: "group", groupId: '["https://api.test","account"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = projectHierarchy(snapshot, { ...hierarchyFilters, includeSupportTraffic: true }, { level: "group", groupId: '["https://api.test","account"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }, { operations: [op] })
   const select = vi.fn()
   render(<ResponsiveGraphList projection={group} snapshot={snapshot} onSelect={select} />)
-  await userEvent.click(screen.getByRole("button", { name: /응답 관측/ }))
+  await userEvent.click(screen.getByRole("button", { name: /Observed operation/ }))
   expect(select).toHaveBeenCalledWith(expect.objectContaining({ operation: op, evidenceIds: ["observed-1"] }), `observed-operation:${op}`)
 })
 
-it("selects support-only identity evidence after compact API search", async () => {
+it("does not expose excluded support identity as a compact search destination", async () => {
   const snapshot = targetSnapshot({ cells: [rawCell], events: [{
     eventId: "poll-b", method: "GET", path: "/api/orders/1", status: 200, fp: "", idn: "USER B", role: "USER", source: "human", op: rawCell.op, resource: null, timestamp: 1,
     sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "POLLING", trafficDisposition: "EXCLUDE", coverageEligible: false,
     classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["poll-b"], objects: [], verdict: "untested",
   }] })
   const filters = { ...hierarchyFilters, includeSupportTraffic: true }
-  const entry = buildGraphSearchIndex(snapshot, filters).byKey.get(searchKey("identity", "Target", "USER B"))!
-  const destination = searchDestination(entry, operationNavigation, projectHierarchy(snapshot, filters, operationNavigation), true)
-  const graph = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
-  const select = vi.fn()
-  render(<ResponsiveGraphList projection={graph} snapshot={snapshot} revealNodeId={destination.nodeId} onSelect={select} />)
-  const button = screen.getByRole("button", { name: /USER B/ })
-  expect(button).toHaveAttribute("data-graph-node-id", "identity:USER B")
-  await userEvent.click(button)
-  expect(select).toHaveBeenCalledWith(expect.objectContaining({ identity: "USER B", cells: [], cellKeys: [], evidenceIds: ["poll-b"] }), "identity:USER B")
+  const index = buildGraphSearchIndex(snapshot, filters)
+  expect(index.byKey.has(searchKey("identity", "Target", "USER B"))).toBe(false)
+  expect(snapshot.events[0].eventId).toBe("poll-b")
 })

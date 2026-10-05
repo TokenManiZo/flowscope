@@ -121,7 +121,7 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
 })
 
-it.each(["UNKNOWN", "POLLING"])("shows unjudged account evidence in API detail without borrowing another account's verdict (%s)", trafficClass => {
+it.each(["UNKNOWN", "POLLING"])("keeps unjudged account records stored but excludes them on a judged API (%s)", trafficClass => {
   const bob = { ...event, eventId: "bob-unjudged", clusterEvidenceIds: ["bob-unjudged"], idn: "bob", resource: null, trafficClass, trafficDisposition: "REVIEW", verdict: "untested" as const }
   const data = { ...snapshot, events: [event, bob] }
   const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: true, includeRouteCandidates: false, expanded: false }
@@ -131,8 +131,7 @@ it.each(["UNKNOWN", "POLLING"])("shows unjudged account evidence in API detail w
   const node = graph.nodes.find(node => node.kind === "operation")!
   renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
   const alice = screen.getByRole("listitem", { name: "alice 관측 기록 1건" })
-  const bobCard = screen.getByRole("listitem", { name: "bob 관측 기록 1건" })
   expect(alice).toHaveTextContent("ALLOW")
-  expect(bobCard).not.toHaveTextContent("ALLOW")
-  expect(screen.getByText("인가 판정에 포함되지 않은 관측 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
+  expect(screen.queryByRole("listitem", { name: "bob 관측 기록 1건" })).not.toBeInTheDocument()
+  expect(data.events).toContain(bob)
 })
