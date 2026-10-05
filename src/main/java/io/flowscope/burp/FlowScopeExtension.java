@@ -409,7 +409,8 @@ public final class FlowScopeExtension implements BurpExtension {
         api.extension().setName("FlowScope");
         configureInitialScope();
         proxyListeners = new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet());
-        humanBrowsers = new HumanBrowserSessions(proxyListeners,
+        // HUMAN listeners follow project sessions; the ZAP listener lives until extension unload.
+        humanBrowsers = new HumanBrowserSessions(new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet()),
                 new io.flowscope.explorer.HumanChromiumBrowser()::open);
         crossIdentityReplay = new CrossIdentityReplayOrchestrator(sessionBroker, () -> scope,
                 this::executeCrossIdentityReplay, this::openCrossIdentityReplayDraft,
@@ -2762,6 +2763,7 @@ public final class FlowScopeExtension implements BurpExtension {
         sessionBroker.close();
         rawExchanges.clear();
         clearRunContexts();
+        if (proxyListeners != null) proxyListeners.close();
         JavascriptCallSiteAnalyzer.clearCache();
     }
 
