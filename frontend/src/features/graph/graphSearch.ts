@@ -1,6 +1,6 @@
 import type { Snapshot } from "@/lib/api/types"
 import type { GraphFilters } from "./graphProjection"
-import { graphContents, apiGroupDescriptor, objectGroupKey, operationGroup, navigateHierarchy, type GraphNavigation, type GraphReveal, type HierarchyProjection } from "./graphHierarchy"
+import { graphContents, objectGroupKey, operationGroup, navigateHierarchy, type GraphNavigation, type GraphReveal, type HierarchyProjection } from "./graphHierarchy"
 import { GRAPH_MIN_ZOOM } from "./graphLanes"
 import { operationShapeKey } from "./graphPathShape"
 
@@ -22,7 +22,7 @@ export const searchKey = (kind: SearchKind, service: string, value: string) => J
 const compare = (left: string, right: string) => left.localeCompare(right, "en")
 /** 제한·접힘 전 그래프 데이터에서 식별자와 이동 문맥만 보관한다. */
 export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters): GraphSearchIndex {
-  const { cells, observedEvents, supportEvents, routeCandidates } = graphContents(snapshot, filters)
+  const { cells, observedEvents, attachedEvents, routeCandidates, resolveGroup } = graphContents(snapshot, filters)
   const entries = new Map<string, Omit<GraphSearchEntry, "contexts" | "name" | "text"> & { contexts: Map<string, SearchContext> }>()
   const shapes = new Map<string, { service: string; shape: string; operations: Set<string> }>()
   const add = (kind: SearchKind, service: string, value: string, title: string, context: SearchContext) => {
@@ -32,7 +32,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     entry.contexts.set(context.operation, context)
   }
   for (const cell of cells) {
-    const group = operationGroup(cell.op)
+    const group = operationGroup(cell.op, resolveGroup)
     const context = { groupId: group.id, groupLabel: group.label, operation: cell.op }
     add("target", group.service, group.service, group.service, context)
     add("api-group", group.service, group.id, group.label, context)
@@ -50,9 +50,8 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
   }
   const operationKinds = new Map<string, SearchKind>(cells.map(cell => [cell.op, "operation"]))
   for (const event of observedEvents) if (!operationKinds.has(event.op)) operationKinds.set(event.op, "observed-operation")
-  for (const event of supportEvents) if (!operationKinds.has(event.op)) operationKinds.set(event.op, "support-operation")
-  for (const event of [...observedEvents, ...supportEvents]) {
-    const group = operationGroup(event.op), kind = operationKinds.get(event.op)!
+  for (const event of [...observedEvents, ...attachedEvents]) {
+    const group = operationGroup(event.op, resolveGroup), kind = operationKinds.get(event.op)!
     const context = { groupId: group.id, groupLabel: group.label, operation: event.op, nodeKind: kind }
     add("target", group.service, group.service, group.service, context)
     add("api-group", group.service, group.id, group.label, context)
@@ -60,7 +59,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     add("identity", group.service, event.idn, event.idn, context)
   }
   for (const candidate of routeCandidates) {
-    const group = apiGroupDescriptor(candidate.service, candidate.pathTemplate)
+    const group = resolveGroup(candidate.service, candidate.pathTemplate)
     const context = { groupId: group.id, groupLabel: group.label, operation: candidate.selection.operation ?? "", nodeKind: "route-candidate" as const }
     add("target", group.service, group.service, group.service, context)
     add("api-group", group.service, group.id, group.label, context)
@@ -68,7 +67,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
   }
   for (const bucket of shapes.values()) if (bucket.operations.size > 1) {
     for (const operation of bucket.operations) {
-      const group = operationGroup(operation)
+      const group = operationGroup(operation, resolveGroup)
       add("operation-group", bucket.service, bucket.shape, bucket.shape.replace(/^https?:\/\/\S+\s+/i, ""), { groupId: group.id, groupLabel: group.label, operation })
     }
   }
@@ -143,6 +142,10 @@ export function searchHighlights(projection: HierarchyProjection, keys: Readonly
   const matches = new Map<string, "direct" | "member">()
   const service = projection.groups.find(group => group.id === projection.navigation.groupId)?.service ?? "Target"
   for (const node of projection.nodes) {
+    if (node.kind === "quiet-group") {
+      if (node.objectGroup?.members.some(member => ["operation", "observed-operation"].some(kind => keys.has(searchKey(kind as SearchKind, service, member))))) matches.set(node.id, "member")
+      continue
+    }
     if (node.hiddenInGraph || !kinds.includes(node.kind as SearchKind)) continue
     const kind = node.kind as SearchKind
     const value = kind === "api-group" ? node.groupId! : kind === "route-candidate" ? node.id : node.id.slice(kind.length + 1)

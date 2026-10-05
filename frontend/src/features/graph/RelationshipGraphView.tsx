@@ -21,8 +21,7 @@ import { emptyGraphView, emptyGraphWorkspace, graphView, graphViewKey, mergeGrap
 import { useGraphWorkspace } from "./useGraphWorkspace"
 import { EMPTY_HIGHLIGHT, nodeStatusCodes, projectHighlight, projectSiteHighlight, statusGroups, statusHighlightColors, type GraphHighlight } from "./graphHighlight"
 import { graphCellKey, graphCellSelection, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
-import { GRAPH_PAGE_SIZE, graphContents, navigateHierarchy, stepBack, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection } from "./graphHierarchy"
-import { ResponsiveGraphList } from "./ResponsiveGraphList"
+import { GRAPH_PAGE_SIZE, graphContents, navigateHierarchy, stepBack, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection, isObservedTraffic } from "./graphHierarchy"import { ResponsiveGraphList } from "./ResponsiveGraphList"
 import { operationParts } from "./relationshipNodeCard"
 
 const allSources: readonly Source[] = ["human", "scanner", "llm", "unknown"]
@@ -88,7 +87,8 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const canvasShellRef = useRef<HTMLDivElement | null>(null)
   const listShellRef = useRef<HTMLDivElement | null>(null)
   // 출처·신원은 데이터를 숨기지 않고 강조 필터(highlight)로만 고른다. 투영 필터는 전체 출처·신원을 그대로 둔다.
-  const [filters] = useState<GraphFilters>({ source: allSources, identity: [], view: "source", reviewStates, includeRouteCandidates: false, includeSupportTraffic: false, expanded: false })
+  // 보기 범위: 기본은 판정 셀이 있는 핵심 API만, "관측 전체"는 정적 파일을 뺀 관측 요청을 판정 없이 함께 그린다.
+  const [filters, setFilters] = useState<GraphFilters>({ source: allSources, identity: [], view: "source", reviewStates, includeRouteCandidates: false, includeSupportTraffic: false, expanded: false })
   const [highlight, setHighlight] = useState<GraphHighlight>(EMPTY_HIGHLIGHT)
   const [expandedStatus, setExpandedStatus] = useState<readonly string[]>([])
   // 계층 이동 기록. 뒤로·앞으로 버튼은 단계(사이트·그룹·API) 이동만 되돌리고, 18개 더 보기 같은 펼침은 기록하지 않는다.
@@ -188,7 +188,9 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     if (!currentCell && !currentGap && !currentEvent) { setSelection(null); setSelectedElementId(null); setInspectorOpen(false) }
   }, [filters.source, graph, selectedElementId, selection, snapshot.data, snapshot.isError])
 
-  const includedEvents = (snapshot.data?.events ?? []).filter((event) => event.trafficDisposition === "INCLUDE" && (filters.includeSupportTraffic || !supportTrafficClasses.has(event.trafficClass)))
+  const includedEvents = (snapshot.data?.events ?? []).filter((event) => filters.includeSupportTraffic
+    ? event.trafficDisposition === "INCLUDE" || isObservedTraffic(event)
+    : event.trafficDisposition === "INCLUDE" && !supportTrafficClasses.has(event.trafficClass))
   const identities = [...new Set(includedEvents.map((event) => event.idn))].sort()
   const sourceCount = (source: Source) => includedEvents.filter((event) => event.source === source).length
   const identityCount = (identity: string) => includedEvents.filter((event) => event.idn === identity).length
@@ -221,6 +223,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     setOpenObjectGroup(null)
     setSearchAnchor(null); setPendingSearch(null); setRevealRequest(null)
     setHighlight(EMPTY_HIGHLIGHT)
+    setFilters((current) => ({ ...current, includeSupportTraffic: false }))
     setExpandedStatus([])
     setExpandedGroups([])
     workspaceState.update(current => {
@@ -365,6 +368,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
 
   const filterRail = <div className="h-full bg-[var(--flowscope-pane)] px-4 py-4 text-sm leading-6">
     <div className="mb-1 border-b border-border/70 pb-3"><p className="text-[15px] font-semibold text-foreground">Graph filters</p></div>
+    <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">보기 범위</legend><div className="grid grid-cols-2 gap-1.5">{([[false, "핵심 API만"], [true, "관측 전체"]] as const).map(([broad, label]) => <Button key={label} size="sm" variant={filters.includeSupportTraffic === broad ? "secondary" : "ghost"} aria-pressed={filters.includeSupportTraffic === broad} onClick={() => setFilters((current) => ({ ...current, includeSupportTraffic: broad }))}>{label}</Button>)}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">{filters.includeSupportTraffic ? "정적 파일(CSS·JS·이미지·폰트)만 빼고 관측된 요청을 모두 보여 줍니다. 추가로 보이는 요청은 판정에 쓰지 않습니다." : "인가 판정에 쓰는 요청만 보여 줍니다."}</p></fieldset>
     <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">출처</legend><div className="grid gap-2.5">{railSources.map((source) => <label className="grid cursor-pointer grid-cols-[1rem_1.5rem_1fr_auto] items-center gap-2" key={source}><Checkbox checked={highlight.sources.includes(source)} onCheckedChange={() => setHighlight((current) => ({ ...current, sources: toggle(current.sources, source) }))} /><SourceIcon source={source} /><span className="font-medium">{sourceNames[source]}</span><span className="tabular-nums text-muted-foreground">{sourceCount(source)}</span></label>)}</div></fieldset>
     <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">신원</legend><div className="grid gap-2.5">{identities.map((identity) => <label className="grid cursor-pointer grid-cols-[1rem_1fr_auto] items-center gap-2" key={identity}><Checkbox checked={highlight.identities.includes(identity)} onCheckedChange={() => setHighlight((current) => ({ ...current, identities: toggle(current.identities, identity) }))} /><span className="truncate font-medium">{identity}</span><span className="tabular-nums text-muted-foreground">{identityCount(identity)}</span></label>)}{!identities.length && <span className="text-xs text-muted-foreground">INCLUDE 신원이 없습니다.</span>}</div></fieldset>
     <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">응답 코드</legend><div className="grid gap-1.5">{statusGroupList.map((group) => {

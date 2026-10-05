@@ -18,7 +18,7 @@ for (const theme of ["light", "dark"] as const) for (const width of [1280, 1920]
     page.on("pageerror", error => errors.push(error.message))
     await page.setViewportSize({ width, height: 1080 })
     await page.addInitScript(theme => localStorage.setItem("flowscope-theme", theme), theme)
-    const workspace = { ...emptyGraphWorkspace, navigation, views: { [graphViewKey(navigation)]: { positions: { [`operation:${cells[0].op}`]: { x: 540, y: 180 } }, sizes: {}, viewport: { zoom: 1, pan: { x: 0, y: 0 } }, expandedGroups: [`operation-group:${operationShapeKey(cells[0].op)}`] } } }
+    const workspace = { ...emptyGraphWorkspace, navigation, views: { [graphViewKey(navigation)]: { positions: { [`operation:${cells[0].op}`]: { x: 540, y: 180 } }, sizes: {}, viewport: { zoom: 1, pan: { x: 0, y: 0 } }, expandedGroups: [`quiet-group:${navigation.groupId}`, `operation-group:${operationShapeKey(cells[0].op)}`] } } }
     let revision = 0
     const responses: Record<string, unknown> = {
       "/api/snapshot": targetSnapshot({ datasetRevision: 7, cells }),
@@ -105,6 +105,9 @@ for (const width of [1280, 820]) test(`observed POST search opens neutral eviden
     await route.fulfill({ contentType: "application/json", body: JSON.stringify(responses[target.pathname] ?? {}) })
   })
   await page.goto("./#graph")
+  if (width <= 900) await page.getByRole("button", { name: "그래프 필터" }).click()
+  await page.getByRole("button", { name: "관측 전체", exact: true }).click()
+  if (width <= 900) await page.getByRole("button", { name: "Close", exact: true }).click()
   await page.getByRole("combobox", { name: "프로젝트 전체 노드 검색" }).fill("POST /api/orders/update")
   const result = page.getByRole("option", { name: /^관측 API POST/ })
   await expect(result).toHaveAttribute("aria-disabled", "false")
@@ -121,5 +124,85 @@ for (const width of [1280, 820]) test(`observed POST search opens neutral eviden
     await page.getByRole("button", { name: "Close", exact: true }).click()
     await expect(page.locator(`[data-graph-node-id="observed-operation:${event.op}"]`)).toBeVisible()
   }
+  expect(errors).toEqual([])
+})
+
+test("ROOT search and HUMAN priority work together at 1280px", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 1080 })
+  const human = { ...cells[0], op: `${service} GET /human`, resource: null, perSource: { human: "suspicious" as const }, overall: "suspicious" as const }
+  const scanners = Array.from({ length: 18 }, (_, index) => ({ ...human, op: `${service} GET /scanner_${String.fromCharCode(97 + index)}`, perSource: { scanner: "suspicious" as const }, evidenceIds: [`s-${index}-1`, `s-${index}-2`, `s-${index}-3`] }))
+  const root = JSON.stringify([service, "root"])
+  const workspace = { ...emptyGraphWorkspace, navigation: { ...emptyGraphWorkspace.navigation, level: "group", groupId: root } }
+  const responses: Record<string, unknown> = {
+    "/api/snapshot": targetSnapshot({ datasetRevision: 7, cells: [human, ...scanners] }),
+    "/api/graph-workspace": { datasetRevision: 7, revision: 0, workspace },
+    "/api/projects": { directory: "/tmp/synthetic-human-priority", active: null, projects: [], saveState: "UNMANAGED", lastSavedAt: "", saveError: "" },
+    "/api/human-run": humanRunFixture, "/api/zap-status": zapStatusFixture, "/api/scanner-run": scannerRunFixture,
+  }
+  const origin = new URL(testInfo.project.use.baseURL!).origin
+  await page.route("**/*", async route => {
+    const url = new URL(route.request().url())
+    if (url.origin !== origin) { await route.abort(); return }
+    if (!url.pathname.startsWith("/api/")) { await route.continue(); return }
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(responses[url.pathname] ?? { datasetRevision: 7, revision: 1 }) })
+  })
+  await page.goto("./#graph")
+  const canvas = page.getByLabel("공격면 Cytoscape 그래프", { exact: true })
+  await expect.poll(() => canvas.evaluate((element, id) => (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy.getElementById(id).length, `operation:${human.op}`)).toBe(1)
+  const input = page.getByRole("combobox", { name: "프로젝트 전체 노드 검색" })
+  await input.fill("ROOT")
+  await page.getByRole("option", { name: /^API 그룹 ROOT APIs/ }).click()
+  await expect.poll(() => canvas.evaluate((element, id) => (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy.getElementById(id).selected(), `api-group:${root}`)).toBe(true)
+  await input.fill("GET /human")
+  await page.getByRole("option", { name: /^API GET \/human/ }).click()
+  await expect.poll(() => canvas.evaluate((element, id) => (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy.getElementById(id).selected(), `operation:${human.op}`)).toBe(true)
+})
+
+
+test("B polling search preserves neutral evidence on A's API at 1280px", async ({ page }, testInfo) => {
+  const event: EventRecord = { eventId: "bob-poll", method: "GET", path: "/api/orders/00", status: 200, fp: "", idn: "USER B", role: "USER", source: "human", op: cells[0].op, resource: null, timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "synthetic", authState: "AUTH", trafficClass: "POLLING", trafficDisposition: "EXCLUDE", coverageEligible: false, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "synthetic", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["bob-poll"], objects: [], verdict: "untested" }
+  const errors: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  await page.setViewportSize({ width: 1280, height: 1080 })
+  const responses: Record<string, unknown> = {
+    "/api/snapshot": targetSnapshot({ datasetRevision: 7, cells, events: [event] }),
+    "/api/graph-workspace": { datasetRevision: 7, revision: 0, workspace: { ...emptyGraphWorkspace, navigation } },
+    "/api/projects": { directory: "/tmp/synthetic-account-evidence", active: null, projects: [], saveState: "UNMANAGED", lastSavedAt: "", saveError: "" },
+    "/api/human-run": humanRunFixture, "/api/zap-status": zapStatusFixture, "/api/scanner-run": scannerRunFixture,
+  }
+  const origin = new URL(testInfo.project.use.baseURL!).origin
+  await page.route("**/*", async route => {
+    const url = new URL(route.request().url())
+    if (url.origin !== origin) { await route.abort(); return }
+    if (!url.pathname.startsWith("/api/")) { await route.continue(); return }
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(responses[url.pathname] ?? { datasetRevision: 7, revision: 1 }) })
+  })
+  await page.goto("./#graph")
+  await page.getByRole("button", { name: "관측 전체", exact: true }).click()
+  const input = page.getByRole("combobox", { name: "프로젝트 전체 노드 검색" })
+  const canvas = page.getByLabel("공격면 Cytoscape 그래프", { exact: true })
+  await expect.poll(() => canvas.evaluate((element, id) => {
+    const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
+    const quiet = cy.getElementById(id)
+    if (!quiet.length) return false
+    quiet.emit("tap")
+    return quiet.data("groupState") === "closed" && cy.getElementById("identity:USER B").length === 0
+  }, `quiet-group:${navigation.groupId}`)).toBe(true)
+  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
+  await input.fill("USER B")
+  await page.getByRole("option", { name: /^신원 USER B/ }).click()
+  await expect.poll(() => canvas.evaluate(element => {
+    const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
+    const b = cy.getElementById("identity:USER B")
+    return { selected: b.selected(), verdict: b.data("verdictText"), connections: b.connectedEdges().length }
+  })).toEqual({ selected: true, verdict: "UNKNOWN", connections: 1 })
+  await input.fill("GET /api/orders/00")
+  await page.getByRole("option", { name: /^API GET \/api\/orders\/00/ }).click()
+  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
+  await expect.poll(() => canvas.evaluate((element, op) => {
+    const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
+    const api = cy.getElementById(`operation:${op}`)
+    return { selected: api.selected(), verdict: api.data("verdictText"), duplicate: cy.getElementById(`observed-operation:${op}`).length, bConnected: api.connectedEdges().some(edge => edge.source().id() === "identity:USER B") }
+  }, cells[0].op)).toEqual({ selected: true, verdict: "ALLOW", duplicate: 0, bConnected: true })
   expect(errors).toEqual([])
 })

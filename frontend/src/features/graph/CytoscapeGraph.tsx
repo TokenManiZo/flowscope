@@ -124,7 +124,9 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
   }
   // 펼친 객체 묶음의 멤버 노드는 어느 묶음에서 나왔는지 표시한다(배경 띠·강조 테두리).
   const memberOf = new Map<string, string>()
-  for (const node of hierarchy?.nodes ?? []) if (node.objectGroup?.expanded) for (const member of node.objectGroup.members) memberOf.set(`${node.kind === "operation-group" ? "operation" : "resource"}:${member}`, node.id)
+  // "신호 없는 기능" 묶음에는 판정 기능(operation)과 관측만 된 기능(support-operation)이 함께 들어 있다.
+  const memberKinds = (kind: HierarchyNode["kind"]) => kind === "quiet-group" ? ["operation", "observed-operation", "support-operation"] : kind === "operation-group" ? ["operation"] : ["resource"]
+  for (const node of hierarchy?.nodes ?? []) if (node.objectGroup?.expanded) for (const member of node.objectGroup.members) for (const kind of memberKinds(node.kind)) memberOf.set(`${kind}:${member}`, node.id)
   // 접힌 API 묶음의 멤버는 그리지 않는다(엣지는 이미 묶음 노드로 모였다).
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate" && !node.hiddenInGraph) : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {
     // 접근 주체 아이콘은 오른쪽 API·Object 노드에만 둔다.
@@ -222,13 +224,55 @@ export function positionInLanes(core: Core, height: number, savedPositions: Grap
     if (restored.length) cursor = Math.max(...restored.map(node => savedPositions![node.id()].y + nodeModelHeight(node) / 2)) + LANE_NODE_GAP
     cursor = Math.max(cursor, reservedBottom + LANE_NODE_GAP)
     const x = restored.length ? restored.reduce((sum, node) => sum + savedPositions![node.id()].x, 0) / restored.length : laneAnchor(index)
+    // 펼친 묶음의 새 멤버는 레인 맨 아래가 아니라 묶음 노드 바로 아래에 끼운다(아래 insertGroupMembers).
+    const columnIds = new Set(nodes.map(node => node.id()))
+    const fresh = nodes.filter(node => !savedPositions?.[node.id()] && columnIds.has(String(node.data("memberOf") ?? "")))
+    const freshIds = new Set(fresh.map(node => node.id()))
     nodes.forEach((node, order) => {
+      if (freshIds.has(node.id())) return
       const saved = savedPositions?.[node.id()]
       node.position(saved ?? { x, y: cursor + heights[order] / 2 })
       if (!saved) cursor += heights[order] + LANE_NODE_GAP
     })
+    insertGroupMembers(nodes, fresh)
   })
   positionObjectMembers(core, height, onlyLane)
+}
+
+/** 새 멤버를 묶음 노드(와 이미 놓인 멤버) 바로 아래에 쌓고, 그 아래에 있던 같은 레인 노드를 그만큼 밀어 내린다. */
+function insertGroupMembers(column: readonly cytoscape.NodeSingular[], fresh: readonly cytoscape.NodeSingular[]) {
+  const freshIds = new Set(fresh.map(node => node.id()))
+  for (const groupId of new Set(fresh.map(node => String(node.data("memberOf"))))) {
+    const group = column.find(node => node.id() === groupId)
+    if (!group) continue
+    const family = column.filter(node => node === group || (node.data("memberOf") === groupId && !freshIds.has(node.id())))
+    const familyIds = new Set(family.map(node => node.id()))
+    const incoming = fresh.filter(node => node.data("memberOf") === groupId)
+    const insert = incoming.reduce((sum, node) => sum + nodeModelHeight(node) + LANE_NODE_GAP, 0)
+    const groupY = group.position().y
+    for (const other of column) {
+      if (familyIds.has(other.id()) || freshIds.has(other.id()) || other.position().y <= groupY) continue
+      other.position({ x: other.position().x, y: other.position().y + insert })
+    }
+    let bottom = Math.max(...family.map(node => node.position().y + nodeModelHeight(node) / 2))
+    for (const member of incoming) {
+      const height = nodeModelHeight(member)
+      member.position({ x: group.position().x, y: bottom + LANE_NODE_GAP + height / 2 })
+      bottom += LANE_NODE_GAP + height
+    }
+  }
+}
+
+/** 펼친 묶음 노드를 끌면 그 멤버를 같은 거리만큼 함께 옮긴다. */
+export function moveGroupMembers(core: Core, groupId: string, dx: number, dy: number) {
+  if (!dx && !dy) return
+  core.nodes().forEach((node) => {
+    if (node.data("memberOf") !== groupId) return
+    const locked = node.locked?.() ?? false
+    if (locked) node.unlock()
+    node.position({ x: node.position().x + dx, y: node.position().y + dy })
+    if (locked) node.lock()
+  })
 }
 
 /** 펼친 객체는 다른 저장 노드 공간과 겹쳐도 묶음 가까이에 놓는다. */
@@ -236,7 +280,7 @@ function positionObjectMembers(core: Core, viewportHeight: number, onlyLane: num
   if (onlyLane !== null && onlyLane !== 2) return
   const groups = new Map<string, cytoscape.NodeSingular[]>()
   core.nodes().forEach(node => {
-    if (node.data("kind") !== "resource" || !node.data("memberOf")) return
+    if (node.data("kind") !== "resource" || node.data("temporaryObjectPosition") !== "yes" || !node.data("memberOf")) return
     const id = String(node.data("memberOf")), members = groups.get(id) ?? []
     members.push(node); groups.set(id, members)
   })
@@ -708,9 +752,24 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       node.position({ x, y: node.position().y })
       if (locked) node.lock()
     }
+    // 펼친 묶음 노드를 잡으면 직전 위치를 기억해 두고, 움직인 만큼 멤버를 따라 옮긴다.
+    let groupDrag: { id: string; x: number; y: number } | null = null
+    const grabListener = (event: cytoscape.EventObject) => {
+      const node = event.target
+      groupDrag = node.data("groupState") === "open" ? { id: node.id(), ...node.position() } : null
+    }
+    const followGroup = (node: cytoscape.NodeSingular) => {
+      if (!groupDrag || groupDrag.id !== node.id()) return
+      const { x, y } = node.position()
+      moveGroupMembers(core, groupDrag.id, x - groupDrag.x, y - groupDrag.y)
+      groupDrag = { id: groupDrag.id, x, y }
+    }
+    const groupDragListener = (event: cytoscape.EventObject) => followGroup(event.target)
     const dragListener = (event: cytoscape.EventObject) => {
       if (event.target.data("temporaryObjectPosition") === "yes") { event.target.data("temporaryObjectPosition", "no"); objectEditsRef.current.add(event.target.id()) }
       clampToNeighbourLanes(event.target)
+      followGroup(event.target)
+      groupDrag = null
       publishLayout()
     }
     const viewportListener = () => scheduleViewportPublish()
@@ -758,6 +817,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     window.addEventListener("keydown", escapeListener)
     core.on("mouseover focus", "node", showCardTooltip)
     core.on("mouseout blur", "node", hideCardTooltip)
+    core.on("grab", "node", grabListener)
+    core.on("drag", "node", groupDragListener)
     core.on("dragfree", "node", dragListener)
     core.on("viewport", viewportListener)
     // 노드 위치·크기(재배치, 끌기, 크기 조절)나 강조(split)가 바뀌면 다음 프레임에 엣지 경로를 한 번 다시 계산한다.
@@ -776,6 +837,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       window.removeEventListener("keydown", escapeListener)
       core.off("mouseover focus", "node", showCardTooltip)
       core.off("mouseout blur", "node", hideCardTooltip)
+      core.off("grab", "node", grabListener)
+      core.off("drag", "node", groupDragListener)
       core.off("dragfree", "node", dragListener)
       core.off("viewport", viewportListener)
       resizeObserver?.disconnect()
