@@ -23,6 +23,17 @@ import static org.junit.jupiter.api.Assertions.*;
 final class TransientExchangeVaultTest {
     @TempDir Path temp;
 
+    @Test void deletingSelectedTrafficDiscardsOnlyItsLiveHttpBytes() {
+        var vault = new TransientExchangeVault(64, 64, 128);
+        var first = record("/first"); var second = record("/second");
+        vault.put(first, new byte[]{1, 2}, 2, new byte[]{3}, 1);
+        vault.put(second, new byte[]{4, 5}, 2, null, 0);
+        vault.discard(Set.of(first.runtimeId()));
+        assertTrue(vault.get(first).isEmpty()); assertTrue(vault.get(second).isPresent());
+        assertEquals(2, vault.retainedBytes());
+        vault.discard(Set.of(first.runtimeId())); assertEquals(2, vault.retainedBytes());
+    }
+
     /** PR #11 raw-isolation contract: a populated vault never reaches JSON/SQLite, while derived parameter facts survive reopen. */
     @Test
     void populatedRawVaultNeverEntersJsonOrSqliteProjects() throws Exception {

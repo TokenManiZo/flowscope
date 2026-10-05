@@ -1,3 +1,5 @@
+import { DeleteTrafficButton } from "@/features/api-management/ApiActions"
+import { Checkbox } from "@/components/ui/checkbox"
 import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
 import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
@@ -62,6 +64,7 @@ export function EvidencePage() {
   const snapshot = useSnapshotQuery()
   const trafficDecision = useTrafficOverrideMutation()
   const queryClient = useQueryClient()
+  const [checkedRecords, setCheckedRecords] = useState<string[]>([])
   const [tab, setTab] = useState<EvidenceTab>(initialTab)
   const [filters, setFilters] = useState(() => ({ ...defaultEvidenceFilters(), dispositions: tabDispositions(initialTab()) }))
   const [selected, setSelected] = useState<EventRecord | null>(null)
@@ -69,6 +72,7 @@ export function EvidencePage() {
   const [offset, setOffset] = useState(0)
   const selectedEvent = selected ? snapshot.data?.events.find((item) => item.eventId === selected.eventId) ?? null : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
+  useEffect(() => setCheckedRecords([]), [datasetRevision])
   const evidence = useEvidenceQuery(selectedEvent?.op ?? null, offset, evidencePageLimit, datasetRevision)
 
   useEffect(() => {
@@ -93,6 +97,7 @@ export function EvidencePage() {
   }, [selected, selectedEvent, snapshot.isError])
 
   const rows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], filters), [snapshot.data?.events, filters])
+  const rowIds = (event: EventRecord) => filters.expandRepeats ? [event.eventId] : visibleEvidence(snapshot.data?.events ?? [], { ...filters, expandRepeats: true }).filter(item => item.clusterId === event.clusterId).map(item => item.eventId)
   const counts = useMemo(() => dispositionCounts(snapshot.data?.events ?? []), [snapshot.data?.events])
   // 탭(판정)으로 나뉜 것은 숨김이 아니다. 지금 탭 안에서 소스·분류·검색 필터로 가린 것만 센다.
   const tabEvents = (snapshot.data?.events ?? []).filter((event) => filters.dispositions[event.trafficDisposition as keyof typeof filters.dispositions])
@@ -148,7 +153,8 @@ export function EvidencePage() {
   const inspector = <div data-evidence-inspector className="grid min-w-0">
     {selectedEvent && <section aria-label="관측 기록 분류 작업" className="grid gap-2 border-b p-4">
       <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.classificationReasons.includes("USER_REVIEW") ? "AUTO" : "REVIEW" })}>{selectedEvent.classificationReasons.includes("USER_REVIEW") ? "자동 분류로 복귀" : "검토 필요로 표시"}</Button><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.trafficDisposition === "EXCLUDE" ? "AUTO" : "EXCLUDE" })}>{selectedEvent.trafficDisposition === "EXCLUDE" ? "숨김 해제" : "목록에서 숨기기"}</Button><Button size="sm" className="ml-auto" disabled={snapshot.isError || !selectedEvent.op} onClick={() => openSurfaceSelection(selectedEvent.op, datasetRevision)}>API에서 보기</Button></div>
-      <p className="text-[11px] text-muted-foreground">같은 API의 요청 전체에 적용합니다. 원본 관측 기록은 보존됩니다.</p>
+      <p className="text-[11px] text-muted-foreground">분류 변경은 같은 API의 요청 전체에 적용합니다. 삭제는 선택한 원본 기록을 제거합니다.</p>
+      {snapshot.data && <div className="flex flex-wrap gap-2"><DeleteTrafficButton snapshot={snapshot.data} evidenceIds={[selectedEvent.eventId]} label="이 기록 삭제" disabled={snapshot.isError} />{rowIds(selectedEvent).length > 1 && <DeleteTrafficButton snapshot={snapshot.data} evidenceIds={rowIds(selectedEvent)} label={`반복 묶음 ${rowIds(selectedEvent).length}건 삭제`} disabled={snapshot.isError} />}</div>}
       {trafficDecision.isError && <p role="alert" className="text-xs text-destructive">{trafficDecision.error instanceof Error ? trafficDecision.error.message : "분류를 저장하지 못했습니다."}</p>}
     </section>}
     {selectedEvent?.trafficDisposition === "REVIEW" && <ReviewDecision key={selectedEvent.eventId} event={selectedEvent} disabled={snapshot.isError} />}
@@ -166,13 +172,15 @@ export function EvidencePage() {
       <EvidenceFilters value={filters} onChange={setFilters} />
       {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.data && <>
         {(hidden > 0 || folded > 0) && <p className="text-xs text-muted-foreground">{[hidden > 0 && `필터로 가린 ${hidden}건`, folded > 0 && `반복 요청 ${folded}건은 한 줄로 묶음`].filter(Boolean).join(" · ")}</p>}
+        {checkedRecords.length > 0 && <div className="flex items-center gap-3 rounded-md border bg-muted/30 p-2 text-xs"><span>관측 기록 {checkedRecords.length}건 선택</span><DeleteTrafficButton snapshot={snapshot.data} evidenceIds={checkedRecords} label="선택 기록 삭제" disabled={snapshot.isError} onDeleted={() => setCheckedRecords([])} /><Button variant="ghost" size="sm" onClick={() => setCheckedRecords([])}>선택 해제</Button></div>}
         <ScrollArea className="h-[calc(100dvh-20rem)] min-h-64 rounded-md border" aria-label="관측 기록 표">
           <Table className="min-w-[680px]">
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead className="text-center">Method</TableHead><TableHead>API</TableHead><TableHead>HTTP</TableHead><TableHead>계정</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="w-10"><Checkbox aria-label="표시된 관측 기록 모두 선택" disabled={snapshot.isError || rows.length === 0} checked={rows.length > 0 && rows.every(row => rowIds(row).every(id => checkedRecords.includes(id)))} onCheckedChange={checked => setCheckedRecords(current => checked ? [...new Set([...current, ...rows.flatMap(rowIds)])] : current.filter(id => !rows.flatMap(rowIds).includes(id)))} /></TableHead><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead className="text-center">Method</TableHead><TableHead>API</TableHead><TableHead>HTTP</TableHead><TableHead>계정</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((event) => {
                 const review = event.trafficDisposition === "REVIEW"
                 return <TableRow key={event.eventId} data-state={selected?.eventId === event.eventId ? "selected" : undefined} className={cn(!snapshot.isError && "cursor-pointer")} onClick={() => selectEvent(event)}>
+                  <TableCell onClick={click => click.stopPropagation()}><Checkbox aria-label={`${evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)} 기록 선택`} checked={rowIds(event).every(id => checkedRecords.includes(id))} disabled={snapshot.isError} onCheckedChange={checked => setCheckedRecords(current => checked ? [...new Set([...current, ...rowIds(event)])] : current.filter(id => !rowIds(event).includes(id)))} /></TableCell>
                   <TableCell className="font-mono text-muted-foreground">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</TableCell>
                   <TableCell><Badge variant="outline" className={sourceTone[event.source]}>{sourceLabel(event.source)}</Badge></TableCell>
                   <TableCell className="text-center"><MethodBadge method={event.method} /></TableCell>
@@ -186,7 +194,7 @@ export function EvidencePage() {
                   <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={observedTimeLabel(event.firstSeen, event.lastSeen)}>{clockLabel(event)}</TableCell>
                 </TableRow>
               })}
-              {rows.length === 0 && <TableRow><TableCell colSpan={9} className="whitespace-normal py-8 text-center text-muted-foreground">{tab === "REVIEW" ? "검토할 트래픽이 없습니다." : "현재 필터에 맞는 관측 기록이 없습니다."}</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={10} className="whitespace-normal py-8 text-center text-muted-foreground">{tab === "REVIEW" ? "검토할 트래픽이 없습니다." : "현재 필터에 맞는 관측 기록이 없습니다."}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </ScrollArea>

@@ -476,6 +476,7 @@ export interface LegacyLlm {
 }
 
 export interface Snapshot {
+  apiMarks?: Readonly<Record<string, { color: string; registered: boolean; evidenceIds: readonly string[] }>>
   legacyLlm?: LegacyLlm
   revision: number
   identityRevision: number

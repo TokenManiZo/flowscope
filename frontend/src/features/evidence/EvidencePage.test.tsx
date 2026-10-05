@@ -109,7 +109,7 @@ describe("EvidencePage", () => {
     installFetch([event({ eventId: "outside-evidence" })])
     renderWithQueryClient(<EvidencePage />)
     const row = (await screen.findByText("outside-evidence")).closest("tr")!
-    expect(within(row).getAllByRole("cell")).toHaveLength(9)
+    expect(within(row).getAllByRole("cell")).toHaveLength(10)
     for (const name of ["#", "소스", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
     await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
     const detail = await screen.findByRole("region", { name: "관측 기록 상세" })

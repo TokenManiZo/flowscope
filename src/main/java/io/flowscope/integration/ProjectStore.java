@@ -68,8 +68,8 @@ public final class ProjectStore {
         }
     }
 
-    private static final int SCHEMA_VERSION = 8;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6, 7);
+    private static final int SCHEMA_VERSION = 9;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6, 7, 8);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -292,6 +292,7 @@ public final class ProjectStore {
             savedAttempts.add(writeRunAttempt(attempt));
         }
         root.set("policy", writePolicy(config));
+        root.set("api_state", json.valueToTree(config.apiState()));
         ArrayNode savedReviews = root.putArray("reviews");
         config.reviews().values().stream().sorted(java.util.Comparator.comparing(ReviewDecision::itemId))
                 .forEach(review -> savedReviews.add(writeReview(review)));
@@ -327,6 +328,10 @@ public final class ProjectStore {
             records.add(readRecord(value, payloads, restoredPayloads, restoredPayloadBytes));
         }
         AnalysisConfig config = readPolicy(root.path("policy"));
+        if (root.has("api_state")) {
+            try { config.restoreApiState(json.treeToValue(root.path("api_state"), io.flowscope.core.ApiState.class)); }
+            catch (IOException error) { throw new IllegalArgumentException("invalid API state", error); }
+        }
         JsonNode reviewNodes = root.path("reviews");
         if (reviewNodes.isArray()) {
             if (reviewNodes.size() > 2_000) throw new IllegalArgumentException("review limit exceeded");

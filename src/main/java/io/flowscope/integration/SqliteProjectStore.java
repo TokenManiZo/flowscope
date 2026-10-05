@@ -227,7 +227,7 @@ public final class SqliteProjectStore {
                     }
                     putMetadata(metadata, "request_lab_revision", Long.toString(next.revision()));
                     putMetadata(metadata, "storage_schema_version", Integer.toString(STORAGE_SCHEMA_VERSION));
-                    putMetadata(metadata, "project_schema_version", "8");
+                    putMetadata(metadata, "project_schema_version", "9");
                     putMetadata(metadata, "saved_at", java.time.Instant.now().toString());
                 }
                 try (PreparedStatement migration = connection.prepareStatement("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)")) {
@@ -403,6 +403,7 @@ public final class SqliteProjectStore {
             putMetadata(metadata, "saved_at", root.path("saved_at").asText());
             putMetadata(metadata, "project_context", json.writeValueAsString(root.path("project")));
             putMetadata(metadata, "graph_workspace", json.writeValueAsString(root.path("graphWorkspace")));
+            putMetadata(metadata, "api_state", json.writeValueAsString(root.path("api_state")));
 
             RequestLabWorkspace workspace = json.convertValue(root.path("requestLabWorkspace"), RequestLabWorkspace.class);
             putMetadata(metadata, "request_lab_revision", Long.toString(workspace.revision()));
@@ -526,6 +527,8 @@ public final class SqliteProjectStore {
         if (projectContext != null) root.set("project", json.readTree(projectContext));
         String graphWorkspace = readOptionalMetadata(connection, "graph_workspace");
         if (graphWorkspace != null) root.set("graphWorkspace", json.readTree(graphWorkspace));
+        String apiState = readOptionalMetadata(connection, "api_state");
+        if (apiState != null) root.set("api_state", json.readTree(apiState));
         if (version >= 4) root.set("requestLabWorkspace", json.valueToTree(readRequestLabWorkspace(connection)));
         ArrayNode records = root.putArray("records");
         readDocuments(connection, "SELECT document FROM records ORDER BY seq", records);

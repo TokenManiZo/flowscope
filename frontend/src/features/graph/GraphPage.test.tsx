@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react"
+import { renderWithQueryClient as render } from "@/test/render"
+import { act, screen, waitFor, within } from "@testing-library/react"
 import { useEffect } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
