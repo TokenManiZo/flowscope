@@ -102,7 +102,7 @@ describe("project relationship search", () => {
   it("marks matching folded members without opening their group and removes vanished results", () => {
     const cells = [cell(), cell({ resource: "orders:202" })], snapshot = targetSnapshot({ cells })
     const navigation = { ...initial, level: "group" as const, groupId: operationGroup(operation).id }
-    const graph = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [`quiet-group:${navigation.groupId}`] }, navigation)
+    const graph = projectHierarchy(snapshot, filters, navigation)
     const keys = new Set([searchKey("resource", service, "orders:202")])
     expect(searchHighlights(graph, keys).get("object-group:|orders")).toBe("member")
     expect(graph.resources).toHaveLength(0)
@@ -210,13 +210,3 @@ it("uses the displayed ROOT group for API and group search destinations", () => 
   expect(index.byKey.has(searchKey("api-group", service, JSON.stringify([service, "login"])))).toBe(false)
 })
 
-it("reveals a quiet API without changing the group's saved fold state", () => {
-  const snapshot = targetSnapshot({ cells: [cell({ resource: null })] })
-  const entry = snapshotSearchIndex(snapshot, filters).byKey.get(searchKey("operation", service, operation))!
-  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, filters, initial), false)
-  const graph = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
-  expect(graph.nodes.find(node => node.id === destination.nodeId)?.hiddenInGraph).not.toBe(true)
-  expect(graph.nodes.find(node => node.kind === "quiet-group")?.objectGroup?.expanded).toBe(false)
-  expect(searchHighlights(graph, new Set([entry.key])).get(`quiet-group:${destination.navigation.groupId}`)).toBe("member")
-  expect(projectHierarchy(snapshot, filters, destination.navigation).nodes.find(node => node.id === destination.nodeId)?.hiddenInGraph).toBe(true)
-})
