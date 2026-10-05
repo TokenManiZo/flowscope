@@ -558,8 +558,8 @@ describe("RequestLabDialog", () => {
     expect(fetch.mock.calls.some(([input]) => String(input).startsWith("/api/account-settings"))).toBe(false)
   })
 
-  it("lists every registered account, disables unavailable sessions, and sends exact form data for each mode", async () => {
-    const fetch = installReusableTransport()
+  it("lists every registered account and disables unavailable sessions", async () => {
+    installReusableTransport()
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, { ...activeSession, accountId: "inactive", accountLabel: "비활성", status: "EXPIRED" }, { ...activeSession, accountId: "other", service: "https://other.example.test" }]} />)
 
@@ -568,8 +568,14 @@ describe("RequestLabDialog", () => {
     for (const label of ["USER B", "USER C", "비활성", "다른 서비스"]) {
       expect(screen.getByRole("option", { name: `${label} · 점검 시작 후 사용 가능` })).toHaveAttribute("aria-disabled", "true")
     }
-    await user.keyboard("{Escape}")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+  })
+
+  it("sends exact form data when switching account and anonymous authentication", async () => {
+    const fetch = installReusableTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+
+    expect(await openDraft(true)).toHaveValue(secret)
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
     const call = fetch.mock.calls.find(([input]) => String(input) === "/api/request-lab")
