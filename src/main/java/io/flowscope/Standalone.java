@@ -16,6 +16,7 @@ import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.GraphWorkspace;
+import io.flowscope.integration.RequestLabWorkspace;
 import io.flowscope.integration.ProjectWorkspace;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SqliteProjectStore;
@@ -67,6 +68,7 @@ public final class Standalone {
         private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
         private volatile long savedRevision = -1;
         private GraphWorkspace graphWorkspace = GraphWorkspace.empty();
+        private RequestLabWorkspace requestLabWorkspace = RequestLabWorkspace.empty();
         private long graphWorkspaceRevision;
         private volatile Instant lastSavedAt;
 
@@ -110,6 +112,24 @@ public final class Standalone {
             graphWorkspaceRevision++;
             return graphWorkspace();
         }
+        @Override public synchronized RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
+            return new RequestLabWorkspace.State(datasetRevision.get(), requestLabWorkspace.revision(),
+                    activeProjectDatabase != null, requestLabWorkspace.tab(evidenceId));
+        }
+        @Override public synchronized RequestLabWorkspace.State updateRequestLabWorkspace(String evidenceId, long dataset,
+                long expectedRevision, RequestLabWorkspace.Change change) {
+            if (dataset != datasetRevision.get() || expectedRevision != requestLabWorkspace.revision()) {
+                throw new IllegalStateException("프로젝트 또는 Request Lab이 변경되었습니다.");
+            }
+            if (activeProjectDatabase == null) throw new IllegalStateException("먼저 프로젝트를 DB에 저장해 주세요.");
+            if (records.stream().noneMatch(record -> evidenceId.equals(record.evidenceId))) throw new IllegalArgumentException("해당 Evidence가 없습니다.");
+            RequestLabWorkspace next = change.apply(requestLabWorkspace, evidenceId);
+            try { sqliteProjectStore.saveRequestLabWorkspace(activeProjectDatabase, evidenceId, requestLabWorkspace, next); }
+            catch (Exception error) { throw projectFailure("Request Lab 저장에 실패했습니다.", error); }
+            requestLabWorkspace = next;
+            lastSavedAt = Instant.now();
+            return requestLabWorkspace(evidenceId);
+        }
         @Override public AnalysisConfig config() { return config; }
         @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }
         @Override public List<ValidationDecision> validations() { return archivedValidations; }
@@ -137,6 +157,7 @@ public final class Standalone {
         @Override public synchronized void loadSample() {
             replaceWithSample();
             replaceGraphWorkspace(GraphWorkspace.empty());
+            requestLabWorkspace = RequestLabWorkspace.empty();
             archivedAssessments = List.of();
             archivedValidations = List.of();
             contexts.reset();
@@ -192,6 +213,7 @@ public final class Standalone {
                 activeProjectDatabase = next.database();
                 activeProjectContext = next.context();
                 replaceGraphWorkspace(GraphWorkspace.empty());
+                requestLabWorkspace = RequestLabWorkspace.empty();
                 datasetRevision.incrementAndGet();
                 rebuild();
                 markSaved();
@@ -216,6 +238,7 @@ public final class Standalone {
                 activeProjectDatabase = database;
                 activeProjectContext = loaded.context();
                 replaceGraphWorkspace(loaded.graphWorkspace());
+                requestLabWorkspace = loaded.requestLabWorkspace();
                 result = Pipeline.runIsolated(new ArrayList<>(records), config);
                 routeCandidates = List.copyOf(loaded.routeCandidates());
                 datasetRevision.incrementAndGet();
@@ -255,6 +278,7 @@ public final class Standalone {
                 routeCandidates = List.of();
                 JavascriptCallSiteAnalyzer.clearCache();
                 replaceGraphWorkspace(GraphWorkspace.empty());
+                requestLabWorkspace = RequestLabWorkspace.empty();
                 datasetRevision.incrementAndGet();
                 rebuild();
                 markSaved();
@@ -328,7 +352,7 @@ public final class Standalone {
         private void saveProject(Path database, ProjectStore.ProjectContext context) throws Exception {
             sqliteProjectStore.save(database, new ArrayList<>(records), config,
                     archivedAssessments, archivedValidations, contexts.completedRuns(),
-                    routeCandidates, executionLedger.attempts(), context, graphWorkspace);
+                    routeCandidates, executionLedger.attempts(), context, graphWorkspace, requestLabWorkspace);
             markSaved();
         }
 

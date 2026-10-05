@@ -18,16 +18,16 @@ const INSPECTOR_DEFAULT_WIDTH = 368
 const CENTER_MIN_WIDTH = 160
 const HANDLE_WIDTH = 16
 
-function useCompactWorkspace() {
-  const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.matchMedia?.(COMPACT_WORKSPACE_QUERY).matches === true)
+function useCompactWorkspace(query: string) {
+  const [compact, setCompact] = useState(() => typeof window !== "undefined" && window.matchMedia?.(query).matches === true)
 
   useEffect(() => {
-    const media = window.matchMedia(COMPACT_WORKSPACE_QUERY)
+    const media = window.matchMedia(query)
     const update = () => setCompact(media.matches)
     update()
     media.addEventListener("change", update)
     return () => media.removeEventListener("change", update)
-  }, [])
+  }, [query])
 
   return compact
 }
@@ -56,6 +56,7 @@ export interface ReferenceAnalysisWorkspaceProps {
   inspectorPersistent?: boolean
   inspectorModal?: boolean
   inspectorDefaultWidth?: number
+  compactMediaQuery?: string
   contentOverflow?: "auto" | "hidden"
   inspectorOverflow?: "auto" | "hidden"
   contextOpen?: boolean
@@ -67,8 +68,8 @@ export interface ReferenceAnalysisWorkspaceProps {
   onContextOpenChange?(open: boolean): void
 }
 
-export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorRevealKey, inspectorPersistent = false, inspectorModal = true, inspectorDefaultWidth = INSPECTOR_DEFAULT_WIDTH, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, contextBadge = 0, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
-  const compact = useCompactWorkspace()
+export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, children, inspector, inspectorOpen, inspectorRevealKey, inspectorPersistent = false, inspectorModal = true, inspectorDefaultWidth = INSPECTOR_DEFAULT_WIDTH, compactMediaQuery = COMPACT_WORKSPACE_QUERY, contentOverflow = "auto", inspectorOverflow = "auto", contextOpen, contextTitle = true, contextBadge = 0, onInspectorOpenChange, onContextOpenChange }: ReferenceAnalysisWorkspaceProps) {
+  const compact = useCompactWorkspace(compactMediaQuery)
   const [isContextOpen, setContextOpen] = useOpenState(contextOpen, onContextOpenChange)
   const [isInspectorOpen, setInspectorOpen] = useOpenState(inspectorOpen, onInspectorOpenChange)
   const workspaceRef = useRef<HTMLElement>(null)
@@ -95,7 +96,7 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
     return () => observer.disconnect()
   }, [compact, contextCollapsed, contextWidth, hasContext, hasInspector, inspectorCollapsed, inspectorWidth])
 
-  return <section ref={workspaceRef} className="relative flex min-h-full min-w-0 flex-col xl:h-full xl:flex-row xl:overflow-hidden">
+  return <section ref={workspaceRef} className={`relative flex min-h-full min-w-0 xl:h-full xl:flex-row xl:overflow-hidden ${compact ? "flex-col" : "h-full flex-row overflow-hidden"}`}>
     {/* 접으면 40px 띠를 남겨 언제든 다시 열 수 있게 한다(경계의 숨은 버튼만 남으면 다시 여는 법을 찾기 어렵다). */}
     {!compact && hasContext ? !contextCollapsed ? <><RouteContextPanel title={CONTEXT_TITLE} showTitle={contextTitle} className="min-h-0 shrink-0 overflow-y-auto" style={{ width: contextWidth }}>{context}</RouteContextPanel><PaneResizeHandle side="left" label={CONTEXT_TITLE} width={contextWidth} min={CONTEXT_MIN_WIDTH} max={contextMax()} onWidthChange={setContextWidth} onCollapse={() => setContextCollapsed(true)} /></>
       : <div className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-border/70 py-3">

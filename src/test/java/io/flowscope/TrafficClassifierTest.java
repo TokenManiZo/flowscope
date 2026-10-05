@@ -21,6 +21,26 @@ class TrafficClassifierTest {
     }
 
     @Test
+    void manualReviewPreservesEvidenceAndDiscoveryBoundary() {
+        RequestRecord api = record("GET", "/api/orders", null, "application/json");
+        RequestRecord duplicate = record("GET", "/api/orders", null, "application/json");
+        RequestRecord validation = record("GET", "/api/orders", null, "application/json");
+        validation.phase = RunPhase.VALIDATION;
+        String operation = classified(api).op;
+        AnalysisConfig config = new AnalysisConfig().withTrafficOverride(operation, TrafficOverride.REVIEW);
+        var result = Pipeline.run(List.of(api, duplicate, validation), config);
+        assertEquals(3, result.records.size());
+        assertEquals(TrafficClassification.Disposition.REVIEW, result.records.get(0).trafficClassification.disposition());
+        assertTrue(result.records.get(0).trafficClassification.reasons().contains("USER_REVIEW"));
+        assertFalse(result.records.get(0).trafficClassification.coverageEligible());
+        assertEquals(TrafficClassification.Disposition.REVIEW, result.records.get(1).trafficClassification.disposition());
+        assertEquals(TrafficClassification.Disposition.EXCLUDE, result.records.get(2).trafficClassification.disposition());
+        assertFalse(result.records.get(2).trafficClassification.userOverride());
+        config.withTrafficOverride(operation, TrafficOverride.AUTO);
+        assertEquals(TrafficClassification.Disposition.INCLUDE, Pipeline.run(List.of(api), config).records.getFirst().trafficClassification.disposition());
+    }
+
+    @Test
     void 표준문맥과_MIME가_일치하는_정적자산만_제외한다() {
         RequestRecord js = record("GET", "/static/app.js", null, "application/javascript");
         js.secFetchDest = "script";

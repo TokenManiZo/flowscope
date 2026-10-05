@@ -9,7 +9,7 @@ import { scopeFindings, undecidedReason } from "./graphScopeFindings"
 
 const svc = "https://demo.test:443"
 const cell = (overrides: Partial<Cell>): Cell => ({ idn: "user-1", op: `${svc} GET /orders/{id}`, resource: null, perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: [], ...overrides })
-const group = (id: string, label: string, cells: Cell[]): ApiGroup => ({ id, service: svc, key: label, label, cells, operations: [...new Set(cells.map(item => item.op))], routeCandidates: [], endpointCount: new Set(cells.map(item => item.op)).size, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0, observedOperationCount: 0 })
+const group = (id: string, label: string, cells: Cell[]): ApiGroup => ({ id, service: svc, key: label, label, cells, operations: [...new Set(cells.map(item => item.op))], routeCandidates: [], endpointCount: new Set(cells.map(item => item.op)).size, observedCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 })
 
 it("splits server verdicts into IDOR/BFLA candidates (writes first), undecided reasons and per-identity counts", () => {
   const cells = [
@@ -55,12 +55,6 @@ it("orders site groups by candidates, then undecided, and marks clean groups", (
   ]} />)
   const rows = within(screen.getByRole("list", { name: "API 그룹 목록" })).getAllByRole("button")
   expect(rows.map(row => row.textContent)).toEqual(["HOT APIs· 1후보 1", "WARN APIs· 1확인 필요 1", "CLEAN APIs· 1문제 없음"])
-})
-
-it("does not call a group clean when it holds observed functions that were never judged", () => {
-  render(<GraphScopeSummary scope="site" groups={[{ ...group("p", "PAGE APIs", []), observedOperationCount: 2 }, { ...group("m", "MIXED APIs", [cell({})]), observedOperationCount: 1 }]} />)
-  const rows = within(screen.getByRole("list", { name: "API 그룹 목록" })).getAllByRole("button")
-  expect(rows.map(row => row.textContent)).toEqual(["MIXED APIs· 1판정 없음", "PAGE APIs· 0판정 없음"])
 })
 
 it("counts each identity's APIs by their most urgent verdict so the parts add up to the API count", () => {

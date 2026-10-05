@@ -234,6 +234,7 @@ public final class ZapCampaign implements AutoCloseable {
     }
 
     synchronized JsonNode startZapBaseline(JsonNode args) {
+        rejectIndependentExplorer("ZAP baseline");
         if (zapWorkflowActive) {
             throw new IllegalStateException("ZAP campaign cleanup is still running");
         }
@@ -1884,6 +1885,13 @@ public final class ZapCampaign implements AutoCloseable {
         String value = args.path(field).asText();
         if (value.isBlank()) throw new IllegalArgumentException(field + " is required");
         return value;
+    }
+
+    private void rejectIndependentExplorer(String capability) {
+        RunContextRegistry.Context context = state.contexts().current(Source.LLM);
+        if (context != null && context.phase() == RunPhase.EXPLORATION) {
+            throw new IllegalStateException("independent Explorer cannot access " + capability);
+        }
     }
 
     private String validatedAccount(String accountId) {

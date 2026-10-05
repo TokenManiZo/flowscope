@@ -133,27 +133,6 @@ it("requires explicit 18-item expansion for APIs and retains group paging on Bac
   expect(screen.getByRole("row", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
 })
 
-it("switches the graph between judged APIs and every observed non-static request, and resets to judged APIs", async () => {
-  window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  const page = { ...snapshot.events[0], eventId: "php-1", clusterEvidenceIds: ["php-1"], path: "/board/list.php", op: "GET /board/list.php", resource: null, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", coverageEligible: false }
-  const style = { ...page, eventId: "css-1", clusterEvidenceIds: ["css-1"], path: "/theme/site.css", op: "GET /theme/site.css", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW" }
-  ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, events: [...snapshot.events, page, style] }
-  const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
-  render(<GraphPage />)
-  const rail = screen.getByRole("complementary", { name: "분석 필터" })
-  expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
-  expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
-  await userEvent.click(within(rail).getByRole("button", { name: "관측 전체" }))
-  expect(within(rail).getByRole("button", { name: "관측 전체" })).toHaveAttribute("aria-pressed", "true")
-  expect(within(rail).getByText(/추가로 보이는 요청은 판정에 쓰지 않습니다/)).toBeVisible()
-  // 정적 파일(/theme/site.css)은 관측 전체에서도 빠지고, 서버 렌더링 화면(/board/list.php) 묶음만 더해진다.
-  expect(screen.queryAllByText("BOARD APIs").length).toBeGreaterThan(0)
-  expect(screen.queryAllByText("THEME APIs")).toHaveLength(0)
-  await userEvent.click(within(rail).getByRole("button", { name: "초기화" }))
-  expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
-  expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
-})
-
 it("destroys the canvas branch and exposes the same projection as a list across the 900px breakpoint", async () => {
   const listeners = new Set<(event: Event) => void>()
   const media = { matches: false, media: "(max-width: 900px)", onchange: null, addEventListener: (_: string, listener: (event: Event) => void) => listeners.add(listener), removeEventListener: (_: string, listener: (event: Event) => void) => listeners.delete(listener), dispatchEvent: () => true }
@@ -163,7 +142,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   render(<GraphPage />)
   expect(screen.getByRole("complementary", { name: "분석 필터" })).toBeVisible()
   const rail = screen.getByRole("complementary", { name: "분석 필터" })
-  for (const section of ["보기 범위", "출처", "신원", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
+  for (const section of ["출처", "신원", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
   // 판정·Gap 목록·역할 개수·보기 전환은 그래프 필터에서 뺐다(판정은 매트릭스, 색 기준은 강조 필터가 맡는다).
   for (const removed of ["Verdict", "Gap", "Role · policy", "View options", "고급", "경로 후보 표시", "인증·화면·반복 보조 흐름 표시", "그래프 입력 방식"]) expect(within(rail).queryByText(removed)).not.toBeInTheDocument()
   expect(screen.getAllByText("TARGET")).toHaveLength(1)

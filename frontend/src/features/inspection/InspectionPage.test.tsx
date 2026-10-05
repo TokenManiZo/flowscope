@@ -97,6 +97,7 @@ afterEach(() => {
   document.head.querySelector('meta[name="flowscope-capability"]')?.remove()
   vi.unstubAllGlobals()
   vi.useRealTimers()
+  sessionStorage.clear()
 })
 
 const previousHasPointerCapture = Object.getOwnPropertyDescriptor(Element.prototype, "hasPointerCapture")
@@ -129,32 +130,75 @@ describe("unified inspection hub", () => {
     objects: [], verdict: "undecided",
   }
 
-  it("account collection handoff overrides cached completed passes and opens HUMAN without starting traffic", async () => {
-    const human = { active: false, completed: true, runId: "prior-human", accountId: "active-account", proxy: "http://127.0.0.1:8080" }
-    const scanner = { run: { status: "COMPLETED" }, accounts: [], scope: [target] }
-    const explorer = { ...explorerIdle, run: { ...explorerIdle.run, status: "COMPLETED", runId: "prior-llm" } }
-    const fetchStub = installTransport({ human, scanner, explorer })
-    const client = createTestQueryClient()
-    client.setQueryData(queryKeys.humanRun, human)
-    client.setQueryData(queryKeys.scannerRun, scanner)
-    client.setQueryData(queryKeys.explorerRun, explorer)
-    sessionStorage.setItem("flowscope.humanAccount", "active-account")
-    renderWithQueryClient(<InspectionPage />, client)
-    await waitFor(() => expect(screen.getByRole("tab", { name: "1 · 직접 둘러보기" })).toHaveAttribute("aria-selected", "true"))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "HUMAN pass 계정" })).toHaveTextContent("활성 계정"))
-    expect(screen.getByRole("tab", { name: "4 · 결과 비교" })).toHaveAttribute("aria-selected", "false")
-    expect(sessionStorage.getItem("flowscope.humanAccount")).toBeNull()
+  it("opens the records tab from account-page links without starting traffic", async () => {
+    sessionStorage.setItem("flowscope.inspectionRecords", "true")
+    const { fetchStub } = renderInspection()
+    expect(await screen.findByRole("tab", { name: "수집 기록" })).toHaveAttribute("aria-selected", "true")
+    expect(sessionStorage.getItem("flowscope.inspectionRecords")).toBeNull()
+    expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+  })
+
+  it("starts with collected records and has no HUMAN execution controls", async () => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ humanPending: true, humanEvents: [humanEvent,
+      { ...humanEvent, eventId: "auto", idn: "anon", source: "scanner", phase: "AUTHORIZATION_REPLAY" }] })
+    expect(await screen.findByRole("tab", { name: "수집 기록" })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["수집 기록", "ZAP 스캔", "LLM 탐색", "결과 비교"])
+    expect(screen.queryByRole("tab", { name: /직접 둘러보기/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "HUMAN pass 계정" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: "수집 기록" }))
+    expect(await screen.findByText("출처")).toBeVisible()
+    expect(screen.queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
+    const list = screen.getByLabelText("기록된 요청 목록")
+    expect(within(list).getByText("H")).toHaveAttribute("title", "Human")
+    expect(within(list).getByText("S")).toHaveAttribute("title", "비로그인 자동 검증")
+    expect(screen.queryByRole("button", { name: "HUMAN pass 시작" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "HUMAN pass 종료" })).not.toBeInTheDocument()
+    await user.click(within(screen.getByLabelText("수집 출처 필터")).getByRole("button", { name: "ZAP" }))
+    expect(within(screen.getByLabelText("기록된 요청 목록")).queryAllByRole("button")).toHaveLength(0)
+    expect(fetchStub.mock.calls.some(([path]) => path === "/api/human-run")).toBe(false)
+  })
+
+  it("labels anonymous verification as Scanner and separates it from ZAP using saved provenance", async () => {
+    const user = userEvent.setup()
+    const { fetchStub } = renderInspection({ humanEvents: [humanEvent,
+      { ...humanEvent, eventId: "zap", path: "/api/zap", idn: "anon", source: "scanner", sourceDetail: "OTHER_SCANNER" },
+      { ...humanEvent, eventId: "auto-phase", path: "/api/auto-phase", laneAccountId: "anon", source: "scanner", phase: "AUTHORIZATION_REPLAY" },
+      { ...humanEvent, eventId: "auto-detail", path: "/api/auto-detail", idn: "anon", source: "scanner", sourceDetail: "AUTHORIZATION_REPLAY" },
+    ] })
+    const list = await screen.findByLabelText("기록된 요청 목록")
+    const phaseRow = await within(list).findByRole("button", { name: /api\/auto-phase/ })
+    const detailRow = within(list).getByRole("button", { name: /api\/auto-detail/ })
+    for (const row of [phaseRow, detailRow]) {
+      expect(within(row).getByText("S")).toBeVisible()
+      expect(within(row).getByText("비로그인 자동 검증")).toBeVisible()
+      expect(within(row).getByText("비로그인")).toBeVisible()
+    }
+    const filters = screen.getByLabelText("수집 출처 필터")
+    await user.click(within(filters).getByRole("button", { name: "비로그인 자동 검증" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(2)
+    await user.click(within(filters).getByRole("button", { name: "ZAP" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(1)
+    expect(within(list).getByRole("button", { name: /api\/zap/ })).toBeVisible()
+    await user.click(within(filters).getByRole("button", { name: "전체" }))
+    await user.type(screen.getByLabelText("수집 기록 검색"), "비로그인 자동 검증")
+    expect(within(list).getAllByRole("button")).toHaveLength(2)
+    await user.click(screen.getByRole("tab", { name: "ZAP 스캔" }))
+    const zapList = screen.getByLabelText("기록된 요청 목록")
+    expect(within(zapList).getAllByRole("button")).toHaveLength(1)
+    expect(within(zapList).getByRole("button", { name: /api\/zap/ })).toBeVisible()
     expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
   })
 
   it("filters and collapses the bounded HUMAN request feed without loading raw data", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
+    await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
     // 등록 계정은 표시 이름으로, 연결되지 않은 서버 임시 신원은 "미등록 로그인 N"으로 보인다.
     expect(await screen.findByRole("button", { name: /GET \/api\/me 활성 계정 HTTP 200 원문 보기/ })).toBeVisible()
     await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
-    await user.type(screen.getByLabelText("HUMAN 작업 피드 검색"), "profile")
+    await user.type(screen.getByLabelText("수집 기록 검색"), "profile")
     expect(screen.getByRole("button", { name: /GET \/api\/profile 미등록 로그인 2 HTTP 403 원문 보기/ })).toBeVisible()
     expect(screen.queryByRole("button", { name: /POST \/api\/orders/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "작업 피드 접기" }))
@@ -167,8 +211,9 @@ describe("unified inspection hub", () => {
     const { fetchStub } = renderInspection({ humanEvents: [
       { ...humanEvent, source }, { ...humanEvent, source, eventId: "profile-event", path: "/api/profile" },
     ] })
-    if (source === "scanner") await user.click(await screen.findByRole("tab", { name: "2 · ZAP 스캔" }))
-    const search = await screen.findByRole("textbox", { name: source === "human" ? "HUMAN 작업 피드 검색" : "ZAP 작업 피드 검색" })
+    if (source === "human") await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
+    if (source === "scanner") await user.click(await screen.findByRole("tab", { name: "ZAP 스캔" }))
+    const search = await screen.findByRole("textbox", { name: source === "human" ? "수집 기록 검색" : "ZAP 작업 피드 검색" })
     await user.type(search, "profile")
     const list = screen.getByLabelText("기록된 요청 목록")
     list.scrollTop = 35
@@ -179,21 +224,15 @@ describe("unified inspection hub", () => {
     expect(search).toHaveValue("profile")
     expect(screen.getByLabelText("기록된 요청 목록")).toBe(list)
     expect(list.scrollTop).toBe(35)
-    expect(screen.queryByRole("tab", { name: "1 · 직접 둘러보기" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("tab", { name: "수집 기록" })).not.toBeInTheDocument()
     expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
     await user.keyboard("{Escape}")
     expect(screen.getByRole("button", { name: "크게 보기" })).toHaveFocus()
     expect(workspace.scrollTop).toBe(90)
     expect(search).toHaveValue("profile")
-    expect(screen.getByRole("tab", { name: "1 · 직접 둘러보기" })).toBeVisible()
-    const resize = screen.getByRole("separator", { name: "기록된 요청 높이 조절" })
-    vi.spyOn(list, "clientHeight", "get").mockReturnValue(240)
-    resize.focus()
-    await user.keyboard("{ArrowDown}{ArrowDown}")
-    expect(list).toHaveStyle({ height: "320px" })
-    await user.keyboard("{ArrowDown}")
-    expect(list).toHaveStyle({ height: "360px" })
+    expect(screen.getByRole("tab", { name: "수집 기록" })).toBeVisible()
+    expect(screen.queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "크게 보기" }))
     await user.click(screen.getByRole("button", { name: /POST \/api\/profile.*원문 보기/ }))
     expect(await screen.findByRole("dialog")).toBeVisible()
@@ -215,6 +254,7 @@ describe("unified inspection hub", () => {
       reusableSession: "", message: "응답 원문은 보존되지 않았습니다.",
     } })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
+    await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
     await user.click(await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ }))
     expect(await screen.findByLabelText("요청 원문")).toHaveTextContent("Authorization: ***MASKED***")
     expect(screen.getByLabelText("응답 원문 패널")).toHaveTextContent("이 원문은 보존되지 않아 사용할 수 없습니다.")
@@ -240,60 +280,15 @@ describe("unified inspection hub", () => {
     expect(screen.queryByText("범위 → HUMAN → ZAP → 관측 기록 검토 순서로 각각의 관측 기록을 분리합니다.")).not.toBeInTheDocument()
   })
 
-  it("opens on the current step without a current-step button or dot", async () => {
+  it("opens on the first records tab without a current-step button or dot", async () => {
     const user = userEvent.setup()
     renderInspection()
 
-    await waitFor(() => expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).toHaveAttribute("data-state", "active"))
+    await waitFor(() => expect(screen.getByRole("tab", { name: /수집 기록/ })).toHaveAttribute("data-state", "active"))
     expect(screen.queryByRole("button", { name: "현재 단계로" })).not.toBeInTheDocument()
     expect(screen.queryByText("현재 단계")).not.toBeInTheDocument()
     await user.click(screen.getByRole("tab", { name: /LLM 탐색/ }))
     expect(screen.getByRole("tab", { name: /LLM 탐색/ })).toHaveAttribute("data-state", "active")
-  })
-
-  it("sends exact HUMAN begin and current-run end forms without offering observed or inactive credentials", async () => {
-    const user = userEvent.setup()
-    const { fetchStub } = renderInspection({ human: { active: true, completed: false, runId: "human-current", accountId: "active-account", proxy: "http://127.0.0.1:8080" } })
-
-    await screen.findByRole("button", { name: "HUMAN pass 종료" })
-    expect(screen.queryByText("관측 신원")).not.toBeInTheDocument()
-    expect(screen.queryByText("만료 계정")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "HUMAN pass 종료" }))
-    await waitFor(() => expect(fetchStub).toHaveBeenCalledWith("/api/human-run", expect.objectContaining({
-      method: "POST", body: new URLSearchParams({ action: "end", runId: "human-current" }),
-    })))
-
-    const endCall = fetchStub.mock.calls.find(([path, init]) => path === "/api/human-run" && (init as RequestInit).method === "POST")
-    expect((endCall?.[1] as RequestInit).body?.toString()).toBe("action=end&runId=human-current")
-  })
-
-  it("shows the listener actually bound to the HUMAN run and names conflicting traffic", async () => {
-    renderInspection({ human: { active: true, completed: false, runId: "human-current",
-      accountId: "", proxy: "http://127.0.0.1:8888", listenerPort: 8888,
-      otherListenerPort: 9999, otherListenerRequests: 2 } })
-
-    expect(await screen.findByText(/프록시 127\.0\.0\.1:8888 브라우저로/)).toBeVisible()
-    expect(screen.getByText(/다른 포트 9999에서 범위 안 요청 2건/)).toBeVisible()
-  })
-
-  it("does not invent a proxy address before the real Burp listener is detected", async () => {
-    renderInspection({ human: { active: true, completed: false, runId: "human-current", accountId: "", proxy: "실제 리스너 감지 대기" } })
-
-    expect(await screen.findByText(/Burp 프록시 브라우저로/)).toBeVisible()
-    expect(screen.queryByText(/실제 리스너 감지 대기 브라우저로/)).not.toBeInTheDocument()
-  })
-
-  it("sends only the action and anonymous account for a HUMAN begin", async () => {
-    const user = userEvent.setup()
-    const { fetchStub } = renderInspection()
-
-    await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
-    await user.click(screen.getByRole("option", { name: "활성 계정" }))
-    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
-    await user.click(screen.getByRole("option", { name: "비로그인" }))
-    await user.click(screen.getByRole("button", { name: "HUMAN pass 시작" }))
-    await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run" && (init as RequestInit).body?.toString() === "action=begin&account=")).toBe(true))
   })
 
   it("sends the exact isolated ZAP baseline request only after connection, exact scope, and an identity choice", async () => {
@@ -443,27 +438,10 @@ describe("unified inspection hub", () => {
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
     await user.click(screen.getByRole("tab", { name: /LLM 탐색/ }))
-    await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
-    await waitFor(() => expect(client.getQueryData(queryKeys.humanRun)).toMatchObject({ completed: true }))
+    await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.scannerRun }) })
 
     expect(screen.getByRole("tab", { name: /LLM 탐색/ })).toHaveAttribute("data-state", "active")
-    expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).not.toHaveTextContent("✓")
-  })
-
-  it("stays on the HUMAN tab when the pass completes instead of jumping to ZAP", async () => {
-    const { client } = renderInspection({
-      human: [
-        { active: true, completed: false, runId: "human-1", accountId: "", proxy: "" },
-        { active: false, completed: true, runId: "", accountId: "", proxy: "" },
-      ],
-    })
-
-    await screen.findByText(target, { exact: false })
-    await waitFor(() => expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).toHaveAttribute("data-state", "active"))
-    await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
-    await waitFor(() => expect(client.getQueryData(queryKeys.humanRun)).toMatchObject({ completed: true }))
-
-    expect(screen.getByRole("tab", { name: /직접 둘러보기/ })).toHaveAttribute("data-state", "active")
+    expect(screen.getByRole("tab", { name: /ZAP 스캔/ })).not.toHaveTextContent("✓")
   })
 
   it("keeps an out-of-scope selected target disabled instead of silently starting another target", async () => {
@@ -499,55 +477,7 @@ describe("unified inspection hub", () => {
     expect(howTo).toHaveTextContent("FlowScope 폴더에서 실행")
     expect(howTo).toHaveTextContent("./scripts/zap-up.sh")
     expect(howTo).toHaveTextContent(".\\scripts\\zap-up.ps1")
-    expect(within(howTo).getByRole("link", { name: "전체 파일 받기" })).toHaveAttribute("href", expect.stringContaining("/releases"))
-  })
-
-  it("offers every registered account of the target because the HUMAN pass captures the session itself", async () => {
-    const user = userEvent.setup()
-    renderInspection({
-      accounts: [
-        { id: "no-session", label: "세션 없는 계정", role: "USER", target, color: "", authArtifactCount: 0 },
-        { id: "active-account", label: "사용 가능 계정", role: "USER", target, color: "", authArtifactCount: 1 },
-        { id: "other-account", label: "다른 서비스 계정", role: "USER", target: "https://other.flowscope.test", color: "", authArtifactCount: 1 },
-      ],
-      managedSessions: [],
-    })
-
-    await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
-    expect(await screen.findByRole("option", { name: "세션 없는 계정" })).toBeVisible()
-    expect(screen.getByRole("option", { name: "사용 가능 계정" })).toBeVisible()
-    expect(screen.queryByRole("option", { name: "다른 서비스 계정" })).not.toBeInTheDocument()
-    expect(screen.queryByText("관측 신원")).not.toBeInTheDocument()
-  })
-
-  it("offers every registered account when no scope is configured yet", async () => {
-    const user = userEvent.setup()
-    renderInspection({
-      scanner: { run: { status: "NOT_STARTED" }, accounts: [], scope: [] },
-      accounts: [{ id: "user-a", label: "USER A", role: "USER", target: "http://127.0.0.1:9000", color: "", authArtifactCount: 0 }],
-      managedSessions: [],
-    })
-
-    await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await user.click(screen.getByRole("combobox", { name: "HUMAN pass 계정" }))
-    expect(await screen.findByRole("option", { name: "USER A" })).toBeVisible()
-  })
-
-  it("refuses blank and stale HUMAN run IDs before any end request", async () => {
-    const user = userEvent.setup()
-    const { client, fetchStub } = renderInspection({ human: [
-      { active: true, completed: false, runId: "", accountId: "", proxy: "" },
-      { active: false, completed: false, runId: "stale-run", accountId: "", proxy: "" },
-    ] })
-    await screen.findByRole("button", { name: "HUMAN pass 종료" })
-    expect(screen.getByRole("button", { name: "HUMAN pass 종료" })).toBeDisabled()
-    expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run" && (init as RequestInit).method === "POST")).toBe(false)
-
-    await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.humanRun }) })
-    expect(screen.getByRole("button", { name: "HUMAN pass 종료" })).toBeDisabled()
-    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
-    expect(fetchStub.mock.calls.some(([path, init]) => path === "/api/human-run" && (init as RequestInit).method === "POST")).toBe(false)
+    expect(within(howTo).getByRole("link", { name: "전체 파일 받기" })).toHaveAttribute("href", "https://github.com/TokenManiZo/flowscope/releases")
   })
 
   it("shows the exact ZAP mutation error without replacing the last successful run", async () => {
@@ -567,27 +497,6 @@ describe("unified inspection hub", () => {
     expect(within(screen.getByRole("group", { name: "ZAP 실행 상태" })).getByText("9 / -")).toBeVisible()
   })
 
-  it.each([
-    ["불러오는 중", { humanPending: true }],
-    ["상태 확인 필요", { humanError: { message: "HUMAN 상태를 읽을 수 없습니다.", status: 503 } }],
-  ])("shows HUMAN %s in the status line when the initial query has no data", async (expected, options) => {
-    renderInspection(options)
-
-    await waitFor(() => expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent(expected), { timeout: 3_000 })
-    expect(screen.getByRole("button", { name: "HUMAN pass 시작" })).toBeDisabled()
-    expect(screen.queryByText("대기 중")).not.toBeInTheDocument()
-  })
-
-  it("does not claim an initial HUMAN error has a last successful state", async () => {
-    renderInspection({ humanError: { message: "HUMAN 상태를 읽을 수 없습니다.", status: 503 } })
-
-    await waitFor(
-      () => expect(screen.getByRole("alert", { name: "HUMAN 상태를 읽을 수 없습니다." })).toHaveTextContent("상태를 가져오지 못했습니다. 확인이 필요합니다."),
-      { timeout: 3_000 },
-    )
-    expect(screen.queryByText("마지막 성공 상태를 표시하고 있습니다.")).not.toBeInTheDocument()
-  })
-
   it.each([900, 600])("keeps the scope strip and step controls reachable without any side rail at %ipx", async (width) => {
     setCompactViewport(width)
     const user = userEvent.setup()
@@ -597,22 +506,23 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.getByRole("group", { name: "점검 범위" })).toBeVisible()
-    await user.click(screen.getByRole("tab", { name: /직접 둘러보기/ }))
-    expect(screen.getByRole("button", { name: "HUMAN pass 시작" })).toBeEnabled()
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    expect(screen.queryByRole("button", { name: "HUMAN pass 시작" })).not.toBeInTheDocument()
   })
 
-  it("gives HUMAN, ZAP, and LLM the same card layout and request feed", async () => {
+  it("keeps ZAP and LLM controls without record resize handles", async () => {
     const user = userEvent.setup()
     renderInspection({
       scanner: { run: { status: "COMPLETED", captured_records: 9, alert_count: 2 }, scope: [target] },
     })
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    for (const [stepName, heading] of [[/직접 둘러보기/, "직접 둘러보기"], [/ZAP 스캔/, "ZAP 스캔"], [/LLM 탐색/, "LLM 탐색"]] as const) {
+    for (const [stepName, heading] of [[/ZAP 스캔/, "ZAP 스캔"], [/LLM 탐색/, "LLM 탐색"]] as const) {
       await user.click(screen.getByRole("tab", { name: stepName }))
       const panel = screen.getByRole("tabpanel", { name: stepName })
       expect(within(panel).getByRole("heading", { name: heading })).toBeVisible()
       expect(within(panel).queryByText("실행 설정")).not.toBeInTheDocument()
+      expect(within(panel).queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
     }
 
     expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeVisible()

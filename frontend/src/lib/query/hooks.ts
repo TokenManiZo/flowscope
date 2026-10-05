@@ -145,7 +145,17 @@ export function useOpenProjectMutation() { return useInvalidatingMutation(openPr
 export function useResetProjectTrafficMutation() { return useInvalidatingMutation(resetProjectTraffic, projectInvalidations) }
 export function useDeleteProjectMutation() { return useInvalidatingMutation(deleteProject, [queryKeys.projects]) }
 export function useLoadSampleMutation() { return useInvalidatingMutation(loadSample, [queryKeys.snapshot]) }
-export function useHumanRunMutation() { return useInvalidatingMutation(setHumanRun, [queryKeys.humanRun]) }
+export function useHumanRunMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: setHumanRun,
+    retry: false,
+    onSuccess: (data) => { queryClient.setQueryData(queryKeys.humanRun, data) },
+    onSettled: () => {
+      void Promise.all([queryKeys.humanRun, queryKeys.snapshot].map((queryKey) => queryClient.invalidateQueries({ queryKey })))
+    },
+  })
+}
 export function useScannerRunMutation() { return useInvalidatingMutation(({ target, accounts, anonymous, definitions }: { target: string; accounts: string; anonymous: boolean; definitions: string }) => startScannerRun(target, accounts, anonymous, definitions), [queryKeys.scannerRun]) }
 export function useScannerCancelMutation() { return useInvalidatingMutation(cancelScannerRun, [queryKeys.scannerRun]) }
 export function useZapAccountSaveMutation() { return useInvalidatingMutation(saveZapAccount, [queryKeys.scannerRun, queryKeys.snapshot]) }

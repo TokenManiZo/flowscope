@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -105,6 +105,22 @@ describe("EvidencePage", () => {
     expect(screen.queryByText("workspace-evidence")).not.toBeInTheDocument()
   })
 
+  it("keeps the original table columns and dismisses details only from outside blank space", async () => {
+    installFetch([event({ eventId: "outside-evidence" })])
+    renderWithQueryClient(<EvidencePage />)
+    const row = (await screen.findByText("outside-evidence")).closest("tr")!
+    expect(within(row).getAllByRole("cell")).toHaveLength(9)
+    for (const name of ["#", "소스", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
+    await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
+    const detail = await screen.findByRole("region", { name: "관측 기록 상세" })
+    fireEvent.pointerDown(detail)
+    expect(screen.getByText("선택 관측 기록: outside-evidence")).toBeVisible()
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "관측 기록" }))
+    expect(screen.queryByText("선택 관측 기록: outside-evidence")).not.toBeInTheDocument()
+    await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
+    expect(await screen.findByText("선택 관측 기록: outside-evidence")).toBeVisible()
+  })
+
   it("splits 관측 기록 into main, review and hidden tabs with counts, and filters by source, class and search", async () => {
     installFetch([
       event({ eventId: "human-api", source: "human", trafficClass: "API" }),
@@ -194,8 +210,8 @@ describe("EvidencePage", () => {
     expect(detail).not.toHaveAccessibleName(/event-2/)
     await userEvent.click(detail)
     expect(await screen.findByText("선택 관측 기록: event-2")).toBeVisible()
-    // 표의 요청 칸과 상세의 경로 칸 모두 선택한 행(/orders/2)을 가리킨다.
-    expect(screen.getAllByText(/\/orders\/2$/).length).toBeGreaterThanOrEqual(2)
+    // 선택 식별자는 유지하고 요청·응답 위의 중복 메타데이터는 표시하지 않는다.
+    expect(screen.getAllByText(/\/orders\/2$/)).toHaveLength(1)
   })
 
   it("uses server pagination metadata without exposing Request Lab raw data", async () => {
@@ -226,14 +242,15 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
     await userEvent.click((await screen.findByText("e-204")).closest("tr")!)
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/evidence?operation=GET+%2Forders%2F%7Bid%7D&offset=200&limit=200", expect.any(Object)))
-    const request = await screen.findByText("GET /orders/1 HTTP/1.1")
+    const request = await screen.findByRole("textbox", { name: "마스킹된 요청 원문" })
     const policy = screen.getByText("정책 편집 · 펼치기/접기")
     expect(request.compareDocumentPosition(policy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(policy.closest("details")).not.toHaveAttribute("open")
     await userEvent.click(policy)
     await userEvent.selectOptions(screen.getByLabelText("필수 역할 지정"), "LV2")
     expect(screen.getByLabelText("필수 역할 지정")).toHaveValue("LV2")
-    expect(screen.getByText("user-a / User")).toBeVisible()
+    expect(screen.queryByText("user-a / User")).not.toBeInTheDocument()
+    expect(screen.queryByText("기록 번호")).not.toBeInTheDocument()
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
   })
 
@@ -406,9 +423,9 @@ describe("EvidencePage", () => {
     expect(await screen.findByRole("button", { name: "XML 가져오기 실행" })).toBeEnabled()
   })
 
-  it.each([900, 600])("keeps 관측 기록 filters and selected detail functional at compact %ipx", async (width) => {
+  it.each([600, 390])("keeps 관측 기록 filters and selected detail functional at compact %ipx", async (width) => {
     const previousMatchMedia = window.matchMedia
-    window.matchMedia = vi.fn((query: string) => ({ matches: query.includes("1279") && width < 1280, media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
+    window.matchMedia = vi.fn((query: string) => ({ matches: query.startsWith("(max-width:") && width <= Number(query.match(/\d+/)?.[0]), media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
     installFetch([event({ eventId: "compact-evidence" })])
     const user = userEvent.setup()
     renderWithQueryClient(<EvidencePage />)

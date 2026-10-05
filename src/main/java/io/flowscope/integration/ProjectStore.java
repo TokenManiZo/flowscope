@@ -46,8 +46,18 @@ public final class ProjectStore {
                               Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                               List<RouteCandidate> routeCandidates,
                               List<RunExecutionLedger.Attempt> runAttempts,
-                              ProjectContext context, GraphWorkspace graphWorkspace) {
-        public ProjectData { graphWorkspace = graphWorkspace == null ? GraphWorkspace.empty() : graphWorkspace; }
+                              ProjectContext context, GraphWorkspace graphWorkspace, RequestLabWorkspace requestLabWorkspace) {
+        public ProjectData {
+            graphWorkspace = graphWorkspace == null ? GraphWorkspace.empty() : graphWorkspace;
+            requestLabWorkspace = requestLabWorkspace == null ? RequestLabWorkspace.empty() : requestLabWorkspace;
+        }
+        public ProjectData(List<RequestRecord> records, AnalysisConfig config, List<LegacyAssessment> assessments,
+                           List<ValidationDecision> validations, Set<Source> completedLanes,
+                           Map<Source, RunContextRegistry.CompletedRun> completedRuns, List<RouteCandidate> routeCandidates,
+                           List<RunExecutionLedger.Attempt> runAttempts, ProjectContext context, GraphWorkspace graphWorkspace) {
+            this(records, config, assessments, validations, completedLanes, completedRuns, routeCandidates, runAttempts,
+                    context, graphWorkspace, RequestLabWorkspace.empty());
+        }
         public ProjectData(List<RequestRecord> records, AnalysisConfig config,
                            List<LegacyAssessment> assessments, List<ValidationDecision> validations,
                            Set<Source> completedLanes, Map<Source, RunContextRegistry.CompletedRun> completedRuns,
@@ -58,8 +68,8 @@ public final class ProjectStore {
         }
     }
 
-    private static final int SCHEMA_VERSION = 7;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6);
+    private static final int SCHEMA_VERSION = 8;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6, 7);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -145,9 +155,18 @@ public final class ProjectStore {
                      Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                      List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
                      ProjectContext context, GraphWorkspace graphWorkspace) throws IOException {
+        save(target, records, config, assessments, validations, completedRuns, routeCandidates,
+                runAttempts, context, graphWorkspace, RequestLabWorkspace.empty());
+    }
+
+    public void save(Path target, List<RequestRecord> records, AnalysisConfig config,
+                     List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                     List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                     ProjectContext context, GraphWorkspace graphWorkspace, RequestLabWorkspace requestLabWorkspace) throws IOException {
         Map<Source, RunContextRegistry.CompletedRun> runs = completedRuns == null ? Map.of() : completedRuns;
         ObjectNode root = toDocument(records, config, assessments, validations,
-                runs.keySet(), runs, routeCandidates, runAttempts, context, graphWorkspace);
+                runs.keySet(), runs, routeCandidates, runAttempts, context, graphWorkspace, requestLabWorkspace);
         saveDocument(target, root);
     }
 
@@ -219,6 +238,15 @@ public final class ProjectStore {
                           Set<Source> completedLanes, Map<Source, RunContextRegistry.CompletedRun> completedRuns,
                           List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
                           ProjectContext context, GraphWorkspace graphWorkspace) {
+        return toDocument(records, config, assessments, validations, completedLanes, completedRuns,
+                routeCandidates, runAttempts, context, graphWorkspace, RequestLabWorkspace.empty());
+    }
+
+    ObjectNode toDocument(List<RequestRecord> records, AnalysisConfig config,
+                          List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                          Set<Source> completedLanes, Map<Source, RunContextRegistry.CompletedRun> completedRuns,
+                          List<RouteCandidate> routeCandidates, List<RunExecutionLedger.Attempt> runAttempts,
+                          ProjectContext context, GraphWorkspace graphWorkspace, RequestLabWorkspace requestLabWorkspace) {
         if (records.size() > MAX_RECORDS) throw new IllegalArgumentException("record limit exceeded");
         assessments = assessments == null ? List.of() : List.copyOf(assessments);
         LegacyAssessment.validateSet(assessments);
@@ -227,6 +255,7 @@ public final class ProjectStore {
         ObjectNode root = json.createObjectNode();
         root.put("schema_version", SCHEMA_VERSION);
         root.set("graphWorkspace", json.valueToTree(graphWorkspace == null ? GraphWorkspace.empty() : graphWorkspace));
+        root.set("requestLabWorkspace", json.valueToTree(requestLabWorkspace == null ? RequestLabWorkspace.empty() : requestLabWorkspace));
         root.put("traffic_classifier_version", TrafficClassifier.VERSION);
         root.put("saved_at", Instant.now().toString());
         ProjectContext safeContext = context == null ? ProjectContext.empty() : context;
@@ -282,7 +311,9 @@ public final class ProjectStore {
     ProjectData fromDocument(JsonNode root) {
         int schemaVersion = root.path("schema_version").asInt(-1);
         if (schemaVersion != SCHEMA_VERSION && !LEGACY_SCHEMA_VERSIONS.contains(schemaVersion)) {
-            throw new IllegalArgumentException("unsupported FlowScope schema version");
+            throw new IllegalArgumentException("지원하지 않는 프로젝트 형식입니다(파일 버전: "
+                    + (schemaVersion == -1 ? "확인 불가" : schemaVersion) + ", 현재 지원: 1~" + SCHEMA_VERSION
+                    + "). 이 형식을 지원하는 JAR로 다시 열어 주세요. 버전 번호를 직접 바꾸면 데이터가 누락될 수 있습니다.");
         }
         JsonNode recordNodes = root.path("records");
         if (!recordNodes.isArray() || recordNodes.size() > MAX_RECORDS) {
@@ -370,7 +401,9 @@ public final class ProjectStore {
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
                 Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),
                 List.copyOf(runAttempts), context, root.hasNonNull("graphWorkspace")
-                        ? json.convertValue(root.get("graphWorkspace"), GraphWorkspace.class) : GraphWorkspace.empty());
+                        ? json.convertValue(root.get("graphWorkspace"), GraphWorkspace.class) : GraphWorkspace.empty(),
+                schemaVersion >= 8 && root.hasNonNull("requestLabWorkspace")
+                        ? json.convertValue(root.get("requestLabWorkspace"), RequestLabWorkspace.class) : RequestLabWorkspace.empty());
     }
 
     private ObjectNode writeRunAttempt(RunExecutionLedger.Attempt attempt) {

@@ -4,5 +4,6 @@ package io.flowscope.core;
 public enum TrafficOverride {
     AUTO,
     INCLUDE,
+    REVIEW,
     EXCLUDE
 }

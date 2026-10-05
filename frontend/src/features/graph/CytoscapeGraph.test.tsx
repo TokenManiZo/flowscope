@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
-import { CytoscapeGraph, graphWheelIntent, moveGroupMembers, positionInLanes, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
+import { CytoscapeGraph, graphFocusStates, graphWheelIntent, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
 import type { EventRecord } from "@/lib/api/types"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
 import { projectHierarchy } from "./graphHierarchy"
@@ -124,6 +124,33 @@ function runScheduledFrame() {
   callback?.(0)
 }
 
+it("updates search rings without recreating graph elements", () => {
+  const props = { projection, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  remove.mockClear(); vi.mocked(core.add).mockClear()
+  rerender(<CytoscapeGraph {...props} searchMatches={new Map([["identity:alice", "member"]])} />)
+  expect(remove).not.toHaveBeenCalled()
+  expect(core.add).not.toHaveBeenCalled()
+  expect(screen.getByText("멤버 일치")).toBeInTheDocument()
+  rerender(<CytoscapeGraph {...props} searchMatches={new Map()} />)
+  expect(screen.queryByText("멤버 일치")).not.toBeInTheDocument()
+  expect(remove).not.toHaveBeenCalled()
+})
+
+it("reveals a search selection with a viewport change while preserving model coordinates", () => {
+  const done = vi.fn()
+  const props = { projection, locked: true, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn(), onRevealed: done }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  modelPosition = { x: 1100, y: 20 }
+  vi.mocked(node.data).mockImplementation(key => key === "width" ? "200" : key === "height" ? "100" : key === "kind" ? "identity" : undefined)
+  vi.mocked(core.viewport).mockClear()
+  rerender(<CytoscapeGraph {...props} revealRequest={{ nodeId: "identity:alice", requestId: 7 }} />)
+  act(runScheduledFrame)
+  expect(core.viewport).toHaveBeenCalledWith({ zoom: 1, pan: { x: -316, y: 86 } })
+  expect(modelPosition).toEqual({ x: 1100, y: 20 })
+  expect(done).toHaveBeenCalledWith(7)
+})
+
 function createStatefulNode(id: string, kind: string, initial: { x: number; y: number }, viewport: () => { zoom: number; pan: { x: number; y: number } }) {
   let model = { ...initial }
   let locked = false
@@ -222,8 +249,6 @@ it("renders a graph-first canvas with dark compact node styling", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
 
   expect(screen.getByLabelText("공격면 Cytoscape 그래프")).toHaveClass("h-full", "min-h-[28rem]")
-  // 그래프 맞추기도 서버가 저장을 받는 확대 범위(0.4~2) 안에 머문다.
-  expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({ minZoom: 0.4, maxZoom: 2 }))
   expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({
     style: expect.arrayContaining([
       expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-color": "data(cardColor)", color: "#e5e7eb" }) }),
@@ -495,6 +520,8 @@ it("keeps the full zoom range because lanes scale with the viewport", () => {
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   runScheduledFrame()
 
+  // preset/fit도 저장 API와 같은 범위를 사용해야 범위 밖 viewport가 게시되지 않는다.
+  expect(vi.mocked(cytoscape)).toHaveBeenLastCalledWith(expect.objectContaining({ minZoom: 0.4, maxZoom: 2 }))
   viewport = { ...viewport, zoom: 2 }
   listeners.get("viewport:core")?.({ target: node })
   runScheduledFrame()
@@ -629,6 +656,24 @@ it("keeps unconfirmed route candidates neutral and dotted", () => {
   expect(vi.mocked(cytoscape)).toHaveBeenCalledWith(expect.objectContaining({ style: expect.arrayContaining([
     expect.objectContaining({ selector: 'node[kind = "route-candidate"]', style: expect.objectContaining({ "border-style": "dotted", "border-color": "#64748b" }) }),
   ]) }))
+})
+
+it("renders a response-backed non-cell GET as a neutral graph node", () => {
+  const service = "https://api.example.test"
+  const snapshot = targetSnapshot({ events: [{
+    eventId: "observed-1", method: "GET", path: "/account/edit?ticket=alpha", status: 200, fp: "", idn: "alice", role: "USER", source: "human", op: `${service} GET /account/edit`, resource: null, timestamp: 1,
+    sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", coverageEligible: false,
+    classificationOverride: false, classificationReasons: ["AMBIGUOUS_KEEP"], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["observed-1"], objects: [], verdict: "untested",
+  }] })
+  // 허용만 있는 기능은 "신호 없는 기능"으로 접히므로 그 묶음을 펼친 상태에서 본다.
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ['quiet-group:["https://api.example.test","account"]'] }
+  const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; kind?: string; accessibleLabel?: string; confirmed?: string } }>
+  expect(added).toEqual(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
+    id: `observed-operation:${service} GET /account/edit`, kind: "observed-operation", accessibleLabel: expect.stringContaining("응답 관측"), confirmed: "no",
+  }) })]))
 })
 
 it("publishes a bounded node-kind geometry snapshot only through the explicit browser test seam", () => {
@@ -816,31 +861,16 @@ it("reads minimap boxes in model space with the current viewport and dims filter
 
 it("opens and closes an object group from a double click or Enter instead of navigating", () => {
   const snapshot = targetSnapshot({ cells: [{ idn: "alice", op: "https://api.example.test GET /orders/{id}", resource: "orders:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
-  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+  // 허용만 있는 기능은 "신호 없는 기능"으로 접히므로 그 묶음을 펼친 상태에서 본다.
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ['quiet-group:["https://api.example.test","orders"]'] }
   const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
-  // 허용만 있는 기능은 "신호 없는 기능" 카드로 접히므로, 객체 묶음을 보려고 접기를 펼친다.
-  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [`quiet-group:${site.groups[0].id}`] }, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
   const groupNode = group.nodes.find(node => node.kind === "object-group")!
   const onToggleObjectGroup = vi.fn(), onNavigate = vi.fn()
   render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onNavigate={onNavigate} onToggleObjectGroup={onToggleObjectGroup} onPreferencesChange={vi.fn()} />)
   act(() => listeners.get("dbltap:node")?.({ target: { ...node, id: vi.fn(() => groupNode.id) } }))
   expect(onToggleObjectGroup).toHaveBeenCalledWith(groupNode.id)
   expect(onNavigate).not.toHaveBeenCalled()
-})
-
-it("marks judged and observed-only members of an opened quiet card so its band covers both", () => {
-  const service = "https://api.example.test"
-  const page = { eventId: "p-1", clusterEvidenceIds: ["p-1"], method: "GET", path: "/orders/help.php", status: 200, op: `${service} GET /orders/help.php`, idn: "alice", source: "human", resource: null, phase: "EXPLORATION", executionTrust: "OBSERVED", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", classificationOverride: false, classificationReasons: [] } as unknown as EventRecord
-  const snapshot = targetSnapshot({ events: [page], cells: [{ idn: "alice", op: `${service} GET /orders/list`, resource: null, perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
-  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: true, expanded: false }
-  const groupId = JSON.stringify([service, "orders"]), quietId = `quiet-group:${groupId}`
-  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [quietId] }, { level: "group", groupId, operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
-  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; memberOf?: string; groupKey?: string } }>
-  // 접기 버튼 이름은 내부 묶음 ID(JSON) 대신 읽을 수 있는 이름을 쓴다.
-  expect(added.find(item => item.data.id === quietId)?.data.groupKey).toBe("신호 없는 기능")
-  expect(added.find(item => item.data.id === `operation:${service} GET /orders/list`)?.data.memberOf).toBe(quietId)
-  expect(added.find(item => item.data.id === `support-operation:${service} GET /orders/help.php`)?.data.memberOf).toBe(quietId)
 })
 
 
@@ -859,42 +889,61 @@ it("wraps each expanded object group and its members in one screen-space band fo
   ])
 })
 
-/** 레인 노드 사이 세로 간격(CytoscapeGraph의 LANE_NODE_GAP)과 테스트 카드 높이. */
-const GAP = 20, CARD = 40
+it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout through theme switches", async () => {
+  const cell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["a"] }
+  const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell, { ...cell, idn: "USER B", resource: "orders:202", evidenceIds: ["b"] }, { ...cell, idn: "USER C", op: "GET /api/orders/profile", resource: "user-profile:1", evidenceIds: ["c"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders", 'quiet-group:["Target","orders"]'] }, { level: "group", groupId: '["Target","orders"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = hierarchy.nodes.find(node => node.kind === "object-group" && node.objectGroup?.key === "orders")!
+  const focus = graphFocusStates(hierarchy, "resource:orders:101", group.id)
+  expect(focus.node("resource:orders:101")).toBe("yes")
+  expect(focus.node("resource:orders:202")).toBe("yes")
+  for (const identity of hierarchy.identities) expect(focus.node(identity.id)).toBe(identity.selection.identity === "USER C" ? "no" : "yes")
+  for (const edge of hierarchy.edges) expect(focus.edge(edge.id)).toBe(edge.selection.identity === "USER C" ? "no" : "yes")
+  expect(hierarchy.edges.some(edge => edge.relation === "identity-operation")).toBe(true)
+  expect(hierarchy.edges.some(edge => edge.relation === "operation-resource")).toBe(true)
 
-function movableCore(specs: Array<{ id: string; kind: string; memberOf?: string; groupState?: string }>) {
-  const nodes = specs.map((spec) => {
-    let point = { x: 0, y: 0 }
-    const data: Record<string, unknown> = { kind: spec.kind, height: CARD, memberOf: spec.memberOf, groupState: spec.groupState }
-    return { id: () => spec.id, data: (key: string) => data[key], position: (next?: { x: number; y: number }) => { if (next) point = { ...next }; return point }, locked: () => false }
-  })
-  const core = { nodes: () => ({ forEach: (visit: (node: typeof nodes[number]) => void) => nodes.forEach(visit) }) }
-  return { core: core as unknown as Parameters<typeof positionInLanes>[0], at: (id: string) => nodes.find(node => node.id() === id)!.position() }
-}
-
-it("stacks newly opened group members right under their group node and pushes the rest of the lane down", () => {
-  const { core, at } = movableCore([
-    { id: "object-group:a", kind: "object-group", groupState: "open" },
-    { id: "resource:other", kind: "resource" },
-    { id: "resource:a:1", kind: "resource", memberOf: "object-group:a" },
-    { id: "resource:a:2", kind: "resource", memberOf: "object-group:a" },
-  ])
-  // 묶음을 펼치기 전에 저장된 위치: 묶음 노드 아래에 다른 객체가 있다. 새 멤버는 저장 위치가 없다.
-  positionInLanes(core, 620, { "object-group:a": { x: 900, y: 100 }, "resource:other": { x: 900, y: 160 } }, 3)
-
-  expect(at("resource:a:1")).toEqual({ x: 900, y: 100 + CARD + GAP })
-  expect(at("resource:a:2")).toEqual({ x: 900, y: 100 + 2 * (CARD + GAP) })
-  expect(at("resource:other")).toEqual({ x: 900, y: 160 + 2 * (CARD + GAP) })
+  const pan = { x: 81, y: -40 }
+  currentZoom = 0.7
+  vi.mocked(core.pan).mockReturnValue(pan)
+  const props = { projection: hierarchy, selectedElementId: "resource:orders:101", openObjectGroupId: group.id, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  modelPosition = { x: 1400, y: 500 }
+  const expectThemeFocus = (cardColor: string) => {
+    const canvas = screen.getByLabelText("공격면 Cytoscape 그래프")
+    expect(canvas.parentElement).toHaveClass("bg-[var(--flowscope-canvas)]")
+    expect(canvas.parentElement?.style.backgroundColor).toBe("")
+    const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; objectFocus: string; cardColor?: string } }>
+    for (const node of hierarchy.nodes.filter(node => !node.hiddenInGraph && node.kind !== "route-candidate")) {
+      expect(added.find(element => element.data.id === node.id)?.data).toEqual(expect.objectContaining({ objectFocus: focus.node(node.id), cardColor }))
+    }
+    for (const edge of hierarchy.edges) expect(added.find(element => element.data.id === edge.id)?.data.objectFocus).toBe(focus.edge(edge.id))
+    expect(modelPosition).toEqual({ x: 1400, y: 500 })
+    expect(currentZoom).toBe(0.7)
+  }
+  expectThemeFocus("#111418")
+  for (const theme of ["light", "dark"] as const) {
+    await act(async () => { document.documentElement.classList.toggle("dark", theme === "dark") })
+    expectThemeFocus(theme === "light" ? "#ffffff" : "#111418")
+    expect(core.viewport).toHaveBeenLastCalledWith({ zoom: 0.7, pan })
+  }
+  expect(core.fit).not.toHaveBeenCalled()
+  remove.mockClear(); vi.mocked(core.add).mockClear()
+  rerender(<CytoscapeGraph {...props} selectedElementId="resource:orders:202" />)
+  expect(remove).not.toHaveBeenCalled()
+  expect(core.add).not.toHaveBeenCalled()
 })
 
-it("moves open group members by the same distance as their dragged group node", () => {
-  const { core, at } = movableCore([
-    { id: "object-group:a", kind: "object-group", groupState: "open" },
-    { id: "resource:a:1", kind: "resource", memberOf: "object-group:a" },
-    { id: "resource:other", kind: "resource" },
-  ])
-  positionInLanes(core, 620, { "object-group:a": { x: 900, y: 100 }, "resource:a:1": { x: 900, y: 160 }, "resource:other": { x: 900, y: 220 } }, 3)
-  moveGroupMembers(core, "object-group:a", 30, -20)
-  expect(at("resource:a:1")).toEqual({ x: 930, y: 140 })
-  expect(at("resource:other")).toEqual({ x: 900, y: 220 })
+it("marks judged and observed-only members of an opened quiet card and names its fold control in words", () => {
+  const service = "https://api.example.test"
+  const page = { eventId: "p-1", clusterEvidenceIds: ["p-1"], method: "GET", path: "/orders/help.php", status: 200, op: `${service} GET /orders/help.php`, idn: "alice", source: "human", resource: null, phase: "EXPLORATION", executionTrust: "OBSERVED", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", classificationOverride: false, classificationReasons: [] } as unknown as EventRecord
+  const snapshot = targetSnapshot({ events: [page], cells: [{ idn: "alice", op: `${service} GET /orders/list`, resource: null, perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
+  const groupId = JSON.stringify([service, "orders"]), quietId = `quiet-group:${groupId}`
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: [quietId] }
+  const group = projectHierarchy(snapshot, filters, { level: "group", groupId, operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; memberOf?: string; groupKey?: string; temporaryObjectPosition?: string } }>
+  // 접기 버튼 이름은 내부 묶음 ID(JSON) 대신 읽을 수 있는 이름을 쓴다.
+  expect(added.find(item => item.data.id === quietId)?.data.groupKey).toBe("신호 없는 기능")
+  for (const id of [`operation:${service} GET /orders/list`, `observed-operation:${service} GET /orders/help.php`]) {
+    expect(added.find(item => item.data.id === id)?.data).toMatchObject({ memberOf: quietId, temporaryObjectPosition: "yes" })
+  }
 })

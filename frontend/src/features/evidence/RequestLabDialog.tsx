@@ -1,109 +1,253 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import type { AccountSettings } from "@/features/accounts/account-settings/types"
-import { getAccountSettings, getManualAttempts, getRequestLabDraft, openReplay, sendRequestLab } from "@/lib/api/endpoints"
-import type { EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { getRequestLabDraft, openReplay, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
+import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
-import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
-import { DATASET_REPLACING } from "@/lib/security/datasetBoundary"
-import { RawTextPanel } from "./RawTextPanel"
-import { highlightRaw, rawTokenClass } from "./rawHighlight"
-import { RequestLabMetadata, requestCredentialPreview, type RequestLabCredentialMode } from "./RequestLabMetadata"
+import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, REQUEST_LAB_MAX_REQUESTS, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
+import { DATASET_REPLACING, DATASET_WILL_REPLACE } from "@/lib/security/datasetBoundary"
+import { formatHttpJson } from "./jsonDisplay"
+import { JsonTextPanel, RawTextPanel } from "./RawTextPanel"
+import type { RequestLabCredentialMode } from "./RequestLabMetadata"
+import { applyRequestLabCredentials } from "./requestLabCredentials"
+import { RequestLabPersistence, type RequestLabSaveStatus } from "./requestLabPersistence"
 
 interface Props {
   open: boolean
   onOpenChange(open: boolean): void
   event: EventRecord
+  accounts: readonly Account[]
   sessions: readonly ManagedSession[]
   datasetRevision?: number
   snapshotRevision?: number
   suspended?: boolean
-  /** snapshot의 Request Lab 검증 응답. 이 Evidence에서 보낸 것만 이력에 표시한다. */
+  /** Persisted verification metadata remains available to the surrounding inspector. */
   verifications?: readonly ManualVerification[]
   /** Test-only inspection seam; production always owns a new instance locally. */
   rawState?: MemoryOnlyRawState
 }
 
 const MANUAL_ATTEMPTS = ["manual-attempts"] as const
-const failureLabels: Readonly<Record<string, string>> = {
-  NO_RESPONSE: "응답 없음", TIMEOUT: "시간 초과", CONNECTION_FAILURE: "연결 실패", TLS_FAILURE: "TLS 실패",
-  DNS_FAILURE: "DNS 실패", INVALID_REQUEST: "전송 전 차단", RECORDING_FAILURE: "응답 받음 · 기록 실패",
-}
-
-/** 저장된 검증 결과와 응답을 받지 못한 시도. 탐색 관측·커버리지와는 따로 센다. */
-function VerificationHistory({ eventId, verifications, snapshotRevision, enabled }: { eventId: string; verifications: readonly ManualVerification[]; snapshotRevision?: number; enabled: boolean }) {
-  const attempts = useQuery({ queryKey: [...MANUAL_ATTEMPTS, snapshotRevision ?? 0], queryFn: ({ signal }) => getManualAttempts(signal), enabled, retry: false })
-  const results = verifications.filter(item => item.originEvidenceId === eventId).sort((left, right) => right.timestamp - left.timestamp)
-  const failures = (Array.isArray(attempts.data) ? attempts.data : []).filter(item => item.originEvidenceId === eventId && item.outcome !== "HTTP_RESPONSE").sort((left, right) => right.sequence - left.sequence)
-  if (!results.length && !failures.length) return null
-  return <section aria-label="검증 이력" className="grid gap-2">
-    <h3 className="font-medium">검증 이력</h3>
-    <ol className="grid gap-1 text-xs">
-      {results.map(item => <li key={item.eventId} className="flex flex-wrap gap-x-3 rounded border px-2 py-1"><span>HTTP {item.status}</span><span>{item.durationMs}ms</span><span>{item.identity}</span><span className="break-all font-mono text-muted-foreground">{item.eventId}</span></li>)}
-      {failures.map(item => <li key={item.sequence} className="flex flex-wrap gap-x-3 rounded border border-destructive/40 px-2 py-1"><span>{failureLabels[item.outcome] ?? item.outcome}</span><span>{item.durationMillis}ms</span><span className="text-muted-foreground">대상 처리 여부 미확인</span></li>)}
-    </ol>
-  </section>
-}
-
-/**
- * 현재 세션 = 지금 수집 중이거나 가장 최근에 트래픽이 기록된 신원의 세션.
- * 원 요청을 보낸 계정과 다를 수 있다(그게 목적). 교차 신원 검증은 이 규칙과 별개다.
- */
-export function currentSessionFor(sessions: readonly ManagedSession[], service: string): ManagedSession | null {
-  const usable = sessions.filter(session => session.service === service
-    && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing && !session.credentialConflict)))
-  const recency = (session: ManagedSession) => Date.parse(session.lastRecordedAt ?? session.lastUsedAt ?? session.createdAt) || 0
-  return usable.reduce<ManagedSession | null>((best, session) => !best || recency(session) > recency(best)
-    || (recency(session) === recency(best) && session.capturing && !best.capturing) ? session : best, null)
-}
-
+const EDIT_REJECTED_MESSAGE = "요청이 너무 크거나 메모리가 부족해 편집에 반영하지 않았습니다. 내용을 줄이거나 사용하지 않는 요청을 삭제해 주세요."
 export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
   for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]
 }
 
-export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetRevision = 0, snapshotRevision, suspended = false, verifications = [], rawState }: Props) {
+export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
   const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
-  const context = useRef<{ generation: number; sendController: AbortController | null }>({ generation: 0, sendController: null })
-  const [version, setVersion] = useState(0)
-  const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response"> | null>(null)
-  const [mode, setMode] = useState<RequestLabCredentialMode>("ACCOUNT")
+  const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string; sessionHandle?: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
+  const [, setVersion] = useState(0)
+  const persistence = useRef<RequestLabPersistence | null>(null)
+  const [saveStatus, setSaveStatus] = useState<RequestLabSaveStatus | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const closePending = useRef(false)
+  const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
   const [openingRepeater, setOpeningRepeater] = useState(false)
+  const [applyingCredentials, setApplyingCredentials] = useState(false)
   const [error, setError] = useState("")
   const [replayMessage, setReplayMessage] = useState("")
   const [loadAttempt, setLoadAttempt] = useState(0)
-  const draftRef = useRef<Omit<RequestLabDraft, "request" | "response"> | null>(null)
+  const [maximized, setMaximized] = useState(false)
+  const [dialogSize, setDialogSize] = useState<{ width: number; height: number } | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const resizeDrag = useRef<{ x: number; y: number; width: number; height: number; side: number; corner: boolean } | null>(null)
+  const pendingSize = useRef<typeof dialogSize>(null)
+  const resizeFrame = useRef<number | null>(null)
+  const [view, setView] = useState<"original" | number>("original")
+  const [renaming, setRenaming] = useState<number | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const requestRef = useRef<HTMLTextAreaElement>(null)
+  const responseRef = useRef<HTMLTextAreaElement>(null)
+  const originalPosition = useRef({ start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 })
+  const [fontSize, setFontSize] = useState(14)
+  const [panelFocus, setPanelFocus] = useState<"both" | "request" | "response">("both")
+  const [jsonView, setJsonView] = useState({ request: false, response: false })
+  const [split, setSplit] = useState(50)
+  const editorsRef = useRef<HTMLDivElement>(null)
+  const splitRef = useRef(50)
+  const draftRef = useRef<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
 
-  const currentSession = useMemo(() => currentSessionFor(sessions, draft?.service ?? ""), [draft?.service, sessions])
-  const accountId = currentSession?.accountId ?? ""
-  const selectedAccountValid = currentSession !== null
-  const currentSettings = useQuery({ queryKey: ["account-settings", accountId], queryFn: () => getAccountSettings<AccountSettings>(accountId), enabled: open && selectedAccountValid, retry: false })
-  const currentCredentials = currentSettings.data?.human?.credentials ?? []
-  const currentCredential = currentCredentials.find((item) => item.name === "Authorization") ?? currentCredentials[0]
+  const accountOptions = useMemo(() => accounts.map(account => {
+    const session = sessions.find(value => value.accountId === account.id && value.service === draft?.service)
+    const ready = !!session && !session.credentialConflict
+      && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing))
+    return { account, session, ready }
+  }), [accounts, sessions, draft?.service])
+  const entry = raw.current.requests.find(item => item.id === view)
+  const accountId = entry?.accountId ?? ""
+  const selectedAccountValid = accountOptions.some(option => option.account.id === accountId && option.ready)
+  const mode = entry?.credentialMode ?? "ORIGINAL"
+  const editRejected = entry?.editRejected ?? false
+  const displayedRequest = raw.current.request
+  const displayedResponse = raw.current.response
+  const editable = !!entry
+  const credentialsRequired = !!entry && (mode === "ORIGINAL" || (entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
+  const busy = sending || openingRepeater || applyingCredentials || deleting || closing
+  const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
+  const controlClass = "h-7 rounded-md border border-input bg-background px-2 text-[0.8rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+  const settingClass = "h-[36px] rounded-md border border-input bg-background px-2.5 text-[14px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+
+  function boundSize(width: number, height: number) {
+    return { width: Math.min(window.innerWidth - 32, Math.max(960, width)), height: Math.min(window.innerHeight - 32, Math.max(460, height)) }
+  }
+  function applySize() {
+    resizeFrame.current = null
+    if (!pendingSize.current || !dialogRef.current) return
+    dialogRef.current.style.setProperty("--request-lab-width", `${pendingSize.current.width}px`)
+    dialogRef.current.style.setProperty("--request-lab-height", `${pendingSize.current.height}px`)
+  }
+  function finishResize() {
+    if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current)
+    applySize()
+    if (pendingSize.current) setDialogSize(pendingSize.current)
+    resizeDrag.current = null
+  }
+  function startResize(event: ReactPointerEvent<HTMLElement>, side: number, corner: boolean) {
+    if (event.button !== 0 || maximized || !dialogRef.current) return
+    const box = dialogRef.current.getBoundingClientRect()
+    resizeDrag.current = { x: event.clientX, y: event.clientY, width: box.width, height: box.height, side, corner }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  function moveResize(event: ReactPointerEvent<HTMLElement>) {
+    const drag = resizeDrag.current
+    if (!drag || !event.currentTarget.hasPointerCapture(event.pointerId)) return
+    pendingSize.current = boundSize(drag.width + 2 * drag.side * (event.clientX - drag.x), drag.height + (drag.corner ? 2 * (event.clientY - drag.y) : 0))
+    if (resizeFrame.current === null) resizeFrame.current = requestAnimationFrame(applySize)
+  }
+  function resetSize() {
+    finishResize()
+    pendingSize.current = null
+    setDialogSize(null)
+    dialogRef.current?.style.removeProperty("--request-lab-width")
+    dialogRef.current?.style.removeProperty("--request-lab-height")
+  }
+  useEffect(() => {
+    if (!open) return
+    const onResize = () => {
+      if (!pendingSize.current) return
+      pendingSize.current = boundSize(pendingSize.current.width, pendingSize.current.height)
+      finishResize()
+    }
+    window.addEventListener("resize", onResize)
+    return () => {
+      window.removeEventListener("resize", onResize)
+      if (resizeFrame.current !== null) cancelAnimationFrame(resizeFrame.current)
+      resizeFrame.current = null
+      resizeDrag.current = null
+    }
+  }, [open])
+
+  function savePosition() {
+    const input = requestRef.current
+    if (!input) return
+    const position = { start: input.selectionStart, end: input.selectionEnd, top: input.scrollTop, left: input.scrollLeft, responseTop: responseRef.current?.scrollTop ?? 0, responseLeft: responseRef.current?.scrollLeft ?? 0 }
+    if (entry) entry.position = position
+    else originalPosition.current = position
+  }
+  function changeView(next: typeof view) {
+    if (busy || suspended || next === view) return
+    savePosition()
+    raw.current.clearJson()
+    raw.current.selectedId = next === "original" ? null : next
+    setJsonView({ request: false, response: false })
+    setError("")
+    setReplayMessage("")
+    setRenaming(null)
+    setView(next)
+    persistence.current?.select(raw.current.selectedId)
+  }
+  useLayoutEffect(() => {
+    const input = requestRef.current
+    if (!input) return
+    const position = entry?.position ?? originalPosition.current
+    input.setSelectionRange(position.start, position.end)
+    input.scrollTop = position.top
+    input.scrollLeft = position.left
+    input.dispatchEvent(new Event("scroll"))
+    if (responseRef.current) {
+      responseRef.current.scrollTop = position.responseTop
+      responseRef.current.scrollLeft = position.responseLeft
+      responseRef.current.dispatchEvent(new Event("scroll"))
+    }
+  }, [view, draft])
+
+  function addRequest() {
+    if (busy || suspended || !(entry || draft?.requestEditable) || editRejected) return
+    const next = raw.current.addRequest(displayedRequest, mode, accountId)
+    if (!next) { setError(`요청을 더 만들 수 없습니다. 최대 ${REQUEST_LAB_MAX_REQUESTS}개이며, 메모리가 부족하면 사용하지 않는 요청을 삭제해 주세요.`); return }
+    next.restored = entry?.restored
+    persistence.current?.changed(next, ["name", "request", "credentialMode", "result", "dirty"])
+    changeView(next.id)
+    requestRef.current?.focus()
+  }
+  async function removeRequest() {
+    if (busy || suspended || !entry) return
+    const index = raw.current.requests.indexOf(entry)
+    const next = raw.current.requests[index + 1] ?? raw.current.requests[index - 1]
+    if (persistence.current) {
+      const generation = context.current.generation
+      setDeleting(true)
+      try {
+        await persistence.current.retry()
+        await persistence.current.remove(entry, next?.id ?? null)
+        if (context.current.generation !== generation) return
+      } catch { return }
+      finally { setDeleting(false) }
+    }
+    changeView(next?.id ?? "original")
+    raw.current.removeRequest(entry)
+    setVersion(value => value + 1)
+  }
+  function renameRequest(value: string) {
+    const name = value.trim().slice(0, 80)
+    if (entry && entry.id === renaming && raw.current.requests.includes(entry) && !busy && !suspended && name) {
+      entry.name = name
+      persistence.current?.changed(entry, ["name"])
+      setVersion(current => current + 1)
+    }
+    setRenaming(null)
+  }
   const invalidateSend = () => {
     context.current.generation += 1
     context.current.sendController?.abort()
     context.current.sendController = null
+    context.current.preview = null
+    if (context.current.submission) context.current.submission.request = ""
+    context.current.submission = null
   }
   const release = () => {
+    persistence.current?.dispose()
+    persistence.current = null
+    setSaveStatus(null)
     invalidateSend()
     raw.current.clear()
     draftRef.current = null
     setDraft(null)
     setError("")
     setReplayMessage("")
-    setMode("ACCOUNT")
+    if (nameRef.current) nameRef.current.value = ""
+    setRenaming(null)
+    setView("original")
+    originalPosition.current = { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 }
+    setJsonView({ request: false, response: false })
     setSending(false)
     setOpeningRepeater(false)
+    setApplyingCredentials(false)
+    setDeleting(false)
+    setClosing(false)
+    closePending.current = false
     setVersion((value) => value + 1)
   }
 
@@ -116,26 +260,36 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
     const generation = context.current.generation
     void getRequestLabDraft(event.eventId, controller.signal).then((next) => {
       if (controller.signal.aborted || context.current.generation !== generation) return
-      raw.current.request = next.request ?? ""
-      raw.current.response = next.response ?? ""
-      const { request: _request, response: _response, ...metadata } = next
+      raw.current.originalRequest = next.request ?? ""
+      raw.current.originalResponse = next.response ?? ""
+      const { request: _request, response: _response, workspace, ...metadata } = next
+      if (workspace) {
+        const entries = Object.entries(workspace.tab.entries).sort(([a], [b]) => Number(a) - Number(b)).map(([id, value]) => ({ ...value, id: Number(id) }))
+        if (!raw.current.restoreRequests(entries, workspace.tab.nextId, workspace.tab.selectedId)) throw new Error("저장 요청이 메모리 한도를 초과했습니다. 다른 요청을 닫고 다시 열어 주세요.")
+        persistence.current = new RequestLabPersistence(raw.current, event.eventId, datasetRevision, workspace, setSaveStatus)
+        setView(raw.current.selectedId ?? "original")
+      }
       draftRef.current = metadata
       setDraft(metadata)
-      setMode(currentSessionFor(sessions, next.service) ? "ACCOUNT" : "ORIGINAL")
       setVersion((value) => value + 1)
     }).catch((reason: unknown) => {
-      if (!controller.signal.aborted && context.current.generation === generation) setError(reason instanceof Error ? reason.message : "Request Lab 초안을 불러오지 못했습니다.")
+      if (!controller.signal.aborted && context.current.generation === generation) {
+        persistence.current?.dispose(); persistence.current = null
+        raw.current.clear()
+        setDraft(null)
+        setError(reason instanceof Error ? reason.message : "Request Lab 초안을 불러오지 못했습니다.")
+      }
     }).finally(() => { if (!controller.signal.aborted && context.current.generation === generation) setLoading(false) })
-    return () => { controller.abort(); invalidateSend(); raw.current.clear() }
+    return () => { controller.abort(); persistence.current?.dispose(); persistence.current = null; invalidateSend(); raw.current.clear() }
   }, [open, event.eventId, datasetRevision, loadAttempt])
 
   // Revalidate retained-raw/session metadata after traffic changes without
-  // replacing edited text/history. The response remains outside the query cache.
+  // replacing independent requests or their latest responses. The response remains outside the query cache.
   useEffect(() => {
     const original = draftRef.current
     if (!open || suspended || !original || snapshotRevision === undefined) return
     const controller = new AbortController()
-    void getRequestLabDraft(event.eventId, controller.signal).then(next => {
+    void getRequestLabDraft(event.eventId, controller.signal, !persistence.current).then(next => {
       if (controller.signal.aborted) return
       if (next.service !== original.service || next.observedIdentity !== original.observedIdentity
         || (original.rawRequestRetained && !next.rawRequestRetained)
@@ -148,43 +302,133 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
 
   // 세션이 사라지면 진행 중 전송을 끊고 전송을 잠근다. 다른 방식으로 조용히 바꾸지 않는다.
   useEffect(() => {
-    if (mode === "ACCOUNT" && draft && !selectedAccountValid) { invalidateSend(); setSending(false) }
+    if (mode === "ACCOUNT" && draft && !selectedAccountValid && !context.current.preview) { invalidateSend(); setSending(false); setOpeningRepeater(false); setApplyingCredentials(false) }
   }, [draft, mode, selectedAccountValid])
 
   useEffect(() => {
-    const clearOnUnload = () => { invalidateSend(); raw.current.clear() }
-    const clearOnReplacement = () => close()
-    window.addEventListener("beforeunload", clearOnUnload)
+    const preview = context.current.preview
+    if (preview && (suspended || (preview.mode === "ACCOUNT" && !accountOptions.some(option => option.account.id === preview.accountId && option.ready && option.session?.handle === preview.sessionHandle)))) {
+      invalidateSend()
+      setApplyingCredentials(false)
+      setError("선택한 계정의 세션이 바뀌었습니다. 인증을 다시 선택해 주세요.")
+    }
+  }, [accountOptions, suspended])
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (persistence.current?.status.pending) { event.preventDefault(); event.returnValue = "" }
+    }
+    const clearOnUnload = () => { release(); onOpenChange(false) }
+    const clearOnReplacement = clearOnUnload
+    const flushBeforeReplacement = (event: Event) => {
+      ;(event as CustomEvent<{ waitUntil(promise: Promise<unknown>): void }>).detail.waitUntil(persistence.current?.flush() ?? Promise.resolve())
+    }
+    window.addEventListener("beforeunload", warnBeforeUnload)
+    window.addEventListener("pagehide", clearOnUnload)
+    window.addEventListener(DATASET_WILL_REPLACE, flushBeforeReplacement)
     window.addEventListener(DATASET_REPLACING, clearOnReplacement)
-    return () => { window.removeEventListener("beforeunload", clearOnUnload); window.removeEventListener(DATASET_REPLACING, clearOnReplacement) }
+    return () => {
+      window.removeEventListener("beforeunload", warnBeforeUnload)
+      window.removeEventListener("pagehide", clearOnUnload)
+      window.removeEventListener(DATASET_WILL_REPLACE, flushBeforeReplacement)
+      window.removeEventListener(DATASET_REPLACING, clearOnReplacement)
+    }
   }, [])
 
-  function close() {
+  async function close() {
+    if (closePending.current) return
+    if (persistence.current) {
+      closePending.current = true
+      invalidateSend()
+      setSending(false)
+      setApplyingCredentials(false)
+      setOpeningRepeater(false)
+      setClosing(true)
+      try { await persistence.current.flush() }
+      catch { return }
+      finally { closePending.current = false; setClosing(false) }
+    }
     release()
     onOpenChange(false)
   }
 
+  async function changeCredentials(nextMode: RequestLabCredentialMode, nextAccountId = "") {
+    if (!draft || !entry || !editable || editRejected || busy || suspended || context.current.preview || (nextMode === mode && nextAccountId === accountId && !credentialsRequired)) return
+    const selected = accountOptions.find(option => option.account.id === nextAccountId && option.ready)
+    if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
+    if (!raw.current.canSend(entry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
+    const controller = new AbortController()
+    const generation = ++context.current.generation
+    context.current.sendController = controller
+    context.current.preview = { mode: nextMode, accountId: nextAccountId, sessionHandle: selected?.session?.handle }
+    const submitted = { request: entry.request }
+    context.current.submission = submitted
+    setApplyingCredentials(true)
+    setError("")
+    try {
+      const preview = await previewRequestLabCredentials({ eventId: event.eventId, request: submitted.request, credentialMode: nextMode, accountId: nextMode === "ACCOUNT" ? nextAccountId : "", datasetRevision }, controller.signal)
+      try {
+        if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(entry) || entry.request !== submitted.request) return
+        const next = applyRequestLabCredentials(submitted.request, preview.headers)
+        if (!raw.current.canSend(next) || !raw.current.editRequest(entry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
+        entry.credentialMode = nextMode
+        entry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
+        entry.restored = false
+        persistence.current?.changed(entry, ["request", "credentialMode", "dirty"])
+        setJsonView(current => ({ ...current, request: false }))
+        setVersion(value => value + 1)
+      } finally {
+        // Scrub references held by this async operation, including ignored late responses.
+        for (const header of preview.headers) header.value = ""
+        preview.headers.length = 0
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted && context.current.generation === generation) setError(reason instanceof Error ? reason.message : "인증을 적용하지 못했습니다. 다시 선택해 주세요.")
+    } finally {
+      submitted.request = ""
+      if (context.current.submission === submitted) context.current.submission = null
+      if (context.current.generation === generation) {
+        context.current.sendController = null
+        context.current.preview = null
+        setApplyingCredentials(false)
+      }
+    }
+  }
+
   async function send() {
-    if (suspended || !draft || !draft.requestEditable || sending) return
+    if (suspended || !draft || !entry || !editable || editRejected || credentialsRequired || busy) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
     const controller = new AbortController()
     const generation = context.current.generation + 1
     context.current.generation = generation
     context.current.sendController?.abort()
     context.current.sendController = controller
+    const submitted = { request: raw.current.request, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "" }
+    context.current.submission = submitted
+    const started = performance.now()
+    raw.current.replaceResult(entry, null)
+    persistence.current?.changed(entry, ["result", "dirty"])
+    setJsonView(current => ({ ...current, response: false }))
     setSending(true)
     setError("")
     try {
-      const result = await sendRequestLab({ eventId: event.eventId, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "", request: raw.current.request }, controller.signal)
+      const result = await sendRequestLab({ eventId: event.eventId, credentialMode: submitted.credentialMode, accountId: submitted.accountId, request: submitted.request }, controller.signal)
       if (controller.signal.aborted || context.current.generation !== generation) return
-      raw.current.addResult({ response: result.response, status: result.status, durationMs: result.durationMs })
-      raw.current.response = result.response
+      if (!raw.current.replaceResult(entry, { response: result.response, status: result.status, durationMs: result.durationMs, requestBytes: result.requestBytes, responseBytes: result.responseBytes })) {
+        const failure = "응답이 커서 보관하지 못했습니다. 사용하지 않는 요청을 삭제해 주세요."
+        if (!raw.current.replaceResult(entry, { response: "", status: result.status, durationMs: result.durationMs, failure })) setError(failure)
+      }
+      persistence.current?.changed(entry, ["result", "dirty"])
       setVersion((value) => value + 1)
     } catch (reason) {
       if (controller.signal.aborted || context.current.generation !== generation) return
-      setError(reason instanceof Error ? reason.message : "Request Lab 전송에 실패했습니다.")
+      raw.current.replaceResult(entry, { response: "", status: 0, durationMs: Math.round(performance.now() - started), failure: reason instanceof Error ? reason.message : "요청 재전송에 실패했습니다." })
+      persistence.current?.changed(entry, ["result", "dirty"])
+      setVersion(current => current + 1)
     } finally {
+      submitted.request = ""
+      if (context.current.submission === submitted) context.current.submission = null
       // 성공은 snapshot 검증 응답으로, 실패는 전송 시도 기록으로 이력에 반영된다.
       void queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })
       void queryClient.invalidateQueries({ queryKey: MANUAL_ATTEMPTS })
@@ -196,61 +440,166 @@ export function RequestLabDialog({ open, onOpenChange, event, sessions, datasetR
   }
 
   async function openInRepeater() {
-    if (suspended || !draft || openingRepeater) return
+    if (suspended || !draft || !editable || editRejected || credentialsRequired || busy) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("현재 세션의 최신 인증값이 없어요."); return }
+    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
+    const generation = context.current.generation
     setOpeningRepeater(true)
     setError("")
     setReplayMessage("")
     try {
       const result = await openReplay({ eventId: event.eventId, request: raw.current.request, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "" })
+      if (context.current.generation !== generation) return
       setReplayMessage(result.openedDraft ? "Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다." : result.message)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Repeater 초안을 열지 못했습니다.")
+      if (context.current.generation === generation) setError(reason instanceof Error ? reason.message : "Repeater 초안을 열지 못했습니다.")
     } finally {
-      setOpeningRepeater(false)
+      if (context.current.generation === generation) setOpeningRepeater(false)
     }
   }
 
+  function resizeSplit(value: number) {
+    const width = editorsRef.current?.clientWidth ?? 0
+    const minimum = width > 610 ? Math.max(25, 300 / (width - 10) * 100) : 50
+    splitRef.current = Math.min(100 - minimum, Math.max(minimum, value))
+    editorsRef.current?.style.setProperty("--request-lab-split", `${splitRef.current}%`)
+  }
+  function editRequest(next: string) {
+    if (!editable || suspended || busy) return
+    if (!entry) return
+    if (!raw.current.editRequest(entry, next)) {
+      entry.editRejected = true
+      setError(EDIT_REJECTED_MESSAGE)
+      setVersion(value => value + 1)
+      return
+    }
+    entry.editRejected = false
+    persistence.current?.changed(entry, ["request", "dirty"])
+    setError("")
+    setVersion(current => current + 1)
+  }
+  function jsonFor(pane: "request" | "response") {
+    if (raw.current.jsonViews[pane]) return raw.current.jsonViews[pane]!
+    const formatted = formatHttpJson(pane === "request" ? displayedRequest : displayedResponse)
+    if (formatted.text.length > 65_536 || new TextEncoder().encode(formatted.text).byteLength > 65_536) {
+      formatted.text = ""
+      formatted.message = "정돈 보기가 커서 Raw로 표시합니다."
+    }
+    raw.current.jsonViews[pane] = formatted
+    return formatted
+  }
+  function chooseJson(pane: "request" | "response") {
+    const formatted = jsonFor(pane)
+    setJsonView(current => ({ ...current, [pane]: !formatted.message }))
+    setVersion(current => current + 1)
+  }
+  function panel(pane: "request" | "response") {
+    if (jsonView[pane]) jsonFor(pane)
+    const formatted = raw.current.jsonViews[pane]
+    const showJson = jsonView[pane] && formatted && !formatted.message
+    const request = pane === "request", title = request ? "요청" : "응답"
+    const selected = entry?.result
+    const text = request ? displayedRequest : displayedResponse
+    const boundary = /\r?\n\r?\n/.exec(text)
+    const body = boundary ? text.slice(boundary.index + boundary[0].length) : text
+    const canFormat = body.length <= 262_144 && (/^\s*[\[{]/.test(body) || (boundary && /^content-type:\s*[^\r\n]*(?:application\/json|\+json)\b/im.test(text.slice(0, boundary.index)))) && !formatted?.message
+    return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border bg-muted/20" aria-label={request ? "Request 원문 패널" : "Response 원문 패널"} hidden={panelFocus !== "both" && panelFocus !== pane}>
+      <header className="flex min-h-[46px] shrink-0 items-center gap-2 border-b bg-background px-3 py-2"><label htmlFor={`request-lab-${pane}`} className="text-[15px] font-medium">{title}</label><span className="text-xs text-muted-foreground">{request && editable && !showJson ? "편집 가능" : "읽기 전용"}</span>
+        {!request && <span className="truncate text-xs text-muted-foreground">{view === "original" ? "관측 원문" : selected ? `${selected.status ? `HTTP ${selected.status}` : "응답 없음"} · ${selected.durationMs}ms${entry?.dirty ? " · 이전 응답" : ""}` : "미전송"}</span>}
+        <div role="group" aria-label={`${title} 보기`} className="ml-auto flex shrink-0 gap-1"><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!showJson} onClick={() => setJsonView(current => ({ ...current, [pane]: false }))}>Raw</Button><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!!showJson} disabled={!canFormat} title={formatted?.message || undefined} onClick={() => chooseJson(pane)}>JSON 정돈</Button></div></header>
+      {!request && selected?.failure && <p role="alert" className="shrink-0 border-b px-3 py-2 text-xs text-destructive">{selected.failure}{!selected.status && " · 대상 처리 여부 미확인"}</p>}
+      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} /></div>
+      <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} />
+    </section>
+  }
+
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
-    <DialogContent className="max-h-[calc(100svh-2rem)] sm:max-w-[70rem] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0" showCloseButton={false} aria-describedby="request-lab-description">
-      <DialogHeader className="border-b p-5"><DialogTitle>Request Lab</DialogTitle><DialogDescription id="request-lab-description">관측한 요청·응답 원문을 확인하고 Burp Repeater로 보냅니다.</DialogDescription></DialogHeader>
-      <div className="min-h-0 overflow-y-auto overscroll-contain">
-        {suspended && <Alert className="m-5 mb-0" aria-label="Request Lab 일시 중지"><AlertTitle>서버 상태 확인 중</AlertTitle><AlertDescription>마지막 성공 snapshot의 편집 초안을 메모리에 보존했습니다. 갱신에 성공할 때까지 전송과 인증정보 변경을 잠급니다.</AlertDescription></Alert>}
-        {loading && <p className="p-5">Request Lab 초안 불러오는 중…</p>}
-        {error && <div className="grid gap-2 p-5"><p role="alert">{error}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt((value) => value + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
-        {replayMessage && <p role="status" className="m-5 mb-0 rounded-md border p-2 text-sm">{replayMessage}</p>}
-        {draft && <div className="grid max-h-[85svh] lg:grid-cols-[19rem_minmax(0,1fr)]">
-          <RequestLabMetadata
-            service={draft.service}
-            identity={draft.observedIdentity}
-            observedCredential={requestCredentialPreview(raw.current.request)}
-            requestRetained={draft.rawRequestRetained}
-            responseRetained={draft.rawResponseRetained}
-            currentSession={currentSession && { label: currentSession.accountLabel, credential: currentCredential ? `${currentCredential.name}: ${currentCredential.preview}` : null }}
-            credentialMode={mode}
-            disabled={suspended || sending || openingRepeater}
-            onCredentialModeChange={(nextMode) => { setMode(nextMode); setError("") }}
-          />
-          <section aria-label="Request Lab 원문 작업면" className="grid min-w-0 content-start gap-4 p-4">
-            {(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}
-            <p className="text-xs text-muted-foreground">{draft.message}</p>
-            <div role="group" aria-label="Request Lab 요청 및 응답" className="grid min-w-0 gap-4 lg:grid-cols-2">
-              <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Request 원문 패널">
-                <Label id="request-lab-request-label" htmlFor="request-lab-request">요청</Label>
-                <RawTextPanel id="request-lab-request" label="Request Lab 요청 원문" value={raw.current.request} disabled={suspended || !draft.requestEditable || sending} onChange={(next) => { raw.current.request = next; setVersion((value) => value + 1) }} />
-              </section>
-              <section className="grid min-w-0 content-start gap-2 rounded-lg border border-border/70 bg-background/30 p-3" aria-label="Response 원문 패널">
-                <Label id="request-lab-response-label" htmlFor="request-lab-response">응답</Label>
-                <RawTextPanel id="request-lab-response" label="Request Lab 응답 원문" value={raw.current.response} readOnly />
-              </section>
-            </div>
-            {raw.current.history.length > 0 && <section className="grid gap-2"><h3 className="font-medium">최근 전송 결과</h3><p aria-live="polite">현재 탭 전송 결과 {raw.current.history.length}건 (최대 10건)</p><ol className="grid gap-2">{raw.current.history.map((result, index) => <li key={`${index}-${result.status}-${result.durationMs}`} data-testid="request-lab-history-result" className="rounded border p-2"><p>HTTP {result.status} · {result.durationMs}ms</p><pre className="whitespace-pre-wrap break-words font-mono text-xs">{highlightRaw(result.response).map((tokens, line) => <span key={line}>{tokens.map((token, index) => <span key={index} className={rawTokenClass[token.kind]}>{token.text}</span>)}{"\n"}</span>)}</pre></li>)}</ol></section>}
-            <VerificationHistory eventId={event.eventId} verifications={verifications} snapshotRevision={snapshotRevision} enabled={open && !suspended} />
-          </section>
-        </div>}
-      </div>
-      <DialogFooter className="sticky bottom-0 mx-0 mb-0 rounded-b-xl"><DialogClose asChild><Button type="button" variant="outline" onClick={close}>닫기</Button></DialogClose><Button type="button" variant="outline" disabled={suspended || !draft || loading || sending || openingRepeater || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void openInRepeater()}>{openingRepeater ? "Repeater 준비 중" : "Repeater로 보내기"}</Button><Button type="button" disabled={suspended || !draft || !draft.requestEditable || loading || sending || openingRepeater || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}>{sending ? "Request Lab 전송 중" : "Request Lab 전송"}</Button></DialogFooter>
+    <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => {
+      if (renaming !== null) {
+        event.preventDefault()
+        if (event.isComposing) return
+        if (nameRef.current) nameRef.current.value = entry?.name ?? ""
+        setRenaming(null)
+        requestRef.current?.focus()
+      } else if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) }
+    }}>
+      <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
+        <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
+            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!editable || editRejected || suspended || busy} onValueChange={value => {
+              void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8)) : changeCredentials("ANONYMOUS"))
+            }}>
+              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
+              <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
+                <SelectItem value="ANONYMOUS">비로그인</SelectItem>
+                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 사용 가능한 인증 없음" : ""}</SelectItem>)}
+                {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
+              </SelectContent>
+            </Select></div>
+            <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
+            <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
+            <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
+          </div>
+        </div>
+        <div className="mt-3.5 flex items-center justify-between gap-3">
+          <div role="group" aria-label="요청 선택" className="flex items-center gap-1.5">
+            <Button type="button" variant="outline" size="sm" className={`h-7 w-[104px] text-xs ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={() => changeView("original")}>Original</Button>
+            {!!raw.current.requests.length && <>
+              {entry && renaming === entry.id ? <input ref={nameRef} aria-label="요청 이름" className={`${controlClass} w-[104px]`} defaultValue={entry.name} maxLength={80} autoFocus disabled={suspended || busy} title="Enter로 저장 · Esc로 취소" onFocus={event => event.currentTarget.select()} onBlur={event => renameRequest(event.currentTarget.value)} onKeyDown={event => {
+                if (event.nativeEvent.isComposing || event.defaultPrevented) return
+                if (event.key === "Enter" || event.key === "Escape") {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (event.key === "Escape") event.currentTarget.value = entry.name
+                  event.currentTarget.blur()
+                  requestRef.current?.focus()
+                }
+              }} /> : <select aria-label="편집 요청 선택" title={entry?.name} className={`${controlClass} w-[104px] ${entry ? "border-primary/50 bg-primary/10 text-primary" : ""}`} value={entry?.id ?? ""} disabled={!draft || suspended || busy} onChange={event => changeView(Number(event.target.value))}>
+                <option value="" disabled>요청 선택</option>
+                {raw.current.requests.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>}
+              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="요청 이름 변경" title="요청 이름 변경" disabled={!entry || renaming !== null || suspended || busy} onClick={() => { if (entry) setRenaming(entry.id) }}><Pencil aria-hidden="true" className="size-3.5" /></Button>
+              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label={entry ? `${entry.name} 삭제` : "편집 요청 삭제"} disabled={!entry || suspended || busy} onClick={() => void removeRequest()}><X aria-hidden="true" className="size-3.5" /></Button>
+            </>}
+            <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="새 요청 추가" disabled={!(entry || draft?.requestEditable) || editRejected || suspended || busy} onClick={addRequest}><Plus aria-hidden="true" className="size-3.5" /></Button>
+          </div>
+          {saveStatus && <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+            <span>{saveStatus.error ? "저장 실패" : !saveStatus.persisted ? "프로젝트 저장 필요" : saveStatus.saving ? "저장 중" : saveStatus.pending ? "저장 대기" : "프로젝트 저장됨"}</span>
+            {saveStatus.error && <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void persistence.current?.retry().catch(() => {})}>다시 저장</Button>}
+          </div>}
+          <div className="flex items-center gap-2 [&_button]:h-[32px] [&_button]:text-[13px]"><Button type="button" variant="outline" size="sm" onClick={() => { resetSize(); setMaximized(false); setPanelFocus("both"); resizeSplit(50); setSplit(50) }}>기본 크기</Button><div role="group" aria-label="패널 확대" className="flex gap-1">{(["both", "request", "response"] as const).map(focus => <Button key={focus} type="button" variant="outline" size="sm" className={selectedButtonClass} aria-pressed={panelFocus === focus} onClick={() => setPanelFocus(focus)}>{focus === "both" ? "함께 보기" : focus === "request" ? "요청 확대" : "응답 확대"}</Button>)}</div></div>
+        </div>
+      </DialogHeader>
+      <section aria-label="Request Lab 원문 작업면" className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="max-h-[20svh] shrink-0 overflow-auto empty:hidden">
+          {suspended && <Alert aria-label="Request Lab 일시 중지"><AlertTitle>서버 상태 확인 중</AlertTitle><AlertDescription>편집 초안을 보존했습니다. 갱신에 성공할 때까지 전송과 인증정보 변경을 잠급니다.</AlertDescription></Alert>}
+          {applyingCredentials && <p role="status" className="px-3 py-2 text-xs">인증 적용 중…</p>}
+          {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
+          {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
+          {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 인증을 사용할 수 없습니다. 계정 또는 인증 방식을 다시 선택해 주세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
+          {replayMessage && <p role="status" className="rounded-md border p-2 text-sm">{replayMessage}</p>}
+          {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
+        </div>
+        {draft && <>
+          <div ref={editorsRef} role="group" aria-label="Request Lab 요청 및 응답" className="grid min-h-0 min-w-0 flex-1 overflow-hidden" style={{ "--request-lab-split": `${split}%`, gridTemplateColumns: panelFocus === "both" ? "minmax(0,var(--request-lab-split)) 10px minmax(0,1fr)" : "minmax(0,1fr)" } as CSSProperties}>
+            {panel("request")}
+            <div hidden={panelFocus !== "both"} role="separator" aria-label="요청 응답 너비 조절" aria-orientation="vertical" aria-valuemin={25} aria-valuemax={75} aria-valuenow={Math.round(split)} tabIndex={0} className="flex cursor-col-resize touch-none items-center justify-center outline-ring before:h-12 before:w-0.5 before:rounded before:bg-border hover:before:bg-primary" onPointerDown={event => { if (event.button === 0) { event.currentTarget.setPointerCapture(event.pointerId); event.preventDefault() } }} onPointerMove={event => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; const box = editorsRef.current!.getBoundingClientRect(); resizeSplit((event.clientX - box.left) / (box.width - 10) * 100) }} onPointerUp={event => { if (!event.currentTarget.hasPointerCapture(event.pointerId)) return; event.currentTarget.releasePointerCapture(event.pointerId); setSplit(splitRef.current) }} onPointerCancel={() => setSplit(splitRef.current)} onDoubleClick={() => { resizeSplit(50); setSplit(50) }} onKeyDown={event => { if (["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) { event.preventDefault(); resizeSplit(event.key === "Home" ? 50 : splitRef.current + (event.key === "ArrowRight" ? 5 : -5)); setSplit(splitRef.current) } }} />
+            {panel("response")}
+          </div>
+        </>}
+      </section>
+      <DialogFooter className="sticky bottom-0 mx-0 mb-0 min-h-[64px] shrink-0 rounded-b-xl px-7 py-3.5 [&_button]:text-[13px]"><Button type="button" variant="outline" size="sm" disabled={closing || deleting} onClick={() => void close()}>{closing ? "저장 중" : "닫기"}</Button><Button type="button" variant="outline" size="sm" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void openInRepeater()}>{openingRepeater ? "Repeater 준비 중" : "Repeater로 보내기"}</Button></DialogFooter>
+      {!maximized && ([-1, 1] as const).map(side => <div key={side}>
+        <div aria-hidden="true" className={`absolute bottom-7 top-[140px] z-10 w-[10px] cursor-ew-resize touch-none hover:bg-primary/10 ${side < 0 ? "left-0" : "right-0"}`} onPointerDown={event => startResize(event, side, false)} onPointerMove={moveResize} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishResize() }} onPointerCancel={finishResize} />
+        <button type="button" aria-label={`${side < 0 ? "왼쪽" : "오른쪽"} 모서리 크기 조절`} title="드래그 또는 방향키로 크기 조절" className={`absolute bottom-0 z-20 flex size-[24px] touch-none items-center justify-center text-muted-foreground hover:text-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${side < 0 ? "left-0 cursor-nesw-resize" : "right-0 cursor-nwse-resize"}`} onPointerDown={event => startResize(event, side, true)} onPointerMove={moveResize} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishResize() }} onPointerCancel={finishResize} onKeyDown={event => {
+          if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key) || !dialogRef.current) return
+          event.preventDefault()
+          const box = dialogRef.current.getBoundingClientRect()
+          pendingSize.current = boundSize(box.width + (event.key === "ArrowRight" ? 32 * side : event.key === "ArrowLeft" ? -32 * side : 0), box.height + (event.key === "ArrowDown" ? 16 : event.key === "ArrowUp" ? -16 : 0))
+          finishResize()
+        }}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={side < 0 ? "-scale-x-100" : ""}><path d="M6 15 15 6M10 15l5-5M14 15l1-1" /></svg></button>
+      </div>)}
     </DialogContent>
   </Dialog>
 }

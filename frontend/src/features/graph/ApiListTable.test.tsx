@@ -54,6 +54,20 @@ it("filters by path, keeping a group when only a member path matches", async () 
   expect(screen.queryByRole("row", { name: "GET /posts/1" })).not.toBeInTheDocument()
 })
 
+it("reveals a search result beyond the group preview while keeping the original operations", async () => {
+  const operations = Object.freeze(Array.from({ length: 7 }, (_, index) => operation(`GET /posts/${index + 1}`, [])))
+  const onSelectApi = vi.fn()
+  render(<ApiListTable operations={operations} snapshot={{ events: [], cells: [], owners: {} }} selectedId={operations[6].id} revealNodeId={operations[6].id} onSelectApi={onSelectApi} onSelectObject={vi.fn()} />)
+  expect(screen.getByRole("row", { name: "GET /posts/{id} 묶음" })).toHaveAttribute("aria-expanded", "true")
+  expect(screen.getByRole("row", { name: "GET /posts/5" })).toBeVisible()
+  expect(screen.queryByRole("row", { name: "GET /posts/6" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("row", { name: "GET /posts/7" }))
+  expect(onSelectApi).toHaveBeenCalledWith(operations[6])
+  await userEvent.click(screen.getByText("… 1개 더"))
+  expect(screen.getByRole("row", { name: "GET /posts/6" })).toBeVisible()
+  expect(operations).toHaveLength(7)
+})
+
 it("opens an object list under the row from the chip, marking only server-suspicious access as an IDOR candidate", async () => {
   const onSelectApi = vi.fn(), onSelectObject = vi.fn()
   const orders = operation("GET /orders/all", ["o1", "o2", "o3"])

@@ -7,8 +7,10 @@ import io.flowscope.core.SourceDetail;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.ToolKind;
+import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import org.junit.jupiter.api.Test;
 
+import java.net.URI;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -21,6 +23,22 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlowScopeExtensionPhaseTest {
+    @Test
+    void 라이브_재전송은_같은_Evidence_ID의_저장본보다_방금_수집한_runtime_원문을_선택한다() {
+        RequestRecord stored = new RequestRecord(Source.HUMAN, "https://api.test:443",
+                "GET", "/api/orders", 200, "user-a");
+        stored.evidenceId = "same-evidence";
+        RequestRecord captured = new RequestRecord(Source.HUMAN, "https://api.test:443",
+                "GET", "/api/orders", 200, "user-a");
+        captured.evidenceId = "same-evidence";
+        var recommendation = new CrossIdentityReplayOrchestrator.Recommendation(
+                "GET /api/orders", "anon", "user-a", "same-evidence",
+                URI.create("https://api.test/api/orders"), captured.runtimeId());
+
+        assertEquals(captured.runtimeId(),
+                FlowScopeExtension.liveReplayBasis(List.of(stored, captured), recommendation).runtimeId());
+    }
+
     @Test
     void 프로젝트_설치와_종료는_같은_원자_경계를_사용한다() throws Exception {
         Object monitor = new Object();

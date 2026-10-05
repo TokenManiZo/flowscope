@@ -67,6 +67,7 @@ html.flowscope-density-90 {
   /* 그래프 캔버스·페인·구분선. 다크에만 있으면 라이트에서 값이 비어 경계와 바탕이 사라진다. */
   --flowscope-pane: var(--background);
   --flowscope-canvas: var(--background);
+  --flowscope-grid: rgba(15, 23, 42, 0.045);
   --flowscope-divider: var(--border);
 }
 
@@ -185,6 +186,7 @@ html.flowscope-density-90 {
   /* 그래프 캔버스·페인은 페이지 베이스(--background 네이비)와 같은 색을 공유한다. 사이드바·카드는 한 단계 elevation. */
   --flowscope-pane: oklch(0.129 0.042 264.695);
   --flowscope-canvas: oklch(0.129 0.042 264.695);
+  --flowscope-grid: rgba(255, 255, 255, 0.025);
   --flowscope-divider: #24323d;
   --flowscope-human: #60a5fa;
   --flowscope-scanner: #f87171;

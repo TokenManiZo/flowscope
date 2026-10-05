@@ -627,7 +627,28 @@ export interface AuthorizationReplayResult extends ApiSuccess {
   }
 }
 
+export interface SavedRequestLabEntry {
+  name: string
+  request: string
+  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+  result: { response: string; status: number; durationMs: number; requestBytes: number; responseBytes: number } | null
+  dirty: boolean
+}
+export interface RequestLabWorkspaceState {
+  datasetRevision: number
+  revision: number
+  persisted: boolean
+  tab: { nextId: number; selectedId: number; entries: Record<string, SavedRequestLabEntry> }
+}
+export interface RequestLabWorkspaceChange extends Partial<SavedRequestLabEntry> {
+  action: "create" | "update" | "delete" | "select"
+  id: number
+  clearResult?: boolean
+  selectedId?: number
+}
+
 export interface RequestLabDraft {
+  workspace?: RequestLabWorkspaceState
   eventId: string
   service: string
   request: string | null
@@ -674,9 +695,54 @@ export interface RequestLabResult extends ApiSuccess {
   responseBytes: number
 }
 
+/** Live credentials: mounted Request Lab memory only, never query cache or project state. */
+export interface RequestLabCredentialHeader {
+  name: string
+  value: string
+}
+
+export interface LiveAuthorizationReplaySnapshot {
+  runId: string
+  state: "STOPPED" | "ACTIVE" | "LIMIT_REACHED"
+  armed: boolean
+  targetAccountIds: readonly string[]
+  includeAnonymous: boolean
+  automaticAnonymousGet: boolean
+  basisSources: readonly ("HUMAN" | "SCANNER" | "LLM")[]
+  observed: number
+  eligible: number
+  queued: number
+  sent: number
+  drafted: number
+  skipped: number
+  failed: number
+  lastReason: string
+  pending?: number
+  limited?: number
+}
+
+export interface LiveAuthorizationReplayEnvelope extends ApiSuccess {
+  live: LiveAuthorizationReplaySnapshot
+}
+
+export interface HumanBrowserRun {
+  paused?: boolean
+  analyzing?: boolean
+  runId: string
+  accountId: string
+  proxy: string
+  listenerPort?: number
+  otherListenerPort?: number
+  otherListenerRequests?: number
+}
+
 export interface HumanRun {
+  paused?: boolean
+  analyzing?: boolean
+  endedRuns?: Array<{ runId: string; accountId: string; analyzing: boolean; message: string }>
   active: boolean
   completed: boolean
+  runs?: HumanBrowserRun[]
   runId: string
   accountId: string
   proxy: string

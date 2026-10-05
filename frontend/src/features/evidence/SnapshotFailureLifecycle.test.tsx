@@ -51,13 +51,17 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
       await userEvent.click(screen.getByRole("row", { name: "orders:101" }))
     }
     else {
-      await userEvent.click(await screen.findByRole("button", { name: /상세 보기$/ }))
-      if (kind === "surface") await userEvent.click(await screen.findByRole("button", { name: /관측 기록 상세 .* H .* HTTP 200/ }))
+      await userEvent.click(await screen.findByRole("button", { name: kind === "surface" ? /API 상세$/ : /상세 보기$/ }))
+      if (kind === "surface") {
+        await userEvent.click(screen.getByRole("tab", { name: /^관측 기록/ }))
+        await userEvent.click(await screen.findByRole("button", { name: /관측 기록 상세 .* H .* HTTP 200/ }))
+      }
     }
   }
   await select()
   await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "원문 보기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
+  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")
 
@@ -68,7 +72,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   expect(screen.getByLabelText("Request Lab 일시 중지")).toBeVisible()
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeDisabled()
-  expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
   expect(screen.getByText("마지막으로 불러온 데이터를 표시하고 있습니다.")).toBeVisible()
   expect(client.getQueryData(["snapshot"])).toEqual(snapshot)
   if (kind === "evidence") expect(screen.getAllByText("actual-a").length).toBeGreaterThan(0)
@@ -82,6 +86,8 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await waitFor(() => expect(screen.queryByText("snapshot unavailable")).not.toBeInTheDocument())
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
-  expect(screen.getByRole("button", { name: "Request Lab 전송" })).toBeEnabled()
+  expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled()
+  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("인증 선택")
+  expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
   await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(2))
 })

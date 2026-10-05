@@ -94,6 +94,35 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void independentExplorerBlocksTheCampaignBeforeAnyZapWork() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
+                    Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, "explorer-fixture"));
+            assertTrue(assertThrows(IllegalStateException.class,
+                    () -> campaign.startDeterministicZapCampaign(TARGET, List.of(), true))
+                    .getMessage().contains("independent Explorer"));
+            assertEquals(1, fixture.started.getCount());
+            assertEquals("", fixture.capabilityRun.get());
+            assertNull(fixture.contexts.current(Source.SCANNER));
+        }
+    }
+
+    @Test
+    void campaignRunsAlongsideIndependentHumanAccounts() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.contexts.activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER,
+                    Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "human-a", "A"));
+            fixture.contexts.activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER,
+                    Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "human-b", "B"));
+            campaign.startDeterministicZapCampaign(TARGET, List.of(), true);
+            assertEquals("COMPLETED", awaitTerminal(campaign).path("status").asText());
+            assertEquals(2, fixture.contexts.activeHumanRuns().size());
+        }
+    }
+
+    @Test
     void completedStatusIsPublishedOnlyAfterCleanupAndAllowsImmediateRestart() throws Exception {
         assertTerminalWaitsForCleanup(true);
     }

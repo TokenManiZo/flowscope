@@ -11,6 +11,7 @@ import { GraphScopeSummary } from "./GraphScopeSummary"
 
 /** 사이트·그룹 요약 패널에서 그래프로 이어지는 동작. RelationshipGraphView가 이동·선택을 맡는다. */
 export interface ScopeActions {
+  onOpenRequestLab?(): void
   onRevealOperation?(groupId: string, operation: string): void
   onSelectGroup?(groupId: string): void
   onOpenGroup?(groupId: string): void
@@ -41,20 +42,29 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const merged = node?.kind === "operation" && !selection.routeCandidate && !!summary
   const identityVerdicts = merged ? new Map(summary.list.map(([identity, verdict]) => [identity, verdict as Verdict])) : undefined
   const ids = new Set(selection.evidenceIds)
+  const manual = (snapshot.manualVerifications ?? []).filter(item => ids.has(item.originEvidenceId))
   const listed = snapshot.events.filter(item => ids.has(item.eventId))
   // 그래프가 정확히 해석한 선택 Evidence는 목록에 반드시 포함한다.
   const events = event && !listed.some(item => item.eventId === event.eventId) ? [event, ...listed] : listed
+  const judgedIds = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
+  const unjudgedCount = events.filter(item => ![item.eventId, ...(item.clusterEvidenceIds ?? [])].some(id => judgedIds.has(id))).length
   const title = structural && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : "선택한 그래프 항목"
   const subtitle = [selection.identity, selection.resource ? stripOrigin(selection.resource) || selection.resource : null].filter(Boolean).join(" · ")
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="선택 작업" description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
       {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
-      {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
       {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
         : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
+      {!structural && !selection.routeCandidate && unjudgedCount > 0 && <p className="mb-4 text-xs text-muted-foreground">인가 판정에 포함되지 않은 관측 기록 {unjudgedCount}건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>}
+      {node?.kind === "observed-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했습니다. 이 노드는 API 존재나 접근 허용·취약점 판정이 아닙니다.</p>}
+      {manual.length > 0 && <section aria-label="Request Lab 재현" className="mb-4 border-b pb-4 text-sm">
+        <h3 className="font-medium">Request Lab 재현 · {manual.length}건</h3>
+        <p className="text-xs text-muted-foreground">원본 요청에 연결된 응답입니다. 상태 코드만으로 취약점을 판정하지 않습니다.</p>
+        <ul className="mt-2 grid gap-1">{manual.map(item => <li key={item.eventId} className="font-mono text-xs">{snapshot.evidenceOrdinals?.[item.eventId] ? `#${snapshot.evidenceOrdinals[item.eventId]} · ` : ""}HTTP {item.status}</li>)}</ul>
+      </section>}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
     </InspectorPanel>
   </div>
 }

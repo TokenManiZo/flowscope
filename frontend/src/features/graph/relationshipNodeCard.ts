@@ -38,12 +38,12 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     const group = "kind" in projection ? projection.groups.find(item => item.id === node.groupId) : undefined
     // 카드는 이름과 API 수만 둔다. 출처 수·Gap은 선택했을 때 오른쪽 패널에서 본다.
     const endpointCount = group?.endpointCount ?? 0
-    const observed = group?.observedOperationCount ?? 0
+    const observedCount = group?.observedCount ?? 0
     const unrequested = group?.routeCandidateCount ?? 0
     const candidates = candidateCount(group?.cells ?? [])
     return {
-      kind: "target", badge: "API GROUP", title: node.label, detail: `${endpointCount} APIs${observed ? ` · 관측 ${observed}` : ""}${unrequested ? ` · 미요청 ${unrequested}` : ""}`, footer: "", icon: "network",
-      accessibleLabel: `${node.label}; ${node.service ?? "Target"}; API group; ${endpointCount} APIs${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}`,
+      kind: "target", badge: "API GROUP", title: node.label, detail: `${endpointCount} APIs${observedCount ? ` · 관측 기능 ${observedCount}` : ""}${unrequested ? ` · 미요청 ${unrequested}` : ""}`, footer: "", icon: "network",
+      accessibleLabel: `${node.label}; ${node.service ?? "Target"}; API group; ${endpointCount} APIs${observedCount ? `; 관측 기능 ${observedCount}` : ""}${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}`,
       ...(candidates ? { candidates } : {}),
     }
   }
@@ -67,7 +67,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "quiet-group" && "objectGroup" in node && node.objectGroup) {
-    // 의심·충돌·확인 필요·쓰기 신호가 없는 기능과 관측만 된 기능을 접어 둔 카드.
+    // 의심·충돌·확인 필요·쓰기 신호가 없는 판정 기능과 관측만 된 기능을 접어 둔 카드.
     const { members, expanded } = node.objectGroup
     return {
       kind: "operation", badge: "FOLDED", title: `${expanded ? "▾" : "▸"} ${node.label}`, detail: "", footer: "의심·충돌·확인 필요·쓰기 아님", icon: "none",
@@ -94,8 +94,12 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
 
   const operation = operationParts(node.label)
   if (node.kind === "support-operation") return {
-    kind: "operation", badge: "OBSERVED", title: `${operation.method} ${operation.path}`, detail: "관측만 · 판정 제외", footer: "", icon: "none",
-    accessibleLabel: `Observed operation ${node.label}; 판정 제외`,
+    kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: "", icon: "none",
+    accessibleLabel: `Support operation ${node.label}`,
+  }
+  if (node.kind === "observed-operation") return {
+    kind: "operation", badge: operation.method, title: pathAfterGroup(operation.path), detail: "응답 관측 · 판정 없음", footer: evidenceFooter(node), icon: "none",
+    accessibleLabel: `${node.label}; 응답 관측; 판정 없음; ${evidenceFooter(node)}`,
   }
 
   const candidates = "kind" in projection ? candidateCount((node as HierarchyNode).selection.cells ?? []) : 0

@@ -152,7 +152,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         request.accountIds().forEach(vault::view);
         String readiness = provider.readiness();
         if (!"READY".equals(readiness)) throw new IllegalStateException(readiness);
-        if (contexts.hasActiveRuns()) throw new IllegalStateException("활성 HUMAN/ZAP/LLM 실행을 먼저 종료하세요.");
+        if (contexts.current(Source.SCANNER) != null) throw new IllegalStateException("활성 ZAP 실행을 먼저 종료하세요.");
         if (!request.model().isBlank() && provider.models().models().stream()
                 .noneMatch(option -> option.id().equals(request.model()))) {
             throw new IllegalArgumentException("선택한 Codex 모델은 현재 계정의 사용 가능 목록에 없습니다.");

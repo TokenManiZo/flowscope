@@ -437,3 +437,16 @@ it("enlarges LLM messages without losing the instruction draft or changing the a
   expect(screen.getByRole("button", { name: /중단/ })).toBeEnabled()
   expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
 })
+
+it("labels collected HTTP traffic with plain L source text", async () => {
+  const running = { ...idle, run: { ...idle.run, status: "RUNNING", runId: "source-run",
+    activities: [{ sequence: 1, kind: "HTTP", title: "GET /api/me", detail: "HTTP 200", status: "RECORDED" }] } }
+  const fetchStub = vi.fn(async (_path: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(running)))
+  vi.stubGlobal("fetch", fetchStub)
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await screen.findByText("GET /api/me")
+  const source = within(screen.getByLabelText("LLM 진행 메시지 및 수집 트래픽")).getByText("L")
+  expect(source).toHaveAttribute("title", "LLM")
+  expect(source).not.toHaveAttribute("data-slot", "badge")
+  expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
+})

@@ -45,6 +45,8 @@ function bodyTokens(line: string): RawToken[] {
   return tokens
 }
 
+export function highlightJson(text: string): RawToken[][] { return text.split("\n").map(bodyTokens) }
+
 /** 한 원문 메시지를 줄 단위 토큰으로 나눈다. 줄바꿈은 그대로 보존한다. */
 export function highlightRaw(text: string): RawToken[][] {
   const lines = text.split("\n")

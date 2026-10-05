@@ -1,5 +1,5 @@
 import { operationShapeKey } from "./graphPathShape"
-import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
+import type { Cell, EventRecord, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
 export const GRAPH_PAGE_SIZE = 18
@@ -20,15 +20,14 @@ export interface ApiGroup extends ApiGroupDescriptor {
   operations: readonly string[]
   routeCandidates: readonly GraphRouteCandidate[]
   endpointCount: number
+  observedCount: number
   sourceCounts: Record<"human" | "scanner" | "llm", number>
   gapCount: number
   routeCandidateCount: number
-  /** "관측 전체" 보기에서만 채운다: 판정 셀 없이 관측만 된 기능 수. */
-  observedOperationCount: number
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "object-group" | "operation-group" | "quiet-group"
+  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "observed-operation" | "object-group" | "operation-group" | "quiet-group"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -41,7 +40,7 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   hiddenInGraph?: boolean
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
-  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
+  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support" | "observed"
   source: Source | null
   structural: boolean
   selection: HierarchySelection
@@ -60,6 +59,7 @@ export interface HierarchyProjection {
   listItems: readonly HierarchyNode[]
   hiddenOperationCount: number
   hiddenObjectCount: number
+  revealedNodeCount?: number
 }
 
 /** 이 조회 API가 이 객체에 대해 공개 정책(PUBLIC)인지. 서버 권한 매트릭스의 객체 칸을 따른다. */
@@ -67,44 +67,11 @@ export function isPublicRead(snapshot: Snapshot, operation: string, resource: st
   return snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
 }
 
-/** "관측 전체" 보기에서도 빼는 요청: 정적 파일과 CORS 사전 요청. 판정과 무관한 표시 전용 기준이다. */
-const hiddenTrafficClasses = new Set(["STATIC_ASSET", "PREFLIGHT", "DISCOVERY_METADATA"])
-/** 탐색 중 그대로 관측한 요청이 아닌 단계: 로그인 확인, 교차 신원 재전송, LLM 확인 요청, Request Lab 같은 수동 재전송. */
-const nonCollectionPhases = new Set(["SESSION_SETUP", "AUTHORIZATION_REPLAY", "COACH_PROBE", "VALIDATION"])
-const staticExtension = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|bmp|woff2?|ttf|eot|mp3|mp4|webm)$/i
-
-/**
- * 그래프에 그릴 정상 수집 요청인지 본다. 값을 바꿔 다시 보낸 요청(Request Lab)과 FlowScope가 재전송한 요청은 출처가 아니므로(D-008)
- * 그리지 않는다. 응답 없는 시도, 사용자가 직접 제외한 요청, 출처·실행 환경을 확인하지 못한 요청도 뺀다.
- */
-export function isObservedTraffic(event: Snapshot["events"][number]): boolean {
-  return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME" && !nonCollectionPhases.has(event.phase)
-    && event.status >= 100 && event.status <= 599 && !event.classificationReasons.includes("NO_RESPONSE")
-    && !(event.classificationOverride && event.trafficDisposition === "EXCLUDE")
-    && !hiddenTrafficClasses.has(event.trafficClass) && !staticExtension.test(event.path.split("?")[0])
-}
-
-/** 묶음 기준 칸(api·rest·버전 다음 첫 칸)과, 그 칸이 경로의 마지막 칸인지(/login.php처럼 한 칸짜리 주소인지). */
-function groupSegment(path: string): { key: string; leaf: boolean } {
+export function apiGroupDescriptor(service: string, path: string): ApiGroupDescriptor {
   const parts = (path || "/").split("/").filter(Boolean)
   let index = 0
   while (index < parts.length - 1 && (/^(api|rest)$/i.test(parts[index]) || /^v\d+(?:\.\d+)?$/i.test(parts[index]))) index += 1
-  return { key: (parts[index] || "root").toLowerCase(), leaf: index >= parts.length - 1 }
-}
-
-/**
- * JS 코드에서 찾았지만 아직 요청하지 않은 API. 정적 파일 모양(/{id}/{id}/styles.css처럼 확장자가 정적 파일이거나
- * 첫 칸부터 변수인 경로)은 숨은 API가 아니라 자산 경로라서 뺀다.
- */
-export function isJavascriptHiddenApi(candidate: Pick<RouteCandidate, "observed" | "method" | "pathTemplate" | "provenanceTypes">): boolean {
-  return !candidate.observed && candidate.method !== "UNKNOWN" && candidate.provenanceTypes.includes("JAVASCRIPT_LITERAL")
-    && !staticExtension.test(candidate.pathTemplate.split("?")[0]) && !/^\/\{/.test(candidate.pathTemplate)
-}
-
-const isWriteOperation = (operation: string) => /^(POST|PUT|PATCH|DELETE)\s/i.test(operation.replace(/^https?:\/\/\S+\s+/i, ""))
-
-export function apiGroupDescriptor(service: string, path: string): ApiGroupDescriptor {
-  const { key } = groupSegment(path)
+  const key = (parts[index] || "root").toLowerCase()
   return { id: JSON.stringify([service || "Target", key]), service: service || "Target", key, label: key === "root" ? "ROOT APIs" : `${key.replace(/[-_]+/g, " ").toUpperCase()} APIs` }
 }
 
@@ -115,12 +82,30 @@ function splitOperation(operation: string): { service: string; path: string } {
   return { service, path: space > 0 ? plain.slice(space + 1) : plain }
 }
 
+export function operationGroup(operation: string): ApiGroupDescriptor {
+  const { service, path } = splitOperation(operation)
+  return apiGroupDescriptor(service, path)
+}
+
+/** 묶음 기준 칸(api·rest·버전 다음 첫 칸)이 경로의 마지막 칸인지. /login.php처럼 한 칸짜리 주소면 true. */
+function singleSegment(path: string): boolean {
+  const parts = (path || "/").split("/").filter(Boolean)
+  let index = 0
+  while (index < parts.length - 1 && (/^(api|rest)$/i.test(parts[index]) || /^v\d+(?:\.\d+)?$/i.test(parts[index]))) index += 1
+  return index >= parts.length - 1
+}
+
+export interface ApiGroupResolver {
+  group(service: string, path: string): ApiGroupDescriptor
+  operation(operation: string): ApiGroupDescriptor
+}
+
 /**
  * 한 칸짜리 주소(/login.php, /dashboard)가 혼자 묶음을 차지하면 같은 서비스의 ROOT 묶음으로 모은다.
- * 같은 첫 칸을 쓰는 다른 경로가 있으면(/orders와 /orders/{id}) 그대로 둔다. 보기 범위·필터를 바꿔도
- * 묶음이 옮겨 다니지 않도록 판정 셀·경로 후보·정적 파일이 아닌 관측 요청 전체로 판단한다. 판정은 바꾸지 않는다.
+ * 같은 첫 칸을 쓰는 다른 경로가 있으면(/orders와 /orders/{id}) 그대로 둔다. 필터를 바꿔도 묶음이 옮겨 다니지 않도록
+ * 판정 셀·경로 후보·관측 기능 전체로 판단한다. 그래프와 검색이 같은 규칙을 쓴다. 판정은 바꾸지 않는다.
  */
-export function apiGroupResolver(snapshot: Snapshot): (service: string, path: string) => ApiGroupDescriptor {
+export function apiGroupResolver(snapshot: Snapshot): ApiGroupResolver {
   const paths = new Map<string, Set<string>>()
   const add = (service: string, path: string) => {
     const id = apiGroupDescriptor(service, path).id
@@ -129,11 +114,12 @@ export function apiGroupResolver(snapshot: Snapshot): (service: string, path: st
   }
   for (const cell of snapshot.cells) { const { service, path } = splitOperation(cell.op); add(service, path) }
   for (const candidate of snapshot.routeCandidates) add(candidate.service, candidate.pathTemplate)
-  for (const event of snapshot.events) if (isObservedTraffic(event)) { const { service, path } = splitOperation(event.op); add(service, path) }
-  return (service, path) => {
+  for (const event of snapshot.events) if (observedFunction(event)) { const { service, path } = splitOperation(event.op); add(service, path) }
+  const group = (service: string, path: string) => {
     const descriptor = apiGroupDescriptor(service, path)
-    return groupSegment(path).leaf && (paths.get(descriptor.id)?.size ?? 0) <= 1 ? apiGroupDescriptor(service, "/") : descriptor
+    return singleSegment(path) && (paths.get(descriptor.id)?.size ?? 0) <= 1 ? apiGroupDescriptor(service, "/") : descriptor
   }
+  return { group, operation: op => { const { service, path } = splitOperation(op); return group(service, path) } }
 }
 
 export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, groupId = "", operation = ""): GraphNavigation {
@@ -167,12 +153,63 @@ const compareText = (left: string, right: string) => left.localeCompare(right, "
 const observedSources = (cell: Cell) => (Object.keys(cell.perSource) as Source[]).filter(source => cell.perSource[source] !== undefined)
 const isPartial = (cell: Cell) => cell.missedSources.length > 0
 const emptySelection = (): HierarchySelection => ({ ...graphCellSelection([]), gapIds: [] })
+const nonFunctionTraffic = new Set(["STATIC_ASSET", "DISCOVERY_METADATA", "PREFLIGHT", "POLLING", "BACKGROUND", "TELEMETRY_CANDIDATE", "AUTH_SESSION"])
+const explicitlyExcluded = (event: EventRecord) => event.classificationReasons.includes("USER_EXCLUDE") || event.classificationOverride && event.trafficDisposition === "EXCLUDE"
+const nonDiscoveryPhases = new Set(["VALIDATION", "COACH_PROBE", "SESSION_SETUP", "AUTHORIZATION_REPLAY"])
 
-export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation): HierarchyProjection {
+/** 실제 응답을 받은 요청만 중립 노드 후보로 둔다. 분류·상태 코드는 존재/권한 판정이 아니다. */
+function observedFunction(event: EventRecord): boolean {
+  return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME"
+    && event.status >= 100 && event.status <= 599
+    && !event.classificationReasons.includes("NO_RESPONSE")
+    && !explicitlyExcluded(event)
+    && !nonFunctionTraffic.has(event.trafficClass)
+    && !nonDiscoveryPhases.has(event.phase)
+}
+
+const isWriteOperation = (operation: string) => /^(POST|PUT|PATCH|DELETE)\s/i.test(operation.replace(/^https?:\/\/\S+\s+/i, ""))
+const eventEvidenceIds = (event: EventRecord) => [...new Set([event.eventId, ...(event.clusterEvidenceIds ?? [])])].sort(compareText)
+const staticExtension = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|bmp|woff2?|ttf|eot|mp3|mp4|webm)$/i
+
+/**
+ * JS 코드에서 찾았지만 아직 요청하지 않은 API. 정적 파일 모양(/{id}/{id}/styles.css처럼 확장자가 정적 파일이거나
+ * 첫 칸부터 변수인 경로)은 숨은 API가 아니라 자산 경로라서 뺀다.
+ */
+export function isJavascriptHiddenApi(candidate: Pick<RouteCandidate, "observed" | "method" | "pathTemplate" | "provenanceTypes">): boolean {
+  return !candidate.observed && candidate.method !== "UNKNOWN" && candidate.provenanceTypes.includes("JAVASCRIPT_LITERAL")
+    && !staticExtension.test(candidate.pathTemplate.split("?")[0]) && !/^\/\{/.test(candidate.pathTemplate)
+}
+
+/** 표시 제한·접기를 적용하기 전, 그래프와 검색에 공통으로 쓰는 데이터. */
+export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
-  const resolveGroup = apiGroupResolver(snapshot)
-  const operationGroup = (operation: string) => { const { service, path } = splitOperation(operation); return resolveGroup(service, path) }
+  const groupOf = apiGroupResolver(snapshot)
   const cells = snapshot.cells.filter(cell => identityMatches(cell.idn) && observedSources(cell).some(source => filters.source.includes(source)) && (!filters.reviewStates || filters.reviewStates.includes(cell.overall)))
+  const judgedEvidence = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
+  const observedEvents = snapshot.events.filter(event => observedFunction(event)
+    && !eventEvidenceIds(event).some(id => judgedEvidence.has(id)) && filters.source.includes(event.source) && identityMatches(event.idn))
+  // 경로 후보를 모두 켜지 않아도, JS 코드에서 찾은 미요청 API는 관측 기능처럼 항상 그린다(JS 파일 요청 자체는 그리지 않는다).
+  const routeCandidates = filters.includeRouteCandidates ? projectRouteCandidates(snapshot, filters)
+    : projectRouteCandidates(snapshot, { ...filters, includeRouteCandidates: true }).filter(isJavascriptHiddenApi)
+  const groupIds = new Set([...cells.map(cell => groupOf.operation(cell.op).id), ...observedEvents.map(event => groupOf.operation(event.op).id), ...routeCandidates.map(candidate => groupOf.group(candidate.service, candidate.pathTemplate).id)])
+  const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
+  const supportEvents = filters.includeSupportTraffic ? snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !explicitlyExcluded(event) && !observedFunction(event) && groupIds.has(groupOf.operation(event.op).id)) : []
+  return { cells, observedEvents, supportEvents, routeCandidates, groupOf }
+}
+
+export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string }
+
+export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
+  const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
+  const contents = graphContents(snapshot, filters)
+  const { cells, observedEvents, groupOf } = contents
+  const observedByGroup = new Map<string, EventRecord[]>()
+  for (const event of observedEvents) {
+    const id = groupOf.operation(event.op).id
+    const grouped = observedByGroup.get(id)
+    if (grouped) grouped.push(event)
+    else observedByGroup.set(id, [event])
+  }
   const gapIdsByCell = new Map<string, string[]>()
   for (const gap of snapshot.gaps) {
     const key = graphCellKey(gap)
@@ -180,9 +217,6 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     ids.push(gap.id)
     gapIdsByCell.set(key, ids)
   }
-  // "관측 전체": 판정 셀이 없는 기능의 관측 요청을 표시 전용으로 더한다. 판정·Gap·출처 집계에는 넣지 않는다.
-  const judgedOperations = new Set(snapshot.cells.map(cell => cell.op))
-  const observedEvents = filters.includeSupportTraffic ? snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && !judgedOperations.has(event.op) && isObservedTraffic(event)) : []
   const selectionFor = (related: readonly Cell[], source: Source | null = null): HierarchySelection => ({ ...graphCellSelection(related, source), gapIds: [...new Set(related.flatMap(cell => gapIdsByCell.get(graphCellKey(cell)) ?? []))] })
 
   // Evidence belongs to the server cell. Event records only supply source attribution;
@@ -197,33 +231,26 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   const ensure = (descriptor: ApiGroupDescriptor) => {
     let group = groupsById.get(descriptor.id)
     if (!group) {
-      group = { ...descriptor, cells: [], operations: [], routeCandidates: [], endpointCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0, observedOperationCount: 0 }
+      group = { ...descriptor, cells: [], operations: [], routeCandidates: [], endpointCount: 0, observedCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 }
       groupsById.set(group.id, group)
     }
     return group
   }
   for (const cell of cells) {
-    const group = ensure(operationGroup(cell.op))
+    const group = ensure(groupOf.operation(cell.op))
     group.cells.push(cell)
   }
+  for (const event of observedEvents) ensure(groupOf.operation(event.op))
   // Route candidates keep the existing source/identity filter semantics of the flat projection.
-  // "관측 전체"는 경로 후보 중 JS에서 찾은 미요청 API만 더한다(JS 파일 요청 자체는 그리지 않는다).
-  const candidateList = filters.includeRouteCandidates ? projectRouteCandidates(snapshot, filters)
-    : filters.includeSupportTraffic ? projectRouteCandidates(snapshot, { ...filters, includeRouteCandidates: true }).filter(isJavascriptHiddenApi) : []
-  for (const candidate of candidateList) {
-    const group = ensure(resolveGroup(candidate.service, candidate.pathTemplate))
+  for (const candidate of contents.routeCandidates) {
+    const group = ensure(groupOf.group(candidate.service, candidate.pathTemplate))
     group.routeCandidates.push(candidate)
-  }
-  const observedOperationsByGroup = new Map<string, Set<string>>()
-  for (const event of observedEvents) {
-    const id = ensure(operationGroup(event.op)).id
-    observedOperationsByGroup.set(id, (observedOperationsByGroup.get(id) ?? new Set()).add(event.op))
   }
   for (const group of groupsById.values()) {
     group.operations = [...new Set(group.cells.map(cell => cell.op))]
     group.endpointCount = group.operations.length
+    group.observedCount = new Set((observedByGroup.get(group.id) ?? []).map(event => event.op).filter(op => !group.operations.includes(op))).size
     group.routeCandidateCount = group.routeCandidates.length
-    group.observedOperationCount = observedOperationsByGroup.get(group.id)?.size ?? 0
     for (const source of ["human", "scanner", "llm"] as const) group.sourceCounts[source] = group.cells.reduce((sum, cell) => sum + sourceCount(cell, source), 0)
     const gapKeys = new Set(group.cells.filter(cell => cell.conflict || isPartial(cell)).map(graphCellKey))
     for (const gap of snapshot.gaps) if (gap.type === "UNCROSSED" && identityMatches(gap.idn) && group.operations.includes(gap.op)) gapKeys.add(graphCellKey(gap))
@@ -241,6 +268,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   let routeCandidates: readonly GraphRouteCandidate[] = []
   let hiddenOperationCount = 0
   let hiddenObjectCount = 0
+  let revealedNodeCount = 0
   const addNode = (kind: HierarchyNode["kind"], key: string, selection = emptySelection(), extra: Partial<HierarchyNode> = {}) => {
     const id = `${kind}:${key}`
     const existing = nodes.find(node => node.id === id)
@@ -272,6 +300,31 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
   }
 
+  const addObserved = (observed: readonly EventRecord[], node: HierarchyNode) => {
+    node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...observed.flatMap(eventEvidenceIds)])].sort(compareText) }
+    const buckets = new Map<string, EventRecord[]>()
+    for (const event of observed) {
+      const key = JSON.stringify([event.idn, event.source])
+      buckets.set(key, [...(buckets.get(key) ?? []), event])
+    }
+    for (const [key, events] of buckets) {
+      const [identity, source] = JSON.parse(key) as [string, Source]
+      const evidenceIds = [...new Set(events.flatMap(eventEvidenceIds))].sort(compareText)
+      const identityNode = addNode("identity", identity, { ...emptySelection(), identity })
+      identityNode.selection = { ...identityNode.selection, evidenceIds: [...new Set([...identityNode.selection.evidenceIds, ...evidenceIds])].sort(compareText) }
+      addEdge("observed", identityNode.id, node.id, { ...emptySelection(), identity, operation: node.selection.operation, source, evidenceIds }, events.length)
+    }
+  }
+
+  const addSupport = (events: readonly EventRecord[], node: HierarchyNode) => {
+    node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText) }
+    for (const event of events) {
+      const identity = addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
+      identity.selection = { ...identity.selection, evidenceIds: [...new Set([...identity.selection.evidenceIds, ...eventEvidenceIds(event)])].sort(compareText) }
+      addEdge("support", identity.id, node.id, { ...emptySelection(), identity: event.idn, operation: node.selection.operation, source: event.source, evidenceIds: eventEvidenceIds(event) }, 0, event.eventId)
+    }
+  }
+
   // 그룹 화면에서는 객체를 종류별 묶음으로 둔다. 접힌 묶음은 노드 하나와 API→묶음 엣지(출처별)만, 펼친 묶음은 머리 노드 바로 아래에 개별 객체를 둔다.
   // 묶이지 않는 객체(":" 없음)만 objectLimit로 접고 "더 보기"로 펼친다. API 하나를 연 화면(grouped=false)은 객체를 하나씩 그린다(목록 모드에도 펼칠 버튼이 없다).
   // 반환값은 개별 객체 노드로 그린 객체다.
@@ -289,7 +342,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       const group = groupOf(resource)
       if (!group) {
         singles++
-        if (singles <= resolved.objectLimit) { addNode("resource", resource, resourceSelection(resource), resourceExtra(resource)); drawn.push(resource) }
+        if (singles > resolved.objectLimit && resource === reveal.resource) revealedNodeCount++
+        if (singles <= resolved.objectLimit || resource === reveal.resource) { addNode("resource", resource, resourceSelection(resource), resourceExtra(resource)); drawn.push(resource) }
         continue
       }
       if (placed.has(group.id)) continue
@@ -311,7 +365,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
         addEdge("operation-resource", `operation:${op}`, `object-group:${group.id}`, selectionFor(bucket, source), bucket.reduce((sum, cell) => sum + sourceCount(cell, source), 0))
       }
     }
-    return { drawn, hidden: Math.max(0, singles - resolved.objectLimit) }
+    return { drawn, hidden: Math.max(0, singles - drawn.filter(resource => !groupOf(resource)).length) }
   }
 
   // 같은 경로 형식(숫자·UUID·긴 토큰 → {id})의 API가 둘 이상이면 객체 묶음처럼 API 묶음 노드로 접는다(API 목록 표와 같은 기준).
@@ -324,7 +378,9 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const [shape, ops] of shapes) {
       if (ops.length < 2) continue
       const id = `operation-group:${shape}`, open = expandedGroups.has(id)
-      const groupNode = addNode("operation-group", shape, selectionFor(related.filter(cell => ops.includes(cell.op))), { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
+      const groupSelection = selectionFor(related.filter(cell => ops.includes(cell.op)))
+      groupSelection.evidenceIds = [...new Set(nodes.filter(node => node.kind === "operation" && ops.includes(node.selection.operation ?? "")).flatMap(node => node.selection.evidenceIds))].sort(compareText)
+      const groupNode = addNode("operation-group", shape, groupSelection, { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
       const members = ops.map(op => nodes.find(node => node.id === `operation:${op}`)).filter((node): node is HierarchyNode => !!node)
       const at = Math.min(...members.map(member => nodes.indexOf(member)))
       for (const node of [groupNode, ...members]) nodes.splice(nodes.indexOf(node), 1)
@@ -342,7 +398,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
     for (const parts of merged.values()) {
       const cells = [...new Set(parts.flatMap(edge => edge.selection.cells))]
-      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selectionFor(cells, parts[0].source), parts.reduce((sum, edge) => sum + edge.count, 0))
+      const selection = { ...selectionFor(cells, parts[0].source), identity: parts[0].selection.identity, operation: cells.length ? selectionFor(cells).operation : parts[0].selection.operation, evidenceIds: [...new Set(parts.flatMap(edge => edge.selection.evidenceIds))].sort(compareText) }
+      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selection, parts.reduce((sum, edge) => sum + edge.count, 0))
     }
   }
 
@@ -357,21 +414,43 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const scores = new Map<string, number>()
     for (const cell of group.cells) scores.set(cell.op, (scores.get(cell.op) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : isPartial(cell) ? 20 : 1) + cell.evidenceIds.length)
     const operations = [...group.operations].sort((left, right) => (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    // 점검할 것부터 그린다(관심 지점에서 시작해 필요할 때 펼치는 탐색). 의심·충돌·확인 필요·쓰기 기능만 카드로 두고,
-    // 나머지는 "신호 없는 기능 N개" 카드 하나로 접는다. 접힌 기능도 목록 보기와 선택 상세에는 남는다.
+    // 점검할 것부터 그린다. 의심·충돌·확인 필요·쓰기 기능만 카드로 두고, 나머지 판정 기능과 관측 기능은
+    // "신호 없는 기능 N개" 카드 하나로 접는다. 접힌 기능도 목록 보기와 선택 상세에는 남고, 검색으로 찾은 기능은 접혀 있어도 그린다.
     const signalled = (op: string) => isWriteOperation(op) || group.cells.some(cell => cell.op === op && (cell.overall === "suspicious" || cell.overall === "undecided" || cell.conflict))
     const quietId = `quiet-group:${group.id}`, quietOpen = expandedGroups.has(quietId)
-    // 목록 보기는 신호 있는 기능 다음에 접힌 기능을 이어서 18개씩 넘긴다. 접혀 있으면 그래프에는 신호 있는 기능만 그린다.
-    // 펼쳐도 같은 순서를 쓴다. 점수순으로 바꾸면 펼치는 순간 신호 있는 기능이 18개 밖으로 밀려 사라질 수 있다.
+    const revealed = new Set(reveal.operations ?? [])
+    const drawn = (op: string) => quietOpen || signalled(op) || revealed.has(op)
+    // 목록은 신호 있는 기능 다음에 접힌 기능을 이어서 18개씩 넘긴다. 펼쳐도 같은 순서를 써서 신호 있는 기능이 밀려나지 않게 한다.
     const ordered = [...operations.filter(signalled), ...operations.filter(op => !signalled(op))]
     const listed = ordered.slice(0, resolved.operationLimit)
-    const visible = listed.filter(op => quietOpen || signalled(op))
+    for (const operation of revealed) if (operations.includes(operation) && !listed.includes(operation)) { listed.push(operation); revealedNodeCount++ }
+    const visible = listed.filter(drawn)
     const related = group.cells.filter(cell => visible.includes(cell.op))
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
-    listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
-    for (const op of listed.filter(op => !visible.includes(op))) listItems.push(addNode("operation", op, selectionFor(group.cells.filter(cell => cell.op === op)), { hiddenInGraph: true }))
-    const quietMembers = operations.filter(op => !signalled(op))
+    listItems = listed.map(op => visible.includes(op) ? addNode("operation", op, selectionFor(related.filter(cell => cell.op === op)))
+      : addNode("operation", op, selectionFor(group.cells.filter(cell => cell.op === op)), { hiddenInGraph: true }))
     addAccess(related)
+    const observed = observedByGroup.get(group.id) ?? []
+    const observedByOperation = new Map<string, EventRecord[]>()
+    for (const event of observed) {
+      const grouped = observedByOperation.get(event.op)
+      if (grouped) grouped.push(event)
+      else observedByOperation.set(event.op, [event])
+    }
+    const observedOps = [...observedByOperation.keys()].filter(op => !group.operations.includes(op)).sort(compareText)
+    const visibleObserved = observedOps.slice(0, Math.max(0, resolved.operationLimit - listed.length))
+    for (const op of revealed) if (observedOps.includes(op) && !visibleObserved.includes(op)) { visibleObserved.push(op); revealedNodeCount++ }
+    for (const op of [...listed, ...visibleObserved]) {
+      const relatedEvents = observedByOperation.get(op) ?? []
+      if (!relatedEvents.length) continue
+      const existing = nodes.find(node => node.id === `operation:${op}`)
+      const node = existing ?? addNode("observed-operation", op, { ...emptySelection(), operation: op }, drawn(op) ? {} : { hiddenInGraph: true })
+      if (!existing) listItems.push(node)
+      // 접힌 기능은 그래프에 그리지 않으므로 엣지 없이 관측 기록만 선택 상세에 남긴다.
+      if (node.hiddenInGraph) node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...relatedEvents.flatMap(eventEvidenceIds)])].sort(compareText) }
+      else addObserved(relatedEvents, node)
+    }
+    const quietMembers = [...operations.filter(op => !signalled(op)), ...observedOps.filter(op => !isWriteOperation(op))]
     // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
     // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
     const resourceScores = new Map<string, number>()
@@ -381,41 +460,33 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const visibleResources = objects.drawn
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     hiddenObjectCount = objects.hidden
-    hiddenOperationCount = ordered.length - listed.length
-    groupOperations(visible, related)
-    routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
+    hiddenOperationCount = operations.length - listed.length + observedOps.length - visibleObserved.length
+    const visibleRoutes = group.routeCandidates.slice(0, resolved.operationLimit)
+    const revealedRoute = group.routeCandidates.find(candidate => candidate.id === reveal.routeCandidateId)
+    if (revealedRoute && !visibleRoutes.includes(revealedRoute)) { visibleRoutes.push(revealedRoute); revealedNodeCount++ }
+    routeCandidates = visibleRoutes
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {
-      const supportEvents = observedEvents.filter(event => operationGroup(event.op).id === group.id)
-      const allSupportOps = [...new Set(supportEvents.map(event => event.op))].filter(op => {
-        if (!isWriteOperation(op)) quietMembers.push(op)
-        return quietOpen || isWriteOperation(op)
-      })
-      const supportOps = allSupportOps.slice(0, resolved.operationLimit)
-      hiddenOperationCount += allSupportOps.length - supportOps.length
-      const supportEvidence = (event: Snapshot["events"][number]) => event.clusterEvidenceIds?.length ? event.clusterEvidenceIds : [event.eventId]
+      const supportEvents = contents.supportEvents.filter(event => groupOf.operation(event.op).id === group.id)
+      const shown = [...visible, ...visibleObserved.filter(drawn)]
+      const supportOnlyOps = [...new Set(supportEvents.map(event => event.op))].filter(op => !group.operations.includes(op) && !observedOps.includes(op))
+      const supportOnly = supportOnlyOps.slice(0, resolved.operationLimit)
+      for (const op of reveal.operations ?? []) if (supportOnlyOps.includes(op) && !supportOnly.includes(op)) { supportOnly.push(op); revealedNodeCount++ }
+      const supportOps = [...new Set([...shown.filter(op => supportEvents.some(event => event.op === op)), ...supportOnly])]
       for (const op of supportOps) {
         const events = supportEvents.filter(event => event.op === op)
-        addNode("support-operation", op, { ...emptySelection(), operation: op, evidenceIds: [...new Set(events.flatMap(supportEvidence))].sort(compareText) })
-      }
-      // 같은 신원·기능·출처의 반복 관측은 엣지 하나로 합친다. 개별 관측 기록은 선택 상세의 Evidence 목록에 모두 남는다.
-      const buckets = new Map<string, Snapshot["events"][number][]>()
-      for (const event of supportEvents.filter(event => supportOps.includes(event.op))) {
-        const key = JSON.stringify([event.idn, event.op, event.source])
-        const bucket = buckets.get(key)
-        if (bucket) bucket.push(event); else buckets.set(key, [event])
-      }
-      for (const bucket of buckets.values()) {
-        const { idn, op, source } = bucket[0]
-        addNode("identity", idn, { ...emptySelection(), identity: idn })
-        const evidenceIds = [...new Set(bucket.flatMap(supportEvidence))].sort(compareText)
-        addEdge("support", `identity:${idn}`, `support-operation:${op}`, { ...emptySelection(), identity: idn, operation: op, source, evidenceIds }, bucket.length)
+        const existing = nodes.find(node => ["operation", "observed-operation"].includes(node.kind) && node.selection.operation === op)
+        if (existing?.hiddenInGraph) continue
+        const node = existing ?? addNode("support-operation", op, { ...emptySelection(), operation: op })
+        if (!existing) listItems.push(node)
+        addSupport(events, node)
       }
     }
     if (quietMembers.length) {
       const label = `신호 없는 기능 ${quietMembers.length}개`
       addNode("quiet-group", group.id, selectionFor(group.cells.filter(cell => quietMembers.includes(cell.op))), { label, wrappedLabel: label, objectGroup: { key: "신호 없는 기능", members: quietMembers, owners: {}, expanded: quietOpen } })
     }
+    groupOperations(visible, related)
   } else if (group) {
     const operation = resolved.operation
     const related = group.cells.filter(cell => cell.op === operation)
@@ -424,11 +495,13 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related) if (cell.resource) scores.set(cell.resource, (scores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
     const focusedResource = candidates.find(gap => graphCellKey(gap) === resolved.focusCandidateKey)?.resource
     const resources = [...new Set([...related.map(cell => cell.resource), ...candidates.map(gap => gap.resource)].filter((resource): resource is string => !!resource))].sort((left, right) => Number(right === focusedResource) - Number(left === focusedResource) || (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    addNode("operation", operation, selectionFor(related))
+    const operationNode = addNode("operation", operation, selectionFor(related))
     const objects = addObjects(resources, related, resource => ({ ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }), resource => ({ owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) }), false)
     const visible = objects.drawn
     for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addAccess(related)
+    addObserved((observedByGroup.get(group.id) ?? []).filter(event => event.op === operation), operationNode)
+    addSupport(contents.supportEvents.filter(event => event.op === operation), operationNode)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
       .sort((left, right) => Number(graphCellKey(right) === resolved.focusCandidateKey) - Number(graphCellKey(left) === resolved.focusCandidateKey))
@@ -442,5 +515,5 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
-  return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount }
+  return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount, revealedNodeCount }
 }
