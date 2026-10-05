@@ -4,8 +4,9 @@
 
 | 버전 | 날짜 | 요약 |
 |---|---|---|
-| [다음 릴리스 (미배포)](unreleased.md) | 미정 | ZAP 크롤링 범위 확대, LLM 브라우저 로그인과 탐색, 프로젝트 관리 창 |
-| [v1.2.0-beta.50](v1.2.0-beta.50.md) | 2026-09-30 | 화면 전면 개편, 계정·세션 재설계, 권한 판정 매트릭스, 교차 신원 검증 |
+| [다음 릴리스 (미배포)](unreleased.md) | 미정 | 변경 기록 대기 |
+| [v1.0.0 — 첫 정식 공개](v1.0.0.md) | 공개 준비 중 | 사람·ZAP·LLM 관측 비교, 계정별 점검, 권한 취약점 후보 검토 |
+| [내부 beta.50 기록](v1.2.0-beta.50.md) | 2026-09-30 | 이전 내부 버전 참고 기록 |
 
 ## 쓰는 법
 
@@ -26,11 +27,11 @@
 ## 템플릿
 
 ```markdown
-# v1.2.0-beta.N
+# v1.0.0
 
 배포일: YYYY-MM-DD
 
-[GitHub Release](https://github.com/TokenManiZo/flowscope/releases/tag/v1.2.0-beta.N)
+[GitHub Release](https://github.com/TokenManiZo/flowscope/releases/tag/v1.0.0)
 
 한두 문장 요약.
 
@@ -39,7 +40,7 @@
 ### 바뀐 것 이름
 설명 2~3줄.
 
-![무엇을 보여 주는 화면인지 한 문장.](images/v1.2.0-beta.N/name.png)
+![무엇을 보여 주는 화면인지 한 문장.](images/v1.0.0/name.png)
 
 ## 추가
 ## 변경

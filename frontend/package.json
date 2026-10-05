@@ -1,7 +1,7 @@
 {
   "name": "flowscope-web",
   "private": true,
-  "version": "1.2.0-beta.48",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "build": "node scripts/clean-react-output.mjs && vite build",
