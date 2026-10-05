@@ -45,6 +45,92 @@ final class SqliteProjectStoreTest {
     @TempDir Path temp;
 
     @Test
+    void apiMarksUpdateInPlaceWithoutTouchingTrafficAndRollbackTogether() throws Exception {
+        var record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders", 200, "anon");
+        record.hasResponse = true; record.reqText = "GET /api/orders HTTP/1.1"; record.body = "{}";
+        var config = new AnalysisConfig();
+        config.reviewItem("historical-audit", ReviewDecision.Status.CONFIRMED, "keep", List.of("old-evidence"));
+        var store = new SqliteProjectStore(new ProjectStore());
+        Path db = temp.resolve("api-marks.db");
+        store.save(db, List.of(record), config, List.of(), List.of(), Set.of(), List.of());
+        String op = "https://api.test:443 GET /api/orders", id = io.flowscope.core.ApiManagement.reviewId(op);
+        String before;
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + db); var statement = connection.createStatement()) {
+            try (var row = statement.executeQuery("SELECT document FROM records")) { row.next(); before = row.getString(1); }
+            statement.execute("CREATE TRIGGER protect_traffic BEFORE DELETE ON records BEGIN SELECT RAISE(ABORT, 'traffic must not change'); END");
+        }
+        config.restoreApiState(new io.flowscope.core.ApiState(java.util.Map.of(op, "purple"), java.util.Map.of()));
+        config.reviewItem(id, ReviewDecision.Status.CONFIRMED, "manual", List.of(record.evidenceId));
+        assertTrue(store.saveApiMarks(db, config, op));
+        var saved = store.load(db);
+        assertEquals("purple", saved.config().apiState().highlights().get(op));
+        assertEquals(config.reviews(), saved.config().reviews());
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + db); var statement = connection.createStatement()) {
+            try (var row = statement.executeQuery("SELECT document FROM records")) { row.next(); assertEquals(before, row.getString(1)); }
+            try (var row = statement.executeQuery("SELECT count(*) FROM sqlite_master WHERE name='protect_traffic'")) { row.next(); assertEquals(1, row.getInt(1)); }
+            statement.execute("CREATE TRIGGER reject_marks BEFORE INSERT ON metadata WHEN NEW.key='api_state' BEGIN SELECT RAISE(ABORT, 'test failure'); END");
+        }
+        config.restoreApiState(new io.flowscope.core.ApiState(java.util.Map.of(op, "blue"), java.util.Map.of()));
+        config.removeReview(id);
+        assertThrows(java.io.IOException.class, () -> store.saveApiMarks(db, config, op));
+        saved = store.load(db);
+        assertEquals("purple", saved.config().apiState().highlights().get(op));
+        assertTrue(saved.config().reviews().containsKey(id));
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + db); var statement = connection.createStatement()) { statement.execute("DROP TRIGGER reject_marks"); }
+        assertTrue(store.saveApiMarks(db, config, op));
+        saved = store.load(db);
+        assertFalse(saved.config().reviews().containsKey(id));
+        assertTrue(saved.config().reviews().containsKey("historical-audit"));
+        assertEquals("blue", saved.config().apiState().highlights().get(op));
+    }
+
+    @Test
+    void deletionRetainsSurvivingTrafficAndSharedPayloadsAndRollsBackOnFailure() throws Exception {
+        var first = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders/1", 200, "anon");
+        var second = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders/2", 200, "anon");
+        var third = new RequestRecord(Source.HUMAN, "https://api.test:443", "POST", "/api/users", 200, "anon");
+        var records = List.of(first, second, third);
+        for (var r : records) {
+            r.hasResponse = true; r.reqText = r.method + " " + r.path + " HTTP/1.1"; r.body = "{}";
+            r.requestPayload = StoredPayload.capture("shared masked request", "text/plain", 1024);
+            r.responsePayload = StoredPayload.capture("response " + r.path, "text/plain", 1024);
+        }
+        var config = new AnalysisConfig();
+        var store = new SqliteProjectStore(new ProjectStore());
+        Path db = temp.resolve("incremental-delete.db");
+        store.save(db, records, config, List.of(), List.of(), Set.of(), List.of());
+        config.reviewItem("surviving-audit", ReviewDecision.Status.CONFIRMED, "keep", List.of(second.evidenceId));
+        var beforeIds = records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet());
+        var deletedIds = Set.of(first.evidenceId, third.evidenceId);
+        String survivingDocument;
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + db); var statement = connection.createStatement()) {
+            assertEquals(4, scalar(statement.executeQuery("SELECT COUNT(*) FROM payloads")));
+            try (var row = statement.executeQuery("SELECT document FROM records WHERE evidence_id='" + second.evidenceId + "'")) {
+                assertTrue(row.next()); survivingDocument = row.getString(1);
+            }
+            statement.execute("CREATE TRIGGER protect_survivor BEFORE DELETE ON records WHEN OLD.evidence_id='" + second.evidenceId + "' BEGIN SELECT RAISE(ABORT, 'survivor must not change'); END");
+            statement.execute("CREATE TRIGGER reject_delete BEFORE INSERT ON metadata WHEN NEW.key='api_state' BEGIN SELECT RAISE(ABORT, 'test failure'); END");
+        }
+        assertFalse(store.saveAfterDeletion(db, Set.of("uncheckpointed"), deletedIds, config, List.of(), List.of(), java.util.Map.of(), List.of(), List.of(), ProjectStore.ProjectContext.empty(), io.flowscope.integration.GraphWorkspace.empty(), io.flowscope.integration.RequestLabWorkspace.empty()));
+        assertThrows(java.io.IOException.class, () -> store.saveAfterDeletion(db, beforeIds, deletedIds, config, List.of(), List.of(), java.util.Map.of(), List.of(), List.of(), ProjectStore.ProjectContext.empty(), io.flowscope.integration.GraphWorkspace.empty(), io.flowscope.integration.RequestLabWorkspace.empty()));
+        assertEquals(3, store.load(db).records().size());
+        assertTrue(store.load(db).config().reviews().isEmpty());
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + db); var statement = connection.createStatement()) {
+            assertEquals(4, scalar(statement.executeQuery("SELECT COUNT(*) FROM payloads")));
+            statement.execute("DROP TRIGGER reject_delete");
+        }
+        assertTrue(store.saveAfterDeletion(db, beforeIds, deletedIds, config, List.of(), List.of(), java.util.Map.of(), List.of(), List.of(), ProjectStore.ProjectContext.empty(), io.flowscope.integration.GraphWorkspace.empty(), io.flowscope.integration.RequestLabWorkspace.empty()));
+        var restored = store.load(db);
+        assertEquals(List.of(second.evidenceId), restored.records().stream().map(r -> r.evidenceId).toList());
+        assertEquals(config.reviews(), restored.config().reviews());
+        assertEquals(second.requestPayload.text(), restored.records().getFirst().requestPayload.text());
+        try (var connection = DriverManager.getConnection("jdbc:sqlite:" + db); var statement = connection.createStatement()) {
+            assertEquals(2, scalar(statement.executeQuery("SELECT COUNT(*) FROM payloads")));
+            try (var row = statement.executeQuery("SELECT document FROM records")) { assertTrue(row.next()); assertEquals(survivingDocument, row.getString(1)); }
+        }
+    }
+
+    @Test
     void relationalProjectRoundTripsWithoutRawCredentials() throws Exception {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443",
                 "GET", "/orders/7", 200, "sess:4e738ca5563c");

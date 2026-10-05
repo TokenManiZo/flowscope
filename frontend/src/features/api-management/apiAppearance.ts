@@ -12,12 +12,23 @@ export const apiColors = [
   { id: "gray", label: "회색", swatch: "#94a3b8", dark: "#28303b", light: "#f1f5f9", classes: "bg-slate-100 dark:bg-slate-800" },
 ] as const
 export function apiOperation(operation: string): string { return operation.split("#", 1)[0] }
+const confirmedOperations = new WeakMap<NonNullable<Snapshot["authorizationMatrix"]>, ReadonlySet<string>>()
 export function apiConfirmed(snapshot: Pick<Snapshot, "apiMarks" | "authorizationMatrix">, operation: string): boolean {
   const op = apiOperation(operation)
   if (snapshot.apiMarks?.[op]?.registered) return true
   const matrix = snapshot.authorizationMatrix
-  return [...(matrix?.functions ?? []), ...(matrix?.objects ?? []), ...(matrix?.evidence ?? [])].some(item => apiOperation(item.operation) === op && item.reviewStatus === "CONFIRMED" && judgmentTone(item.status) === "risk")
+  if (!matrix) return false
+  let confirmed = confirmedOperations.get(matrix)
+  if (!confirmed) {
+    const operations = new Set<string>()
+    for (const items of [matrix.functions, matrix.objects, matrix.evidence])
+      for (const item of items) if (item.reviewStatus === "CONFIRMED" && judgmentTone(item.status) === "risk") operations.add(apiOperation(item.operation))
+    confirmed = operations
+    confirmedOperations.set(matrix, confirmed)
+  }
+  return confirmed.has(op)
 }
+
 export function apiTint(snapshot: Pick<Snapshot, "apiMarks">, operation: string): string {
   return apiColors.find(color => color.id === snapshot.apiMarks?.[apiOperation(operation)]?.color)?.classes ?? ""
 }

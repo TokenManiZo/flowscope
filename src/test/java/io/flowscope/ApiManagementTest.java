@@ -87,9 +87,10 @@ final class ApiManagementTest {
         assertEquals(List.of("/api/users"), ApiManagement.filterRoutes(routes, deleted.config()).stream().map(RouteCandidate::pathTemplate).toList());
         assertEquals(1, ApiManagement.filterRoutes(List.of(declared("/api/orders", "ev-new-script", "new-run")), deleted.config()).size(), "new traffic is allowed to rediscover the API");
         var store = new SqliteProjectStore(new ProjectStore()); Path db = temp.resolve("delete.db");
-        store.save(db, records, config, List.of(), List.of(), Set.of(), routes);
-        store.save(db, deleted.records(), deleted.config(), List.of(), List.of(), Set.of(), deleted.routes());
+        store.save(db, records, config, List.of(), List.of(), Map.of(), routes, List.of(), ProjectStore.ProjectContext.empty(), io.flowscope.integration.GraphWorkspace.empty(), lab);
+        assertTrue(store.saveAfterDeletion(db, records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet()), new java.util.HashSet<>(deleted.preview().evidenceIds()), deleted.config(), List.of(), List.of(), Map.of(), deleted.routes(), List.of(), ProjectStore.ProjectContext.empty(), io.flowscope.integration.GraphWorkspace.empty(), deleted.requestLab()));
         var reopened = store.load(db);
+        assertTrue(reopened.requestLabWorkspace().tabs().isEmpty());
         assertEquals(1, reopened.records().size()); assertFalse(reopened.config().reviews().containsKey("related"));
         assertEquals(List.of("/api/users"), ApiManagement.filterRoutes(routes, reopened.config()).stream().map(RouteCandidate::pathTemplate).toList());
     }

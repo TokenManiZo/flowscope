@@ -90,6 +90,29 @@ class ResizeObserverStub {
 beforeEach(() => vi.stubGlobal("ResizeObserver", ResizeObserverStub))
 
 describe("EvidencePage", () => {
+
+  it("selects only filtered repeat members and keeps expanded-row selection exact", async () => {
+    installFetch([
+      event({ eventId: "event-1", clusterId: "same" }),
+      event({ eventId: "event-2", clusterId: "same" }),
+      event({ eventId: "scanner-hidden", clusterId: "same", source: "scanner" }),
+    ])
+    const user = userEvent.setup()
+    renderWithQueryClient(<EvidencePage />)
+    await screen.findByRole("checkbox", { name: "event-1 기록 선택" })
+    await user.click(screen.getByRole("checkbox", { name: "스캐너 S" }))
+    await user.click(screen.getByRole("checkbox", { name: "event-1 기록 선택" }))
+    expect(screen.getByText("관측 기록 2건 선택")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "반복 관측 기록 펼치기" }))
+    await user.click(screen.getByRole("checkbox", { name: "event-1 기록 선택" }))
+    expect(screen.getByText("관측 기록 1건 선택")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "표시된 관측 기록 모두 선택" }))
+    expect(screen.getByText("관측 기록 2건 선택")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "표시된 관측 기록 모두 선택" }))
+    expect(screen.queryByRole("button", { name: "선택 기록 삭제" })).not.toBeInTheDocument()
+  })
+
+
   it("uses one reference workspace state tree for filters, rows, and selected detail", async () => {
     installFetch([event({ eventId: "workspace-evidence" })])
     renderWithQueryClient(<EvidencePage />)

@@ -116,14 +116,28 @@ public final class Standalone {
             if (request.datasetRevision() != datasetRevision.get() || request.revision() != revision.get()) throw new IllegalStateException("프로젝트 데이터가 변경되었습니다. 다시 확인해 주세요.");
             var change = io.flowscope.core.ApiManagement.prepare(request, result, new ArrayList<>(records), config, routeCandidates, requestLabWorkspace);
             if (request.action().equals("preview-delete")) return change.preview();
+            if (request.marksOnly()) {
+                try {
+                    if (activeProjectDatabase != null && !sqliteProjectStore.saveApiMarks(activeProjectDatabase, change.config(), request.operations().getFirst()))
+                        sqliteProjectStore.save(activeProjectDatabase, records, change.config(), archivedAssessments, archivedValidations,
+                                contexts.completedRuns(), routeCandidates, executionLedger.attempts(), activeProjectContext, graphWorkspace, requestLabWorkspace);
+                } catch (Exception error) { throw projectFailure("API 변경 저장에 실패했습니다.", error); }
+                config.replaceWith(change.config()); revision.incrementAndGet();
+                if (activeProjectDatabase != null) markSaved();
+                return change.preview().withMarks(revision.get(), datasetRevision.get(), io.flowscope.core.ApiManagement.marks(result, config, routeCandidates));
+            }
+
             var ids = new java.util.HashSet<>(change.preview().evidenceIds());
             var assessments = archivedAssessments.stream().filter(a -> a.evidenceIds().stream().noneMatch(ids::contains)).toList();
             var validations = archivedValidations.stream().filter(v -> java.util.stream.Stream.of(v.originalEvidenceIds(), v.validationEvidenceIds(), v.controlEvidenceIds()).flatMap(List::stream).noneMatch(ids::contains)).toList();
             var attempts = executionLedger.attempts().stream().filter(a -> !ids.contains(a.evidenceId()) && !ids.contains(a.originEvidenceId())).toList();
             var completed = io.flowscope.core.ApiManagement.retainedRuns(contexts.completedRuns(), change.records(), ids);
             try {
-                if (activeProjectDatabase != null) sqliteProjectStore.save(activeProjectDatabase, change.records(), change.config(), assessments, validations,
-                        completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab());
+                if (activeProjectDatabase != null && !sqliteProjectStore.saveAfterDeletion(activeProjectDatabase,
+                        records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet()), ids, change.config(), assessments, validations,
+                        completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab()))
+                    sqliteProjectStore.save(activeProjectDatabase, change.records(), change.config(), assessments, validations,
+                            completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab());
             } catch (Exception error) { throw projectFailure("API 변경 저장에 실패했습니다.", error); }
             records.clear(); records.addAll(change.records()); config.replaceWith(change.config());
             archivedAssessments = assessments; archivedValidations = validations; executionLedger.replace(attempts);

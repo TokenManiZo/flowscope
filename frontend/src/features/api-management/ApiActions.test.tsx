@@ -79,3 +79,41 @@ it.each([
   expect(screen.getByRole("button", { name: "범위 다시 확인" })).toBeEnabled()
   expect(calls.map(call => call.action)).toEqual(["preview-delete"])
 })
+
+
+it("indexes matrix confirmation once and refreshes it for a replacement matrix", () => {
+  type Matrix = NonNullable<Snapshot["authorizationMatrix"]>
+  let reads = 0
+  const confirmed = { operation: op + "#variant", status: "BOLA_IDOR_CANDIDATE", get reviewStatus() { reads++; return "CONFIRMED" } } as Matrix["functions"][number]
+  const allowed = { operation: op + "/allowed", status: "EXPECTED_ACCESS", reviewStatus: "CONFIRMED" } as Matrix["functions"][number]
+  const unresolved = { operation: op + "/pending", status: "BFLA_CANDIDATE", reviewStatus: "UNRESOLVED" } as Matrix["functions"][number]
+  const matrix = { functions: [confirmed, allowed, unresolved], objects: [], evidence: [] } as unknown as Matrix
+  const current = { authorizationMatrix: matrix }
+  for (let index = 0; index < 100; index++) {
+    expect(apiConfirmed(current, op)).toBe(true)
+    expect(apiConfirmed(current, op + "/allowed")).toBe(false)
+    expect(apiConfirmed(current, op + "/pending")).toBe(false)
+  }
+  expect(reads).toBe(1)
+  const replaced = { authorizationMatrix: { ...matrix, functions: [{ ...confirmed, reviewStatus: "DISMISSED" as const }] } }
+  expect(apiConfirmed(replaced, op)).toBe(false)
+  expect(apiConfirmed(current, op)).toBe(true)
+})
+
+
+it("applies acknowledged marks and revision without refetching the whole snapshot", async () => {
+  const marked = { [op]: { color: "purple", registered: false, evidenceIds: [] } }
+  const fetch = vi.fn(async () => new Response(JSON.stringify({ operations: [op], evidenceIds: [], records: 0, reviews: 0, declarations: 0, revision: 8, datasetRevision: 3, apiMarks: marked }), { status: 200, headers: { "Content-Type": "application/json" } }))
+  vi.stubGlobal("fetch", fetch)
+  const user = userEvent.setup()
+  const { client } = renderWithQueryClient(<ApiActions snapshot={snapshot} operation={op} />)
+  client.setQueryDefaults(["snapshot"], { gcTime: Infinity })
+  client.setQueryData(["snapshot"], snapshot)
+  const invalidate = vi.spyOn(client, "invalidateQueries")
+  await user.click(screen.getByRole("button", { name: "API 하이라이트" }))
+  await user.click(screen.getByRole("button", { name: "보라 하이라이트" }))
+  await waitFor(() => expect(client.getQueryData<Snapshot>(["snapshot"])?.revision).toBe(8))
+  expect(client.getQueryData<Snapshot>(["snapshot"])?.apiMarks).toEqual(marked)
+  expect(invalidate).not.toHaveBeenCalled()
+  expect(fetch).toHaveBeenCalledTimes(1)
+})

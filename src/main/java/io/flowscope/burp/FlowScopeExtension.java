@@ -1943,17 +1943,33 @@ public final class FlowScopeExtension implements BurpExtension {
                 return runProjectTask(() -> {
                     if (shuttingDown.get() || request.datasetRevision() != datasetEpoch.get() || request.revision() != revision.get()) throw new IllegalStateException("프로젝트 데이터가 변경되었습니다. 다시 확인해 주세요.");
                     synchronized (records) {
-                        Pipeline.Result current = Pipeline.runIsolated(new ArrayList<>(records), analysisConfig);
-                        var routes = routeCandidatesFor(current.records);
+                        Pipeline.Result current = request.marksOnly() || (!rebuildPending.get() && latest.records.size() == records.size()) ? latest : Pipeline.runIsolated(new ArrayList<>(records), analysisConfig);
+                        var routes = current == latest ? routeCandidates : routeCandidatesFor(current.records);
                         var change = io.flowscope.core.ApiManagement.prepare(request, current, new ArrayList<>(records), analysisConfig, routes, requestLabWorkspace);
                         if (request.action().equals("preview-delete")) return change.preview();
+                        if (request.marksOnly()) {
+                            boolean wasDirty = databaseDirty();
+                            if (activeProjectDatabase != null && !sqliteProjectStore.saveApiMarks(activeProjectDatabase, change.config(), request.operations().getFirst()))
+                                sqliteProjectStore.save(activeProjectDatabase, records, change.config(), archivedAssessments, archivedValidations,
+                                        runContexts.completedRuns(), routes, executionLedger.attempts(), activeProjectContext, graphWorkspace, requestLabWorkspace);
+                            analysisConfig.replaceWith(change.config()); revision.incrementAndGet();
+                            if (activeProjectDatabase != null) {
+                                if (!wasDirty) markDatabaseSaved(revision.get());
+                                else scheduleDatabaseSave();
+                            }
+                            return change.preview().withMarks(revision.get(), datasetEpoch.get(), io.flowscope.core.ApiManagement.marks(current, analysisConfig, routes));
+                        }
+
                         var ids = new java.util.HashSet<>(change.preview().evidenceIds());
                         var assessments = archivedAssessments.stream().filter(a -> a.evidenceIds().stream().noneMatch(ids::contains)).toList();
                         var validations = archivedValidations.stream().filter(v -> java.util.stream.Stream.of(v.originalEvidenceIds(), v.validationEvidenceIds(), v.controlEvidenceIds()).flatMap(List::stream).noneMatch(ids::contains)).toList();
                         var attempts = executionLedger.attempts().stream().filter(a -> !ids.contains(a.evidenceId()) && !ids.contains(a.originEvidenceId())).toList();
                         var completed = io.flowscope.core.ApiManagement.retainedRuns(runContexts.completedRuns(), change.records(), ids);
-                        if (activeProjectDatabase != null) sqliteProjectStore.save(activeProjectDatabase, change.records(), change.config(), assessments, validations,
-                                completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab());
+                        if (activeProjectDatabase != null && !sqliteProjectStore.saveAfterDeletion(activeProjectDatabase,
+                                records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet()), ids, change.config(), assessments, validations,
+                                completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab()))
+                            sqliteProjectStore.save(activeProjectDatabase, change.records(), change.config(), assessments, validations,
+                                    completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab());
                         long analysisEpoch = analysisPublication.invalidate();
                         records.clear(); records.addAll(change.records()); analysisConfig.replaceWith(change.config());
                         archivedAssessments = assessments; archivedValidations = validations; executionLedger.replace(attempts);

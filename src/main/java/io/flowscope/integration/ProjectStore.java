@@ -68,7 +68,7 @@ public final class ProjectStore {
         }
     }
 
-    private static final int SCHEMA_VERSION = 9;
+    static final int SCHEMA_VERSION = 9;
     private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6, 7, 8);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
@@ -801,7 +801,7 @@ public final class ProjectStore {
         return out;
     }
 
-    private ObjectNode writeReview(ReviewDecision value) {
+    ObjectNode writeReview(ReviewDecision value) {
         ObjectNode out = json.createObjectNode();
         out.put("item_id", value.itemId());
         out.put("status", value.status().name());

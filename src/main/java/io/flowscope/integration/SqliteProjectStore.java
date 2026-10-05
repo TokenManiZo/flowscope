@@ -103,6 +103,50 @@ public final class SqliteProjectStore {
         saveDocument(target, root);
     }
 
+    /** Delete stored Evidence and update related state in one transaction, retaining untouched traffic. */
+    public boolean saveAfterDeletion(Path target, Set<String> previousEvidenceIds, Set<String> deletedIds,
+                     AnalysisConfig config, List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                     Map<Source, RunContextRegistry.CompletedRun> completedRuns, List<RouteCandidate> routes,
+                     List<RunExecutionLedger.Attempt> attempts, ProjectStore.ProjectContext context,
+                     GraphWorkspace graph, RequestLabWorkspace lab) throws IOException {
+        if (previousEvidenceIds.stream().anyMatch(java.util.Objects::isNull)) return false;
+        Path absolute = target.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(absolute)) throw new IOException("project database is missing");
+        try (Connection connection = connect(absolute)) {
+            int storage = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
+            int project = Integer.parseInt(readMetadata(connection, "project_schema_version"));
+            if (storage > STORAGE_SCHEMA_VERSION || project > ProjectStore.SCHEMA_VERSION) throw new IllegalArgumentException("지원하지 않는 DB 구조입니다.");
+            if (storage < STORAGE_SCHEMA_VERSION || project < ProjectStore.SCHEMA_VERSION) return false;
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys=ON"); statement.execute("PRAGMA secure_delete=ON");
+            }
+            connection.setAutoCommit(false);
+            try {
+                Set<String> stored = new java.util.HashSet<>();
+                try (Statement statement = connection.createStatement(); ResultSet ids = statement.executeQuery("SELECT evidence_id FROM records")) {
+                    while (ids.next()) stored.add(ids.getString(1));
+                }
+                // Uncheckpointed captures or another writer require the existing full checkpoint path.
+                if (!stored.equals(previousEvidenceIds)) { connection.rollback(); return false; }
+                try (PreparedStatement delete = connection.prepareStatement("DELETE FROM records WHERE evidence_id=?")) {
+                    for (String id : deletedIds) { delete.setString(1, id); delete.addBatch(); }
+                    delete.executeBatch();
+                }
+                try (Statement statement = connection.createStatement()) {
+                    statement.execute("DELETE FROM payloads WHERE digest NOT IN (SELECT json_extract(document,'$.request_payload.digest') FROM records WHERE json_extract(document,'$.request_payload.retention')='FULL' AND json_extract(document,'$.request_payload.digest') IS NOT NULL UNION SELECT json_extract(document,'$.response_payload.digest') FROM records WHERE json_extract(document,'$.response_payload.retention')='FULL' AND json_extract(document,'$.response_payload.digest') IS NOT NULL)");
+                    for (String table : List.of("session_bindings", "accounts", "policy_entries", "reviews", "assessments", "validations", "completed_lanes", "completed_runs", "route_candidates", "run_attempts", "request_lab_requests", "request_lab_tabs")) statement.executeUpdate("DELETE FROM " + table);
+                }
+                var runs = completedRuns == null ? Map.<Source, RunContextRegistry.CompletedRun>of() : completedRuns;
+                ObjectNode root = codec.toDocument(List.of(), config, assessments, validations, runs.keySet(), runs, routes, attempts, context, graph, lab);
+                write(connection, root);
+                try (Statement statement = connection.createStatement(); ResultSet size = statement.executeQuery("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")) {
+                    if (size.next() && size.getLong(1) > MAX_FILE_BYTES) throw new IllegalArgumentException("project database exceeds 100 MiB");
+                }
+                connection.commit(); return true;
+            } catch (SQLException | IOException | RuntimeException error) { connection.rollback(); throw error; }
+        } catch (SQLException error) { throw new IOException("FlowScope Evidence delete failed", error); }
+    }
+
     private void saveDocument(Path target, ObjectNode root) throws IOException {
         Path absolute = target.toAbsolutePath().normalize();
         Path parent = absolute.getParent();
@@ -180,6 +224,36 @@ public final class SqliteProjectStore {
                 throw error;
             }
         } catch (SQLException error) { throw new IOException("FlowScope graph workspace save failed", error); }
+    }
+
+    /** Mark-only transaction; traffic and historical reviews are not re-encoded. Older schemas use a full checkpoint. */
+    public boolean saveApiMarks(Path target, AnalysisConfig config, String operation) throws IOException {
+        Path absolute = target.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(absolute)) throw new IOException("project database is missing");
+        try (Connection connection = connect(absolute)) {
+            int storage = Integer.parseInt(readMetadata(connection, "storage_schema_version"));
+            int project = Integer.parseInt(readMetadata(connection, "project_schema_version"));
+            if (storage > STORAGE_SCHEMA_VERSION || project > ProjectStore.SCHEMA_VERSION) throw new IllegalArgumentException("지원하지 않는 DB 구조입니다.");
+            if (storage < STORAGE_SCHEMA_VERSION || project < ProjectStore.SCHEMA_VERSION) return false;
+            connection.setAutoCommit(false);
+            try (PreparedStatement metadata = connection.prepareStatement("INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)");
+                 PreparedStatement delete = connection.prepareStatement("DELETE FROM reviews WHERE item_id=?");
+                 PreparedStatement insert = connection.prepareStatement("INSERT INTO reviews(seq, item_id, document) SELECT COALESCE(MAX(seq),0)+1,?,? FROM reviews")) {
+                String id = io.flowscope.core.ApiManagement.reviewId(operation);
+                delete.setString(1, id); delete.executeUpdate();
+                var review = config.reviews().get(id);
+                if (review != null) {
+                    insert.setString(1, id); insert.setString(2, json.writeValueAsString(codec.writeReview(review))); insert.executeUpdate();
+                }
+                putMetadata(metadata, "api_state", json.writeValueAsString(config.apiState()));
+                putMetadata(metadata, "saved_at", java.time.Instant.now().toString());
+                try (Statement statement = connection.createStatement(); ResultSet size = statement.executeQuery("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")) {
+                    if (size.next() && size.getLong(1) > MAX_FILE_BYTES) throw new IllegalArgumentException("project database exceeds 100 MiB");
+                }
+                connection.commit();
+                return true;
+            } catch (SQLException | IOException | RuntimeException error) { connection.rollback(); throw error; }
+        } catch (SQLException error) { throw new IOException("FlowScope API marks save failed", error); }
     }
 
     private static void createRequestLabTables(Connection connection) throws SQLException {
@@ -367,9 +441,9 @@ public final class SqliteProjectStore {
 
     private void write(Connection connection, ObjectNode root) throws SQLException, IOException {
         try (PreparedStatement migration = connection.prepareStatement(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)");
+                "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES(?, ?)");
              PreparedStatement metadata = connection.prepareStatement(
-                     "INSERT INTO metadata(key, value) VALUES(?, ?)");
+                     "INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)");
              PreparedStatement record = connection.prepareStatement(
                      "INSERT INTO records(seq, evidence_id, service, source, phase, run_id, method, path, status, observed_at, fingerprint, document) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
              PreparedStatement payload = connection.prepareStatement(

@@ -46,7 +46,13 @@ final class StandaloneTest {
         state.loadSample();
         var record = state.snapshot().records.getFirst();
         String op = io.flowscope.core.ApiManagement.operation(record);
-        state.manageApi(new io.flowscope.core.ApiManagement.Request("highlight", state.datasetRevision(), state.revision(), List.of(op), List.of(), "blue", null));
+        var beforeHighlight = state.snapshot();
+        long oldRevision = state.revision();
+        var acknowledged = state.manageApi(new io.flowscope.core.ApiManagement.Request("highlight", state.datasetRevision(), state.revision(), List.of(op), List.of(), "blue", null));
+        org.junit.jupiter.api.Assertions.assertSame(beforeHighlight, state.snapshot());
+        assertEquals(oldRevision + 1, acknowledged.revision());
+        assertEquals(state.datasetRevision(), acknowledged.datasetRevision());
+        assertEquals("blue", acknowledged.apiMarks().get(op).color());
         state.manageApi(new io.flowscope.core.ApiManagement.Request("register", state.datasetRevision(), state.revision(), List.of(op), List.of(record.evidenceId), "", null));
         state.openProject(project.active().id());
         var marks = io.flowscope.core.ApiManagement.marks(state.snapshot(), state.config(), state.routeCandidates());

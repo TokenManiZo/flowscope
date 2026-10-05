@@ -19,8 +19,17 @@ public final class ApiManagement {
             color = color == null ? "" : color;
             if (action == null || !Set.of("highlight", "register", "unregister", "preview-delete", "delete").contains(action)) throw new IllegalArgumentException("unknown API action");
         }
+        public boolean marksOnly() { return Set.of("highlight", "register", "unregister").contains(action); }
     }
-    public record Preview(List<String> operations, List<String> evidenceIds, int records, int reviews, int declarations) {}
+    public record Preview(List<String> operations, List<String> evidenceIds, int records, int reviews, int declarations,
+                          long revision, long datasetRevision, Map<String, Mark> apiMarks) {
+        public Preview(List<String> operations, List<String> evidenceIds, int records, int reviews, int declarations) {
+            this(operations, evidenceIds, records, reviews, declarations, -1, -1, null);
+        }
+        public Preview withMarks(long revision, long datasetRevision, Map<String, Mark> marks) {
+            return new Preview(operations, evidenceIds, records, reviews, declarations, revision, datasetRevision, marks);
+        }
+    }
     public record Change(AnalysisConfig config, List<RequestRecord> records, List<RouteCandidate> routes,
                          RequestLabWorkspace requestLab, Preview preview, Set<Long> removedRuntimeIds) {}
     public record Mark(String color, boolean registered, List<String> evidenceIds) {}
@@ -52,14 +61,20 @@ public final class ApiManagement {
         return List.copyOf(out);
     }
     public static Map<String, Mark> marks(Pipeline.Result result, AnalysisConfig config, List<RouteCandidate> routes) {
-        Set<String> operations = new HashSet<>(config.apiState().highlights().keySet());
-        result.records.forEach(r -> operations.add(operation(r))); routes.forEach(r -> operations.add(operation(r)));
-        Set<String> present = result.records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet());
+        var state = config.apiState();
+        var reviews = config.reviews();
+        boolean registrations = reviews.keySet().stream().anyMatch(id -> id.startsWith("api-"));
+        if (state.highlights().isEmpty() && !registrations) return Map.of();
+        Set<String> operations = new HashSet<>(state.highlights().keySet());
+        if (registrations) {
+            result.records.forEach(r -> operations.add(operation(r))); routes.forEach(r -> operations.add(operation(r)));
+        }
+        Set<String> present = registrations ? result.records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet()) : Set.of();
         Map<String, Mark> out = new HashMap<>();
         for (String op : operations) {
-            var review = config.reviews().get(reviewId(op));
+            var review = registrations ? reviews.get(reviewId(op)) : null;
             boolean registered = review != null && review.status() == ReviewDecision.Status.CONFIRMED && !review.evidenceIds().isEmpty() && present.containsAll(review.evidenceIds());
-            String color = config.apiState().highlights().getOrDefault(op, "");
+            String color = state.highlights().getOrDefault(op, "");
             if (!color.isEmpty() || registered) out.put(op, new Mark(color, registered, registered ? review.evidenceIds() : List.of()));
         }
         return Map.copyOf(out);
@@ -87,7 +102,7 @@ public final class ApiManagement {
         Set<String> removedIds = new LinkedHashSet<>(request.evidenceIds());
         Set<String> present = snapshot.records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet());
         if (!present.containsAll(removedIds)) throw new IllegalStateException("관측 기록이 변경되었습니다. 다시 선택해 주세요.");
-        if (Set.of("highlight", "register", "unregister").contains(request.action())) {
+        if (request.marksOnly()) {
             if (targets.size() != 1) throw new IllegalArgumentException("API 하나를 선택해 주세요.");
             String op = targets.iterator().next();
             switch (request.action()) {
