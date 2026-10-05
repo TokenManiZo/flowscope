@@ -129,14 +129,26 @@ function observedFunction(event: EventRecord): boolean {
 
 const eventEvidenceIds = (event: EventRecord) => [...new Set([event.eventId, ...(event.clusterEvidenceIds ?? [])])].sort(compareText)
 
-export interface GraphReveal { operations?: readonly string[]; resource?: string }
-
-export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
+/** 표시 제한·접기를 적용하기 전, 그래프와 검색에 공통으로 쓰는 데이터. */
+export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const cells = snapshot.cells.filter(cell => identityMatches(cell.idn) && observedSources(cell).some(source => filters.source.includes(source)) && (!filters.reviewStates || filters.reviewStates.includes(cell.overall)))
   const judgedEvidence = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
   const observedEvents = snapshot.events.filter(event => observedFunction(event)
     && !eventEvidenceIds(event).some(id => judgedEvidence.has(id)) && filters.source.includes(event.source) && identityMatches(event.idn))
+  const routeCandidates = projectRouteCandidates(snapshot, filters)
+  const groupIds = new Set([...cells.map(cell => operationGroup(cell.op).id), ...observedEvents.map(event => operationGroup(event.op).id), ...routeCandidates.map(candidate => apiGroupDescriptor(candidate.service, candidate.pathTemplate).id)])
+  const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
+  const supportEvents = filters.includeSupportTraffic ? snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !explicitlyExcluded(event) && !observedFunction(event) && groupIds.has(operationGroup(event.op).id)) : []
+  return { cells, observedEvents, supportEvents, routeCandidates }
+}
+
+export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string }
+
+export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
+  const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
+  const contents = graphContents(snapshot, filters)
+  const { cells, observedEvents } = contents
   const observedByGroup = new Map<string, EventRecord[]>()
   for (const event of observedEvents) {
     const id = operationGroup(event.op).id
@@ -176,7 +188,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   }
   for (const event of observedEvents) ensure(operationGroup(event.op))
   // Route candidates keep the existing source/identity filter semantics of the flat projection.
-  for (const candidate of projectRouteCandidates(snapshot, filters)) {
+  for (const candidate of contents.routeCandidates) {
     const group = ensure(apiGroupDescriptor(candidate.service, candidate.pathTemplate))
     group.routeCandidates.push(candidate)
   }
@@ -354,6 +366,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
     const observedOps = [...observedByOperation.keys()].filter(op => !group.operations.includes(op)).sort(compareText)
     const visibleObserved = observedOps.slice(0, Math.max(0, resolved.operationLimit - visible.length))
+    for (const op of reveal.operations ?? []) if (observedOps.includes(op) && !visibleObserved.includes(op)) { visibleObserved.push(op); revealedNodeCount++ }
     for (const op of [...visible, ...visibleObserved]) {
       const relatedEvents = observedByOperation.get(op) ?? []
       if (!relatedEvents.length) continue
@@ -372,13 +385,17 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     hiddenObjectCount = objects.hidden
     hiddenOperationCount = operations.length - visible.length + observedOps.length - visibleObserved.length
-    routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
+    const visibleRoutes = group.routeCandidates.slice(0, resolved.operationLimit)
+    const revealedRoute = group.routeCandidates.find(candidate => candidate.id === reveal.routeCandidateId)
+    if (revealedRoute && !visibleRoutes.includes(revealedRoute)) { visibleRoutes.push(revealedRoute); revealedNodeCount++ }
+    routeCandidates = visibleRoutes
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {
-      const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-      const supportEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !explicitlyExcluded(event) && !observedFunction(event) && operationGroup(event.op).id === group.id)
+      const supportEvents = contents.supportEvents.filter(event => operationGroup(event.op).id === group.id)
       const shown = [...visible, ...visibleObserved]
-      const supportOnly = [...new Set(supportEvents.map(event => event.op))].filter(op => !group.operations.includes(op) && !observedOps.includes(op)).slice(0, resolved.operationLimit)
+      const supportOnlyOps = [...new Set(supportEvents.map(event => event.op))].filter(op => !group.operations.includes(op) && !observedOps.includes(op))
+      const supportOnly = supportOnlyOps.slice(0, resolved.operationLimit)
+      for (const op of reveal.operations ?? []) if (supportOnlyOps.includes(op) && !supportOnly.includes(op)) { supportOnly.push(op); revealedNodeCount++ }
       const supportOps = [...new Set([...shown.filter(op => supportEvents.some(event => event.op === op)), ...supportOnly])]
       for (const op of supportOps) {
         const events = supportEvents.filter(event => event.op === op)

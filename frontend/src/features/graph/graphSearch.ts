@@ -1,11 +1,12 @@
-import type { Cell } from "@/lib/api/types"
-import { objectGroupKey, operationGroup, navigateHierarchy, type GraphNavigation, type GraphReveal, type HierarchyProjection } from "./graphHierarchy"
+import type { Snapshot } from "@/lib/api/types"
+import type { GraphFilters } from "./graphProjection"
+import { graphContents, apiGroupDescriptor, objectGroupKey, operationGroup, navigateHierarchy, type GraphNavigation, type GraphReveal, type HierarchyProjection } from "./graphHierarchy"
 import { GRAPH_MIN_ZOOM } from "./graphLanes"
 import { operationShapeKey } from "./graphPathShape"
 
-export type SearchKind = "target" | "api-group" | "operation" | "resource" | "identity" | "operation-group" | "object-group"
-export const searchKindNames: Record<SearchKind, string> = { target: "Target", "api-group": "API 그룹", operation: "API", resource: "객체", identity: "신원", "operation-group": "API 묶음", "object-group": "객체 묶음" }
-export interface SearchContext { groupId: string; groupLabel: string; operation: string }
+export type SearchKind = "target" | "api-group" | "operation" | "resource" | "identity" | "operation-group" | "object-group" | "observed-operation" | "support-operation" | "route-candidate"
+export const searchKindNames: Record<SearchKind, string> = { target: "Target", "api-group": "API 그룹", operation: "API", resource: "객체", identity: "신원", "operation-group": "API 묶음", "object-group": "객체 묶음", "observed-operation": "관측 API", "support-operation": "보조 흐름", "route-candidate": "경로 후보" }
+export interface SearchContext { groupId: string; groupLabel: string; operation: string; nodeKind?: SearchKind }
 export interface GraphSearchEntry {
   key: string
   kind: SearchKind
@@ -19,18 +20,9 @@ export interface GraphSearchEntry {
 export interface GraphSearchIndex { entries: readonly GraphSearchEntry[]; byKey: ReadonlyMap<string, GraphSearchEntry> }
 export const searchKey = (kind: SearchKind, service: string, value: string) => JSON.stringify([kind, service, value])
 const compare = (left: string, right: string) => left.localeCompare(right, "en")
-const observable = (cell: Cell) => Object.values(cell.perSource).some(value => value !== undefined)
-
-/** Evidence, 판정, owner만 바뀐 snapshot은 검색 인덱스를 다시 만들 필요가 없다. */
-export function sameSearchCells(before: readonly Cell[], after: readonly Cell[]): boolean {
-  return before === after || before.length === after.length && before.every((cell, index) => {
-    const next = after[index]
-    return cell.op === next.op && cell.idn === next.idn && cell.resource === next.resource && observable(cell) === observable(next)
-  })
-}
-
-/** 제한·접힘을 적용하기 전 셀에서 식별자와 관계 문맥만 보관한다. */
-export function buildGraphSearchIndex(cells: readonly Cell[]): GraphSearchIndex {
+/** 제한·접힘 전 그래프 데이터에서 식별자와 이동 문맥만 보관한다. */
+export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters): GraphSearchIndex {
+  const { cells, observedEvents, supportEvents, routeCandidates } = graphContents(snapshot, filters)
   const entries = new Map<string, Omit<GraphSearchEntry, "contexts" | "name" | "text"> & { contexts: Map<string, SearchContext> }>()
   const shapes = new Map<string, { service: string; shape: string; operations: Set<string> }>()
   const add = (kind: SearchKind, service: string, value: string, title: string, context: SearchContext) => {
@@ -40,7 +32,6 @@ export function buildGraphSearchIndex(cells: readonly Cell[]): GraphSearchIndex 
     entry.contexts.set(context.operation, context)
   }
   for (const cell of cells) {
-    if (!observable(cell)) continue
     const group = operationGroup(cell.op)
     const context = { groupId: group.id, groupLabel: group.label, operation: cell.op }
     add("target", group.service, group.service, group.service, context)
@@ -57,6 +48,24 @@ export function buildGraphSearchIndex(cells: readonly Cell[]): GraphSearchIndex 
     if (!bucket) { bucket = { service: group.service, shape, operations: new Set() }; shapes.set(key, bucket) }
     bucket.operations.add(cell.op)
   }
+  const operationKinds = new Map<string, SearchKind>(cells.map(cell => [cell.op, "operation"]))
+  for (const event of observedEvents) if (!operationKinds.has(event.op)) operationKinds.set(event.op, "observed-operation")
+  for (const event of supportEvents) if (!operationKinds.has(event.op)) operationKinds.set(event.op, "support-operation")
+  for (const event of [...observedEvents, ...supportEvents]) {
+    const group = operationGroup(event.op), kind = operationKinds.get(event.op)!
+    const context = { groupId: group.id, groupLabel: group.label, operation: event.op, nodeKind: kind }
+    add("target", group.service, group.service, group.service, context)
+    add("api-group", group.service, group.id, group.label, context)
+    add(kind, group.service, event.op, event.op.replace(/^https?:\/\/\S+\s+/i, ""), context)
+    add("identity", group.service, event.idn, event.idn, context)
+  }
+  for (const candidate of routeCandidates) {
+    const group = apiGroupDescriptor(candidate.service, candidate.pathTemplate)
+    const context = { groupId: group.id, groupLabel: group.label, operation: candidate.selection.operation ?? "", nodeKind: "route-candidate" as const }
+    add("target", group.service, group.service, group.service, context)
+    add("api-group", group.service, group.id, group.label, context)
+    add("route-candidate", group.service, candidate.id, candidate.label, context)
+  }
   for (const bucket of shapes.values()) if (bucket.operations.size > 1) {
     for (const operation of bucket.operations) {
       const group = operationGroup(operation)
@@ -71,7 +80,7 @@ export function buildGraphSearchIndex(cells: readonly Cell[]): GraphSearchIndex 
 }
 
 export interface GraphSearchResults { entries: readonly GraphSearchEntry[]; keys: ReadonlySet<string>; total: number; hosts?: ReadonlyMap<string, string> }
-const kinds: readonly SearchKind[] = ["target", "api-group", "operation", "resource", "identity", "operation-group", "object-group"]
+const kinds: readonly SearchKind[] = ["target", "api-group", "operation", "resource", "identity", "operation-group", "object-group", "observed-operation", "support-operation", "route-candidate"]
 export function searchGraph(index: GraphSearchIndex, query: string, navigation: GraphNavigation, limit = 30): GraphSearchResults {
   const needle = query.trim().toLowerCase(), tokens = needle.split(/\s+/)
   if (!needle) return { entries: [], keys: new Set(), total: 0 }
@@ -115,18 +124,19 @@ export function searchGraph(index: GraphSearchIndex, query: string, navigation: 
 export interface SearchDestination { navigation: GraphNavigation; nodeId: string; reveal: GraphReveal; expand: readonly string[] }
 export function searchDestination(entry: GraphSearchEntry, current: GraphNavigation, projection: HierarchyProjection | null, listMode: boolean): SearchDestination {
   const currentService = projection?.groups.find(group => group.id === current.groupId)?.service
-  const nodeId = `${entry.kind}:${entry.value}`
+  const nodeId = entry.kind === "route-candidate" ? entry.value : `${entry.kind}:${entry.value}`
+  const operationCard = ["operation", "observed-operation", "support-operation"].includes(entry.kind)
   const visible = currentService === entry.service && projection?.nodes.some(node => node.id === nodeId && !node.hiddenInGraph)
   const context = entry.contexts.find(context => context.operation === current.operation)
     ?? entry.contexts.find(context => context.groupId === current.groupId) ?? entry.contexts[0]
   let navigation = current
   if (entry.kind === "target" || entry.kind === "api-group") navigation = navigateHierarchy(current, "site")
-  else if (!visible || listMode && entry.kind !== "operation") {
-    const level = entry.kind === "resource" || listMode && entry.kind === "identity" ? "operation" : "group"
+  else if (!visible || listMode && !operationCard) {
+    const level = entry.kind === "resource" || listMode && entry.kind === "identity" && (!context.nodeKind || context.nodeKind === "operation") ? "operation" : "group"
     navigation = navigateHierarchy(current, level, context.groupId, level === "operation" ? context.operation : "")
   }
   const operations = entry.kind === "operation-group" ? entry.contexts.filter(item => item.groupId === navigation.groupId).slice(0, 2).map(item => item.operation) : [context.operation]
-  return { navigation, nodeId, reveal: { operations, ...(entry.kind === "resource" ? { resource: entry.value } : {}) }, expand: entry.kind === "operation" ? [`operation-group:${operationShapeKey(entry.value)}`] : [] }
+  return { navigation, nodeId, reveal: { operations, ...(entry.kind === "resource" ? { resource: entry.value } : {}), ...(entry.kind === "route-candidate" ? { routeCandidateId: entry.value } : {}) }, expand: entry.kind === "operation" ? [`operation-group:${operationShapeKey(entry.value)}`] : [] }
 }
 
 export function searchHighlights(projection: HierarchyProjection, keys: ReadonlySet<string>): ReadonlyMap<string, "direct" | "member"> {
@@ -135,7 +145,7 @@ export function searchHighlights(projection: HierarchyProjection, keys: Readonly
   for (const node of projection.nodes) {
     if (node.hiddenInGraph || !kinds.includes(node.kind as SearchKind)) continue
     const kind = node.kind as SearchKind
-    const value = kind === "api-group" ? node.groupId! : node.id.slice(kind.length + 1)
+    const value = kind === "api-group" ? node.groupId! : kind === "route-candidate" ? node.id : node.id.slice(kind.length + 1)
     const ownService = node.service ?? service
     if (keys.has(searchKey(kind, ownService, value))) matches.set(node.id, "direct")
     else if (node.objectGroup?.members.some(member => keys.has(searchKey(kind === "operation-group" ? "operation" : "resource", ownService, member)))) matches.set(node.id, "member")

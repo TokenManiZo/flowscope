@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import type { EventRecord } from "../src/lib/api/types"
 import type { Core } from "cytoscape"
 import { humanRunFixture, scannerRunFixture, targetSnapshot, zapStatusFixture } from "../src/test/fixtures"
 import { emptyGraphWorkspace, graphViewKey } from "../src/features/graph/graphWorkspace"
@@ -79,3 +80,46 @@ for (const theme of ["light", "dark"] as const) for (const width of [1280, 1920]
     await page.screenshot({ path: testInfo.outputPath(`graph-search-${theme}-${width}.png`), animations: "disabled" })
   })
 }
+
+for (const width of [1280, 820]) test(`observed POST search opens neutral evidence at ${width}px`, async ({ page }, testInfo) => {
+  const event: EventRecord = { eventId: "observed-post", method: "POST", path: "/api/orders/update", status: 201, fp: "", idn: "USER B", role: "USER", source: "human", op: `${service} POST /api/orders/update`, resource: null, timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "synthetic", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "EXCLUDE", coverageEligible: false, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "synthetic", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["observed-post"], objects: [], verdict: "untested" }
+  const errors: string[] = []
+  page.on("pageerror", error => errors.push(error.message))
+  await page.setViewportSize({ width, height: 1080 })
+  const responses: Record<string, unknown> = {
+    "/api/snapshot": targetSnapshot({ datasetRevision: 7, cells, events: [event] }),
+    "/api/graph-workspace": { datasetRevision: 7, revision: 0, workspace: emptyGraphWorkspace },
+    "/api/projects": { directory: "/tmp/synthetic-observed-search", active: null, projects: [], saveState: "UNMANAGED", lastSavedAt: "", saveError: "" },
+    "/api/human-run": humanRunFixture, "/api/zap-status": zapStatusFixture, "/api/scanner-run": scannerRunFixture,
+  }
+  const origin = new URL(testInfo.project.use.baseURL!).origin
+  await page.route("**/*", async route => {
+    const request = route.request(), target = new URL(request.url())
+    if (target.origin !== origin) { await route.abort(); return }
+    if (!target.pathname.startsWith("/api/")) { await route.continue(); return }
+    if (request.method() === "POST") {
+      if (target.pathname !== "/api/graph-workspace") { await route.abort(); return }
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ datasetRevision: 7, revision: 1 }) })
+      return
+    }
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify(responses[target.pathname] ?? {}) })
+  })
+  await page.goto("./#graph")
+  await page.getByRole("combobox", { name: "프로젝트 전체 노드 검색" }).fill("POST /api/orders/update")
+  const result = page.getByRole("option", { name: /^관측 API POST/ })
+  await expect(result).toHaveAttribute("aria-disabled", "false")
+  await result.click()
+  await expect(page.getByText("인가 판정에 포함되지 않은 관측 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
+  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
+  if (width > 900) {
+    const canvas = page.getByLabel("공격면 Cytoscape 그래프", { exact: true })
+    await expect.poll(() => canvas.evaluate((element, id) => {
+      const node = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy.getElementById(id)
+      return { selected: node.selected(), verdict: node.data("verdictText") }
+    }, `observed-operation:${event.op}`)).toEqual({ selected: true, verdict: "UNKNOWN" })
+  } else {
+    await page.getByRole("button", { name: "Close", exact: true }).click()
+    await expect(page.locator(`[data-graph-node-id="observed-operation:${event.op}"]`)).toBeVisible()
+  }
+  expect(errors).toEqual([])
+})
