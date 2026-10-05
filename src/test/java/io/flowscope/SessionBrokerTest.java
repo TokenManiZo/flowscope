@@ -16,6 +16,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class SessionBrokerTest {
     @Test
+    void listenerBoundCapturesOfTheSameServiceNeverUseAnImplicitAccount() {
+        try (var broker = new SessionBroker()) {
+            var a = new AccountProfile("A", "A", "https://api.test:443", AccessRole.USER);
+            var b = new AccountProfile("B", "B", "https://api.test:443", AccessRole.USER);
+            String ah = broker.beginIsolatedCapture(a, Instant.now());
+            String bh = broker.beginIsolatedCapture(b, Instant.now());
+            assertTrue(broker.activeCaptureForService(a.service()).isEmpty());
+            broker.observeRequest(ah, URI.create(a.service() + "/me"), Map.of("Cookie", "session=A"), Instant.now());
+            broker.observeRequest(bh, URI.create(b.service() + "/me"), Map.of("Cookie", "session=B"), Instant.now());
+            broker.endCapture(ah);
+            assertFalse(broker.viewForAccount("A").orElseThrow().capturing());
+            assertTrue(broker.viewForAccount("B").orElseThrow().capturing());
+            assertTrue(broker.activeCaptureForService(a.service()).isEmpty());
+        }
+    }
+
+    @Test
     void capturesRotatesAndInjectsOnlyInsideTheAccountServiceAndScope() {
         SessionBroker broker = new SessionBroker();
         AccountProfile account = new AccountProfile("acct-a", "USER A",

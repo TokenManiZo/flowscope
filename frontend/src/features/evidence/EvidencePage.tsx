@@ -16,6 +16,8 @@ import { queryKeys, useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutati
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { trafficClassLabel, trafficReasonLabel } from "@/lib/display/traffic"
 import { cn } from "@/lib/utils"
+import { openSurfaceSelection, takePageSelection } from "./evidenceNavigation"
+import { EvidenceHttpViewer } from "./EvidenceHttpViewer"
 import { EvidenceFilters } from "./EvidenceFilters"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, dispositionCounts, hiddenEvidenceCount, tabDispositions, visibleEvidence, type EvidenceTab } from "./evidenceSelectors"
@@ -58,6 +60,7 @@ function ReviewDecision({ event, disabled }: { event: EventRecord; disabled: boo
 
 export function EvidencePage() {
   const snapshot = useSnapshotQuery()
+  const trafficDecision = useTrafficOverrideMutation()
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<EvidenceTab>(initialTab)
   const [filters, setFilters] = useState(() => ({ ...defaultEvidenceFilters(), dispositions: tabDispositions(initialTab()) }))
@@ -67,6 +70,16 @@ export function EvidencePage() {
   const selectedEvent = selected ? snapshot.data?.events.find((item) => item.eventId === selected.eventId) ?? null : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
   const evidence = useEvidenceQuery(selectedEvent?.op ?? null, offset, evidencePageLimit, datasetRevision)
+
+  useEffect(() => {
+    if (!snapshot.data || snapshot.isError) return
+    const selection = takePageSelection("evidence", datasetRevision)
+    if (!selection?.evidenceId) return
+    const event = snapshot.data.events.find(item => item.eventId === selection.evidenceId)
+    if (!event) return
+    setTab("ALL"); setFilters({ ...defaultEvidenceFilters(), dispositions: tabDispositions("ALL"), expandRepeats: true })
+    selectEvent(event)
+  }, [snapshot.data, snapshot.isError, datasetRevision])
 
   // 같은 화면 안에서 #evidence ↔ #evidence-review로 주소만 바뀌면 화면이 다시 만들어지지 않으므로 탭을 직접 맞춘다.
   useEffect(() => {
@@ -103,6 +116,20 @@ export function EvidencePage() {
     setOffset(Math.min(20_000, Math.floor(Math.max(0, index) / evidencePageLimit) * evidencePageLimit))
   }
 
+  useEffect(() => {
+    if (!inspectorOpen) return
+    const dismissOnBlankSpace = (event: PointerEvent) => {
+      // 열린 대화상자의 바깥 클릭은 해당 대화상자가 처리한다(편집 초안 보호).
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      const target = event.target
+      if (!(target instanceof Element) || target.closest('[data-evidence-inspector], [role="dialog"], [role="menu"], [role="listbox"], [role="separator"], button, a, input, select, textarea, label, summary, tr')) return
+      setInspectorOpen(false)
+      setSelected(null)
+    }
+    document.addEventListener("pointerdown", dismissOnBlankSpace)
+    return () => document.removeEventListener("pointerdown", dismissOnBlankSpace)
+  }, [inspectorOpen])
+
   const page = evidence.data
   const records = selectedEvent && <section aria-label="작업 관측 기록 페이지" className="grid min-w-0 gap-3 border-t pt-4">
     <h2 className="text-sm font-semibold">요청 · 응답 <span className="ml-1 text-xs font-normal text-muted-foreground">마스킹됨{page ? ` · 같은 API ${page.total}건` : ""}</span></h2>
@@ -110,29 +137,26 @@ export function EvidencePage() {
     {selectedEvent.op && evidence.isLoading && <p className="text-xs text-muted-foreground">불러오는 중…</p>}
     {evidence.isError && <div className="flex items-start justify-between gap-2"><p role="alert" className="min-w-0 break-words text-xs text-destructive">{evidence.error.message}</p><Button variant="outline" size="sm" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}>다시 시도</Button></div>}
     {page && page.records.length === 0 && <p className="text-sm text-muted-foreground">이 페이지에 관측 기록이 없습니다.</p>}
-    {page?.records.slice().sort((a, b) => Number(b.eventId === selectedEvent.eventId) - Number(a.eventId === selectedEvent.eventId)).map((record) => <details key={`${datasetRevision}:${page.offset}:${record.eventId}`} open={record.eventId === selectedEvent.eventId} className="min-w-0 rounded-md border p-3">
-      <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
-      <div className="mt-3 grid min-w-0 gap-2">
-        <h3 className="text-xs font-medium">요청</h3>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-xs">{record.request || record.requestBody || "요청 전문 없음"}</pre>
-        <h3 className="mt-2 text-xs font-medium">응답</h3>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-xs">{record.response || record.responseBody || "응답 전문 없음"}</pre>
-        <details className="mt-2 border-t pt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">분류 · 보존 정보</summary><div className="mt-2 grid gap-2">
-          <p className="break-words">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p>
-          <Retention label="요청 보존" value={record.requestPayload} />
-          <Retention label="응답 보존" value={record.responsePayload} />
-        </div></details>
-      </div>
-    </details>)}
+    {page && page.records.length > 0 && <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">같은 API 관측 기록<select aria-label="같은 API 관측 기록" className="max-w-full rounded-md border bg-background px-2 py-1 text-foreground" value={selectedEvent.eventId} onChange={event => { const record = snapshot.data?.events.find(item => item.eventId === event.target.value); if (record) selectEvent(record) }}>{page.records.map(record => <option key={record.eventId} value={record.eventId} disabled={!snapshot.data?.events.some(item => item.eventId === record.eventId)}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals,record.eventId)}</option>)}</select></label>}
+    {page?.records.filter(record => record.eventId === selectedEvent.eventId).map(record => <div key={`${datasetRevision}:${record.eventId}`} className="grid min-w-0 gap-2">
+      <EvidenceHttpViewer request={record.request || record.requestBody} response={record.response || record.responseBody} />
+      <details className="border-t pt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">분류 · 보존 정보</summary><div className="mt-2 grid gap-2"><p className="break-words">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p><Retention label="요청 보존" value={record.requestPayload} /><Retention label="응답 보존" value={record.responsePayload} /></div></details>
+    </div>)}
+    {page && page.records.length > 0 && !page.records.some(record => record.eventId === selectedEvent.eventId) && <p className="text-xs text-muted-foreground">선택 기록의 원문이 이 페이지에 없습니다. 관측 기록을 선택하거나 이전·다음 페이지를 확인하세요.</p>}
     {page && (page.offset > 0 || page.hasMore) && <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">총 {page.total}건 · {page.offset + 1}번째부터</span><Button variant="outline" size="sm" aria-label="이전 관측 기록 페이지" disabled={page.offset <= 0 || evidence.isFetching || snapshot.isError} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button><Button variant="outline" size="sm" aria-label="다음 관측 기록 페이지" disabled={!page.hasMore || evidence.isFetching || snapshot.isError} onClick={() => setOffset(page.offset + page.limit)}>다음</Button></div>}
   </section>
-  const inspector = <div className="grid min-w-0">
+  const inspector = <div data-evidence-inspector className="grid min-w-0">
+    {selectedEvent && <section aria-label="관측 기록 분류 작업" className="grid gap-2 border-b p-4">
+      <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.classificationReasons.includes("USER_REVIEW") ? "AUTO" : "REVIEW" })}>{selectedEvent.classificationReasons.includes("USER_REVIEW") ? "자동 분류로 복귀" : "검토 필요로 표시"}</Button><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.trafficDisposition === "EXCLUDE" ? "AUTO" : "EXCLUDE" })}>{selectedEvent.trafficDisposition === "EXCLUDE" ? "숨김 해제" : "목록에서 숨기기"}</Button><Button size="sm" className="ml-auto" disabled={snapshot.isError || !selectedEvent.op} onClick={() => openSurfaceSelection(selectedEvent.op, datasetRevision)}>API에서 보기</Button></div>
+      <p className="text-[11px] text-muted-foreground">같은 API의 요청 전체에 적용합니다. 원본 관측 기록은 보존됩니다.</p>
+      {trafficDecision.isError && <p role="alert" className="text-xs text-destructive">{trafficDecision.error instanceof Error ? trafficDecision.error.message : "분류를 저장하지 못했습니다."}</p>}
+    </section>}
     {selectedEvent?.trafficDisposition === "REVIEW" && <ReviewDecision key={selectedEvent.eventId} event={selectedEvent} disabled={snapshot.isError} />}
-    <EvidenceSheet inline compactPolicy detailContent={records} event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
+    <EvidenceSheet showMetadata={false} inline compactPolicy detailContent={records} event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
   </div>
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="관측 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
-      <section className="grid gap-3 p-4" aria-labelledby="evidence-title">
+    <ReferenceAnalysisWorkspace compactMediaQuery="(max-width: 767px)" ariaLabel="관측 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={Math.max(600, Math.round(window.innerWidth / 2))} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
+      <section className="grid min-w-0 gap-3 p-4" aria-labelledby="evidence-title">
       <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">관측 기록</h1><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>관측 기록을 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
       <div role="tablist" aria-label="관측 기록 판정" className="flex gap-5 border-b">{tabs.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} aria-label={`${label} ${counts[key]}`} onClick={() => selectTab(key)}
@@ -142,8 +166,8 @@ export function EvidencePage() {
       <EvidenceFilters value={filters} onChange={setFilters} />
       {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.data && <>
         {(hidden > 0 || folded > 0) && <p className="text-xs text-muted-foreground">{[hidden > 0 && `필터로 가린 ${hidden}건`, folded > 0 && `반복 요청 ${folded}건은 한 줄로 묶음`].filter(Boolean).join(" · ")}</p>}
-        <ScrollArea className="h-[32rem] rounded-md border" aria-label="관측 기록 표">
-          <Table>
+        <ScrollArea className="h-[calc(100dvh-20rem)] min-h-64 rounded-md border" aria-label="관측 기록 표">
+          <Table className="min-w-[680px]">
             <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead className="text-center">Method</TableHead><TableHead>API</TableHead><TableHead>HTTP</TableHead><TableHead>계정</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((event) => {

@@ -220,13 +220,14 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
   const feed = (view: RecordView) => <Card className={view.focused ? "flex min-h-0 flex-1 flex-col gap-0 overflow-hidden py-0" : "gap-0 overflow-hidden py-0"}>
     <CardHeader className="border-b py-3"><div className="flex items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><div className="flex shrink-0 items-center gap-2"><RecordViewButton view={view} onExpand={() => setFeedOpen(true)} /><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div></div>{view.focused && <p className="text-xs text-muted-foreground">LLM 탐색 · {target} · 실행 모델 {run?.model || "Codex 기본 설정"}</p>}<p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
     <CardContent className={view.focused ? "flex min-h-0 flex-1 flex-col p-0" : "p-0"}>
-      {feedOpen && <div data-record-list className={view.focused ? "min-h-0 flex-1 overflow-y-auto" : "max-h-[min(24rem,24vh)] overflow-y-auto"} style={!view.focused && view.height ? { height: view.height, maxHeight: view.height } : undefined} aria-label="LLM 진행 메시지 및 수집 트래픽">
+      {feedOpen && <div data-record-list className={view.focused ? "min-h-0 flex-1 overflow-y-auto" : "max-h-[min(24rem,24vh)] overflow-y-auto"} aria-label="LLM 진행 메시지 및 수집 트래픽">
         {feedItems.length ? feedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
-          return <article key={item.id} className="grid grid-cols-[60px_minmax(0,1fr)_6rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
+          return <article key={item.id} className="grid grid-cols-[60px_minmax(0,1fr)_1.5rem_6rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
             {item.badge === "HTTP" && /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(method) ? <MethodBadge method={method} /> : <Badge variant="outline" className="h-[22px] w-[60px] justify-center text-[11px]">{item.badge}</Badge>}
             <div className="min-w-0"><p className="break-words text-sm font-medium">{item.title}</p>{item.detail && <p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p>}</div>
+            <span className="text-xs" title={item.badge === "HTTP" ? "LLM" : undefined}>{item.badge === "HTTP" ? "L" : ""}</span>
             <span className="text-right font-mono text-[11px] text-muted-foreground">{http ? <HttpStatusBadge status={http} /> : item.status}</span>
           </article>
         }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비·HTTP 요청·기록 번호가 여기에 순서대로 표시됩니다.</p>}

@@ -208,7 +208,7 @@ it("explains an empty graph as run-less traffic and offers to start a HUMAN pass
   render()
   const statePanel = screen.getByRole("status", { name: "" })
   expect(within(statePanel).getByRole("status", { name: "run 밖 API 트래픽 안내" })).toHaveTextContent("인증된 API 요청 4건")
-  expect(within(statePanel).getByRole("button", { name: "점검에서 HUMAN 탐색 시작" })).toBeVisible()
+  expect(within(statePanel).getByRole("button", { name: "계정·세션에서 브라우저 열기" })).toBeVisible()
   expect(statePanel).not.toHaveTextContent("범위를 확인하고 HUMAN 관측 기록을 수집하세요")
 })
 

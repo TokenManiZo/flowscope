@@ -318,6 +318,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final HumanListenerBinding humanListeners = new HumanListenerBinding(PORT_SOURCE);
+    private HumanBrowserSessions humanBrowsers;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
     private final ZapAccountVault zapAccounts = new ZapAccountVault();
@@ -359,8 +360,11 @@ public final class FlowScopeExtension implements BurpExtension {
     private CrossIdentityReplayOrchestrator crossIdentityReplay;
     private LiveCrossIdentityReplayCoordinator liveCrossIdentityReplay;
     private final Set<Long> pendingLiveReplays = ConcurrentHashMap.newKeySet();
+    /** Auth-stripped live requests waiting for the serialized anonymous replay worker. Process memory only. */
+    private final Map<Long, HttpRequest> pendingAnonymousRequests = new ConcurrentHashMap<>();
     private final ExecutorService authorizationReplayWorker =
-            Executors.newSingleThreadExecutor(r -> {
+            new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                    new java.util.concurrent.ArrayBlockingQueue<>(200), r -> {
                 Thread t = new Thread(r, "flowscope-authorization-replay");
                 t.setDaemon(true);
                 return t;
@@ -401,6 +405,8 @@ public final class FlowScopeExtension implements BurpExtension {
         this.api = api;
         api.extension().setName("FlowScope");
         configureInitialScope();
+        humanBrowsers = new HumanBrowserSessions(new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet()),
+                new io.flowscope.explorer.HumanChromiumBrowser()::open);
         crossIdentityReplay = new CrossIdentityReplayOrchestrator(sessionBroker, () -> scope,
                 this::executeCrossIdentityReplay, this::openCrossIdentityReplayDraft,
                 java.time.Clock.systemUTC());
@@ -566,38 +572,62 @@ public final class FlowScopeExtension implements BurpExtension {
         }
     }
 
+    private RunContextRegistry.Context legacyHumanRun() {
+        RunContextRegistry.Context context = runContexts.current(Source.HUMAN);
+        return context != null && !humanBrowsers.contains(context.runId()) ? context : null;
+    }
+
     /** Scanner/LLM 전용 listener의 모든 송신과 redirect 후속 요청을 exact scope에서 강제 차단한다. */
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
             String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
-            RunContextRegistry.Context humanRun = runContexts.current(Source.HUMAN);
+            int observedPort = listenerPort(request.listenerInterface());
+            RunContextRegistry.Context managed = humanBrowsers.context(observedPort);
+            if (humanBrowsers.ownsPort(observedPort) && managed == null) return ProxyRequestReceivedAction.drop();
+            RunContextRegistry.Context humanRun = managed == null ? legacyHumanRun() : managed;
+            if (managed != null) {
+                loginCaptureHandle = managed.accountId() == null ? null : sessionBroker.viewForAccount(managed.accountId())
+                        .filter(SessionBroker.SessionView::capturing)
+                        .filter(view -> view.service().equals(serviceOf(request)))
+                        .map(SessionBroker.SessionView::handle).orElse(null);
+            }
             boolean linkedHumanAsset = humanRun != null
                     && humanListeners.boundPort(humanRun.runId()) == listenerPort(request.listenerInterface())
                     && supportingAssets.pageUrlFor(Source.HUMAN, humanRun.runId(), scope::allows,
                     request.method(), request.url(), request.headerValue("Referer"),
                     request.headerValue("Sec-Fetch-Dest")) != null;
-            PortProfile profile = humanListeners.resolve(request.listenerInterface(), request.url(), scope,
+            PortProfile profile = managed != null ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER)
+                    : humanListeners.resolve(request.listenerInterface(), request.url(), scope,
                     humanRun, loginCaptureHandle, linkedHumanAsset);
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
+            long captureGeneration = profile.source() == Source.HUMAN && humanRun != null
+                    ? runContexts.humanCaptureGeneration(humanRun.runId()) : -1;
+            if (profile.source() == Source.HUMAN && humanRun != null && captureGeneration < 0) {
+                rememberObservation(proxyObservations, request.messageId(), humanRun, null,
+                        true, "프록시", profile, observedPort, captureGeneration);
+                return managed != null ? ProxyRequestReceivedAction.doNotIntercept(request)
+                        : ProxyRequestReceivedAction.continueWith(request);
+            }
             try {
-                RunContextRegistry.Context context = runContexts.current(profile.source());
+                RunContextRegistry.Context context = profile.source() == Source.HUMAN ? humanRun : runContexts.current(profile.source());
                 // Operator choice is authoritative: between 시작 and 종료 every credentialed browser request belongs to
                 // the selected account, even if an older binding said otherwise. Requests without credentials stay anonymous.
                 // The handle is resolved before profile selection so the bound Burp listener (e.g. 8888) also counts (#30).
                 String captureHandle = profile.source() == Source.HUMAN && hasCredentials(request) ? loginCaptureHandle : null;
                 String requestCaptureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
-                boolean captureSuppressed = false;
+                boolean captureSuppressed = managed != null && captureHandle == null;
+                rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
+                        captureSuppressed, "프록시", profile, observedPort, captureGeneration);
                 if (captureHandle != null) {
                     sessionBroker.observeRequest(captureHandle, URI.create(request.url()), headersOf(request.headers()),
                             java.time.Instant.now());
                     sessionBroker.noteRecordedRequest(captureHandle, request.method() + " " + request.pathWithoutQuery());
                 }
                 HttpRequest prepared = prepareSession(request, profile, context);
-                rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
-                        captureSuppressed, "프록시", profile, listenerPort(request.listenerInterface()));
-                return ProxyRequestReceivedAction.continueWith(prepared);
+                return managed != null ? ProxyRequestReceivedAction.doNotIntercept(prepared)
+                        : ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
                 return ProxyRequestReceivedAction.drop();
@@ -606,13 +636,23 @@ public final class FlowScopeExtension implements BurpExtension {
 
         @Override
         public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest request) {
-            return allowed(request, profileOf(request.listenerInterface()))
+            int port = listenerPort(request.listenerInterface());
+            var observation = proxyObservations.get(request.messageId());
+            if (observation != null && observation.source() == Source.HUMAN
+                    && observation.detail() == SourceDetail.BROWSER && observation.context() != null
+                    && runContexts.current(Source.HUMAN, observation.context().runId()) == null) {
+                return ProxyRequestToBeSentAction.drop();
+            }
+            if (humanBrowsers.ownsPort(port) && humanBrowsers.context(port) == null) return ProxyRequestToBeSentAction.drop();
+            return allowed(request, humanBrowsers.ownsPort(port)
+                    ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER) : profileOf(request.listenerInterface()))
                     ? ProxyRequestToBeSentAction.continueWith(request)
                     : ProxyRequestToBeSentAction.drop();
         }
 
         private boolean allowed(InterceptedRequest request, PortProfile profile) {
-            RunContextRegistry.Context context = runContexts.current(profile.source());
+            RunContextRegistry.Context context = humanBrowsers.context(listenerPort(request.listenerInterface()));
+            if (context == null) context = runContexts.current(profile.source());
             String runId = context == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
                     : context.runId();
             boolean allowed = ActiveTrafficGuard.allows(profile.source(), scope, request.url())
@@ -719,7 +759,8 @@ public final class FlowScopeExtension implements BurpExtension {
             ToolType tool = req.toolSource().toolType();
             if (tool != ToolType.PROXY && !controlledRequest.get()) {
                 Source source = sourceOfTool(tool);
-                RunContextRegistry.Context context = toolRunContext(detailOfTool(tool), runContexts.current(source));
+                RunContextRegistry.Context context = toolRunContext(detailOfTool(tool),
+                        source == Source.HUMAN ? legacyHumanRun() : runContexts.current(source));
                 String captureHandle = source == Source.HUMAN && hasCredentials(req)
                         ? sessionBroker.activeCaptureForService(serviceOf(req)).orElse(null) : null;
                 String captureAccountId = captureHandle == null ? null
@@ -813,20 +854,28 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.supportingPageUrl = supportingPage;
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
-        synchronized (records) {
-            // 초기화/프로젝트 교체가 record 변환 도중 일어났다면 이전 데이터셋의 늦은 응답을 버린다.
-            if (shuttingDown.get() || staleObservation(observation)) return false;
-            if (records.size() >= MAX_RECORDS) {
-                recordDroppedAtCapacity();
-                return false;
+        java.util.function.BooleanSupplier commit = () -> {
+            synchronized (records) {
+                // 초기화/프로젝트 교체가 record 변환 도중 일어났다면 이전 데이터셋의 늦은 응답을 버린다.
+                if (shuttingDown.get() || staleObservation(observation)) return false;
+                if (records.size() >= MAX_RECORDS) {
+                    recordDroppedAtCapacity();
+                    return false;
+                }
+                records.add(rec);
+                retainRawExchange(rec, req, response);
+                if (liveCrossIdentityReplay != null
+                        && liveCrossIdentityReplay.acceptingCaptures(rec)) {
+                    pendingLiveReplays.add(rec.runtimeId());
+                }
+                return true;
             }
-            records.add(rec);
-            retainRawExchange(rec, req, response);
-            if (liveCrossIdentityReplay != null
-                    && liveCrossIdentityReplay.acceptingCaptures(rec)) {
-                pendingLiveReplays.add(rec.runtimeId());
-            }
-        }
+        };
+        boolean captured = observation != null && observation.context() != null
+                && observation.source() == Source.HUMAN && observation.detail() == SourceDetail.BROWSER
+                ? runContexts.captureHumanIfCurrent(runId, observation.humanCaptureGeneration(), commit)
+                : commit.getAsBoolean();
+        if (!captured) return false;
         if (supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
                 && String.valueOf(response.headerValue("Content-Type")).toLowerCase(Locale.ROOT)
                 .contains("text/html")) {
@@ -910,7 +959,9 @@ public final class FlowScopeExtension implements BurpExtension {
             rec.runId = context.runId();
             if (profile.source() != Source.HUMAN) rec.laneAccountId = context.accountId();
         }
-        if (profile.source() == Source.HUMAN) rec.laneAccountId = accountId;
+        if (profile.source() == Source.HUMAN) rec.laneAccountId = observation != null
+                && humanBrowsers != null && humanBrowsers.ownsPort(observation.listenerPort()) && context != null
+                ? context.accountId() : accountId;
         boolean directZapAccount = profile.source() == Source.SCANNER
                 && scannerUsesDirectAuthentication(context, scannerDirectAuthenticationRunId);
         if (accountId != null && !"anon".equals(fp) && !directZapAccount && accountId.equals(humanCaptureAccountId)) {
@@ -1080,24 +1131,39 @@ public final class FlowScopeExtension implements BurpExtension {
                                      RunContextRegistry.Context context, String humanCaptureAccountId,
                                      boolean humanCaptureSuppressed, String channel,
                                      PortProfile profile, int listenerPort) {
+        long generation = context != null && profile != null && profile.source() == Source.HUMAN
+                && profile.detail() == SourceDetail.BROWSER ? runContexts.humanCaptureGeneration(context.runId()) : -1;
+        rememberObservation(tracker, messageId, context, humanCaptureAccountId, humanCaptureSuppressed,
+                channel, profile, listenerPort, generation);
+    }
+
+    private void rememberObservation(InFlightRequestTracker tracker, int messageId,
+                                     RunContextRegistry.Context context, String humanCaptureAccountId,
+                                     boolean humanCaptureSuppressed, String channel,
+                                     PortProfile profile, int listenerPort, long generation) {
         long now = System.currentTimeMillis();
         if (!tracker.remember(messageId, context, humanCaptureAccountId,
                 humanCaptureSuppressed, datasetEpoch.get(), now,
                 profile == null ? Source.UNKNOWN : profile.source(),
-                profile == null ? SourceDetail.UNKNOWN : profile.detail(), listenerPort)) {
+                profile == null ? SourceDetail.UNKNOWN : profile.detail(), listenerPort,
+                generation)) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
     }
 
     private boolean staleObservation(InFlightRequestTracker.Observation observation) {
-        return observation != null && !observation.belongsTo(datasetEpoch.get());
+        return observation != null && (!observation.belongsTo(datasetEpoch.get())
+                || observation.context() != null && observation.source() == Source.HUMAN
+                && observation.detail() == SourceDetail.BROWSER
+                && !runContexts.acceptsHumanCapture(observation.context().runId(), observation.humanCaptureGeneration()));
     }
 
     private void observeSessionResponse(PortProfile profile, HttpRequest request, int status,
                                         String location, String body, List<HttpHeader> headers,
                                         InFlightRequestTracker.Observation observation) {
         try {
+            if (staleObservation(observation)) return;
             String service = serviceOf(request);
             String handle = null;
             RunContextRegistry.Context context = observation == null ? runContexts.current(profile.source())
@@ -1850,6 +1916,15 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public Pipeline.Result completionSnapshot() { rebuildImmediately(); return latest; }
             @Override public long revision() { return revision.get(); }
             @Override public long datasetRevision() { return datasetEpoch.get(); }
+            @Override public java.util.concurrent.CompletableFuture<Pipeline.Result> humanCompletionSnapshot(String runId) {
+                long epoch = datasetEpoch.get();
+                RunContextRegistry.Context context = runContexts.current(Source.HUMAN, runId);
+                return java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    if (shuttingDown.get() || datasetEpoch.get() != epoch
+                            || runContexts.current(Source.HUMAN, runId) != context) throw new DatasetReplacedException();
+                    return rebuildImmediately();
+                }, worker);
+            }
             @Override public GraphWorkspace.State graphWorkspace() {
                 return runProjectTask(() -> new GraphWorkspace.State(datasetEpoch.get(), graphWorkspaceRevision, graphWorkspace));
             }
@@ -1894,8 +1969,23 @@ public final class FlowScopeExtension implements BurpExtension {
                 return archivedValidations;
             }
             @Override public RunContextRegistry contexts() { return runContexts; }
-            @Override public void humanRunStarted(String runId) { humanListeners.start(runId); }
-            @Override public int humanListenerPort(String runId) { return humanListeners.boundPort(runId); }
+            @Override public void humanRunStarted(String runId) {
+                RunContextRegistry.Context context = runContexts.current(Source.HUMAN, runId);
+                if (context == null) throw new IllegalStateException("HUMAN 수집 실행을 찾지 못했습니다.");
+                String service = context.accountId() == null ? null
+                        : analysisConfig.account(context.accountId()).orElseThrow().service();
+                String target = scope.entries().stream()
+                        .filter(entry -> service == null || entry.startsWith(service + "/"))
+                        .findFirst().orElseThrow(() -> new IllegalStateException("계정의 서비스를 점검 범위에 추가하세요."));
+                try { humanBrowsers.start(context, URI.create(target)); }
+                catch (IOException error) { throw new IllegalStateException(error.getMessage(), error); }
+            }
+            @Override public void humanRunStopped(String runId) { humanBrowsers.stop(runId); }
+            @Override public boolean humanBrowserAlive(String runId) { return humanBrowsers.alive(runId); }
+            @Override public int humanListenerPort(String runId) {
+                int port = humanBrowsers.port(runId);
+                return port > 0 ? port : humanListeners.boundPort(runId);
+            }
             @Override public int otherHumanListenerPort(String runId) { return humanListeners.otherPort(runId); }
             @Override public long otherHumanListenerRequests(String runId) {
                 return humanListeners.otherPortCount(runId);
@@ -2171,12 +2261,16 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 return liveCrossIdentityReplay.start(accountIds, anonymous, basisSources, armed);
             }
+            @Override public LiveCrossIdentityReplayCoordinator.Snapshot startAutomaticAnonymousGet(boolean armed) {
+                return liveCrossIdentityReplay.startAutomaticAnonymousGet(armed);
+            }
             @Override public LiveCrossIdentityReplayCoordinator.Snapshot liveAuthorizationReplayStatus() {
                 return liveCrossIdentityReplay.snapshot();
             }
             @Override public LiveCrossIdentityReplayCoordinator.Snapshot stopLiveAuthorizationReplay() {
                 liveCrossIdentityReplay.stop();
                 pendingLiveReplays.clear();
+                pendingAnonymousRequests.clear();
                 return liveCrossIdentityReplay.snapshot();
             }
         }, port);
@@ -2592,6 +2686,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private void clearRunContexts() {
+        if (humanBrowsers != null) humanBrowsers.close();
         runContexts.reset();
         humanListeners.clear();
     }
@@ -2823,7 +2918,7 @@ public final class FlowScopeExtension implements BurpExtension {
     /** 메서드 제한 없이 교차 신원 요청을 Burp Repeater 초안으로만 연다(운영자가 직접 전송). 자동 전송 없음(D-169). */
     private void openCrossIdentityReplayDraftAnyMethod(CrossIdentityReplayOrchestrator.Recommendation recommendation,
                                                        Map<String, String> credentialHeaders) {
-        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
+        RequestRecord seed = replayBasisRecord(recommendation);
         HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
         if (!URI.create(request.url()).equals(recommendation.target())) {
             throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
@@ -2833,6 +2928,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     void killCrossIdentityReplay() {
         pendingLiveReplays.clear();
+        pendingAnonymousRequests.clear();
         if (liveCrossIdentityReplay != null) liveCrossIdentityReplay.reset();
         if (crossIdentityReplay != null) crossIdentityReplay.kill();
     }
@@ -2841,43 +2937,73 @@ public final class FlowScopeExtension implements BurpExtension {
             CrossIdentityReplayOrchestrator.Recommendation recommendation,
             Map<String, String> credentialHeaders,
             CrossIdentityReplayOrchestrator.ReplayContext context) {
-        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
-        TransientExchangeVault.Exchange raw = rawExchanges.get(seed).orElse(null);
-        if (raw == null || !raw.requestRetained()) {
-            throw new IllegalStateException("자동 재전송에는 현재 프로세스의 원문 요청이 필요합니다.");
+        long epoch = datasetEpoch.get();
+        HttpRequest request = null;
+        if (CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY.equals(recommendation.targetIdentity())
+                && recommendation.basisRuntimeId() > 0 && credentialHeaders.isEmpty()) {
+            request = pendingAnonymousRequests.remove(recommendation.basisRuntimeId());
         }
-        HttpRequest request = prepareReplayRequest(seed, decodeRequest(raw, seed.requestContentType).text(),
-                credentialHeaders);
+        if (request == null) {
+            RequestRecord seed;
+            try {
+                seed = replayBasisRecord(recommendation);
+            } catch (RuntimeException error) {
+                throw replayFailure("REPLAY_BASIS_UNAVAILABLE", error);
+            }
+            TransientExchangeVault.Exchange raw = rawExchanges.get(seed).orElse(null);
+            if (raw == null || !raw.requestRetained()) {
+                throw replayFailure("REPLAY_REQUEST_EXPIRED", null);
+            }
+            try {
+                request = prepareReplayRequest(seed, decodeRequest(raw, seed.requestContentType).text(),
+                        credentialHeaders);
+            } catch (RuntimeException error) {
+                throw replayFailure("REPLAY_REQUEST_PREPARATION_FAILED", error);
+            }
+        }
         if (!Set.of("GET", "HEAD").contains(request.method().toUpperCase(Locale.ROOT))) {
-            throw new IllegalArgumentException("안전 자동 재전송은 GET/HEAD만 허용됩니다.");
+            throw replayFailure("REPLAY_METHOD_NOT_SAFE", null);
         }
         if (!URI.create(request.url()).equals(recommendation.target())) {
-            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+            throw replayFailure("REPLAY_TARGET_MISMATCH", null);
         }
 
+        if (datasetEpoch.get() != epoch || liveCrossIdentityReplay != null && !liveCrossIdentityReplay.isDispatchCurrent()) {
+            throw replayFailure("REPLAY_RUN_CHANGED", null);
+        }
         var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                .withResponseTimeout(30_000);
+                .withResponseTimeout(10_000);
         burp.api.montoya.http.message.HttpRequestResponse exchange;
         long started = System.nanoTime();
         controlledRequest.set(true);
         try { exchange = api.http().sendRequest(request, options); }
+        catch (RuntimeException error) {
+            throw replayFailure(executionOutcome(error) == RunExecutionLedger.Outcome.TIMEOUT
+                    ? "HTTP_RESPONSE_TIMEOUT" : "HTTP_SEND_FAILED", error);
+        }
         finally { controlledRequest.remove(); }
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
         if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
-            throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
+            throw replayFailure("HTTP_NO_RESPONSE", null);
         }
 
         HttpResponse response = exchange.response();
-        RequestRecord record = recordFrom(exchange.request(), response,
-                new PortProfile(Source.SCANNER, SourceDetail.AUTHORIZATION_REPLAY),
-                System.currentTimeMillis(), false, context.runId(), null,
-                recommendation.targetIdentity());
-        context.applyTo(record);
-        appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
-        rebuildImmediately();
-        RequestRecord published = latest.records.stream()
-                .filter(value -> value.runtimeId() == record.runtimeId()).findFirst()
-                .orElseThrow(() -> new IllegalStateException("재전송 Evidence 게시에 실패했습니다."));
+        RequestRecord record;
+        RequestRecord published;
+        try {
+            record = recordFrom(exchange.request(), response,
+                    new PortProfile(Source.SCANNER, SourceDetail.AUTHORIZATION_REPLAY),
+                    System.currentTimeMillis(), false, context.runId(), null,
+                    recommendation.targetIdentity());
+            context.applyTo(record);
+            appendReplayRecord(record, epoch, () -> retainRawExchange(record, exchange.request(), response));
+            rebuildImmediately();
+            published = latest.records.stream()
+                    .filter(value -> value.runtimeId() == record.runtimeId()).findFirst()
+                    .orElseThrow(() -> new IllegalStateException("재전송 Evidence 게시에 실패했습니다."));
+        } catch (RuntimeException error) {
+            throw replayFailure("EVIDENCE_RECORDING_FAILED", error);
+        }
         int requestBytes = exchange.request().toByteArray().length();
         int responseBytes = response.toByteArray().length();
         String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
@@ -2893,9 +3019,27 @@ public final class FlowScopeExtension implements BurpExtension {
                 boundedResponseBody(response), setCookies);
     }
 
+    private static CrossIdentityReplayOrchestrator.TransportFailure replayFailure(
+            String reason, Throwable cause) {
+        return new CrossIdentityReplayOrchestrator.TransportFailure(reason, cause);
+    }
+
+    private RequestRecord replayBasisRecord(CrossIdentityReplayOrchestrator.Recommendation recommendation) {
+        if (recommendation.basisRuntimeId() <= 0) return evidenceRecord(recommendation.basisEvidenceId());
+        return liveReplayBasis(latest.records, recommendation);
+    }
+
+    static RequestRecord liveReplayBasis(List<RequestRecord> records,
+                                         CrossIdentityReplayOrchestrator.Recommendation recommendation) {
+        return records.stream()
+                .filter(record -> record.runtimeId() == recommendation.basisRuntimeId())
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("현재 자동 검증 기준 요청을 찾을 수 없습니다."));
+    }
+
     private void openCrossIdentityReplayDraft(CrossIdentityReplayOrchestrator.Recommendation recommendation,
                                                Map<String, String> credentialHeaders) {
-        RequestRecord seed = evidenceRecord(recommendation.basisEvidenceId());
+        RequestRecord seed = replayBasisRecord(recommendation);
         HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
         if (!Set.of("POST", "PUT", "PATCH", "DELETE").contains(request.method().toUpperCase(Locale.ROOT))) {
             throw new IllegalArgumentException("파괴적 요청 초안은 POST/PUT/PATCH/DELETE만 지원합니다.");
@@ -3203,6 +3347,17 @@ public final class FlowScopeExtension implements BurpExtension {
         }
     }
 
+    void appendReplayRecord(RequestRecord record, long expectedEpoch, Runnable retainExchange) {
+        synchronized (records) {
+            if (datasetEpoch.get() != expectedEpoch) throw new DatasetReplacedException();
+            Runnable commit = () -> appendControlledToolRecord(record, retainExchange);
+            if (liveCrossIdentityReplay == null) commit.run();
+            else if (!liveCrossIdentityReplay.commitCurrentDispatch(commit)) {
+                throw replayFailure("REPLAY_RUN_CHANGED", null);
+            }
+        }
+    }
+
     /** 방금 추가한 레코드의 분석본. 다른 재분석이 먼저 게시돼도 Evidence ID는 내용 해시라 다음 게시와 같다. */
     RequestRecord analyzedRecord(RequestRecord record) {
         return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
@@ -3297,21 +3452,44 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private void dispatchPendingLiveHumanReplays(Pipeline.Result result) {
         if (liveCrossIdentityReplay == null || result == null) return;
+        boolean automaticAnonymousGet = liveCrossIdentityReplay.snapshot().automaticAnonymousGet();
         for (RequestRecord record : result.records) {
             if (!pendingLiveReplays.remove(record.runtimeId())) continue;
             TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
             boolean requestRetained = raw != null && raw.requestRetained();
             URI target = null;
+            String anonymousRequestKey = null;
+            HttpRequest prepared = null;
             if (requestRetained) {
                 try {
-                    HttpRequest prepared = prepareHumanRequest(record, replayRequestText(record),
+                    prepared = prepareHumanRequest(record, replayRequestText(record),
                             FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
                     target = URI.create(prepared.url());
+                    anonymousRequestKey = anonymousRequestKey(prepared.method(), prepared.url());
                 } catch (RuntimeException ignored) {
                     // No request is sent; the coordinator records this basis as ineligible.
                 }
             }
-            liveCrossIdentityReplay.offer(record, target, requestRetained);
+            if (automaticAnonymousGet && prepared != null) {
+                pendingAnonymousRequests.put(record.runtimeId(), prepared);
+            }
+            long bytes = automaticAnonymousGet && prepared != null ? prepared.toByteArray().length() : 0;
+            long runtimeId = record.runtimeId();
+            if (!liveCrossIdentityReplay.offer(record, target, requestRetained, anonymousRequestKey, bytes,
+                    () -> pendingAnonymousRequests.remove(runtimeId))) {
+                pendingAnonymousRequests.remove(record.runtimeId());
+            }
+        }
+    }
+
+    private static String anonymousRequestKey(String method, String url) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest((method.toUpperCase(Locale.ROOT) + "\0" + url)
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException error) {
+            throw new IllegalStateException(error);
         }
     }
 

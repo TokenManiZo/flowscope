@@ -701,9 +701,48 @@ export interface RequestLabCredentialHeader {
   value: string
 }
 
+export interface LiveAuthorizationReplaySnapshot {
+  runId: string
+  state: "STOPPED" | "ACTIVE" | "LIMIT_REACHED"
+  armed: boolean
+  targetAccountIds: readonly string[]
+  includeAnonymous: boolean
+  automaticAnonymousGet: boolean
+  basisSources: readonly ("HUMAN" | "SCANNER" | "LLM")[]
+  observed: number
+  eligible: number
+  queued: number
+  sent: number
+  drafted: number
+  skipped: number
+  failed: number
+  lastReason: string
+  pending?: number
+  limited?: number
+}
+
+export interface LiveAuthorizationReplayEnvelope extends ApiSuccess {
+  live: LiveAuthorizationReplaySnapshot
+}
+
+export interface HumanBrowserRun {
+  paused?: boolean
+  analyzing?: boolean
+  runId: string
+  accountId: string
+  proxy: string
+  listenerPort?: number
+  otherListenerPort?: number
+  otherListenerRequests?: number
+}
+
 export interface HumanRun {
+  paused?: boolean
+  analyzing?: boolean
+  endedRuns?: Array<{ runId: string; accountId: string; analyzing: boolean; message: string }>
   active: boolean
   completed: boolean
+  runs?: HumanBrowserRun[]
   runId: string
   accountId: string
   proxy: string

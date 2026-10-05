@@ -149,6 +149,24 @@ class FlowScopeExtensionLifecycleTest {
     }
 
     @Test
+    void replayResponseIsNotRecordedIntoAProjectOpenedDuringTheSend() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        long epoch = ((AtomicLong) field("datasetEpoch").get(extension)).getAndIncrement();
+        AtomicBoolean retained = new AtomicBoolean(false);
+        try {
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendReplayRecord(new RequestRecord(Source.SCANNER, "https://api.test:443",
+                            "GET", "/me", 200, "anon"), epoch, () -> retained.set(true)));
+            assertTrue(records.isEmpty());
+            assertEquals(false, retained.get());
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
     void requestLabResponseIsNotRecordedIntoAProjectOpenedDuringTheSend() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         @SuppressWarnings("unchecked")
@@ -288,6 +306,121 @@ class FlowScopeExtensionLifecycleTest {
         } finally {
             worker.shutdownNow();
         }
+    }
+
+    @Test
+    void accountPauseActuallySuppressesRecordsAndLateResponsesThenResumeCollectsAgain() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        field("api").set(extension, loggingApi());
+        field("scope").set(extension, ScopePolicy.parse("https://api.example.test/"));
+        var contexts = (io.flowscope.core.RunContextRegistry) field("runContexts").get(extension);
+        var a = new io.flowscope.core.RunContextRegistry.Context(io.flowscope.core.SourceDetail.BROWSER,
+                io.flowscope.core.Orchestrator.HUMAN, io.flowscope.core.ToolKind.BROWSER,
+                io.flowscope.core.RunPhase.EXPLORATION, "a", "A");
+        var b = new io.flowscope.core.RunContextRegistry.Context(io.flowscope.core.SourceDetail.BROWSER,
+                io.flowscope.core.Orchestrator.HUMAN, io.flowscope.core.ToolKind.BROWSER,
+                io.flowscope.core.RunPhase.EXPLORATION, "b", "B");
+        contexts.activateHuman(a);
+        contexts.activateHuman(b);
+        var profile = new FlowScopeExtension.PortProfile(Source.HUMAN, io.flowscope.core.SourceDetail.BROWSER);
+        var tracker = new InFlightRequestTracker(10, 60_000);
+        Method remember = FlowScopeExtension.class.getDeclaredMethod("rememberObservation", InFlightRequestTracker.class,
+                int.class, io.flowscope.core.RunContextRegistry.Context.class, String.class, boolean.class,
+                String.class, FlowScopeExtension.PortProfile.class, int.class);
+        remember.setAccessible(true);
+        Method capture = FlowScopeExtension.class.getDeclaredMethod("capture",
+                burp.api.montoya.http.message.requests.HttpRequest.class,
+                burp.api.montoya.http.message.responses.HttpResponse.class,
+                FlowScopeExtension.PortProfile.class, InFlightRequestTracker.Observation.class);
+        capture.setAccessible(true);
+        var request = (burp.api.montoya.http.message.requests.HttpRequest) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{burp.api.montoya.http.message.requests.HttpRequest.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "url" -> "https://api.example.test/orders";
+                    case "method" -> "GET";
+                    case "pathWithoutQuery" -> "/orders";
+                    case "query" -> "";
+                    case "headers" -> List.of();
+                    case "bodyOffset" -> 0;
+                    case "toByteArray" -> testMessageBytes("GET /orders HTTP/1.1\r\n\r\n");
+                    case "httpService" -> null;
+                    case "headerValue" -> null;
+                    default -> throw new AssertionError(method.getName());
+                });
+        var response = (burp.api.montoya.http.message.responses.HttpResponse) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{burp.api.montoya.http.message.responses.HttpResponse.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "statusCode" -> (short) 200;
+                    case "bodyOffset" -> 0;
+                    case "headerValue" -> "Content-Type".equals(args[0]) ? "application/json" : null;
+                    case "toByteArray" -> testMessageBytes("HTTP/1.1 200 OK\r\n\r\n{}");
+                    default -> throw new AssertionError(method.getName());
+                });
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        try {
+            remember.invoke(extension, tracker, 1, a, null, true, "test", profile, 18080);
+            assertEquals(true, capture.invoke(extension, request, response, profile, tracker.remove(1)));
+            remember.invoke(extension, tracker, 2, a, null, true, "test", profile, 18080);
+            contexts.pauseHuman("a", true);
+            remember.invoke(extension, tracker, 3, a, null, true, "test", profile, 18080);
+            var pausedRequest = tracker.remove(3);
+            assertEquals(false, capture.invoke(extension, request, response, profile, pausedRequest));
+            remember.invoke(extension, tracker, 4, b, null, true, "test", profile, 18081);
+            assertEquals(true, capture.invoke(extension, request, response, profile, tracker.remove(4)));
+            contexts.pauseHuman("a", false);
+            assertEquals(false, capture.invoke(extension, request, response, profile, tracker.remove(2)));
+            assertEquals(false, capture.invoke(extension, request, response, profile, pausedRequest));
+            remember.invoke(extension, tracker, 5, a, null, true, "test", profile, 18080);
+            assertEquals(true, capture.invoke(extension, request, response, profile, tracker.remove(5)));
+            remember.invoke(extension, tracker, 6, a, null, true, "test", profile, 18080);
+            contexts.abort(Source.HUMAN, "a");
+            assertEquals(false, capture.invoke(extension, request, response, profile, tracker.remove(6)));
+            assertEquals(List.of("a", "b", "a"), records.stream().map(record -> record.runId).toList());
+            // Pause must wait for a response already committing, then reject every later response.
+            contexts.activateHuman(a);
+            var committing = new CountDownLatch(1);
+            var releaseCommit = new CountDownLatch(1);
+            List<RequestRecord> blockedRecords = new ArrayList<>() {
+                @Override public boolean add(RequestRecord value) {
+                    committing.countDown();
+                    try { releaseCommit.await(); }
+                    catch (InterruptedException error) { throw new RuntimeException(error); }
+                    return super.add(value);
+                }
+            };
+            field("records").set(extension, blockedRecords);
+            remember.invoke(extension, tracker, 7, a, null, true, "test", profile, 18080);
+            var committingObservation = tracker.remove(7);
+            try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                var saving = executor.submit(() -> capture.invoke(extension, request, response, profile, committingObservation));
+                assertTrue(committing.await(2, TimeUnit.SECONDS));
+                var pauseStarted = new CountDownLatch(1);
+                var pausing = executor.submit(() -> { pauseStarted.countDown(); contexts.pauseHuman("a", true); });
+                try {
+                    assertTrue(pauseStarted.await(2, TimeUnit.SECONDS));
+                    assertThrows(java.util.concurrent.TimeoutException.class, () -> pausing.get(100, TimeUnit.MILLISECONDS));
+                } finally { releaseCommit.countDown(); }
+                assertEquals(true, saving.get(2, TimeUnit.SECONDS));
+                pausing.get(2, TimeUnit.SECONDS);
+                assertEquals(false, capture.invoke(extension, request, response, profile, committingObservation));
+                assertEquals(1, blockedRecords.size());
+            }
+
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    private static burp.api.montoya.core.ByteArray testMessageBytes(String text) {
+        byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return (burp.api.montoya.core.ByteArray) Proxy.newProxyInstance(
+                FlowScopeExtensionLifecycleTest.class.getClassLoader(), new Class<?>[]{burp.api.montoya.core.ByteArray.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "length" -> bytes.length;
+                    case "getBytes" -> bytes.clone();
+                    default -> throw new AssertionError(method.getName());
+                });
     }
 
     private static ProjectStore.ProjectContext context() {

@@ -26,6 +26,7 @@ const reasonLabels: Record<string, string> = {
   API_EVIDENCE: "API 근거",
   SESSION_SETUP: "로그인·세션 준비 요청",
   DOCUMENT_NAVIGATION: "페이지 이동",
+  USER_REVIEW: "사용자가 검토 필요로 표시",
   USER_INCLUDE: "사용자가 메인 비교에 포함",
   USER_EXCLUDE: "사용자가 제외",
 }

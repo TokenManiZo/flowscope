@@ -90,6 +90,26 @@ final class CrossIdentityReplayOrchestratorTest {
     }
 
     @Test
+    void readsTheMethodFromTheServicePrefixedOperationProducedByNormalizer() {
+        SessionBroker broker = activeBroker("user-b", "Bearer active");
+        AtomicInteger sends = new AtomicInteger();
+        CrossIdentityReplayOrchestrator orchestrator = orchestrator(broker,
+                (candidate, headers, context) -> {
+                    sends.incrementAndGet();
+                    return response(200, "{}");
+                }, (candidate, headers) -> fail("GET must not open a draft"));
+
+        CrossIdentityReplayOrchestrator.RunResult result = orchestrator.execute(List.of(
+                candidate("https://api.test:443 GET /api/orders/{id}",
+                        "https://api.test/api/orders/19")), true);
+
+        assertEquals(1, sends.get());
+        assertEquals(1, result.sent());
+        assertEquals(CrossIdentityReplayOrchestrator.Outcome.SENT,
+                result.items().getFirst().outcome());
+    }
+
+    @Test
     void outOfScopeAndNonActiveIdentitiesAreSkippedBeforeTransport() {
         SessionBroker broker = activeBroker("user-b", "Bearer active");
         AccountProfile inactive = new AccountProfile("user-c", "USER C", "https://api.test:443", AccessRole.USER);
@@ -166,6 +186,22 @@ final class CrossIdentityReplayOrchestratorTest {
         assertEquals(1, result.sent());
         assertEquals(CrossIdentityReplayOrchestrator.Outcome.SKIPPED_INELIGIBLE,
                 result.items().get(1).outcome());
+    }
+
+    @Test
+    void transportFailureExposesOnlyItsSafeStageCode() {
+        SessionBroker broker = activeBroker("user-b", "Bearer active");
+        CrossIdentityReplayOrchestrator orchestrator = orchestrator(broker,
+                (candidate, headers, context) -> {
+                    throw new CrossIdentityReplayOrchestrator.TransportFailure(
+                            "HTTP_NO_RESPONSE", new IllegalStateException("secret upstream detail"));
+                }, (candidate, headers) -> fail("GET must not open a draft"));
+
+        CrossIdentityReplayOrchestrator.RunResult result = orchestrator.execute(List.of(
+                candidate("GET /api/orders/{id}", "https://api.test/api/orders/19")), true);
+
+        assertEquals("HTTP_NO_RESPONSE", result.items().getFirst().reason());
+        assertFalse(result.toString().contains("secret upstream detail"));
     }
 
     @Test
