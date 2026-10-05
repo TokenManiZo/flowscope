@@ -93,6 +93,16 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   const operation = operationParts(node.label)
+  if (node.kind === "resend-operation" && "resend" in node && node.resend) {
+    // 재전송 카드: Request Lab은 원본 기록과 응답 코드를 비교하고, Repeater는 원본을 알 수 없어 응답 코드만 보인다.
+    const { tool, count, status, originalStatus } = node.resend
+    const toolName = tool === "lab" ? "REQUEST LAB" : "REPEATER"
+    const detail = tool === "lab" ? `원본 ${originalStatus ?? "기록 없음"} → ${status}` : `응답 ${status} · 원본 없음`
+    return {
+      kind: "operation", badge: `${toolName} · ${operation.method}`, title: operation.path, detail, footer: count > 1 ? `${count}회 전송 · 최근 기준` : "", icon: "none",
+      accessibleLabel: `${toolName} 재전송 ${node.label}; ${detail}; ${count}회 전송; 판정 제외`,
+    }
+  }
   if (node.kind === "observed-operation") return {
     kind: "operation", badge: "OBSERVED", title: `${operation.method} ${operation.path}`, detail: "관측만 · 판정 제외", footer: "", icon: "none",
     accessibleLabel: `Observed operation ${node.label}; 판정 제외`,

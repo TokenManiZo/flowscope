@@ -41,6 +41,29 @@ class TrafficClassifierTest {
     }
 
     @Test
+    void repeaterAndIntruderResendsStayOutOfJudgmentEvenDuringAnExplorationRunOrUserInclude() {
+        RequestRecord browser = record("GET", "/api/orders", null, "application/json");
+        browser.phase = RunPhase.EXPLORATION;
+        browser.sourceDetail = SourceDetail.BROWSER;
+        RequestRecord repeater = record("GET", "/api/orders", null, "application/json");
+        repeater.phase = RunPhase.EXPLORATION;
+        repeater.sourceDetail = SourceDetail.BURP_REPEATER;
+        RequestRecord intruder = record("GET", "/api/orders", null, "application/json");
+        intruder.phase = RunPhase.EXPLORATION;
+        intruder.sourceDetail = SourceDetail.BURP_INTRUDER;
+        AnalysisConfig config = new AnalysisConfig().withTrafficOverride(classified(browser).op, TrafficOverride.INCLUDE);
+
+        var result = Pipeline.run(List.of(browser, repeater, intruder), config);
+
+        assertTrue(result.records.get(0).trafficClassification.coverageEligible());
+        for (RequestRecord resend : result.records.subList(1, 3)) {
+            assertEquals(TrafficClassification.Disposition.EXCLUDE, resend.trafficClassification.disposition());
+            assertEquals(List.of(TrafficClassifier.MANUAL_TOOL_RESEND), resend.trafficClassification.reasons());
+        }
+        assertEquals(List.of(result.records.get(0)), result.coverageRecords);
+    }
+
+    @Test
     void 표준문맥과_MIME가_일치하는_정적자산만_제외한다() {
         RequestRecord js = record("GET", "/static/app.js", null, "application/javascript");
         js.secFetchDest = "script";

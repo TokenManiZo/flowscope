@@ -1,13 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useState } from "react"
+import { useState, type ReactElement } from "react"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 
-import { RequestLabDialog } from "./RequestLabDialog"
+import { activeAccounts, RequestLabDialog } from "./RequestLabDialog"
 import { OperationDetail } from "./OperationDetail"
-import { renderWithQueryClient } from "@/test/render"
+import { createTestQueryClient, renderWithQueryClient as renderWithClient, seedHumanRun } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
-import type { Account, EventRecord, ManagedSession, Snapshot } from "@/lib/api/types"
+import type { Account, EventRecord, HumanRun, ManagedSession, Snapshot } from "@/lib/api/types"
 import { createMemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
 
@@ -28,6 +28,16 @@ const registeredAccounts: Account[] = [
   { id: "inactive", label: "비활성", role: "user", target: activeSession.service, color: "", authArtifactCount: 1 },
   { id: "other", label: "다른 서비스", role: "user", target: "https://other.example.test", color: "", authArtifactCount: 1 },
 ]
+
+/** 사이드바가 받아 온 점검 상태. accountId ""는 비로그인 점검이다. */
+const inspecting = (...accountIds: string[]): HumanRun => ({ active: accountIds.length > 0, completed: false, runId: "", accountId: "", proxy: "", runs: accountIds.map((accountId, index) => ({ runId: `run-${index}`, accountId, proxy: "" })) })
+function clientInspecting(run: HumanRun) {
+  return seedHumanRun(createTestQueryClient(), run)
+}
+// 이 파일의 기본은 비로그인으로 점검 중인 상태다. 점검 상태에 따른 기본 전송 인증은 따로 고정한다.
+function renderWithQueryClient(ui: ReactElement, client = clientInspecting(inspecting(""))) {
+  return renderWithClient(ui, client)
+}
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }) }
 
@@ -97,45 +107,150 @@ async function chooseAuthentication(user: ReturnType<typeof userEvent.setup>, va
 
 async function openDraft(currentSession: boolean | null = false) {
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  await userEvent.click(screen.getByRole("button", { name: "새 요청 추가" }))
-  if (currentSession !== null) {
-    const value = currentSession ? "ACCOUNT:acct-1" : "ANONYMOUS"
-    await chooseAuthentication(userEvent.setup(), value)
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(value)))
+  // 비로그인으로 점검 중이면 열자마자 원본에서 비로그인 편집본이 준비된다(Original·+ 없음).
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+  if (currentSession) {
+    await chooseAuthentication(userEvent.setup(), "ACCOUNT:acct-1")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
   }
   return request
 }
 
 describe("RequestLabDialog", () => {
-  it("offers an account dropdown without original identity and requires a choice before sending", async () => {
+  it("opens ready to send without logging in, offers registered accounts, and shows the original read-only on demand", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
-    await openDraft(null)
-    const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-    expect(authentication).toHaveTextContent("인증 선택")
-    for (const name of ["요청 재전송", "Repeater로 보내기"]) {
-      const action = screen.getByRole("button", { name })
-      expect(action).toBeDisabled()
-      action.removeAttribute("disabled")
-      fireEvent.click(action)
-    }
-    expect(fetch.mock.calls.some(([input]) => ["/api/request-lab", "/api/replay"].includes(String(input)))).toBe(false)
-    await user.click(authentication)
-    const options = await screen.findByRole("listbox")
-    expect(within(options).queryByRole("option", { name: /원문|anon|인증.*선택/ })).not.toBeInTheDocument()
-    expect(within(options).getByRole("option", { name: "비로그인" })).toBeVisible()
-    expect(within(options).getByRole("option", { name: "관리자" })).toBeVisible()
-    expect(within(options).getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
-    await user.keyboard("{Escape}")
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument()
-    await chooseAuthentication(user, "ANONYMOUS")
-    await waitFor(() => expect(authentication).toHaveTextContent("비로그인"))
+    const request = await openDraft()
+    expect(screen.queryByRole("button", { name: "Original" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "새 요청 추가" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Repeater/ })).not.toBeInTheDocument()
+    expect(request).not.toHaveAttribute("readonly")
+    expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
+    await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
+    const options = await screen.findByRole("listbox")
+    expect(within(options).getByRole("option", { name: "관리자" })).toBeVisible()
+    expect(within(options).getByRole("option", { name: "USER C · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
+    await user.keyboard("{Escape}")
+
+    await user.click(screen.getByRole("button", { name: "원문 보기" }))
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveAttribute("readonly")
+    expect(screen.getByRole("note")).toHaveTextContent("처음 수집한 원문입니다")
+    await user.click(screen.getByRole("button", { name: "편집으로 돌아가기" }))
+    expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
+    expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(false)
   })
 
-  it("keeps an explicit account across traffic updates and tabs, and uses it for preview, send and Repeater", async () => {
+  it.each([
+    ["the account being inspected", inspecting("acct-1"), "관리자"],
+    ["비로그인 while inspecting without logging in", inspecting(""), "비로그인"],
+  ])("defaults the send authentication to %s", async (_, run, label) => {
+    installTransport()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />, clientInspecting(run))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(label))
+  })
+
+  it.each([
+    ["nothing is being inspected", inspecting()],
+    ["several identities are being inspected", inspecting("acct-1", "")],
+    ["the inspected account has no usable session yet", inspecting("acct-2")],
+  ])("leaves the send authentication empty when %s", async (_, run) => {
+    const fetch = installTransport()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />, clientInspecting(run))
+    await screen.findByRole("button", { name: /^작성 중 · / })
+    // 고를 신원이 없으면 어떤 인증도 미리 적용하지 않는다.
+    expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab/credentials")).toBe(false)
+    expect(screen.getByRole("button", { name: "작성 중 · 인증 선택 전" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(/인증 선택/)
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+  })
+
+  it("deletes any tab on its own and stays on the tab being viewed", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft()
+    for (const n of [1, 2, 3]) {
+      await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+      await screen.findByRole("button", { name: `수정된 요청 ${n} · 비로그인 · 200` })
+    }
+    // 3번을 보는 채로 가운데 2번만 지운다. 뒤 탭을 먼저 지울 필요가 없다.
+    await user.click(screen.getByRole("button", { name: "수정된 요청 2 삭제" }))
+    await waitFor(() => expect(screen.queryByRole("button", { name: "수정된 요청 2 · 비로그인 · 200" })).not.toBeInTheDocument())
+    expect(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "수정된 요청 3 · 비로그인 · 200" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("stacks every send as 수정된 요청 N and continues edits or resends of a sent tab in a new tab", async () => {
+    const fetch = installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft()
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    const first = await screen.findByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })
+    expect(first).toHaveAttribute("aria-pressed", "true")
+    const sentFirst = String(screen.getByLabelText("Request Lab 요청 원문").getAttribute("value") ?? (screen.getByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement).value)
+
+    // 보낸 탭을 고치면 그 기록은 그대로 두고 새 탭(작성 중)에서 이어 간다.
+    await user.type(screen.getByLabelText("Request Lab 요청 원문"), "X")
+    expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    expect(await screen.findByRole("button", { name: "수정된 요청 2 · 비로그인 · 200" })).toHaveAttribute("aria-pressed", "true")
+
+    await user.click(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" }))
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(sentFirst)
+    // 보낸 탭을 그대로 다시 보내도 새 탭으로 쌓인다.
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    expect(await screen.findByRole("button", { name: "수정된 요청 3 · 비로그인 · 200" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })).toBeInTheDocument()
+    const sends = fetch.mock.calls.filter(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
+    expect(sends).toHaveLength(3)
+    expect(sends.map(([, init]) => new URLSearchParams(String(init?.body)).get("credentialMode"))).toEqual(["ANONYMOUS", "ANONYMOUS", "ANONYMOUS"])
+  })
+
+  it("sends with an account that is being checked right now", async () => {
+    const fetch = installReusableTransport()
+    const user = userEvent.setup()
+    const capturing: ManagedSession = { ...activeSession, status: "CAPTURING", capturing: true, replayReady: true }
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[capturing]} />)
+    await openDraft()
+    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 신원(alice)으로 보내려면 전송 인증에서 alice을(를) 고르세요.")
+    await chooseAuthentication(user, "ACCOUNT:acct-1")
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("관리자"))
+    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await waitFor(() => expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(true))
+    const sent = fetch.mock.calls.find(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
+    expect(new URLSearchParams(String(sent?.[1]?.body)).get("credentialMode")).toBe("ACCOUNT")
+    expect(new URLSearchParams(String(sent?.[1]?.body)).get("accountId")).toBe("acct-1")
+    expect(await screen.findByRole("button", { name: "수정된 요청 1 · 관리자 · 200" })).toBeInTheDocument()
+    expect(activeAccounts([capturing, { ...capturing, accountId: "acct-2", replayReady: false }], activeSession.service).map(item => item.accountId)).toEqual(["acct-1"])
+  })
+
+  it("deletes the selected tab and prepares a fresh 비로그인 draft once every tab is gone", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft()
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await screen.findByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })
+    await user.click(screen.getByRole("button", { name: "수정된 요청 1 삭제" }))
+    await waitFor(() => expect(screen.queryByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })).not.toBeInTheDocument())
+    expect(await screen.findByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("tells how to send as the record's identity when its session is not ready yet", async () => {
+    const fetch = vi.fn((input: RequestInfo | URL) => Promise.resolve(json(String(input) === "/api/manual-attempts" ? [] : { ...requestLabDraft(), observedIdentity: "USER B", observedAccountId: "acct-2" })))
+    vi.stubGlobal("fetch", fetch)
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    expect(await screen.findByRole("note")).toHaveTextContent("USER B로 보내려면 계정·세션에서 USER B의 점검 시작을 누르고 로그인하세요.")
+  })
+
+  it("keeps each tab's explicit account across traffic updates, and uses it for preview and send", async () => {
     const owner = createMemoryOnlyRawState()
     const original = "POST /orders HTTP/1.1\nHost: api.example.test\nCookie: original-demo\nAuthorization: Bearer original-demo\n\nbody-kept"
     const second: ManagedSession = { ...activeSession, handle: "second", accountId: "acct-2", accountLabel: "USER B", replayReady: true }
@@ -148,15 +263,14 @@ describe("RequestLabDialog", () => {
         ] }))
       }
       if (String(input) === "/api/request-lab") return Promise.resolve(json({ success: true, eventId: "event-7", response: "ok", status: 200, durationMs: 1 }))
-      if (String(input) === "/api/replay") return Promise.resolve(json({ success: true, openedDraft: true }))
       return Promise.resolve(json(requestLabDraft("event-7", original)))
     })
     vi.stubGlobal("fetch", fetch)
     const user = userEvent.setup()
     const view = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, second]} rawState={owner} />)
-    await openDraft(null)
+    await openDraft()
     const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-    for (const id of ["acct-1", "acct-2"]) {
+    for (const [index, id] of ["acct-1", "acct-2"].entries()) {
       await chooseAuthentication(user, `ACCOUNT:${id}`)
       await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel(`ACCOUNT:${id}`)))
       await waitFor(() => expect(authentication).toBeEnabled())
@@ -165,10 +279,8 @@ describe("RequestLabDialog", () => {
       expect(owner.request).not.toContain("original-demo")
       expect(owner.request.split("\n\n")[1]).toBe("body-kept")
       await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-      await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
-      await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
-      await waitFor(() => expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeEnabled())
-      for (const route of ["/api/request-lab/credentials", "/api/request-lab", "/api/replay"]) {
+      await screen.findByRole("button", { name: `수정된 요청 ${index + 1} · ${authenticationLabel(`ACCOUNT:${id}`)} · 200` })
+      for (const route of ["/api/request-lab/credentials", "/api/request-lab"]) {
         const values = new URLSearchParams(String(fetch.mock.calls.filter(([input]) => String(input) === route).at(-1)?.[1]?.body))
         expect(values.get("accountId")).toBe(id)
         expect(values.get("credentialMode")).toBe("ACCOUNT")
@@ -177,23 +289,22 @@ describe("RequestLabDialog", () => {
     }
     view.rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[{ ...activeSession, lastRecordedAt: "2099-01-01T00:00:00Z" }, second]} rawState={owner} />)
     expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2"))
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2"))
+    // 보낸 탭의 인증을 바꾸면 새 탭에서 바꾼다.
     await chooseAuthentication(user, "ANONYMOUS")
     await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     expect(owner.request).not.toMatch(/Cookie:|Authorization:/)
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
+    await screen.findByRole("button", { name: "수정된 요청 3 · 비로그인 · 200" })
     const anonymous = new URLSearchParams(String(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab").at(-1)?.[1]?.body))
     expect(anonymous.get("accountId")).toBe("")
     expect(anonymous.get("credentialMode")).toBe("ANONYMOUS")
-    await user.selectOptions(screen.getByRole("combobox", { name: "편집 요청 선택" }), "1")
-    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2"))
-    expect(owner.request).toContain("Cookie: session=acct-2")
+    await user.click(screen.getByRole("button", { name: "수정된 요청 1 · 관리자 · 200" }))
+    expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
+    expect(owner.request).toContain("Cookie: session=acct-1")
+    await user.click(screen.getByRole("button", { name: "수정된 요청 2 · USER B · 200" }))
     view.rerender(<RequestLabDialog accounts={registeredAccounts.filter(account => account.id !== "acct-2")} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, second]} rawState={owner} />)
     expect(authentication).toHaveTextContent(authenticationLabel(""))
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeDisabled()
   })
 
   it("keeps account A selected when switching to account B fails", async () => {
@@ -215,13 +326,13 @@ describe("RequestLabDialog", () => {
     expect(owner.request).toContain("Cookie: session=A")
   })
 
-  it("projects account/anonymous/original credentials into only the selected editor without sending or caching them", async () => {
+  it("projects account/anonymous credentials into the editing copy without sending or caching them", async () => {
     const original = 'POST /orders HTTP/1.1\nHost: api.example.test\nCookie: ORIGINAL_DEMO\nX-Custom: keep\nContent-Type: application/json\n\n{"id":9007199254740993,"amount":1.2300}'
     const owner = createMemoryOnlyRawState()
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
       if (String(input) === "/api/request-lab/credentials") {
         const mode = new URLSearchParams(String(init?.body)).get("credentialMode")
-        return Promise.resolve(json({ headers: mode === "ANONYMOUS" ? [] : mode === "ORIGINAL" ? [{ name: "Cookie", value: "ORIGINAL_DEMO" }] : [{ name: "Authorization", value: "Bearer ACCOUNT_DEMO" }, { name: "Cookie", value: "ACCOUNT_DEMO" }] }))
+        return Promise.resolve(json({ headers: mode === "ANONYMOUS" ? [] : [{ name: "Authorization", value: "Bearer ACCOUNT_DEMO" }, { name: "Cookie", value: "ACCOUNT_DEMO" }] }))
       }
       return Promise.resolve(json(requestLabDraft("event-7", original)))
     })
@@ -229,6 +340,8 @@ describe("RequestLabDialog", () => {
     const user = userEvent.setup()
     const { client } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
     const request = await openDraft()
+    // 열 때 비로그인이 적용돼 원래 쿠키가 빠진다.
+    expect(owner.request).not.toContain("ORIGINAL_DEMO")
     fireEvent.change(request, { target: { value: original.replace('/orders ', '/edited ').replace('keep', 'edited') } })
     const before = owner.request
     const pane = screen.getByRole("region", { name: "Request 원문 패널" })
@@ -244,18 +357,13 @@ describe("RequestLabDialog", () => {
     expect(owner.request.split('\n\n')[1]).toBe(before.split('\n\n')[1])
     expect(owner.request).toContain("X-Custom: edited")
     expect(derived.text).toBe("")
-    const projected = owner.request
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
     await chooseAuthentication(user, "ANONYMOUS")
     await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ANONYMOUS")))
     await waitFor(() => expect(authentication).toBeEnabled())
     expect(owner.request).not.toContain("Authorization:")
     expect(owner.request).not.toContain("Cookie:")
-    expect(owner.requests[0]?.request).toBe(projected)
-    await chooseAuthentication(user, "ACCOUNT:acct-1")
-    await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
-    expect(owner.request).toContain("Cookie: ACCOUNT_DEMO")
     expect(owner.request).toContain("POST /edited HTTP/1.1")
+    expect(owner.requests).toHaveLength(1)
     expect(owner.originalRequest).toBe(original)
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
     expect(JSON.stringify(client.getQueryCache().getAll())).not.toContain("ACCOUNT_DEMO")
@@ -269,7 +377,9 @@ describe("RequestLabDialog", () => {
       ? json({ success: false, message: "세션을 확인해 주세요." }, 400) : json(requestLabDraft()))))
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    await openDraft(null)
+    await screen.findByLabelText("Request Lab 요청 원문")
+    // 열 때 비로그인 적용이 실패하면 알리고, 인증을 고르기 전에는 보내지 않는다.
+    expect(await screen.findByRole("alert")).toHaveTextContent("세션을 확인해 주세요.")
     await chooseAuthentication(user, "ACCOUNT:acct-1")
     expect(await screen.findByRole("alert")).toHaveTextContent("세션을 확인해 주세요.")
     expect(owner.request).toBe(secret)
@@ -282,18 +392,20 @@ describe("RequestLabDialog", () => {
     const owner = createMemoryOnlyRawState()
     let previewSignal: AbortSignal | undefined
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/request-lab/credentials") { previewSignal = init?.signal ?? undefined; return pending.promise }
+      if (String(input) === "/api/request-lab/credentials") {
+        if (new URLSearchParams(String(init?.body)).get("credentialMode") === "ANONYMOUS") return Promise.resolve(json({ headers: [] }))
+        previewSignal = init?.signal ?? undefined
+        return pending.promise
+      }
       return Promise.resolve(json(requestLabDraft()))
     }))
     const user = userEvent.setup()
     const view = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={1} rawState={owner} />)
-    const request = await openDraft(null)
+    const request = await openDraft()
     await chooseAuthentication(user, "ACCOUNT:acct-1")
     expect(request).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Original" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "새 요청 추가" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "요청 1 삭제" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "요청 이름 변경" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "작성 중 삭제" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
     if (action === "close") await user.click(screen.getByRole("button", { name: "닫기" }))
     else if (action === "unmount") view.unmount()
@@ -302,10 +414,11 @@ describe("RequestLabDialog", () => {
     await act(async () => { pending.resolve(json({ headers: [{ name: "Cookie", value: "LATE_ACCOUNT_DEMO" }] })); await pending.promise })
     expect(owner.request).not.toContain("LATE_ACCOUNT_DEMO")
     expect(owner.originalRequest).not.toContain("LATE_ACCOUNT_DEMO")
+    expect(owner.requests.some(item => item.request.includes("LATE_ACCOUNT_DEMO"))).toBe(false)
     if (action === "session") {
-      expect(owner.requests[0]?.credentialMode).toBe("ORIGINAL")
+      expect(owner.requests[0]?.credentialMode).toBe("ANONYMOUS")
       expect(request).toBeEnabled()
-    } else expect(owner.requests).toHaveLength(0)
+    } else if (action !== "dataset") expect(owner.requests).toHaveLength(0)
   })
 
   it("resizes from both corners, bounds the window and restores its custom size after fullscreen without remounting editors", async () => {
@@ -337,167 +450,7 @@ describe("RequestLabDialog", () => {
     rect.mockRestore()
   })
 
-  it("adds independent editable requests without sending, preserves Original and restores each position/auth/result", async () => {
-    const owner = createMemoryOnlyRawState()
-    const fetch = installTransport()
-    const user = userEvent.setup()
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    const request = await screen.findByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement
-    const response = screen.getByLabelText("Request Lab 응답 원문") as HTMLTextAreaElement
-    expect(request).toHaveAttribute("readonly")
-    expect(request).toHaveValue(secret)
-    expect(response).toHaveValue("observed-response")
-    expect(screen.queryByRole("combobox", { name: "편집 요청 선택" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    expect(request).not.toHaveAttribute("readonly")
-    expect(request).toHaveFocus()
-    expect(response).toHaveValue("")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ORIGINAL"))
-    expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
-    await chooseAuthentication(user, "ACCOUNT:acct-1")
-    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
-    fireEvent.change(request, { target: { value: "submitted draft" } })
-    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-    await waitFor(() => expect(response).toHaveValue("sent-response"))
-    expect(request).not.toHaveAttribute("readonly")
-    fireEvent.change(request, { target: { value: "GET /edited HTTP/1.1\nHost: api.example.test\n\nunsent draft" } })
-    await chooseAuthentication(user, "ANONYMOUS")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
-    expect(screen.getByText(/이전 응답/)).toBeInTheDocument()
-    request.setSelectionRange(2, 5)
-    request.scrollTop = 80
-    request.scrollLeft = 12
-    response.scrollTop = 34
-    fireEvent.scroll(request)
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    expect(request).toHaveValue("GET /edited HTTP/1.1\nHost: api.example.test\n\nunsent draft")
-    expect(response).toHaveValue("")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS"))
-    fireEvent.change(request, { target: { value: "second request" } })
-    await user.click(screen.getByRole("button", { name: "Original" }))
-    expect(request).toHaveValue(secret)
-    expect(response).toHaveValue("observed-response")
-    expect(screen.getByRole("button", { name: "편집 요청 삭제" })).toBeDisabled()
-    await user.selectOptions(screen.getByRole("combobox", { name: "편집 요청 선택" }), "1")
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toBe(request)
-    expect(request).toHaveValue("GET /edited HTTP/1.1\nHost: api.example.test\n\nunsent draft")
-    expect(request.selectionStart).toBe(2)
-    expect(request.selectionEnd).toBe(5)
-    expect(request.scrollTop).toBe(80)
-    expect(request.scrollLeft).toBe(12)
-    expect(response.scrollTop).toBe(34)
-    expect(response).toHaveValue("sent-response")
-    expect(owner.originalRequest).toBe(secret)
-    expect(owner.requests).toHaveLength(2)
-    expect(owner.requests[1]?.request).toBe("second request")
-    expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")).toHaveLength(1)
-  })
-
-  it("renames independent requests without changing their request, authentication or last response", async () => {
-    const fetch = installTransport()
-    const owner = createMemoryOnlyRawState()
-    const user = userEvent.setup()
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    const request = await openDraft()
-    fireEvent.change(request, { target: { value: "edited request" } })
-    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-    await waitFor(() => expect(owner.response).toBe("sent-response"))
-    const first = owner.requests[0]!
-    const result = first.result
-    const calls = fetch.mock.calls.length
-    await user.click(screen.getByRole("button", { name: "요청 이름 변경" }))
-    const name = screen.getByRole("textbox", { name: "요청 이름" })
-    expect(name).toHaveFocus()
-    expect(name).toHaveAttribute("maxlength", "80")
-    await user.clear(name)
-    await user.type(name, "  주문 확인  {Enter}")
-    expect(screen.getByRole("option", { name: "주문 확인" })).toHaveValue("1")
-    expect(first.name).toBe("주문 확인")
-    expect(first.request).toBe("edited request")
-    expect(first.credentialMode).toBe("ANONYMOUS")
-    expect(first.dirty).toBe(false)
-    expect(first.result).toBe(result)
-    expect(fetch.mock.calls).toHaveLength(calls)
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toBe(request)
-
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    expect(screen.getByRole("option", { name: "요청 2" })).toBeInTheDocument()
-    await user.selectOptions(screen.getByRole("combobox", { name: "편집 요청 선택" }), "1")
-    expect(request).toHaveValue("edited request")
-    expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("sent-response")
-    await user.click(screen.getByRole("button", { name: "Original" }))
-    expect(screen.getByRole("button", { name: "요청 이름 변경" })).toBeDisabled()
-    await user.selectOptions(screen.getByRole("combobox", { name: "편집 요청 선택" }), "1")
-    await user.click(screen.getByRole("button", { name: "주문 확인 삭제" }))
-    expect(first.name).toBe("")
-    expect(screen.getByRole("combobox", { name: "편집 요청 선택" })).toHaveValue("2")
-  })
-
-  it("saves request names on blur, ignores blank names, cancels Escape and clears an unfinished name on dataset replacement", async () => {
-    installTransport()
-    const owner = createMemoryOnlyRawState()
-    const user = userEvent.setup()
-    const view = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} datasetRevision={1} />)
-    await openDraft()
-    await user.click(screen.getByRole("button", { name: "요청 이름 변경" }))
-    await user.clear(screen.getByRole("textbox", { name: "요청 이름" }))
-    await user.type(screen.getByRole("textbox", { name: "요청 이름" }), "검토 중")
-    await user.click(screen.getByRole("button", { name: "요청 확대" }))
-    expect(screen.getByRole("option", { name: "검토 중" })).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "요청 이름 변경" }))
-    await user.clear(screen.getByRole("textbox", { name: "요청 이름" }))
-    await user.type(screen.getByRole("textbox", { name: "요청 이름" }), "   {Enter}")
-    expect(owner.requests[0]?.name).toBe("검토 중")
-    await user.click(screen.getByRole("button", { name: "요청 이름 변경" }))
-    await user.clear(screen.getByRole("textbox", { name: "요청 이름" }))
-    await user.type(screen.getByRole("textbox", { name: "요청 이름" }), "취소할 이름{Escape}")
-    expect(owner.requests[0]?.name).toBe("검토 중")
-    expect(screen.getByRole("dialog")).toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: "요청 이름 변경" }))
-    const unfinished = screen.getByRole("textbox", { name: "요청 이름" })
-    await user.clear(unfinished)
-    await user.type(unfinished, "미완성 이름")
-    const first = owner.requests[0]!
-    view.rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} datasetRevision={2} />)
-    await waitFor(() => expect(screen.queryByRole("textbox", { name: "요청 이름" })).not.toBeInTheDocument())
-    expect(first.name).toBe("")
-    expect(unfinished).toHaveValue("")
-    expect(owner.requests).toHaveLength(0)
-  })
-
-  it("deletes only the selected request/result, selects its neighbour and hides the dropdown after the last deletion", async () => {
-    const owner = createMemoryOnlyRawState()
-    installTransport()
-    const user = userEvent.setup()
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    await openDraft()
-    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-    await waitFor(() => expect(owner.response).toBe("sent-response"))
-    const removed = owner.requests[0]!
-    const result = removed.result!
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    const choices = screen.getByRole("combobox", { name: "편집 요청 선택" })
-    await user.selectOptions(choices, "1")
-    await user.click(screen.getByRole("button", { name: "요청 1 삭제" }))
-    expect(choices).toHaveValue("2")
-    expect(removed.request).toBe("")
-    expect(result.response).toBe("")
-    await user.selectOptions(choices, "3")
-    await user.click(screen.getByRole("button", { name: "요청 3 삭제" }))
-    expect(choices).toHaveValue("2")
-    await user.click(screen.getByRole("button", { name: "요청 2 삭제" }))
-    expect(screen.queryByRole("combobox", { name: "편집 요청 선택" })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
-    expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("observed-response")
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
-    expect(screen.getByRole("option", { name: "요청 4" })).toBeInTheDocument()
-  })
-
-  it("clears the previous response at send start and keeps failure response-less and request editable", async () => {
+  it("keeps the previous tab's response, starts the next send in a new empty tab and keeps a failure response-less", async () => {
     let sends = 0
     const pending = deferredResponse()
     const owner = createMemoryOnlyRawState()
@@ -513,14 +466,17 @@ describe("RequestLabDialog", () => {
     await waitFor(() => expect(owner.response).toBe("HTTP/1.1 403 Forbidden"))
     const oldResult = owner.requests[0]!.result!
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    // 다시 보내면 새 탭에서 보내고, 앞 탭의 응답은 기록으로 남는다.
     expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("")
-    expect(oldResult.response).toBe("")
+    expect(oldResult.response).toBe("HTTP/1.1 403 Forbidden")
     await act(async () => { pending.reject(new Error("connection failed")); await pending.promise.catch(() => {}) })
     expect(await screen.findByRole("alert")).toHaveTextContent("connection failed")
     expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("")
-    expect(request).not.toHaveAttribute("readonly")
-    expect(request).toBeEnabled()
-    expect(owner.requests[0]!.result).toMatchObject({ response: "", status: 0 })
+    expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
+    expect(owner.requests[1]!.result).toMatchObject({ response: "", status: 0 })
+    expect(owner.requests[0]!.result).toMatchObject({ response: "HTTP/1.1 403 Forbidden", status: 403 })
+    expect(screen.getByRole("button", { name: "수정된 요청 2 · 비로그인 · 실패" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("alert")).toHaveTextContent("대상 처리 여부 미확인")
     expect(screen.queryByRole("option", { name: /#.*HTTP/ })).not.toBeInTheDocument()
   })
@@ -550,8 +506,8 @@ describe("RequestLabDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("편집에 반영하지 않았습니다")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
     expect(request).toHaveValue(secret)
-    await user.click(screen.getByRole("button", { name: "Original" }))
-    await user.selectOptions(screen.getByRole("combobox", { name: "편집 요청 선택" }), "1")
+    await user.click(screen.getByRole("button", { name: "원문 보기" }))
+    await user.click(screen.getByRole("button", { name: "편집으로 돌아가기" }))
     expect(screen.getByRole("alert")).toHaveTextContent("편집에 반영하지 않았습니다")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
     fireEvent.change(request, { target: { value: "x".repeat(1_048_577) } })
@@ -559,21 +515,6 @@ describe("RequestLabDialog", () => {
     fireEvent.change(request, { target: { value: "smaller draft" } })
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
-  })
-
-  it("ignores a late Repeater handoff result after the dialog closes", async () => {
-    const pending = deferredResponse()
-    const owner = createMemoryOnlyRawState()
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => String(input) === "/api/replay" ? pending.promise : Promise.resolve(json(requestLabDraft()))))
-    const user = userEvent.setup()
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    await openDraft()
-    await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
-    await user.click(screen.getByRole("button", { name: "닫기" }))
-    await act(async () => { pending.resolve(json({ openedDraft: true, message: "opened", success: true })); await pending.promise })
-    expect(owner.originalRequest).toBe("")
-    expect(owner.request).toBe("")
-    expect(screen.queryByText("Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다.")).not.toBeInTheDocument()
   })
 
   it("keeps the editors and draft when changing window, panel and font settings", async () => {
@@ -675,7 +616,7 @@ describe("RequestLabDialog", () => {
     expect(await openDraft(true)).toHaveValue(secret)
     await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
     for (const label of ["USER B", "USER C", "비활성", "다른 서비스"]) {
-      expect(screen.getByRole("option", { name: `${label} · 사용 가능한 인증 없음` })).toHaveAttribute("aria-disabled", "true")
+      expect(screen.getByRole("option", { name: `${label} · 점검 시작 후 사용 가능` })).toHaveAttribute("aria-disabled", "true")
     }
   })
 
@@ -718,8 +659,9 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
 
     expect(await screen.findByText(/Standalone 데모에서는/)).toBeVisible()
-    expect(screen.getByRole("button", { name: "새 요청 추가" })).toBeDisabled()
-    expect(screen.queryByRole("combobox", { name: "편집 요청 선택" })).not.toBeInTheDocument()
+    // 편집할 수 없는 원문이면 편집본(작성 중 탭)을 만들지 않고 인증도 고를 수 없다.
+    expect(screen.queryByRole("button", { name: /작성 중/ })).not.toBeInTheDocument()
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeDisabled()
     expect(screen.getByLabelText("Request Lab 요청 원문")).toBeDisabled()
     const send = screen.getByRole("button", { name: "요청 재전송" })
     expect(send).toBeDisabled()
@@ -755,24 +697,23 @@ describe("RequestLabDialog", () => {
   it("disables the current session without a reusable session and locks sending if it disappears", async () => {
     installTransport()
     const { unmount } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
-    await openDraft(null)
+    await openDraft()
     await userEvent.click(screen.getByRole("combobox", { name: "전송 인증" }))
-    expect(screen.getByRole("option", { name: "관리자 · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("option", { name: "관리자 · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
     await userEvent.keyboard("{Escape}")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ORIGINAL"))
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS"))
     unmount()
 
     installReusableTransport()
     const { rerender } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
     await openDraft(true)
-    expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
     rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
-    await waitFor(() => expect(screen.getByRole("button", { name: "Repeater로 보내기" })).toBeDisabled())
-    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled())
     expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(""))
   })
 
-  it("retries a draft load and replaces the latest result without adding result choices", async () => {
+  it("retries a draft load and stacks each send as its own tab", async () => {
     let attempts = 0
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input, init) => {
       if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
@@ -791,38 +732,10 @@ describe("RequestLabDialog", () => {
     await openDraft()
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
-    const choices = screen.getByRole("combobox", { name: "편집 요청 선택" })
-    expect(within(choices).getAllByRole("option").map(option => option.textContent)).toEqual(["요청 선택", "요청 1"])
     await waitFor(() => expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("result-3"))
+    const tabs = screen.getByRole("group", { name: "보낸 요청" })
+    expect(within(tabs).getAllByRole("button").map(button => button.textContent).filter(text => text?.startsWith("수정된"))).toEqual(["수정된 요청 1 · 비로그인 · 201", "수정된 요청 2 · 비로그인 · 201"])
     expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
-  })
-
-  it("blocks duplicate Repeater handoff while the unsent draft is opening", async () => {
-    let resolveReplay!: (response: Response) => void
-    const replay = new Promise<Response>((resolve) => { resolveReplay = resolve })
-    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => String(input) === "/api/request-lab/credentials" ? Promise.resolve(json({ headers: [] })) : String(input) === "/api/replay" ? replay : Promise.resolve(json({ ...requestLabDraft(), reusableAccountId: "acct-1" })))
-    vi.stubGlobal("fetch", fetch)
-    const user = userEvent.setup()
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
-    await openDraft(true)
-    const handoff = screen.getByRole("button", { name: "Repeater로 보내기" })
-    await user.click(handoff)
-    expect(screen.getByRole("button", { name: "Repeater 준비 중" })).toBeDisabled()
-    await user.click(screen.getByRole("button", { name: "Repeater 준비 중" }))
-    expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay")).toHaveLength(1)
-    const replayCall = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
-    expect(new URLSearchParams(String(replayCall?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: "ACCOUNT", accountId: "acct-1" }))
-    resolveReplay(json({ success: true, message: "draft", openedDraft: true, status: 200, replayId: "r" }))
-    expect(await screen.findByText("Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다.")).toBeVisible()
-    for (const mode of ["ANONYMOUS"] as const) {
-      await chooseAuthentication(user, mode)
-      await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(mode)))
-      await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
-      await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
-      await waitFor(() => expect(new URLSearchParams(String(fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)?.[1]?.body)).get("credentialMode")).toBe(mode))
-      const call = fetch.mock.calls.filter(([input]) => String(input) === "/api/replay").at(-1)
-      expect(new URLSearchParams(String(call?.[1]?.body))).toEqual(new URLSearchParams({ eventId: "event-7", request: secret, credentialMode: mode, accountId: "" }))
-    }
   })
 
   it("keeps policy input and selected detail visible when the server rejects a policy", async () => {
@@ -873,18 +786,18 @@ describe("RequestLabDialog", () => {
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[older, collecting, notReady]} />)
 
-    await openDraft(null)
+    await openDraft()
     const authentication = screen.getByRole("combobox", { name: "전송 인증" })
-    expect(authentication).toHaveTextContent(authenticationLabel("ORIGINAL"))
+    expect(authentication).toHaveTextContent(authenticationLabel("ANONYMOUS"))
     await user.click(authentication)
     expect(screen.getByRole("option", { name: "USER B" })).not.toHaveAttribute("aria-disabled", "true")
-    expect(screen.getByRole("option", { name: "USER C · 사용 가능한 인증 없음" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("option", { name: "USER C · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
     await chooseAuthentication(user, "ACCOUNT:acct-2")
     await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-2")))
     await waitFor(() => expect(authentication).toBeEnabled())
-    await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
-    await waitFor(() => expect(fetch.mock.calls.some(([input]) => String(input) === "/api/replay")).toBe(true))
-    const call = fetch.mock.calls.find(([input]) => String(input) === "/api/replay")
+    await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+    await waitFor(() => expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(true))
+    const call = fetch.mock.calls.find(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
     expect(new URLSearchParams(String(call?.[1]?.body)).get("accountId")).toBe("acct-2")
   })
 
@@ -910,7 +823,8 @@ describe("RequestLabDialog", () => {
     view.rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={revision} rawState={owner} />)
     await waitFor(() => expect(owner.request).toBe(""))
     expect(owner.response).toBe("")
-    expect(owner.requests).toHaveLength(0)
+    // 이전 프로젝트의 보낸 기록은 모두 지워진다(새 원문으로 만든 빈 편집본만 남을 수 있다).
+    expect(owner.requests.every(item => !item.result && !item.request.includes("REVISION"))).toBe(true)
   })
 
   it("keeps an edited draft when only ordinary analysis data refreshes", async () => {
@@ -1029,7 +943,6 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     view.rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={nextEvent} sessions={[activeSession]} rawState={owner} />)
     await waitFor(() => expect(owner.request).toBe("NEXT-EVIDENCE"))
-    expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
 
     await act(async () => {
@@ -1038,8 +951,8 @@ describe("RequestLabDialog", () => {
     })
 
     expect(owner.request).toBe("NEXT-EVIDENCE")
-    expect(owner.response).toBe("observed-response")
-    expect(owner.requests).toHaveLength(0)
+    expect(owner.originalResponse).toBe("observed-response")
+    expect(owner.requests.some(item => item.result?.response === "LATE-EVIDENCE")).toBe(false)
   })
 
   it("isolates a late send completion when the dataset revision changes", async () => {
@@ -1057,7 +970,6 @@ describe("RequestLabDialog", () => {
     draftRequest = "REVISION-TWO"
     view.rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={2} rawState={owner} />)
     await waitFor(() => expect(owner.request).toBe("REVISION-TWO"))
-    expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
 
     await act(async () => {
@@ -1066,8 +978,8 @@ describe("RequestLabDialog", () => {
     })
 
     expect(owner.request).toBe("REVISION-TWO")
-    expect(owner.response).toBe("observed-response")
-    expect(owner.requests).toHaveLength(0)
+    expect(owner.originalResponse).toBe("observed-response")
+    expect(owner.requests.some(item => item.result?.response === "LATE-REVISION")).toBe(false)
   })
 
   it("applies the response and clears sending for a send that completes in its original context", async () => {
@@ -1150,15 +1062,13 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
 
     expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeDisabled()
-    expect(screen.getByRole("combobox", { name: "편집 요청 선택" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Original" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "새 요청 추가" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "요청 1 삭제" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "요청 이름 변경" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "수정된 요청 1 삭제" })).toBeDisabled()
     await act(async () => { send.resolve(json({ success: true, message: "sent", eventId: "ev-new", status: 200, response: "ok", durationMs: 3, requestBytes: 1, responseBytes: 2 })) })
 
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
-    expect(screen.getByRole("combobox", { name: "편집 요청 선택" })).toBeEnabled()
+    expect(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })).toBeEnabled()
     expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("ok")
     expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
   })
@@ -1212,14 +1122,18 @@ describe("RequestLabDialog", () => {
     const owner = createMemoryOnlyRawState(), onOpenChange = vi.fn(), user = userEvent.setup()
     const { client } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={onOpenChange} event={event} sessions={[activeSession]} rawState={owner} datasetRevision={7} />)
     await waitFor(() => expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(savedRequest))
-    expect(screen.getByRole("option", { name: "저장한 주문" })).toBeInTheDocument()
+    // 저장한 보낸 탭이 그대로 열린다. 편집할 원문이 없어 새 편집본은 만들지 않는다.
+    expect(screen.getByRole("button", { name: "저장한 주문 · 계정 · 200" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
     expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("last-response")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+    // 보낸 탭의 인증을 바꾸면 새 탭에서 이어 간다.
     await chooseAuthentication(user, "ANONYMOUS")
     await waitFor(() => expect(owner.request).not.toContain("Cookie:"))
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(owner.response).toBe("latest-response"))
+    expect(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 201" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("button", { name: "저장한 주문 · 계정 · 200" })).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "닫기" }))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
     const changes = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab/workspace").map(([, init]) => JSON.parse(new URLSearchParams(String(init?.body)).get("change")!))
@@ -1248,30 +1162,6 @@ describe("RequestLabDialog", () => {
     } finally { window.removeEventListener("beforeunload", cancelDeparture) }
   })
 
-  it("unlocks editing after close-save failure during a Repeater handoff and ignores its late result", async () => {
-    const handoff = deferredResponse(), owner = createMemoryOnlyRawState(), user = userEvent.setup()
-    const onOpenChange = vi.fn()
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      if (String(input) === "/api/replay") return handoff.promise
-      if (String(input) === "/api/request-lab/workspace") return Promise.resolve(json({ success: false, message: "disk full" }, 409))
-      return Promise.resolve(json({ ...requestLabDraft(), workspace: { datasetRevision: 7, revision: 1, persisted: true,
-        tab: { nextId: 2, selectedId: 1, entries: { "1": { name: "saved", request: "editable", credentialMode: "ANONYMOUS", result: null, dirty: false } } } } }))
-    }))
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={onOpenChange} event={event} sessions={[]} rawState={owner} datasetRevision={7} />)
-    const request = await screen.findByLabelText("Request Lab 요청 원문")
-    await waitFor(() => expect(request).toHaveValue("editable"))
-    await user.type(request, "-edited")
-    await user.click(screen.getByRole("button", { name: "Repeater로 보내기" }))
-    await user.click(screen.getByRole("button", { name: "닫기" }))
-    expect(await screen.findByText("disk full")).toBeVisible()
-    await act(async () => { handoff.resolve(json({ success: true, openedDraft: true, message: "late handoff" })); await handoff.promise })
-    expect(onOpenChange).not.toHaveBeenCalled()
-    expect(screen.getByRole("button", { name: "다시 저장" })).toBeEnabled()
-    expect(request).not.toHaveAttribute("readonly")
-    expect(owner.request).toContain("-edited")
-    expect(screen.queryByText(/Burp Repeater에 현재 요청 초안을/)).not.toBeInTheDocument()
-  })
-
   it("keeps a request visible until delete commits, and preserves it after DB failure", async () => {
     const pending = deferredResponse()
     let fail = true
@@ -1296,8 +1186,9 @@ describe("RequestLabDialog", () => {
     expect(owner.request).toBe("editable")
     expect(screen.getByRole("button", { name: "saved 삭제" })).toBeDisabled()
     await act(async () => { pending.resolve(json({ datasetRevision: 7, revision: 2, persisted: true })); await pending.promise })
-    await waitFor(() => expect(owner.requests).toHaveLength(0))
-    expect(screen.getByRole("button", { name: "Original" })).toHaveAttribute("aria-pressed", "true")
+    // 마지막 탭을 지우면 원본에서 비로그인 편집본을 새로 준비한다.
+    await waitFor(() => expect(owner.requests.map(item => item.name)).toEqual(["작성 중"]))
+    expect(await screen.findByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
   })
 
   it("keeps unsaved changes open when closing fails and flushes before dataset replacement", async () => {
@@ -1306,8 +1197,8 @@ describe("RequestLabDialog", () => {
       ? Promise.resolve(json({ success: false, message: "disk full" }, 409))
       : Promise.resolve(json({ ...requestLabDraft(), workspace: { datasetRevision: 7, revision: 0, persisted: true, tab: { nextId: 1, selectedId: 0, entries: {} } } }))))
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={onOpenChange} event={event} sessions={[]} rawState={owner} datasetRevision={7} />)
-    await waitFor(() => expect(screen.getByRole("button", { name: "새 요청 추가" })).toBeEnabled())
-    await user.click(screen.getByRole("button", { name: "새 요청 추가" }))
+    // 열면 비로그인 편집본이 바로 준비된다.
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
     fireEvent.change(screen.getByLabelText("Request Lab 요청 원문"), { target: { value: "KEEP-UNSAVED" } })
     await user.click(screen.getByRole("button", { name: "닫기" }))
     expect(await screen.findByText("disk full")).toBeVisible()

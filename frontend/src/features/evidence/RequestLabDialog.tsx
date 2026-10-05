@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getRequestLabDraft, openReplay, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
+import { getHumanRun, getRequestLabDraft, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
 import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
-import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, REQUEST_LAB_MAX_REQUESTS, type MemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
+import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, REQUEST_LAB_MAX_REQUESTS, type MemoryOnlyRawState, type RequestLabEntry } from "@/lib/security/memoryOnlyRawState"
 import { DATASET_REPLACING, DATASET_WILL_REPLACE } from "@/lib/security/datasetBoundary"
 import { formatHttpJson } from "./jsonDisplay"
 import { JsonTextPanel, RawTextPanel } from "./RawTextPanel"
@@ -36,7 +36,8 @@ const MANUAL_ATTEMPTS = ["manual-attempts"] as const
 const EDIT_REJECTED_MESSAGE = "요청이 너무 크거나 메모리가 부족해 편집에 반영하지 않았습니다. 내용을 줄이거나 사용하지 않는 요청을 삭제해 주세요."
 export function activeAccounts(sessions: readonly ManagedSession[], service: string) {
   const unique = new Map<string, ManagedSession>()
-  for (const session of sessions) if (session.service === service && session.status === "ACTIVE" && !session.capturing && !session.credentialConflict && !unique.has(session.accountId)) unique.set(session.accountId, session)
+  // 서버가 인증값을 넣어 주는 기준(SessionBroker.headers)과 같다: ACTIVE이거나, 그 계정으로 점검 중이고 인증된 응답을 이미 받은 세션.
+  for (const session of sessions) if (session.service === service && !session.credentialConflict && (session.replayReady ?? (session.status === "ACTIVE" && !session.capturing)) && !unique.has(session.accountId)) unique.set(session.accountId, session)
   return [...unique.values()]
 }
 
@@ -53,10 +54,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const [draft, setDraft] = useState<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
   const [loading, setLoading] = useState(false)
   const [sending, setSending] = useState(false)
-  const [openingRepeater, setOpeningRepeater] = useState(false)
   const [applyingCredentials, setApplyingCredentials] = useState(false)
   const [error, setError] = useState("")
-  const [replayMessage, setReplayMessage] = useState("")
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [maximized, setMaximized] = useState(false)
   const [dialogSize, setDialogSize] = useState<{ width: number; height: number } | null>(null)
@@ -65,8 +64,9 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const pendingSize = useRef<typeof dialogSize>(null)
   const resizeFrame = useRef<number | null>(null)
   const [view, setView] = useState<"original" | number>("original")
-  const [renaming, setRenaming] = useState<number | null>(null)
-  const nameRef = useRef<HTMLInputElement>(null)
+  /** 원문 보기에서 편집으로 돌아갈 탭과, 열 때 편집본을 한 번 준비했는지. */
+  const returnView = useRef<number | null>(null)
+  const prepared = useRef(false)
   const requestRef = useRef<HTMLTextAreaElement>(null)
   const responseRef = useRef<HTMLTextAreaElement>(null)
   const originalPosition = useRef({ start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 })
@@ -78,6 +78,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const splitRef = useRef(50)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
 
+  // 점검 중인 실행은 사이드바 상태 표시가 계속 받아 온다. 여기서는 새로 요청하지 않고 같은 값을 읽기만 한다.
+  const inspection = useQuery({ queryKey: queryKeys.humanRun, queryFn: ({ signal }) => getHumanRun(signal), enabled: false }).data
   const accountOptions = useMemo(() => accounts.map(account => {
     const session = sessions.find(value => value.accountId === account.id && value.service === draft?.service)
     const ready = !!session && !session.credentialConflict
@@ -93,7 +95,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const displayedResponse = raw.current.response
   const editable = !!entry
   const credentialsRequired = !!entry && (mode === "ORIGINAL" || (entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
-  const busy = sending || openingRepeater || applyingCredentials || deleting || closing
+  const busy = sending || applyingCredentials || deleting || closing
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
   const controlClass = "h-7 rounded-md border border-input bg-background px-2 text-[0.8rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
   const settingClass = "h-[36px] rounded-md border border-input bg-background px-2.5 text-[14px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
@@ -163,8 +165,6 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     raw.current.selectedId = next === "original" ? null : next
     setJsonView({ request: false, response: false })
     setError("")
-    setReplayMessage("")
-    setRenaming(null)
     setView(next)
     persistence.current?.select(raw.current.selectedId)
   }
@@ -183,41 +183,77 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     }
   }, [view, draft])
 
-  function addRequest() {
-    if (busy || suspended || !(entry || draft?.requestEditable) || editRejected) return
-    const next = raw.current.addRequest(displayedRequest, mode, accountId)
-    if (!next) { setError(`요청을 더 만들 수 없습니다. 최대 ${REQUEST_LAB_MAX_REQUESTS}개이며, 메모리가 부족하면 사용하지 않는 요청을 삭제해 주세요.`); return }
-    next.restored = entry?.restored
+  const authLabel = (item: RequestLabEntry) => item.credentialMode === "ANONYMOUS" ? "비로그인"
+    : item.credentialMode === "ACCOUNT" ? accounts.find(account => account.id === item.accountId)?.label ?? "계정" : "인증 선택 전"
+  const tabLabel = (item: RequestLabEntry) => item.result
+    ? `${item.name} · ${authLabel(item)} · ${item.result.status || "실패"}`
+    : `작성 중 · ${authLabel(item)}`
+  function toggleOriginal() {
+    if (view !== "original") { returnView.current = typeof view === "number" ? view : null; changeView("original"); return }
+    const back = raw.current.requests.find(item => item.id === returnView.current) ?? raw.current.requests.at(-1)
+    if (back) changeView(back.id)
+    else { changeView("original"); prepared.current = false; startDraft() }
+  }
+  /** 보낸 탭 이름: 수정된 요청 1, 2, … 지운 번호는 다시 쓰지 않는다. */
+  function nextSentName() {
+    const used = raw.current.requests.map(item => /^수정된 요청 (\d+)$/.exec(item.name)?.[1]).filter(Boolean).map(Number)
+    return `수정된 요청 ${Math.max(0, ...used) + 1}`
+  }
+  /** 새 편집본(작성 중)을 만들어 고른다. 만들 수 없으면 이유를 알리고 null. */
+  function createDraft(request: string, credentialMode: RequestLabEntry["credentialMode"], accountId: string, restored?: boolean) {
+    const next = raw.current.addRequest(request, credentialMode, accountId)
+    if (!next) { setError(`요청은 최대 ${REQUEST_LAB_MAX_REQUESTS}개까지 쌓입니다. 오래된 요청을 삭제한 뒤 다시 시도해 주세요.`); return null }
+    next.name = "작성 중"
+    next.restored = restored
     persistence.current?.changed(next, ["name", "request", "credentialMode", "result", "dirty"])
     changeView(next.id)
-    requestRef.current?.focus()
+    return next
   }
-  async function removeRequest() {
-    if (busy || suspended || !entry) return
-    const index = raw.current.requests.indexOf(entry)
+  /**
+   * 새 편집본의 전송 인증: 점검이 하나만 돌고 있으면 그 신원(비로그인 점검이면 비로그인, 계정은 세션을 쓸 수 있을 때만).
+   * 점검이 없거나 여러 개면 어느 신원인지 알 수 없으므로 비워 두고 사용자가 고르게 한다.
+   */
+  function inspectedCredentials(): { mode: RequestLabCredentialMode; accountId: string } | null {
+    const runs = inspection?.runs?.length ? inspection.runs : inspection?.active ? [inspection] : []
+    const identities = [...new Set(runs.map(run => run.accountId || ""))]
+    if (identities.length !== 1) return null
+    const [accountId] = identities
+    if (!accountId) return { mode: "ANONYMOUS", accountId: "" }
+    return accountOptions.some(option => option.account.id === accountId && option.ready) ? { mode: "ACCOUNT", accountId } : null
+  }
+  /** 원본에서 새 편집본을 만들고 점검 중인 신원의 인증을 적용한다. 열 때와 탭을 모두 지웠을 때 쓴다. */
+  function startDraft() {
+    if (!draft?.requestEditable || busy || suspended) return
+    const next = createDraft(raw.current.originalRequest, "ORIGINAL", "")
+    const credentials = inspectedCredentials()
+    if (next && credentials) void changeCredentials(credentials.mode, credentials.accountId, next)
+  }
+  /** 보낸 탭은 기록으로 남긴다. 고치거나 다시 보내면 같은 인증으로 새 탭을 만들어 이어 간다. */
+  function forkFrom(source: RequestLabEntry, request = source.request) {
+    const next = createDraft(request, source.credentialMode, source.accountId, source.restored)
+    if (next && request !== source.request) next.dirty = true
+    return next
+  }
+  /** 탭마다 따로 지운다. 보고 있는 탭을 지우면 옆 탭으로 옮기고, 다른 탭을 지우면 보던 탭에 그대로 머문다. */
+  async function removeRequest(target: RequestLabEntry) {
+    if (busy || suspended) return
+    const index = raw.current.requests.indexOf(target)
     const next = raw.current.requests[index + 1] ?? raw.current.requests[index - 1]
+    const removingViewed = view === target.id
     if (persistence.current) {
       const generation = context.current.generation
       setDeleting(true)
       try {
         await persistence.current.retry()
-        await persistence.current.remove(entry, next?.id ?? null)
+        await persistence.current.remove(target, removingViewed ? next?.id ?? null : entry?.id ?? null)
         if (context.current.generation !== generation) return
       } catch { return }
       finally { setDeleting(false) }
     }
-    changeView(next?.id ?? "original")
-    raw.current.removeRequest(entry)
+    if (removingViewed) changeView(next?.id ?? "original")
+    raw.current.removeRequest(target)
     setVersion(value => value + 1)
-  }
-  function renameRequest(value: string) {
-    const name = value.trim().slice(0, 80)
-    if (entry && entry.id === renaming && raw.current.requests.includes(entry) && !busy && !suspended && name) {
-      entry.name = name
-      persistence.current?.changed(entry, ["name"])
-      setVersion(current => current + 1)
-    }
-    setRenaming(null)
+    if (!next) prepared.current = false
   }
   const invalidateSend = () => {
     context.current.generation += 1
@@ -236,14 +272,12 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     draftRef.current = null
     setDraft(null)
     setError("")
-    setReplayMessage("")
-    if (nameRef.current) nameRef.current.value = ""
-    setRenaming(null)
+    returnView.current = null
+    prepared.current = false
     setView("original")
     originalPosition.current = { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 }
     setJsonView({ request: false, response: false })
     setSending(false)
-    setOpeningRepeater(false)
     setApplyingCredentials(false)
     setDeleting(false)
     setClosing(false)
@@ -295,14 +329,23 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         || (original.rawRequestRetained && !next.rawRequestRetained)
         || (original.rawResponseRetained && !next.rawResponseRetained)
         || (original.requestEditable && !next.requestEditable)
-        || next.reusableSession !== original.reusableSession) close()
+        || (original.reusableSession !== "없음" && next.reusableSession !== original.reusableSession)) close()
     }).catch(() => { if (!controller.signal.aborted) close() })
     return () => controller.abort()
   }, [open, event.eventId, snapshotRevision, suspended])
 
+  // 열자마자 보낼 수 있게 한다: 아직 보내지 않은 탭이 있으면 그 탭을, 없으면 원본에서 점검 중인 신원으로 편집본을 만들어 고른다.
+  useEffect(() => {
+    if (!open || !draft || prepared.current || loading || busy || suspended) return
+    prepared.current = true
+    const unsent = [...raw.current.requests].reverse().find(item => !item.result)
+    if (unsent) changeView(unsent.id)
+    else startDraft()
+  }, [open, draft, loading, busy, suspended, raw.current.requests.length])
+
   // 세션이 사라지면 진행 중 전송을 끊고 전송을 잠근다. 다른 방식으로 조용히 바꾸지 않는다.
   useEffect(() => {
-    if (mode === "ACCOUNT" && draft && !selectedAccountValid && !context.current.preview) { invalidateSend(); setSending(false); setOpeningRepeater(false); setApplyingCredentials(false) }
+    if (mode === "ACCOUNT" && draft && !selectedAccountValid && !context.current.preview) { invalidateSend(); setSending(false); setApplyingCredentials(false) }
   }, [draft, mode, selectedAccountValid])
 
   useEffect(() => {
@@ -342,8 +385,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
       invalidateSend()
       setSending(false)
       setApplyingCredentials(false)
-      setOpeningRepeater(false)
-      setClosing(true)
+        setClosing(true)
       try { await persistence.current.flush() }
       catch { return }
       finally { closePending.current = false; setClosing(false) }
@@ -352,29 +394,31 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     onOpenChange(false)
   }
 
-  async function changeCredentials(nextMode: RequestLabCredentialMode, nextAccountId = "") {
-    if (!draft || !entry || !editable || editRejected || busy || suspended || context.current.preview || (nextMode === mode && nextAccountId === accountId && !credentialsRequired)) return
+  async function changeCredentials(nextMode: RequestLabCredentialMode, nextAccountId = "", targetEntry = entry) {
+    // 같은 편집본에 같은 인증을 다시 고르면 아무 일도 하지 않는다. 원본 화면에서 새로 만든 편집본은 항상 적용한다.
+    const unchanged = targetEntry === entry && nextMode === mode && nextAccountId === accountId && !credentialsRequired
+    if (!draft || !targetEntry || targetEntry.editRejected || busy || suspended || context.current.preview || unchanged) return
     const selected = accountOptions.find(option => option.account.id === nextAccountId && option.ready)
-    if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
-    if (!raw.current.canSend(entry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
+    if (nextMode === "ACCOUNT" && !selected) { setError("선택한 계정의 세션이 아직 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하면 쓸 수 있습니다."); return }
+    if (!raw.current.canSend(targetEntry.request)) { setError("요청이 너무 큽니다. 내용을 줄인 뒤 인증을 선택해 주세요."); return }
     const controller = new AbortController()
     const generation = ++context.current.generation
     context.current.sendController = controller
     context.current.preview = { mode: nextMode, accountId: nextAccountId, sessionHandle: selected?.session?.handle }
-    const submitted = { request: entry.request }
+    const submitted = { request: targetEntry.request }
     context.current.submission = submitted
     setApplyingCredentials(true)
     setError("")
     try {
       const preview = await previewRequestLabCredentials({ eventId: event.eventId, request: submitted.request, credentialMode: nextMode, accountId: nextMode === "ACCOUNT" ? nextAccountId : "", datasetRevision }, controller.signal)
       try {
-        if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(entry) || entry.request !== submitted.request) return
+        if (controller.signal.aborted || context.current.generation !== generation || !raw.current.requests.includes(targetEntry) || targetEntry.request !== submitted.request) return
         const next = applyRequestLabCredentials(submitted.request, preview.headers)
-        if (!raw.current.canSend(next) || !raw.current.editRequest(entry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
-        entry.credentialMode = nextMode
-        entry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
-        entry.restored = false
-        persistence.current?.changed(entry, ["request", "credentialMode", "dirty"])
+        if (!raw.current.canSend(next) || !raw.current.editRequest(targetEntry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
+        targetEntry.credentialMode = nextMode
+        targetEntry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
+        targetEntry.restored = false
+        persistence.current?.changed(targetEntry, ["request", "credentialMode", "dirty"])
         setJsonView(current => ({ ...current, request: false }))
         setVersion(value => value + 1)
       } finally {
@@ -399,32 +443,37 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     if (suspended || !draft || !entry || !editable || editRejected || credentialsRequired || busy) return
     if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
     if (mode === "ACCOUNT" && !selectedAccountValid) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
+    // 이미 보낸 탭을 다시 보내면 그 기록은 그대로 두고 같은 요청으로 새 탭을 만들어 보낸다.
+    const target = entry.result ? forkFrom(entry) : entry
+    if (!target) return
+    target.name = nextSentName()
+    persistence.current?.changed(target, ["name"])
     const controller = new AbortController()
     const generation = context.current.generation + 1
     context.current.generation = generation
     context.current.sendController?.abort()
     context.current.sendController = controller
-    const submitted = { request: raw.current.request, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "" }
+    const submitted = { request: target.request, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "" }
     context.current.submission = submitted
     const started = performance.now()
-    raw.current.replaceResult(entry, null)
-    persistence.current?.changed(entry, ["result", "dirty"])
+    raw.current.replaceResult(target, null)
+    persistence.current?.changed(target, ["result", "dirty"])
     setJsonView(current => ({ ...current, response: false }))
     setSending(true)
     setError("")
     try {
       const result = await sendRequestLab({ eventId: event.eventId, credentialMode: submitted.credentialMode, accountId: submitted.accountId, request: submitted.request }, controller.signal)
       if (controller.signal.aborted || context.current.generation !== generation) return
-      if (!raw.current.replaceResult(entry, { response: result.response, status: result.status, durationMs: result.durationMs, requestBytes: result.requestBytes, responseBytes: result.responseBytes })) {
+      if (!raw.current.replaceResult(target, { response: result.response, status: result.status, durationMs: result.durationMs, requestBytes: result.requestBytes, responseBytes: result.responseBytes })) {
         const failure = "응답이 커서 보관하지 못했습니다. 사용하지 않는 요청을 삭제해 주세요."
-        if (!raw.current.replaceResult(entry, { response: "", status: result.status, durationMs: result.durationMs, failure })) setError(failure)
+        if (!raw.current.replaceResult(target, { response: "", status: result.status, durationMs: result.durationMs, failure })) setError(failure)
       }
-      persistence.current?.changed(entry, ["result", "dirty"])
+      persistence.current?.changed(target, ["result", "dirty"])
       setVersion((value) => value + 1)
     } catch (reason) {
       if (controller.signal.aborted || context.current.generation !== generation) return
-      raw.current.replaceResult(entry, { response: "", status: 0, durationMs: Math.round(performance.now() - started), failure: reason instanceof Error ? reason.message : "요청 재전송에 실패했습니다." })
-      persistence.current?.changed(entry, ["result", "dirty"])
+      raw.current.replaceResult(target, { response: "", status: 0, durationMs: Math.round(performance.now() - started), failure: reason instanceof Error ? reason.message : "요청 재전송에 실패했습니다." })
+      persistence.current?.changed(target, ["result", "dirty"])
       setVersion(current => current + 1)
     } finally {
       submitted.request = ""
@@ -439,25 +488,6 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     }
   }
 
-  async function openInRepeater() {
-    if (suspended || !draft || !editable || editRejected || credentialsRequired || busy) return
-    if (!raw.current.canSend(raw.current.request)) { setError(`요청은 UTF-8 기준 ${REQUEST_LAB_MAX_BYTES.toLocaleString("en-US")}바이트를 초과할 수 없습니다.`); return }
-    if (mode === "ACCOUNT" && !selectedAccountValid) { setError("선택한 계정의 사용 가능한 인증값이 없어요."); return }
-    const generation = context.current.generation
-    setOpeningRepeater(true)
-    setError("")
-    setReplayMessage("")
-    try {
-      const result = await openReplay({ eventId: event.eventId, request: raw.current.request, credentialMode: mode, accountId: mode === "ACCOUNT" ? accountId : "" })
-      if (context.current.generation !== generation) return
-      setReplayMessage(result.openedDraft ? "Burp Repeater에 현재 요청 초안을 열었습니다. 아직 전송되지 않았습니다." : result.message)
-    } catch (reason) {
-      if (context.current.generation === generation) setError(reason instanceof Error ? reason.message : "Repeater 초안을 열지 못했습니다.")
-    } finally {
-      if (context.current.generation === generation) setOpeningRepeater(false)
-    }
-  }
-
   function resizeSplit(value: number) {
     const width = editorsRef.current?.clientWidth ?? 0
     const minimum = width > 610 ? Math.max(25, 300 / (width - 10) * 100) : 50
@@ -467,6 +497,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   function editRequest(next: string) {
     if (!editable || suspended || busy) return
     if (!entry) return
+    if (entry.result) { forkFrom(entry, next); setVersion(value => value + 1); return }
     if (!raw.current.editRequest(entry, next)) {
       entry.editRejected = true
       setError(EDIT_REJECTED_MESSAGE)
@@ -515,53 +546,36 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
     <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => {
-      if (renaming !== null) {
-        event.preventDefault()
-        if (event.isComposing) return
-        if (nameRef.current) nameRef.current.value = entry?.name ?? ""
-        setRenaming(null)
-        requestRef.current?.focus()
-      } else if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) }
+      if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) }
     }}>
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
-            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!editable || editRejected || suspended || busy} onValueChange={value => {
-              void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8)) : changeCredentials("ANONYMOUS"))
+            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!entry || editRejected || suspended || busy} onValueChange={value => {
+              if (!entry) return
+              // 보낸 탭의 인증을 바꾸면 그 기록은 두고 새 탭에서 바꾼다.
+              const target = entry.result ? forkFrom(entry) : entry
+              if (target) void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), target) : changeCredentials("ANONYMOUS", "", target))
             }}>
               <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
                 <SelectItem value="ANONYMOUS">비로그인</SelectItem>
-                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 사용 가능한 인증 없음" : ""}</SelectItem>)}
+                {accountOptions.map(({ account, ready }) => <SelectItem key={account.id} value={`ACCOUNT:${account.id}`} disabled={!ready}>{account.label}{!ready ? " · 점검 시작 후 사용 가능" : ""}</SelectItem>)}
                 {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
               </SelectContent>
             </Select></div>
+            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={toggleOriginal}>{view === "original" ? "편집으로 돌아가기" : "원문 보기"}</Button>
             <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
           </div>
         </div>
         <div className="mt-3.5 flex items-center justify-between gap-3">
-          <div role="group" aria-label="요청 선택" className="flex items-center gap-1.5">
-            <Button type="button" variant="outline" size="sm" className={`h-7 w-[104px] text-xs ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={() => changeView("original")}>Original</Button>
-            {!!raw.current.requests.length && <>
-              {entry && renaming === entry.id ? <input ref={nameRef} aria-label="요청 이름" className={`${controlClass} w-[104px]`} defaultValue={entry.name} maxLength={80} autoFocus disabled={suspended || busy} title="Enter로 저장 · Esc로 취소" onFocus={event => event.currentTarget.select()} onBlur={event => renameRequest(event.currentTarget.value)} onKeyDown={event => {
-                if (event.nativeEvent.isComposing || event.defaultPrevented) return
-                if (event.key === "Enter" || event.key === "Escape") {
-                  event.preventDefault()
-                  event.stopPropagation()
-                  if (event.key === "Escape") event.currentTarget.value = entry.name
-                  event.currentTarget.blur()
-                  requestRef.current?.focus()
-                }
-              }} /> : <select aria-label="편집 요청 선택" title={entry?.name} className={`${controlClass} w-[104px] ${entry ? "border-primary/50 bg-primary/10 text-primary" : ""}`} value={entry?.id ?? ""} disabled={!draft || suspended || busy} onChange={event => changeView(Number(event.target.value))}>
-                <option value="" disabled>요청 선택</option>
-                {raw.current.requests.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-              </select>}
-              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="요청 이름 변경" title="요청 이름 변경" disabled={!entry || renaming !== null || suspended || busy} onClick={() => { if (entry) setRenaming(entry.id) }}><Pencil aria-hidden="true" className="size-3.5" /></Button>
-              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label={entry ? `${entry.name} 삭제` : "편집 요청 삭제"} disabled={!entry || suspended || busy} onClick={() => void removeRequest()}><X aria-hidden="true" className="size-3.5" /></Button>
-            </>}
-            <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label="새 요청 추가" disabled={!(entry || draft?.requestEditable) || editRejected || suspended || busy} onClick={addRequest}><Plus aria-hidden="true" className="size-3.5" /></Button>
+          <div role="group" aria-label="보낸 요청" className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {raw.current.requests.map(item => <span key={item.id} className="flex items-center">
+              <Button type="button" variant="outline" size="sm" className={`h-7 max-w-[260px] truncate rounded-r-none px-2.5 text-xs ${selectedButtonClass}`} aria-pressed={view === item.id} title={tabLabel(item)} disabled={!draft || suspended || busy} onClick={() => changeView(item.id)}>{tabLabel(item)}</Button>
+              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0 rounded-l-none border-l-0" aria-label={`${item.name} 삭제`} title="이 요청 삭제" disabled={suspended || busy} onClick={() => void removeRequest(item)}><X aria-hidden="true" className="size-3.5" /></Button>
+            </span>)}
           </div>
           {saveStatus && <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
             <span>{saveStatus.error ? "저장 실패" : !saveStatus.persisted ? "프로젝트 저장 필요" : saveStatus.saving ? "저장 중" : saveStatus.pending ? "저장 대기" : "프로젝트 저장됨"}</span>
@@ -577,8 +591,9 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 인증을 사용할 수 없습니다. 계정 또는 인증 방식을 다시 선택해 주세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
-          {replayMessage && <p role="status" className="rounded-md border p-2 text-sm">{replayMessage}</p>}
+          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다.</p>}
+          {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 신원(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
           {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
         </div>
         {draft && <>
@@ -589,7 +604,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           </div>
         </>}
       </section>
-      <DialogFooter className="sticky bottom-0 mx-0 mb-0 min-h-[64px] shrink-0 rounded-b-xl px-7 py-3.5 [&_button]:text-[13px]"><Button type="button" variant="outline" size="sm" disabled={closing || deleting} onClick={() => void close()}>{closing ? "저장 중" : "닫기"}</Button><Button type="button" variant="outline" size="sm" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void openInRepeater()}>{openingRepeater ? "Repeater 준비 중" : "Repeater로 보내기"}</Button></DialogFooter>
+      <DialogFooter className="sticky bottom-0 mx-0 mb-0 min-h-[64px] shrink-0 rounded-b-xl px-7 py-3.5 [&_button]:text-[13px]"><Button type="button" variant="outline" size="sm" disabled={closing || deleting} onClick={() => void close()}>{closing ? "저장 중" : "닫기"}</Button></DialogFooter>
       {!maximized && ([-1, 1] as const).map(side => <div key={side}>
         <div aria-hidden="true" className={`absolute bottom-7 top-[140px] z-10 w-[10px] cursor-ew-resize touch-none hover:bg-primary/10 ${side < 0 ? "left-0" : "right-0"}`} onPointerDown={event => startResize(event, side, false)} onPointerMove={moveResize} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishResize() }} onPointerCancel={finishResize} />
         <button type="button" aria-label={`${side < 0 ? "왼쪽" : "오른쪽"} 모서리 크기 조절`} title="드래그 또는 방향키로 크기 조절" className={`absolute bottom-0 z-20 flex size-[24px] touch-none items-center justify-center text-muted-foreground hover:text-primary focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${side < 0 ? "left-0 cursor-nesw-resize" : "right-0 cursor-nwse-resize"}`} onPointerDown={event => startResize(event, side, true)} onPointerMove={moveResize} onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finishResize() }} onPointerCancel={finishResize} onKeyDown={event => {

@@ -311,7 +311,7 @@ public final class Standalone {
                     request, response, false, false, false,
                     request == null ? null : "UTF-8", response == null ? null : "UTF-8",
                     record.idn == null || record.idn.isBlank() ? "미확정" : record.idn, "없음", "",
-                    "Standalone 데모에서는 마스킹된 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.");
+                    "Standalone 데모에서는 마스킹된 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.", "");
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                 String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,

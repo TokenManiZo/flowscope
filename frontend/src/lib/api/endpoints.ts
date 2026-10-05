@@ -41,9 +41,6 @@ export const startAutomaticAnonymousGet = () =>
   postForm<LiveAuthorizationReplayEnvelope>("/api/authorization-replay", { action: "start-anonymous-get", armed: "true" })
 export const stopLiveAuthorizationReplay = () =>
   postForm<LiveAuthorizationReplayEnvelope>("/api/authorization-replay", { action: "stop-live" })
-/** 추천 여부와 무관하게 이 셀의 교차 요청을 대상 신원 자격으로 Burp Repeater 초안으로 연다(자동 전송 없음). */
-export const draftAuthorizationReplay = (itemId: string) =>
-  postForm<ApiSuccess>("/api/authorization-replay", { action: "draft", itemId })
 export const getRequestLabDraft = (eventId: string, signal?: AbortSignal, includeWorkspace = true) =>
   apiFetch<RequestLabDraft>(`/api/request-lab?${new URLSearchParams(includeWorkspace ? { eventId } : { eventId, workspace: "exclude" })}` as `/api/${string}`, formSignal(signal))
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"; accountId: string }, signal?: AbortSignal) =>
