@@ -84,3 +84,13 @@ it("shows pending requests and click help without detailed exclusion counters", 
   expect(fetch.mock.calls.every(([, init]) => !init?.method || init.method !== "POST")).toBe(true)
   await waitFor(() => expect(fetch.mock.calls.length).toBeGreaterThan(1), { timeout: 2_500 })
 })
+
+it("shows the exact pending count and capacity exclusions without stopping verification", async () => {
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json({ ...active,
+    live: { ...active.live, pending: 200, limited: 3, lastReason: "PENDING_LIMIT_REACHED" },
+  }))))
+  renderWithQueryClient(<AnonymousAutoVerification />)
+  expect(await screen.findByText("검증 대기 한도 초과 3건 · 일반 수집은 계속됩니다.")).toBeVisible()
+  expect(screen.getByText("대기").parentElement).toHaveTextContent("200건")
+  expect(screen.getByRole("switch", { name: "비로그인 자동 검증" })).toHaveAttribute("aria-checked", "true")
+})

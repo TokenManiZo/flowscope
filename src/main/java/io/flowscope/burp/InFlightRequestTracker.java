@@ -53,6 +53,8 @@ final class InFlightRequestTracker {
         return true;
     }
 
+    synchronized Observation get(int messageId) { return observations.get(messageId); }
+
     synchronized Observation remove(int messageId) {
         return observations.remove(messageId);
     }

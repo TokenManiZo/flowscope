@@ -32,7 +32,7 @@ export function AnonymousAutoVerification() {
   const error = change.error ?? status.error
   // Skipped includes requests excluded before queueing as well as queued requests that could not run.
   const skippedAfterQueue = live ? Math.max(0, live.skipped - (live.observed - live.eligible)) : 0
-  const pending = live ? Math.max(0, live.queued - live.sent - live.drafted - skippedAfterQueue) : 0
+  const pending = live ? (live.pending ?? Math.max(0, live.queued - live.sent - live.drafted - skippedAfterQueue)) : 0
 
   return <section aria-label="비로그인 자동 검증" className="space-y-3 rounded-xl border border-border p-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -57,6 +57,8 @@ export function AnonymousAutoVerification() {
     </div>
     {anotherRun && <Alert><AlertDescription>다른 라이브 권한 검증이 실행 중입니다. 해당 실행을 중지한 뒤 사용할 수 있습니다.</AlertDescription></Alert>}
     {error && <Alert variant="destructive"><AlertDescription>{error instanceof Error ? error.message : "자동 검증 상태를 변경하지 못했습니다."}</AlertDescription></Alert>}
+    {enabled && Boolean(live?.limited) && <p role="status" className="text-xs text-muted-foreground">검증 대기 한도 초과 {live?.limited}건 · 일반 수집은 계속됩니다.</p>}
+    {enabled && live?.lastReason === "HTTP_RESPONSE_TIMEOUT" && <p role="status" className="text-xs text-muted-foreground">응답을 10초 안에 확인하지 못했습니다.</p>}
     {enabled && live && <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs tabular-nums">
       <div className="flex items-center gap-2"><dt className="flex items-center gap-1 text-muted-foreground">비로그인 응답<InfoHint label="비로그인 응답">로그인 없이 보낸 요청에서 받은 응답 수예요.</InfoHint></dt><dd className="font-medium">{live.sent}건</dd></div>
       <div className="flex items-center gap-2"><dt className="flex items-center gap-1 text-muted-foreground">대기<InfoHint label="대기">아직 보내지 않고 기다리는 요청 수예요.</InfoHint></dt><dd className="font-medium">{pending}건</dd></div>

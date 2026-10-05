@@ -68,6 +68,8 @@ final class HumanProxyListeners implements AutoCloseable {
         throw new IOException("18080 이상에서 사용할 수 있는 수집 프록시 포트가 없습니다.");
     }
 
+    synchronized boolean owns(int port) { return owned.containsKey(port); }
+
     synchronized void remove(int port) throws IOException {
         JsonNode entry = owned.get(port);
         if (entry == null) return;

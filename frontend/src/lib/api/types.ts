@@ -717,6 +717,8 @@ export interface LiveAuthorizationReplaySnapshot {
   skipped: number
   failed: number
   lastReason: string
+  pending?: number
+  limited?: number
 }
 
 export interface LiveAuthorizationReplayEnvelope extends ApiSuccess {

@@ -51,7 +51,7 @@ class HumanBrowserSessionsTest {
                 sessions.stop("a");
                 assertFalse(windows.get(a).alive());
                 assertNull(sessions.context(a));
-                assertTrue(sessions.ownsPort(a)); // Late requests on a retired listener never take B's run.
+                assertFalse(sessions.ownsPort(a)); // A user may reuse the retired listener port.
                 assertTrue(sessions.alive("b"));
                 assertTrue(sessions.alive("anon"));
                 assertEquals(3, burp.entries().size());
@@ -60,6 +60,20 @@ class HumanBrowserSessionsTest {
             assertTrue(windows.values().stream().noneMatch(FakeWindow::alive));
             assertEquals("original", burp.config.path("unrelated").asText());
             assertEquals(8080, burp.entries().get(0).path("listener_port").asInt());
+        }
+    }
+
+    @Test void releasesOwnershipWhilePreservingAUserModifiedListener() throws Exception {
+        try (var burp = new FakeBurp(); var sessions = new HumanBrowserSessions(
+                new HumanProxyListeners(burp.api, Set.of(8080)), (target, port) -> new FakeWindow())) {
+            sessions.start(context("a", "A"), URI.create("http://localhost/"));
+            int port = sessions.port("a");
+            var entry = (ObjectNode) burp.entries().get(1);
+            entry.put("certificate_mode", "user_modified");
+            sessions.stop("a");
+            assertFalse(sessions.ownsPort(port));
+            assertEquals(2, burp.entries().size());
+            assertEquals("user_modified", burp.entries().get(1).path("certificate_mode").asText());
         }
     }
 

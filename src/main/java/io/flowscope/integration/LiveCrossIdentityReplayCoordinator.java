@@ -24,6 +24,9 @@ public final class LiveCrossIdentityReplayCoordinator {
     private static final Set<String> SUPPORTED_METHODS =
             Set.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE");
 
+    private static final int MAX_WAITING = 200;
+    private static final long MAX_RETAINED_BYTES = 8L * 1024 * 1024;
+
     public enum State { STOPPED, ACTIVE, LIMIT_REACHED }
 
     public record Snapshot(String runId, State state, boolean armed,
@@ -31,10 +34,18 @@ public final class LiveCrossIdentityReplayCoordinator {
                            boolean automaticAnonymousGet,
                            int observed, int eligible, int queued,
                            int sent, int drafted, int skipped, int failed, String lastReason,
-                           List<Source> basisSources) {
+                           List<Source> basisSources, int pending, int limited) {
         public Snapshot {
             targetAccountIds = List.copyOf(targetAccountIds);
             basisSources = List.copyOf(basisSources);
+        }
+
+        public Snapshot(String runId, State state, boolean armed,
+                        List<String> targetAccountIds, boolean includeAnonymous, boolean automaticAnonymousGet,
+                        int observed, int eligible, int queued, int sent, int drafted, int skipped, int failed,
+                        String lastReason, List<Source> basisSources) {
+            this(runId, state, armed, targetAccountIds, includeAnonymous, automaticAnonymousGet,
+                    observed, eligible, queued, sent, drafted, skipped, failed, lastReason, basisSources, 0, 0);
         }
 
         public Snapshot(String runId, State state, boolean armed,
@@ -79,6 +90,10 @@ public final class LiveCrossIdentityReplayCoordinator {
     private final LinkedHashSet<String> targetAccountIds = new LinkedHashSet<>();
     private final LinkedHashSet<Source> basisSources = new LinkedHashSet<>();
     private final LinkedHashSet<String> deduplicated = new LinkedHashSet<>();
+    private final Set<PendingTask> tasks = new LinkedHashSet<>();
+    private final ThreadLocal<String> dispatchRun = new ThreadLocal<>();
+    private long retainedBytes;
+    private int limited;
     private String runId = "";
     private State state = State.STOPPED;
     private boolean armed;
@@ -149,34 +164,49 @@ public final class LiveCrossIdentityReplayCoordinator {
         basisSources.clear();
         basisSources.addAll(selectedSources);
         deduplicated.clear();
-        observed = eligible = queued = sent = drafted = skipped = failed = 0;
+        observed = eligible = queued = sent = drafted = skipped = failed = limited = 0;
         lastReason = "ARMED";
         return snapshot();
     }
 
-    public void stop() {
-        synchronized (this) {
-            if (state == State.STOPPED) return;
-            state = State.STOPPED;
-            armed = false;
-            automaticAnonymousGet = false;
-            lastReason = "STOPPED_BY_OPERATOR";
-        }
+    public synchronized void stop() {
+        if (state == State.STOPPED) return;
+        state = State.STOPPED;
+        armed = false;
+        automaticAnonymousGet = false;
+        lastReason = "STOPPED_BY_OPERATOR";
         killRun.run();
+        for (PendingTask task : List.copyOf(tasks)) {
+            if (!task.running) {
+                if (task.run.equals(runId)) skipped += task.recommendations.size();
+                task.release();
+                if (executor instanceof java.util.concurrent.ThreadPoolExecutor pool) pool.remove(task);
+            }
+        }
     }
 
     public synchronized void reset() {
-        state = State.STOPPED;
-        armed = false;
+        stop();
         includeAnonymous = false;
-        automaticAnonymousGet = false;
         targetAccountIds.clear();
         basisSources.clear();
         deduplicated.clear();
         runId = "";
-        observed = eligible = queued = sent = drafted = skipped = failed = 0;
+        observed = eligible = queued = sent = drafted = skipped = failed = limited = 0;
         lastReason = "NOT_STARTED";
         killRun.run();
+    }
+
+    public synchronized boolean isDispatchCurrent() {
+        String dispatch = dispatchRun.get();
+        return dispatch == null || dispatch.equals(runId) && acceptingCaptures();
+    }
+
+    /** The caller holds the dataset lock; stop cannot interleave with this commit. */
+    public synchronized boolean commitCurrentDispatch(Runnable commit) {
+        if (!isDispatchCurrent()) return false;
+        commit.run();
+        return true;
     }
 
     public synchronized boolean acceptingCaptures() { return state == State.ACTIVE && armed; }
@@ -196,8 +226,13 @@ public final class LiveCrossIdentityReplayCoordinator {
 
     public boolean offer(RequestRecord record, URI target, boolean rawRequestRetained,
                          String anonymousRequestKey) {
-        List<CrossIdentityReplayOrchestrator.Recommendation> recommendations;
-        String offeredRunId;
+        return offer(record, target, rawRequestRetained, anonymousRequestKey, 0, () -> { });
+    }
+
+    public boolean offer(RequestRecord record, URI target, boolean rawRequestRetained,
+                         String anonymousRequestKey, long bytes, Runnable release) {
+        PendingTask task;
+        List<String> keys;
         synchronized (this) {
             if (!acceptingCaptures()) return false;
             observed++;
@@ -207,26 +242,93 @@ public final class LiveCrossIdentityReplayCoordinator {
                 if (queued == 0) lastReason = rejection;
                 return false;
             }
-            recommendations = recommendations(record, target, anonymousRequestKey);
+            if (bytes < 0 || bytes > MAX_RETAINED_BYTES - retainedBytes
+                    || tasks.stream().filter(pending -> !pending.running).count() >= MAX_WAITING) {
+                skipped++;
+                limited++;
+                lastReason = "PENDING_LIMIT_REACHED";
+                return false;
+            }
+            var recommendations = recommendations(record, target, anonymousRequestKey);
             if (recommendations.isEmpty()) {
                 skipped++;
                 if (queued == 0) lastReason = "NO_OTHER_SELECTED_IDENTITY";
                 return false;
             }
+            keys = recommendations.stream().map(recommendation -> automaticAnonymousGet
+                    ? anonymousRequestKey + "\0" + recommendation.targetIdentity()
+                    : record.evidenceId + "\0" + recommendation.targetIdentity()).toList();
+            task = new PendingTask(runId, recommendations, bytes, release);
+            tasks.add(task);
+            retainedBytes += bytes;
             eligible++;
             queued += recommendations.size();
             lastReason = "QUEUED";
-            offeredRunId = runId;
         }
-        executor.execute(() -> dispatch(offeredRunId, recommendations));
-        return true;
+        try {
+            executor.execute(task);
+            return true;
+        } catch (java.util.concurrent.RejectedExecutionException error) {
+            synchronized (this) {
+                task.release();
+                if (task.run.equals(runId)) {
+                    deduplicated.removeAll(keys);
+                    eligible--;
+                    queued -= task.recommendations.size();
+                    skipped++;
+                    limited++;
+                    lastReason = "PENDING_LIMIT_REACHED";
+                }
+            }
+            return false;
+        }
+    }
+
+    private final class PendingTask implements Runnable {
+        private final String run;
+        private final List<CrossIdentityReplayOrchestrator.Recommendation> recommendations;
+        private final long bytes;
+        private final Runnable cleanup;
+        private boolean running;
+        private boolean released;
+
+        private PendingTask(String run, List<CrossIdentityReplayOrchestrator.Recommendation> recommendations,
+                            long bytes, Runnable cleanup) {
+            this.run = run;
+            this.recommendations = recommendations;
+            this.bytes = bytes;
+            this.cleanup = cleanup;
+        }
+
+        @Override public void run() {
+            synchronized (LiveCrossIdentityReplayCoordinator.this) {
+                if (released) return;
+                running = true;
+            }
+            dispatchRun.set(run);
+            try { dispatch(run, recommendations); }
+            finally {
+                dispatchRun.remove();
+                synchronized (LiveCrossIdentityReplayCoordinator.this) { release(); }
+            }
+        }
+
+        private void release() {
+            if (released) return;
+            released = true;
+            tasks.remove(this);
+            retainedBytes -= bytes;
+            cleanup.run();
+        }
     }
 
     public synchronized Snapshot snapshot() {
         return new Snapshot(runId, state, armed, new ArrayList<>(targetAccountIds), includeAnonymous,
                 automaticAnonymousGet,
                 observed, eligible, queued, sent, drafted, skipped, failed, lastReason,
-                new ArrayList<>(basisSources));
+                new ArrayList<>(basisSources),
+                tasks.stream().filter(task -> task.run.equals(runId)).mapToInt(task -> task.recommendations.size()).sum(),
+                limited);
     }
 
     private synchronized List<CrossIdentityReplayOrchestrator.Recommendation> recommendations(
@@ -249,7 +351,8 @@ public final class LiveCrossIdentityReplayCoordinator {
     private void dispatch(String offeredRunId,
                           List<CrossIdentityReplayOrchestrator.Recommendation> recommendations) {
         synchronized (this) {
-            if (!runId.equals(offeredRunId) || state == State.STOPPED || !armed) {
+            if (!runId.equals(offeredRunId)) return;
+            if (state == State.STOPPED || !armed) {
                 skipped += recommendations.size();
                 lastReason = "RUN_STOPPED_BEFORE_DISPATCH";
                 return;
@@ -258,7 +361,7 @@ public final class LiveCrossIdentityReplayCoordinator {
         try {
             CrossIdentityReplayOrchestrator.RunResult result = dispatcher.dispatch(recommendations, true);
             synchronized (this) {
-                if (!runId.equals(offeredRunId)) return;
+                if (!runId.equals(offeredRunId) || state == State.STOPPED) return;
                 sent += result.sent();
                 drafted += result.drafted();
                 skipped += result.skipped();
@@ -272,7 +375,7 @@ public final class LiveCrossIdentityReplayCoordinator {
             }
         } catch (RuntimeException error) {
             synchronized (this) {
-                if (!runId.equals(offeredRunId)) return;
+                if (!runId.equals(offeredRunId) || state == State.STOPPED) return;
                 skipped += recommendations.size();
                 failed += recommendations.size();
                 lastReason = "BATCH_FAILED";

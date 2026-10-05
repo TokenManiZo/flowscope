@@ -5,7 +5,6 @@ import io.flowscope.explorer.HumanChromiumBrowser;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -19,7 +18,6 @@ final class HumanBrowserSessions implements AutoCloseable {
     private final HumanProxyListeners listeners;
     private final Launcher launcher;
     private final Map<String, Session> sessions = new LinkedHashMap<>();
-    private final Set<Integer> usedPorts = new HashSet<>();
 
     HumanBrowserSessions(HumanProxyListeners listeners, Launcher launcher) {
         this.listeners = listeners;
@@ -28,11 +26,11 @@ final class HumanBrowserSessions implements AutoCloseable {
 
     synchronized void start(RunContextRegistry.Context context, URI target) throws IOException {
         int port = listeners.open();
-        usedPorts.add(port);
         sessions.put(context.runId(), new Session(context, port, null, false));
         try {
             var window = launcher.open(target, port);
             sessions.put(context.runId(), new Session(context, port, window, false));
+            if (!window.alive()) throw new IOException("수집 브라우저가 시작 전에 종료되었습니다.");
         } catch (IOException | RuntimeException failure) {
             try { stop(context.runId()); }
             catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); }
@@ -44,7 +42,7 @@ final class HumanBrowserSessions implements AutoCloseable {
         return sessions.values().stream().filter(session -> session.port() == port && !session.stopping())
                 .map(Session::context).findFirst().orElse(null);
     }
-    synchronized boolean ownsPort(int port) { return usedPorts.contains(port); }
+    synchronized boolean ownsPort(int port) { return listeners.owns(port); }
     synchronized boolean contains(String runId) { return sessions.containsKey(runId); }
     synchronized int port(String runId) {
         Session session = sessions.get(runId);

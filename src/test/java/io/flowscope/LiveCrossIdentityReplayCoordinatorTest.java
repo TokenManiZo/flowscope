@@ -247,6 +247,79 @@ final class LiveCrossIdentityReplayCoordinatorTest {
         assertEquals(250, dispatched.get());
     }
 
+    @Test
+    void boundsWaitingRequestsButAcceptsMoreAfterTheyFinish() {
+        List<Runnable> work = new ArrayList<>();
+        var coordinator = new LiveCrossIdentityReplayCoordinator(
+                (recommendations, armed) -> result(recommendations, true), () -> { }, () -> { }, work::add);
+        coordinator.startAutomaticAnonymousGet(true);
+        for (int i = 0; i < 200; i++) {
+            assertTrue(coordinator.offer(eligible("GET", "ev-" + i), TARGET, true, "key-" + i));
+        }
+        assertFalse(coordinator.offer(eligible("GET", "ev-overflow"), TARGET, true, "overflow"));
+        work.getFirst().run();
+        assertTrue(coordinator.offer(eligible("GET", "ev-overflow"), TARGET, true, "overflow"));
+        coordinator.stop();
+        coordinator.startAutomaticAnonymousGet(true);
+        work.forEach(Runnable::run);
+        assertEquals(0, coordinator.snapshot().skipped());
+        assertEquals("ARMED", coordinator.snapshot().lastReason());
+    }
+
+    @Test
+    void boundsBytesAndReleasesThemOnFinishStopAndExecutorRejection() {
+        List<Runnable> work = new ArrayList<>();
+        AtomicInteger released = new AtomicInteger();
+        var coordinator = new LiveCrossIdentityReplayCoordinator(
+                (recommendations, armed) -> result(recommendations, true), () -> { }, () -> { }, work::add);
+        coordinator.startAutomaticAnonymousGet(true);
+        for (int i = 0; i < 8; i++) {
+            assertTrue(coordinator.offer(eligible("GET", "ev-" + i), TARGET, true, "key-" + i,
+                    1024L * 1024, released::incrementAndGet));
+        }
+        assertFalse(coordinator.offer(eligible("GET", "extra"), TARGET, true, "extra", 1, released::incrementAndGet));
+        assertEquals(8, coordinator.snapshot().pending());
+        assertEquals(1, coordinator.snapshot().limited());
+        work.getFirst().run();
+        assertTrue(coordinator.offer(eligible("GET", "extra"), TARGET, true, "extra", 1, released::incrementAndGet));
+        coordinator.stop();
+        assertEquals(9, released.get());
+        assertEquals(0, coordinator.snapshot().pending());
+        work.forEach(Runnable::run);
+        assertEquals(9, released.get(), "cleanup must run once per accepted request");
+
+        AtomicInteger attempts = new AtomicInteger();
+        var rejecting = new LiveCrossIdentityReplayCoordinator(
+                (recommendations, armed) -> result(recommendations, true), () -> { }, () -> { }, task -> {
+                    if (attempts.getAndIncrement() == 0) throw new java.util.concurrent.RejectedExecutionException();
+                    task.run();
+                });
+        rejecting.startAutomaticAnonymousGet(true);
+        assertFalse(rejecting.offer(eligible("GET", "retry"), TARGET, true, "retry", 1, released::incrementAndGet));
+        assertTrue(rejecting.offer(eligible("GET", "retry"), TARGET, true, "retry", 1, released::incrementAndGet));
+        assertEquals(1, rejecting.snapshot().sent());
+        assertEquals(0, rejecting.snapshot().pending());
+    }
+
+    @Test
+    void rejectsLateCommitsAndCountersAfterStopAndRestart() {
+        var current = new LiveCrossIdentityReplayCoordinator[1];
+        AtomicInteger commits = new AtomicInteger();
+        current[0] = coordinator((recommendations, armed) -> {
+            current[0].stop();
+            current[0].startAutomaticAnonymousGet(true);
+            assertFalse(current[0].commitCurrentDispatch(commits::incrementAndGet));
+            return result(recommendations, true);
+        });
+        current[0].startAutomaticAnonymousGet(true);
+        assertTrue(current[0].offer(eligible("GET", "late"), TARGET, true, "late"));
+        assertEquals(0, commits.get());
+        assertEquals(0, current[0].snapshot().sent());
+        assertEquals(0, current[0].snapshot().skipped());
+        assertEquals(0, current[0].snapshot().pending());
+        assertEquals("ARMED", current[0].snapshot().lastReason());
+    }
+
     private static LiveCrossIdentityReplayCoordinator coordinator(
             LiveCrossIdentityReplayCoordinator.Dispatcher dispatcher) {
         return new LiveCrossIdentityReplayCoordinator(dispatcher, () -> { }, () -> { }, Runnable::run);

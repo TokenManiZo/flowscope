@@ -95,6 +95,7 @@ public final class SessionBroker implements AutoCloseable {
         Status status = Status.CAPTURING;
         boolean capturing = true;
         boolean isolatedCapture;
+        ManagedSession previous;
         VerificationSource verificationSource = VerificationSource.NONE;
         VerificationSource pendingVerificationSource = VerificationSource.NONE;
         /** "METHOD /path" of the last request attributed to this capture (no query, no credentials). */
@@ -111,6 +112,7 @@ public final class SessionBroker implements AutoCloseable {
         }
 
         @Override public void close() {
+            if (previous != null) { previous.close(); previous = null; }
             cookies.values().forEach(StoredCookie::close);
             headers.values().forEach(Secret::close);
             cookies.clear();
@@ -182,13 +184,37 @@ public final class SessionBroker implements AutoCloseable {
                             + session.account.id());
                 });
         String existing = handleByAccount.remove(account.id());
-        if (existing != null) revoke(existing);
+        ManagedSession previous = existing == null ? null : byHandle.get(existing);
+        if (existing != null && !isolated) revoke(existing);
+        else if (existing != null) byHandle.remove(existing);
         String handle = "session-" + UUID.randomUUID();
         ManagedSession session = new ManagedSession(handle, account, time);
         session.isolatedCapture = isolated;
+        session.previous = isolated ? previous : null;
         byHandle.put(handle, session);
         handleByAccount.put(account.id(), handle);
         return handle;
+    }
+
+    /** Discard the old credentials only after the listener and browser have started. */
+    public synchronized void commitIsolatedCapture(String handle) {
+        ManagedSession session = required(handle);
+        if (session.previous != null) {
+            session.previous.close();
+            session.previous = null;
+        }
+    }
+
+    public synchronized void rollbackIsolatedCapture(String handle) {
+        ManagedSession session = byHandle.get(handle);
+        if (session == null) return;
+        ManagedSession previous = session.previous;
+        session.previous = null;
+        revoke(handle);
+        if (previous != null) {
+            byHandle.put(previous.handle, previous);
+            handleByAccount.put(previous.account.id(), previous.handle);
+        }
     }
 
     public synchronized void endCapture(String handle) {

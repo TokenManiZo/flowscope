@@ -149,6 +149,24 @@ class FlowScopeExtensionLifecycleTest {
     }
 
     @Test
+    void replayResponseIsNotRecordedIntoAProjectOpenedDuringTheSend() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        long epoch = ((AtomicLong) field("datasetEpoch").get(extension)).getAndIncrement();
+        AtomicBoolean retained = new AtomicBoolean(false);
+        try {
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendReplayRecord(new RequestRecord(Source.SCANNER, "https://api.test:443",
+                            "GET", "/me", 200, "anon"), epoch, () -> retained.set(true)));
+            assertTrue(records.isEmpty());
+            assertEquals(false, retained.get());
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
     void requestLabResponseIsNotRecordedIntoAProjectOpenedDuringTheSend() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         @SuppressWarnings("unchecked")

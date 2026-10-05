@@ -908,11 +908,22 @@ final class FlowScopeWebServerTest {
     @Test
     void humanBrowserStartFailureRollsBackTheRunAndCredentials() throws Exception {
         state.config.upsertAccount(new AccountProfile("user-a", "A", state.record.service, AccessRole.USER));
+        var account = state.config.account("user-a").orElseThrow();
+        String previous = state.sessions.beginCapture(account, java.time.Instant.now());
+        state.sessions.observeRequest(previous, java.net.URI.create(account.service() + "/me"),
+                Map.of("Cookie", "session=previous"), java.time.Instant.now());
+        state.sessions.observeResponse(previous, java.net.URI.create(account.service() + "/me"),
+                200, null, "ok", List.of(), java.time.Instant.now());
+        state.sessions.endCapture(previous);
+        var before = state.sessions.viewForAccount("user-a").orElseThrow();
         state.failHumanBrowser = true;
         start();
         assertEquals(400, post("/api/human-run", "action=begin&runId=failed&account=user-a", token).statusCode());
         assertTrue(state.contexts.activeHumanRuns().isEmpty());
-        assertTrue(state.sessions.viewForAccount("user-a").isEmpty());
+        assertEquals(before, state.sessions.viewForAccount("user-a").orElseThrow());
+        assertEquals("session=previous", state.sessions.headersForAccount("user-a",
+                java.net.URI.create(account.service() + "/me"), ScopePolicy.parse(account.service() + "/"),
+                java.time.Instant.now()).get("Cookie"));
         state.failHumanBrowser = false;
         assertEquals(200, post("/api/human-run", "action=begin&runId=retry&account=user-a", token).statusCode());
     }

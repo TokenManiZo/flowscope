@@ -677,6 +677,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         live.put("skipped", status.skipped());
         live.put("failed", status.failed());
         live.put("lastReason", status.lastReason());
+        live.put("pending", status.pending());
+        live.put("limited", status.limited());
         return json(200, body);
     }
 
@@ -884,11 +886,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         accountId.isBlank() ? null : accountId));
                 try {
                     state.humanRunStarted(runId);
+                    String handle = humanCaptureHandle(state.contexts().current(Source.HUMAN, runId));
+                    if (handle != null) state.sessions().commitIsolatedCapture(handle);
                 } catch (RuntimeException failure) {
                     RunContextRegistry.Context failed = state.contexts().current(Source.HUMAN, runId);
                     state.contexts().pauseHuman(runId, true);
                     String handle = humanCaptureHandle(failed);
-                    if (handle != null) state.sessions().revoke(handle);
+                    if (handle != null) state.sessions().rollbackIsolatedCapture(handle);
                     try { state.humanRunStopped(runId); }
                     catch (RuntimeException cleanup) { failure.addSuppressed(cleanup); throw failure; }
                     state.contexts().abort(Source.HUMAN, runId);

@@ -363,7 +363,8 @@ public final class FlowScopeExtension implements BurpExtension {
     /** Auth-stripped live requests waiting for the serialized anonymous replay worker. Process memory only. */
     private final Map<Long, HttpRequest> pendingAnonymousRequests = new ConcurrentHashMap<>();
     private final ExecutorService authorizationReplayWorker =
-            Executors.newSingleThreadExecutor(r -> {
+            new java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+                    new java.util.concurrent.ArrayBlockingQueue<>(200), r -> {
                 Thread t = new Thread(r, "flowscope-authorization-replay");
                 t.setDaemon(true);
                 return t;
@@ -636,6 +637,12 @@ public final class FlowScopeExtension implements BurpExtension {
         @Override
         public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest request) {
             int port = listenerPort(request.listenerInterface());
+            var observation = proxyObservations.get(request.messageId());
+            if (observation != null && observation.source() == Source.HUMAN
+                    && observation.detail() == SourceDetail.BROWSER && observation.context() != null
+                    && runContexts.current(Source.HUMAN, observation.context().runId()) == null) {
+                return ProxyRequestToBeSentAction.drop();
+            }
             if (humanBrowsers.ownsPort(port) && humanBrowsers.context(port) == null) return ProxyRequestToBeSentAction.drop();
             return allowed(request, humanBrowsers.ownsPort(port)
                     ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER) : profileOf(request.listenerInterface()))
@@ -1156,8 +1163,7 @@ public final class FlowScopeExtension implements BurpExtension {
                                         String location, String body, List<HttpHeader> headers,
                                         InFlightRequestTracker.Observation observation) {
         try {
-            if (observation != null && humanBrowsers != null && humanBrowsers.ownsPort(observation.listenerPort())
-                    && observation.context() != null && runContexts.current(Source.HUMAN, observation.context().runId()) == null) return;
+            if (staleObservation(observation)) return;
             String service = serviceOf(request);
             String handle = null;
             RunContextRegistry.Context context = observation == null ? runContexts.current(profile.source())
@@ -2922,6 +2928,7 @@ public final class FlowScopeExtension implements BurpExtension {
             CrossIdentityReplayOrchestrator.Recommendation recommendation,
             Map<String, String> credentialHeaders,
             CrossIdentityReplayOrchestrator.ReplayContext context) {
+        long epoch = datasetEpoch.get();
         HttpRequest request = null;
         if (CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY.equals(recommendation.targetIdentity())
                 && recommendation.basisRuntimeId() > 0 && credentialHeaders.isEmpty()) {
@@ -2952,13 +2959,19 @@ public final class FlowScopeExtension implements BurpExtension {
             throw replayFailure("REPLAY_TARGET_MISMATCH", null);
         }
 
+        if (datasetEpoch.get() != epoch || liveCrossIdentityReplay != null && !liveCrossIdentityReplay.isDispatchCurrent()) {
+            throw replayFailure("REPLAY_RUN_CHANGED", null);
+        }
         var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
-                .withResponseTimeout(30_000);
+                .withResponseTimeout(10_000);
         burp.api.montoya.http.message.HttpRequestResponse exchange;
         long started = System.nanoTime();
         controlledRequest.set(true);
         try { exchange = api.http().sendRequest(request, options); }
-        catch (RuntimeException error) { throw replayFailure("HTTP_SEND_FAILED", error); }
+        catch (RuntimeException error) {
+            throw replayFailure(executionOutcome(error) == RunExecutionLedger.Outcome.TIMEOUT
+                    ? "HTTP_RESPONSE_TIMEOUT" : "HTTP_SEND_FAILED", error);
+        }
         finally { controlledRequest.remove(); }
         long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
         if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
@@ -2974,7 +2987,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     System.currentTimeMillis(), false, context.runId(), null,
                     recommendation.targetIdentity());
             context.applyTo(record);
-            appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
+            appendReplayRecord(record, epoch, () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
             published = latest.records.stream()
                     .filter(value -> value.runtimeId() == record.runtimeId()).findFirst()
@@ -3325,6 +3338,17 @@ public final class FlowScopeExtension implements BurpExtension {
         }
     }
 
+    void appendReplayRecord(RequestRecord record, long expectedEpoch, Runnable retainExchange) {
+        synchronized (records) {
+            if (datasetEpoch.get() != expectedEpoch) throw new DatasetReplacedException();
+            Runnable commit = () -> appendControlledToolRecord(record, retainExchange);
+            if (liveCrossIdentityReplay == null) commit.run();
+            else if (!liveCrossIdentityReplay.commitCurrentDispatch(commit)) {
+                throw replayFailure("REPLAY_RUN_CHANGED", null);
+            }
+        }
+    }
+
     /** 방금 추가한 레코드의 분석본. 다른 재분석이 먼저 게시돼도 Evidence ID는 내용 해시라 다음 게시와 같다. */
     RequestRecord analyzedRecord(RequestRecord record) {
         return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
@@ -3440,7 +3464,10 @@ public final class FlowScopeExtension implements BurpExtension {
             if (automaticAnonymousGet && prepared != null) {
                 pendingAnonymousRequests.put(record.runtimeId(), prepared);
             }
-            if (!liveCrossIdentityReplay.offer(record, target, requestRetained, anonymousRequestKey)) {
+            long bytes = automaticAnonymousGet && prepared != null ? prepared.toByteArray().length() : 0;
+            long runtimeId = record.runtimeId();
+            if (!liveCrossIdentityReplay.offer(record, target, requestRetained, anonymousRequestKey, bytes,
+                    () -> pendingAnonymousRequests.remove(runtimeId))) {
                 pendingAnonymousRequests.remove(record.runtimeId());
             }
         }
