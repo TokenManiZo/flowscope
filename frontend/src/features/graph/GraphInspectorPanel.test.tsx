@@ -6,6 +6,7 @@ import type { ManagedSession, Snapshot } from "@/lib/api/types"
 import { renderWithQueryClient } from "@/test/render"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
+import { navigateHierarchy, projectHierarchy } from "./graphHierarchy"
 import type { GraphSelection } from "./graphProjection"
 
 const event: Snapshot["events"][number] = {
@@ -78,6 +79,16 @@ it("locks 관측 기록 actions while the snapshot is suspended", () => {
   expect(screen.getByRole("button", { name: "현재 세션으로 Repeater" })).toBeDisabled()
 })
 
+it("links Request Lab POST replay status to its original node without adding a verdict", () => {
+  const original = { ...event, eventId: "post-original", method: "POST", path: "/update", op: "POST /update", resource: null, verdict: "untested" as const }
+  const replay = { ...original, eventId: "post-replay", phase: "VALIDATION", trafficDisposition: "EXCLUDE" as const, coverageEligible: false, status: 200 }
+  renderWithQueryClient(<GraphInspectorPanel selection={{ operation: original.op, resource: null, identity: "alice", source: "human", evidenceIds: [original.eventId] }} event={original}
+    snapshot={{ ...snapshot, events: [original, replay], manualVerifications: [{ eventId: replay.eventId, originEvidenceId: original.eventId, operation: original.op, resource: null, identity: "alice", identityId: "alice", timestamp: 2, status: 200, durationMs: 10 }] }} />)
+  const panel = screen.getByRole("complementary", { name: "선택 작업" })
+  expect(within(panel).getByRole("region", { name: "Request Lab 재현" })).toHaveTextContent("HTTP 200")
+  expect(panel).not.toHaveTextContent("취약점 확정")
+})
+
 it("groups 관측 기록 into one card per identity with a row per source, acting on each row's latest request", async () => {
   const fetch = stubFetch()
   const events = [
@@ -108,4 +119,20 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   // 줄의 원문 보기는 그 출처의 가장 최근 요청(ev-2)을 연다.
   await userEvent.click(within(human).getByRole("button", { name: "원문 보기" }))
   expect(fetch.mock.calls.map(([input]) => String(input))).toContain("/api/request-lab?eventId=ev-2")
+})
+
+it.each(["UNKNOWN", "POLLING"])("shows unjudged account evidence in API detail without borrowing another account's verdict (%s)", trafficClass => {
+  const bob = { ...event, eventId: "bob-unjudged", clusterEvidenceIds: ["bob-unjudged"], idn: "bob", resource: null, trafficClass, trafficDisposition: "REVIEW", verdict: "untested" as const }
+  const data = { ...snapshot, events: [event, bob] }
+  const filters = { source: ["human" as const], identity: [], view: "source" as const, includeSupportTraffic: true, includeRouteCandidates: false, expanded: false }
+  const navigation = { level: "site" as const, groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
+  const site = projectHierarchy(data, filters, navigation)
+  const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "operation", site.groups[0].id, event.op))
+  const node = graph.nodes.find(node => node.kind === "operation")!
+  renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
+  const alice = screen.getByRole("listitem", { name: "alice 관측 기록 1건" })
+  const bobCard = screen.getByRole("listitem", { name: "bob 관측 기록 1건" })
+  expect(alice).toHaveTextContent("ALLOW")
+  expect(bobCard).not.toHaveTextContent("ALLOW")
+  expect(screen.getByText("인가 판정에 포함되지 않은 관측 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
 })

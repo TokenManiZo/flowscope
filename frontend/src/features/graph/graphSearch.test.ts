@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest"
-import type { Cell } from "@/lib/api/types"
+import type { Cell, EventRecord, RouteCandidate } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
 import { emptyGraphWorkspace, graphViewKey, mergeGraphLayout } from "./graphWorkspace"
 import { operationGroup, projectHierarchy } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
-import { buildGraphSearchIndex, graphSearchViewport, sameSearchCells, searchDestination, searchGraph, searchHighlights, searchKey } from "./graphSearch"
+import { buildGraphSearchIndex as snapshotSearchIndex, graphSearchViewport, searchDestination, searchGraph, searchHighlights, searchKey } from "./graphSearch"
 
 const service = "https://a.test:443"
 const operation = `${service} GET /api/orders/101`
 const cell = (changes: Partial<Cell> = {}): Cell => ({ idn: "USER A", op: operation, resource: "orders:101", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["evidence-a"], ...changes })
 const initial = emptyGraphWorkspace.navigation
 const filters: GraphFilters = { source: ["human", "scanner", "llm", "unknown"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+
+const buildGraphSearchIndex = (cells: readonly Cell[]) => snapshotSearchIndex(targetSnapshot({ cells: [...cells] }), filters)
+const captured = (changes: Partial<EventRecord> = {}): EventRecord => ({ eventId: "observed", method: "GET", path: "/api/orders/101", status: 200, fp: "", idn: "USER B", role: "USER", source: "human", op: operation, resource: null, timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", coverageEligible: false, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: [changes.eventId ?? "observed"], objects: [], verdict: "untested", ...changes })
 
 describe("project relationship search", () => {
   it("indexes limited and folded members without creating projections or copying Evidence", () => {
@@ -42,13 +45,6 @@ describe("project relationship search", () => {
     expect(searchGraph(index, "[.*", initial).total).toBe(0)
     expect(searchGraph(index, "  ", initial).total).toBe(0)
     expect(searchGraph(index, "orders:19", initial).entries[0].kind).toBe("resource")
-  })
-
-  it("reuses the index when only Evidence, owner-related decisions, or source verdicts change", () => {
-    const before = [cell()]
-    expect(sameSearchCells(before, [cell({ evidenceIds: ["new-evidence"], overall: "deny", perSource: { scanner: "deny" } })])).toBe(true)
-    expect(sameSearchCells(before, [cell({ resource: "orders:202" })])).toBe(false)
-    expect(sameSearchCells(before, [cell({ perSource: {} })])).toBe(false)
   })
 
   it("reveals a 19th API and its stored geometry without increasing the page limit", () => {
@@ -138,4 +134,62 @@ it("distinguishes same host and port with different schemes without affecting re
   expect(matches.entries.slice(0, 2)).toEqual(operations)
   expect(matches.entries.some(entry => entry.kind === "resource")).toBe(true)
   expect(operations.map(entry => matches.hosts?.get(entry.key))).toEqual(["http://same.test:8900", "https://same.test:8900"])
+})
+
+it("indexes and reveals off-page observed functions using their actual node IDs", () => {
+  const events = Array.from({ length: 19 }, (_, index) => captured({ eventId: `o-${index}`, op: `${service} GET /api/orders/${String(index).padStart(2, "0")}` }))
+  const snapshot = targetSnapshot({ events })
+  const index = snapshotSearchIndex(snapshot, filters)
+  const entry = index.byKey.get(searchKey("observed-operation", service, events[18].op))!
+  expect(entry).toBeDefined()
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, filters, initial), false)
+  const revealed = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
+  expect(revealed.nodes.find(node => node.id === destination.nodeId)?.selection.evidenceIds).toEqual(["o-18"])
+  expect(revealed.revealedNodeCount).toBe(1)
+  expect(searchHighlights(revealed, new Set([entry.key])).get(destination.nodeId)).toBe("direct")
+  expect(JSON.stringify(index)).not.toContain("o-18")
+})
+
+it("indexes only graph-eligible records and keeps one searchable card per operation", () => {
+  const snapshot = targetSnapshot({ cells: [cell()], events: [captured(), captured({ eventId: "poll", trafficClass: "POLLING" }), captured({ eventId: "hidden", op: `${service} GET /api/orders/hidden`, classificationOverride: true, classificationReasons: ["USER_EXCLUDE"], trafficDisposition: "EXCLUDE" }), captured({ eventId: "asset", op: `${service} GET /api/orders/app.js`, trafficClass: "STATIC_ASSET" }), captured({ eventId: "replay", op: `${service} POST /api/orders/replay`, phase: "VALIDATION" })] })
+  const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
+  expect(index.entries.filter(entry => ["operation", "observed-operation", "support-operation"].includes(entry.kind))).toEqual([expect.objectContaining({ kind: "operation", value: operation })])
+  expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(true)
+})
+
+it("searches enabled support cards outside the page limit and skips disabled support", () => {
+  const events = Array.from({ length: 19 }, (_, index) => captured({ eventId: `p-${index}`, op: `${service} GET /api/orders/poll-${String(index).padStart(2, "0")}`, trafficClass: "POLLING", trafficDisposition: "EXCLUDE" }))
+  const snapshot = targetSnapshot({ cells: [cell()], events })
+  expect(snapshotSearchIndex(snapshot, filters).entries.some(entry => entry.kind === "support-operation")).toBe(false)
+  const enabled = { ...filters, includeSupportTraffic: true }
+  const index = snapshotSearchIndex(snapshot, enabled)
+  const entry = index.byKey.get(searchKey("support-operation", service, events[18].op))!
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), true)
+  const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
+  expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.evidenceIds).toEqual(["p-18"])
+})
+
+it("indexes and reveals enabled route candidates with their existing IDs", () => {
+  const routes: RouteCandidate[] = Array.from({ length: 19 }, (_, index) => ({ service, method: "GET", pathTemplate: `/api/orders/declared-${index}`, observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT"], provenanceEvidenceIds: [], provenance: [{ type: "JAVASCRIPT", evidenceId: `js-${index}`, source: "human", runId: "r", adapter: "browser", applicability: "REVIEW", reason: "declared" }], reviewReason: "not requested", priorityReasons: [] }))
+  const snapshot = targetSnapshot({ routeCandidates: routes }), enabled = { ...filters, includeRouteCandidates: true }
+  expect(snapshotSearchIndex(snapshot, filters).entries).toHaveLength(0)
+  const index = snapshotSearchIndex(snapshot, enabled)
+  const entry = index.entries.find(entry => entry.kind === "route-candidate" && entry.title.includes("declared-18"))!
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), false)
+  const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
+  expect(graph.nodes.find(node => node.id === destination.nodeId)?.selection.routeCandidate?.pathTemplate).toBe(routes[18].pathTemplate)
+})
+
+it("opens a support-only identity on a judged API in compact search", () => {
+  const snapshot = targetSnapshot({ cells: [cell()], events: [captured({ eventId: "poll-b", trafficClass: "POLLING", trafficDisposition: "EXCLUDE" })] })
+  const enabled = { ...filters, includeSupportTraffic: true }
+  const index = snapshotSearchIndex(snapshot, enabled)
+  const entry = index.byKey.get(searchKey("identity", service, "USER B"))!
+  const destination = searchDestination(entry, initial, projectHierarchy(snapshot, enabled, initial), true)
+  expect(destination.navigation.level).toBe("operation")
+  const graph = projectHierarchy(snapshot, enabled, destination.navigation, destination.reveal)
+  const target = graph.nodes.find(node => node.id === destination.nodeId)!
+  expect(target).toBeDefined()
+  expect(target.selection).toMatchObject({ identity: "USER B", cells: [], cellKeys: [], evidenceIds: ["poll-b"] })
+  expect(searchHighlights(graph, new Set([entry.key])).get(target.id)).toBe("direct")
 })

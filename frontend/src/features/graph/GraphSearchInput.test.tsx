@@ -3,9 +3,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 import { GraphSearchInput } from "./GraphSearchInput"
-import { buildGraphSearchIndex, searchGraph } from "./graphSearch"
+import { buildGraphSearchIndex as snapshotSearchIndex, searchGraph } from "./graphSearch"
 import { initialGraphNavigation } from "./graphWorkspace"
 
+import { targetSnapshot } from "@/test/fixtures"
+import type { Cell } from "@/lib/api/types"
+
+const buildGraphSearchIndex = (cells: readonly Cell[]) => snapshotSearchIndex(targetSnapshot({ cells: [...cells] }), { source: ["human", "scanner", "llm", "unknown"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false })
 const canvas = createRef<HTMLDivElement>()
 const index = buildGraphSearchIndex([{ idn: "USER A", op: "GET /orders/101", resource: "orders:101", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }])
 const results = searchGraph(index, "orders", initialGraphNavigation)

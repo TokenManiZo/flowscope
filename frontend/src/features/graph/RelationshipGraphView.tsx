@@ -6,13 +6,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { judgmentTone } from "@/features/matrix/judgmentProjection"
-import type { Cell, Source, Verdict } from "@/lib/api/types"
+import type { Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 import { SourceIcon } from "@/features/evidence/SourceIcon"
 
 import { CytoscapeGraph } from "./CytoscapeGraph"
 import { GraphSearchInput } from "./GraphSearchInput"
-import { buildGraphSearchIndex, sameSearchCells, searchDestination, searchGraph, searchHighlights, type GraphSearchEntry, type GraphSearchIndex, type SearchDestination } from "./graphSearch"
+import { buildGraphSearchIndex, searchDestination, searchGraph, searchHighlights, type GraphSearchEntry, type GraphSearchIndex, type SearchDestination } from "./graphSearch"
 import { GRAPH_MAX_ZOOM, LANE_SPACING, laneAnchor, type LaneBounds } from "./graphLanes"
 import { GraphInspectorPanel, GraphViewOverview } from "./GraphInspectorPanel"
 import { operationShapeKey } from "./graphPathShape"
@@ -31,7 +31,7 @@ const railSources: readonly Source[] = ["human", "scanner", "llm"]
 const reviewStates: readonly Verdict[] = ["allow", "deny", "suspicious", "undecided", "untested"]
 const sourceNames: Record<Source, string> = { human: "HUMAN", scanner: "SCANNER", llm: "LLM", unknown: "UNKNOWN" }
 const supportTrafficClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-const noCells: readonly Cell[] = []
+const emptySearchIndex: GraphSearchIndex = { entries: [], byKey: new Map() }
 
 function useCompactGraph() {
   const [compact, setCompact] = useState(() => window.matchMedia("(max-width: 900px)").matches)
@@ -105,14 +105,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [searchLimit, setSearchLimit] = useState(30)
-  const searchCache = useRef<{ cells: readonly Cell[]; index: GraphSearchIndex } | null>(null)
-  const cells = snapshot.data?.cells ?? noCells
-  const searchIndex = useMemo(() => {
-    const previous = searchCache.current
-    const index = previous && sameSearchCells(previous.cells, cells) ? previous.index : buildGraphSearchIndex(cells)
-    searchCache.current = { cells, index }
-    return index
-  }, [cells])
+  const searchIndex = useMemo(() => snapshot.data ? buildGraphSearchIndex(snapshot.data, filters) : emptySearchIndex, [snapshot.data, filters])
   useEffect(() => {
     if (!searchQuery.trim()) { setSearchTerm(""); return }
     const timer = window.setTimeout(() => setSearchTerm(searchQuery), 120)
@@ -163,6 +156,15 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
         const currentSelection = projectRouteCandidate(currentCandidate, new Set(filters.source)).selection
         if (JSON.stringify(currentSelection) !== JSON.stringify(selection)) setSelection(currentSelection)
       }
+      return
+    }
+    const projectedSelection = graph?.nodes.find(node => node.id === selectedElementId)?.selection ?? graph?.edges.find(edge => edge.id === selectedElementId)?.selection
+    if (projectedSelection) {
+      if (JSON.stringify(projectedSelection) !== JSON.stringify(selection)) setSelection(projectedSelection)
+      return
+    }
+    if (selectedElementId && ["observed-operation:", "support-operation:"].some(prefix => selectedElementId.startsWith(prefix))) {
+      clearGraphSelection()
       return
     }
     // 계층 선택은 서버 셀 key로 현재 snapshot과 재조정한다. 셀이 모두 사라지면 선택을 비우고, 일부만 남으면 남은 셀·Gap ID로 갱신한다.

@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { targetSnapshot } from "@/test/fixtures"
-import type { Snapshot } from "@/lib/api/types"
+import type { Snapshot, EventRecord } from "@/lib/api/types"
 import { RelationshipGraphView } from "./RelationshipGraphView"
 import { emptyGraphWorkspace, graphViewKey, type GraphWorkspace } from "./graphWorkspace"
 import { operationGroup, type HierarchyProjection } from "./graphHierarchy"
@@ -28,7 +28,7 @@ vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ projection, selectedElem
     <button onClick={onClearSelection}>clear canvas</button>
   </div>
 } }))
-vi.mock("./GraphInspectorPanel", () => ({ GraphViewOverview: () => null, GraphInspectorPanel: ({ selection, actions }: { selection: { operation: string | null; resource: string | null }; actions: { onOpenRequestLab(): void } }) => <><p data-testid="search-detail">{selection.operation} {selection.resource}</p><button onClick={actions.onOpenRequestLab}>open lab</button></> }))
+vi.mock("./GraphInspectorPanel", () => ({ GraphViewOverview: () => null, GraphInspectorPanel: ({ selection, actions }: { selection: { operation: string | null; resource: string | null; evidenceIds: readonly string[] }; actions: { onOpenRequestLab(): void } }) => <><p data-testid="search-detail" data-evidence={selection.evidenceIds.join(",")}>{selection.operation} {selection.resource}</p><button onClick={actions.onOpenRequestLab}>open lab</button></> }))
 
 const service = "https://search.test:443"
 const cells = Array.from({ length: 25 }, (_, index) => ({ idn: "USER A", op: `${service} GET /api/orders/${String(index).padStart(2, "0")}`, resource: `orders:${index}`, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [`ev-${index}`] }))
@@ -98,4 +98,54 @@ it("keeps object expansion transient and folds it on background, outside selecti
   view = render(<RelationshipGraphView />)
   expect(canvas()).toHaveAttribute("data-open-object", "")
   expect(state.changes).not.toHaveBeenCalled()
+})
+
+const observed = (changes: Partial<EventRecord> = {}): EventRecord => ({ eventId: "observed", method: "GET", path: "/api/orders/observed", status: 200, fp: "", idn: "USER B", role: "USER", source: "human", op: `${service} GET /api/orders/observed`, resource: null, timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", coverageEligible: false, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: [changes.eventId ?? "observed"], objects: [], verdict: "untested", ...changes })
+
+it("refreshes event-only search results and selects an observed API outside the page limit", async () => {
+  const view = render(<RelationshipGraphView />)
+  await userEvent.type(screen.getByRole("combobox"), "/orders/observed")
+  await screen.findByText("검색 결과가 없습니다. 검색어를 바꿔 보세요.")
+  state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed()] })
+  view.rerender(<RelationshipGraphView />)
+  const option = await screen.findByRole("option", { name: /^관측 API/ })
+  await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
+  await userEvent.click(option)
+  await waitFor(() => expect(screen.getByTestId("search-canvas")).toHaveAttribute("data-selected", `observed-operation:${observed().op}`))
+  expect(screen.getByTestId("search-detail")).toHaveAttribute("data-evidence", "observed")
+  expect(state.workspace?.navigation.operationLimit).toBe(18)
+  state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed({ classificationOverride: true, trafficDisposition: "EXCLUDE", classificationReasons: ["USER_EXCLUDE"] })] })
+  view.rerender(<RelationshipGraphView />)
+  await userEvent.type(screen.getByRole("combobox"), " ")
+  await screen.findByText("검색 결과가 없습니다. 검색어를 바꿔 보세요.")
+  await waitFor(() => expect(screen.queryByTestId("search-detail")).not.toBeInTheDocument())
+})
+
+it("keeps unjudged account evidence selected when Cells update", async () => {
+  state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed({ op: cells[0].op })] })
+  const view = render(<RelationshipGraphView />)
+  await userEvent.type(screen.getByRole("combobox"), "/orders/00")
+  const option = await screen.findByRole("option", { name: /^API\s*GET \/api\/orders\/00/ })
+  await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
+  await userEvent.click(option)
+  await waitFor(() => expect(screen.getByTestId("search-detail").dataset.evidence).toContain("observed"))
+  state.snapshot = targetSnapshot({ datasetRevision: 5, cells: cells.map(cell => ({ ...cell, evidenceIds: [...cell.evidenceIds, "new-judged"] })), events: [observed({ op: cells[0].op })] })
+  view.rerender(<RelationshipGraphView />)
+  await waitFor(() => expect(screen.getByTestId("search-detail").dataset.evidence).toContain("new-judged"))
+  expect(screen.getByTestId("search-detail").dataset.evidence).toContain("observed")
+})
+
+it("reveals and highlights observed search cards in the compact list", async () => {
+  window.matchMedia = vi.fn(query => ({ matches: true, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
+  state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed()] })
+  render(<RelationshipGraphView />)
+  await userEvent.type(screen.getByRole("combobox"), "/orders/observed")
+  const option = await screen.findByRole("option", { name: /^관측 API/ })
+  await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
+  await userEvent.click(option)
+  expect(await screen.findByTestId("search-detail")).toHaveAttribute("data-evidence", "observed")
+  await userEvent.click(screen.getByRole("button", { name: "Close" }))
+  const card = await screen.findByRole("button", { name: /응답 관측/ })
+  expect(card).toHaveAttribute("data-graph-node-id", `observed-operation:${observed().op}`)
+  expect(card.className).toContain("outline-dashed")
 })

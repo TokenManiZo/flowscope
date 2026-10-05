@@ -1,5 +1,5 @@
 import { operationShapeKey } from "./graphPathShape"
-import type { Cell, Snapshot, Source } from "@/lib/api/types"
+import type { Cell, EventRecord, Snapshot, Source } from "@/lib/api/types"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
 export const GRAPH_PAGE_SIZE = 18
@@ -20,13 +20,14 @@ export interface ApiGroup extends ApiGroupDescriptor {
   operations: readonly string[]
   routeCandidates: readonly GraphRouteCandidate[]
   endpointCount: number
+  observedCount: number
   sourceCounts: Record<"human" | "scanner" | "llm", number>
   gapCount: number
   routeCandidateCount: number
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "object-group" | "operation-group"
+  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "observed-operation" | "object-group" | "operation-group"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -39,7 +40,7 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   hiddenInGraph?: boolean
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
-  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
+  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support" | "observed"
   source: Source | null
   structural: boolean
   selection: HierarchySelection
@@ -112,12 +113,49 @@ const compareText = (left: string, right: string) => left.localeCompare(right, "
 const observedSources = (cell: Cell) => (Object.keys(cell.perSource) as Source[]).filter(source => cell.perSource[source] !== undefined)
 const isPartial = (cell: Cell) => cell.missedSources.length > 0
 const emptySelection = (): HierarchySelection => ({ ...graphCellSelection([]), gapIds: [] })
+const nonFunctionTraffic = new Set(["STATIC_ASSET", "DISCOVERY_METADATA", "PREFLIGHT", "POLLING", "BACKGROUND", "TELEMETRY_CANDIDATE", "AUTH_SESSION"])
+const explicitlyExcluded = (event: EventRecord) => event.classificationReasons.includes("USER_EXCLUDE") || event.classificationOverride && event.trafficDisposition === "EXCLUDE"
+const nonDiscoveryPhases = new Set(["VALIDATION", "COACH_PROBE", "SESSION_SETUP", "AUTHORIZATION_REPLAY"])
 
-export interface GraphReveal { operations?: readonly string[]; resource?: string }
+/** 실제 응답을 받은 요청만 중립 노드 후보로 둔다. 분류·상태 코드는 존재/권한 판정이 아니다. */
+function observedFunction(event: EventRecord): boolean {
+  return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME"
+    && event.status >= 100 && event.status <= 599
+    && !event.classificationReasons.includes("NO_RESPONSE")
+    && !explicitlyExcluded(event)
+    && !nonFunctionTraffic.has(event.trafficClass)
+    && !nonDiscoveryPhases.has(event.phase)
+}
+
+const eventEvidenceIds = (event: EventRecord) => [...new Set([event.eventId, ...(event.clusterEvidenceIds ?? [])])].sort(compareText)
+
+/** 표시 제한·접기를 적용하기 전, 그래프와 검색에 공통으로 쓰는 데이터. */
+export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
+  const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
+  const cells = snapshot.cells.filter(cell => identityMatches(cell.idn) && observedSources(cell).some(source => filters.source.includes(source)) && (!filters.reviewStates || filters.reviewStates.includes(cell.overall)))
+  const judgedEvidence = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
+  const observedEvents = snapshot.events.filter(event => observedFunction(event)
+    && !eventEvidenceIds(event).some(id => judgedEvidence.has(id)) && filters.source.includes(event.source) && identityMatches(event.idn))
+  const routeCandidates = projectRouteCandidates(snapshot, filters)
+  const groupIds = new Set([...cells.map(cell => operationGroup(cell.op).id), ...observedEvents.map(event => operationGroup(event.op).id), ...routeCandidates.map(candidate => apiGroupDescriptor(candidate.service, candidate.pathTemplate).id)])
+  const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
+  const supportEvents = filters.includeSupportTraffic ? snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !explicitlyExcluded(event) && !observedFunction(event) && groupIds.has(operationGroup(event.op).id)) : []
+  return { cells, observedEvents, supportEvents, routeCandidates }
+}
+
+export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string }
 
 export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
-  const cells = snapshot.cells.filter(cell => identityMatches(cell.idn) && observedSources(cell).some(source => filters.source.includes(source)) && (!filters.reviewStates || filters.reviewStates.includes(cell.overall)))
+  const contents = graphContents(snapshot, filters)
+  const { cells, observedEvents } = contents
+  const observedByGroup = new Map<string, EventRecord[]>()
+  for (const event of observedEvents) {
+    const id = operationGroup(event.op).id
+    const grouped = observedByGroup.get(id)
+    if (grouped) grouped.push(event)
+    else observedByGroup.set(id, [event])
+  }
   const gapIdsByCell = new Map<string, string[]>()
   for (const gap of snapshot.gaps) {
     const key = graphCellKey(gap)
@@ -139,7 +177,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   const ensure = (descriptor: ApiGroupDescriptor) => {
     let group = groupsById.get(descriptor.id)
     if (!group) {
-      group = { ...descriptor, cells: [], operations: [], routeCandidates: [], endpointCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 }
+      group = { ...descriptor, cells: [], operations: [], routeCandidates: [], endpointCount: 0, observedCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 }
       groupsById.set(group.id, group)
     }
     return group
@@ -148,14 +186,16 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const group = ensure(operationGroup(cell.op))
     group.cells.push(cell)
   }
+  for (const event of observedEvents) ensure(operationGroup(event.op))
   // Route candidates keep the existing source/identity filter semantics of the flat projection.
-  for (const candidate of projectRouteCandidates(snapshot, filters)) {
+  for (const candidate of contents.routeCandidates) {
     const group = ensure(apiGroupDescriptor(candidate.service, candidate.pathTemplate))
     group.routeCandidates.push(candidate)
   }
   for (const group of groupsById.values()) {
     group.operations = [...new Set(group.cells.map(cell => cell.op))]
     group.endpointCount = group.operations.length
+    group.observedCount = new Set((observedByGroup.get(group.id) ?? []).map(event => event.op).filter(op => !group.operations.includes(op))).size
     group.routeCandidateCount = group.routeCandidates.length
     for (const source of ["human", "scanner", "llm"] as const) group.sourceCounts[source] = group.cells.reduce((sum, cell) => sum + sourceCount(cell, source), 0)
     const gapKeys = new Set(group.cells.filter(cell => cell.conflict || isPartial(cell)).map(graphCellKey))
@@ -203,6 +243,31 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const [key, bucket] of buckets) {
       const [identity, operation, source] = JSON.parse(key) as [string, string, Source]
       addEdge("identity-operation", `identity:${identity}`, `operation:${operation}`, selectionFor(bucket, source), bucket.reduce((sum, cell) => sum + sourceCount(cell, source), 0))
+    }
+  }
+
+  const addObserved = (observed: readonly EventRecord[], node: HierarchyNode) => {
+    node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...observed.flatMap(eventEvidenceIds)])].sort(compareText) }
+    const buckets = new Map<string, EventRecord[]>()
+    for (const event of observed) {
+      const key = JSON.stringify([event.idn, event.source])
+      buckets.set(key, [...(buckets.get(key) ?? []), event])
+    }
+    for (const [key, events] of buckets) {
+      const [identity, source] = JSON.parse(key) as [string, Source]
+      const evidenceIds = [...new Set(events.flatMap(eventEvidenceIds))].sort(compareText)
+      const identityNode = addNode("identity", identity, { ...emptySelection(), identity })
+      identityNode.selection = { ...identityNode.selection, evidenceIds: [...new Set([...identityNode.selection.evidenceIds, ...evidenceIds])].sort(compareText) }
+      addEdge("observed", identityNode.id, node.id, { ...emptySelection(), identity, operation: node.selection.operation, source, evidenceIds }, events.length)
+    }
+  }
+
+  const addSupport = (events: readonly EventRecord[], node: HierarchyNode) => {
+    node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText) }
+    for (const event of events) {
+      const identity = addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
+      identity.selection = { ...identity.selection, evidenceIds: [...new Set([...identity.selection.evidenceIds, ...eventEvidenceIds(event)])].sort(compareText) }
+      addEdge("support", identity.id, node.id, { ...emptySelection(), identity: event.idn, operation: node.selection.operation, source: event.source, evidenceIds: eventEvidenceIds(event) }, 0, event.eventId)
     }
   }
 
@@ -259,7 +324,9 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const [shape, ops] of shapes) {
       if (ops.length < 2) continue
       const id = `operation-group:${shape}`, open = expandedGroups.has(id)
-      const groupNode = addNode("operation-group", shape, selectionFor(related.filter(cell => ops.includes(cell.op))), { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
+      const groupSelection = selectionFor(related.filter(cell => ops.includes(cell.op)))
+      groupSelection.evidenceIds = [...new Set(nodes.filter(node => node.kind === "operation" && ops.includes(node.selection.operation ?? "")).flatMap(node => node.selection.evidenceIds))].sort(compareText)
+      const groupNode = addNode("operation-group", shape, groupSelection, { label: shape, wrappedLabel: wrapOperationLabel(shape), objectGroup: { key: shape, members: ops, owners: {}, expanded: open } })
       const members = ops.map(op => nodes.find(node => node.id === `operation:${op}`)).filter((node): node is HierarchyNode => !!node)
       const at = Math.min(...members.map(member => nodes.indexOf(member)))
       for (const node of [groupNode, ...members]) nodes.splice(nodes.indexOf(node), 1)
@@ -277,7 +344,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     }
     for (const parts of merged.values()) {
       const cells = [...new Set(parts.flatMap(edge => edge.selection.cells))]
-      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selectionFor(cells, parts[0].source), parts.reduce((sum, edge) => sum + edge.count, 0))
+      const selection = { ...selectionFor(cells, parts[0].source), identity: parts[0].selection.identity, operation: cells.length ? selectionFor(cells).operation : parts[0].selection.operation, evidenceIds: [...new Set(parts.flatMap(edge => edge.selection.evidenceIds))].sort(compareText) }
+      addEdge(parts[0].relation, parts[0].sourceId, parts[0].targetId, selection, parts.reduce((sum, edge) => sum + edge.count, 0))
     }
   }
 
@@ -298,6 +366,24 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
     listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
     addAccess(related)
+    const observed = observedByGroup.get(group.id) ?? []
+    const observedByOperation = new Map<string, EventRecord[]>()
+    for (const event of observed) {
+      const grouped = observedByOperation.get(event.op)
+      if (grouped) grouped.push(event)
+      else observedByOperation.set(event.op, [event])
+    }
+    const observedOps = [...observedByOperation.keys()].filter(op => !group.operations.includes(op)).sort(compareText)
+    const visibleObserved = observedOps.slice(0, Math.max(0, resolved.operationLimit - visible.length))
+    for (const op of reveal.operations ?? []) if (observedOps.includes(op) && !visibleObserved.includes(op)) { visibleObserved.push(op); revealedNodeCount++ }
+    for (const op of [...visible, ...visibleObserved]) {
+      const relatedEvents = observedByOperation.get(op) ?? []
+      if (!relatedEvents.length) continue
+      const existing = nodes.find(node => node.id === `operation:${op}`)
+      const node = existing ?? addNode("observed-operation", op, { ...emptySelection(), operation: op })
+      if (!existing) listItems.push(node)
+      addObserved(relatedEvents, node)
+    }
     // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
     // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
     const resourceScores = new Map<string, number>()
@@ -307,24 +393,28 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const visibleResources = objects.drawn
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     hiddenObjectCount = objects.hidden
-    hiddenOperationCount = operations.length - visible.length
-    groupOperations(visible, related)
-    routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
+    hiddenOperationCount = operations.length - visible.length + observedOps.length - visibleObserved.length
+    const visibleRoutes = group.routeCandidates.slice(0, resolved.operationLimit)
+    const revealedRoute = group.routeCandidates.find(candidate => candidate.id === reveal.routeCandidateId)
+    if (revealedRoute && !visibleRoutes.includes(revealedRoute)) { visibleRoutes.push(revealedRoute); revealedNodeCount++ }
+    routeCandidates = visibleRoutes
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {
-      const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-      const supportEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && operationGroup(event.op).id === group.id)
-      const supportOps = [...new Set(supportEvents.map(event => event.op).filter(op => !visible.includes(op)))].slice(0, resolved.operationLimit)
-      const supportEvidence = (event: Snapshot["events"][number]) => event.clusterEvidenceIds?.length ? event.clusterEvidenceIds : [event.eventId]
+      const supportEvents = contents.supportEvents.filter(event => operationGroup(event.op).id === group.id)
+      const shown = [...visible, ...visibleObserved]
+      const supportOnlyOps = [...new Set(supportEvents.map(event => event.op))].filter(op => !group.operations.includes(op) && !observedOps.includes(op))
+      const supportOnly = supportOnlyOps.slice(0, resolved.operationLimit)
+      for (const op of reveal.operations ?? []) if (supportOnlyOps.includes(op) && !supportOnly.includes(op)) { supportOnly.push(op); revealedNodeCount++ }
+      const supportOps = [...new Set([...shown.filter(op => supportEvents.some(event => event.op === op)), ...supportOnly])]
       for (const op of supportOps) {
         const events = supportEvents.filter(event => event.op === op)
-        addNode("support-operation", op, { ...emptySelection(), operation: op, evidenceIds: [...new Set(events.flatMap(supportEvidence))].sort(compareText) })
-      }
-      for (const event of supportEvents.filter(event => supportOps.includes(event.op))) {
-        addNode("identity", event.idn, { ...emptySelection(), identity: event.idn })
-        addEdge("support", `identity:${event.idn}`, `support-operation:${event.op}`, { ...emptySelection(), identity: event.idn, operation: event.op, source: event.source, evidenceIds: supportEvidence(event) }, 0, event.eventId)
+        const existing = nodes.find(node => ["operation", "observed-operation"].includes(node.kind) && node.selection.operation === op)
+        const node = existing ?? addNode("support-operation", op, { ...emptySelection(), operation: op })
+        if (!existing) listItems.push(node)
+        addSupport(events, node)
       }
     }
+    groupOperations(visible, related)
   } else if (group) {
     const operation = resolved.operation
     const related = group.cells.filter(cell => cell.op === operation)
@@ -333,11 +423,13 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const cell of related) if (cell.resource) scores.set(cell.resource, (scores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
     const focusedResource = candidates.find(gap => graphCellKey(gap) === resolved.focusCandidateKey)?.resource
     const resources = [...new Set([...related.map(cell => cell.resource), ...candidates.map(gap => gap.resource)].filter((resource): resource is string => !!resource))].sort((left, right) => Number(right === focusedResource) - Number(left === focusedResource) || (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    addNode("operation", operation, selectionFor(related))
+    const operationNode = addNode("operation", operation, selectionFor(related))
     const objects = addObjects(resources, related, resource => ({ ...selectionFor(related.filter(cell => cell.resource === resource)), operation, resource }), resource => ({ owner: snapshot.owners[resource] ?? null, publicRead: isPublicRead(snapshot, operation, resource) }), false)
     const visible = objects.drawn
     for (const identity of new Set([...related.map(cell => cell.idn), ...candidates.filter(gap => gap.resource && visible.includes(gap.resource)).map(gap => gap.idn)])) addNode("identity", identity, { ...selectionFor(related.filter(cell => cell.idn === identity)), identity })
     addAccess(related)
+    addObserved((observedByGroup.get(group.id) ?? []).filter(event => event.op === operation), operationNode)
+    addSupport(contents.supportEvents.filter(event => event.op === operation), operationNode)
     for (const cell of related.filter(cell => cell.resource && visible.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${operation}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     const visibleCandidates = candidates.filter(gap => gap.resource && visible.includes(gap.resource))
       .sort((left, right) => Number(graphCellKey(right) === resolved.focusCandidateKey) - Number(graphCellKey(left) === resolved.focusCandidateKey))
