@@ -15,6 +15,7 @@ interface Props {
   disabled?: boolean
   fontSize?: number
   fill?: boolean
+  wrap?: boolean
   inputRef?: Ref<HTMLTextAreaElement>
   onChange?: (value: string) => void
 }
@@ -23,19 +24,20 @@ interface Props {
  * 원문 편집/열람 패널. 편집 가능한 textarea 위에 같은 좌표의 하이라이트 층을 겹쳐
  * 값은 그대로 두고 색만 입힌다(Burp 유사 표시).
  */
-export function RawTextPanel({ id, label, value, readOnly = false, disabled = false, onChange, fontSize = 12, fill = false, inputRef }: Props) {
+export function RawTextPanel({ id, label, value, readOnly = false, disabled = false, onChange, fontSize = 12, fill = false, wrap = true, inputRef }: Props) {
   const highlightRef = useRef<HTMLPreElement>(null)
   const tokens = useMemo(() => value.length <= 262_144 ? highlightRaw(value) : null, [value])
   const textClass = fill ? "h-full min-h-0 resize-none field-sizing-fixed whitespace-pre-wrap break-words px-3 py-2 font-mono text-xs leading-relaxed [scrollbar-gutter:stable] md:text-xs" : RAW_TEXT_CLASS
+  const layoutClass = wrap ? textClass : textClass.replace("whitespace-pre-wrap break-words", "whitespace-pre");
   const style = fontSize === 12 && !fill ? undefined : { fontSize, lineHeight: "1.65" }
   return <div className={`relative min-w-0 ${fill ? "h-full min-h-0" : ""}`}>
-    <pre ref={highlightRef} aria-hidden="true" className={`pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent ${textClass}`} style={style}>{tokens ? tokens.map((tokens, line) => <span key={line}>{tokens.map((token, index) => <span key={index} className={rawTokenClass[token.kind]}>{token.text}</span>)}{"\n"}</span>) : value}</pre>
+    <pre ref={highlightRef} aria-hidden="true" className={`pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent ${layoutClass}`} style={style}>{tokens ? tokens.map((tokens, line) => <span key={line}>{tokens.map((token, index) => <span key={index} className={rawTokenClass[token.kind]}>{token.text}</span>)}{"\n"}</span>) : value}</pre>
     <Textarea
       ref={inputRef}
       id={id}
       aria-label={label}
       spellCheck={false}
-      className={`relative bg-transparent text-transparent caret-foreground ${textClass}`}
+      className={`relative bg-transparent text-transparent caret-foreground ${layoutClass}`}
       style={style}
       value={value}
       readOnly={readOnly}

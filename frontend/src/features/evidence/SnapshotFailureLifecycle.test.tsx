@@ -51,8 +51,11 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
       await userEvent.click(screen.getByRole("row", { name: "orders:101" }))
     }
     else {
-      await userEvent.click(await screen.findByRole("button", { name: /상세 보기$/ }))
-      if (kind === "surface") await userEvent.click(await screen.findByRole("button", { name: /관측 기록 상세 .* H .* HTTP 200/ }))
+      await userEvent.click(await screen.findByRole("button", { name: kind === "surface" ? /API 상세$/ : /상세 보기$/ }))
+      if (kind === "surface") {
+        await userEvent.click(screen.getByRole("tab", { name: /^관측 기록/ }))
+        await userEvent.click(await screen.findByRole("button", { name: /관측 기록 상세 .* H .* HTTP 200/ }))
+      }
     }
   }
   await select()

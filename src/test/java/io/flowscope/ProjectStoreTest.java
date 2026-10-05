@@ -89,7 +89,7 @@ final class ProjectStoreTest {
                 .withEndpointRequirement(record.op, AccessRole.LV1)
                 .withResourceOwner(record.resource, "user-a")
                 .withResourcePolicy(record.resource, ResourcePolicy.OWNER_ONLY)
-                .withTrafficOverride(record.op, TrafficOverride.INCLUDE);
+                .withTrafficOverride(record.op, TrafficOverride.INCLUDE).withTrafficOverride(record.service + " GET /api/review", TrafficOverride.REVIEW);
         AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
         config.upsertAccount(account).bindSession(record.service, record.fp, account.id());
         LegacyAssessment assessment = new LegacyAssessment("a-1", "BOLA", "LIKELY",
@@ -134,6 +134,7 @@ final class ProjectStoreTest {
         assertEquals(record.authState, restored.authState);
         assertEquals(record.trafficClassification, restored.trafficClassification);
         assertEquals(TrafficOverride.INCLUDE, loaded.config().trafficOverride(record.op));
+        assertEquals(TrafficOverride.REVIEW, loaded.config().trafficOverride(record.service + " GET /api/review"));
         assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
         assertEquals("user-a", loaded.config().resourceOwner(record.resource));
         assertEquals(ResourcePolicy.OWNER_ONLY, loaded.config().resourcePolicy(record.op, record.resource));

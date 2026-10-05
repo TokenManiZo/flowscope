@@ -1,13 +1,17 @@
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
 import { AppProviders } from "@/app/AppProviders"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { snapshotFixture } from "@/test/fixtures"
-import { SurfacePage } from "./SurfacePage"
+import { SurfacePage, inputComparisonStatus } from "./SurfacePage"
+import { openEvidenceSelection } from "@/features/evidence/evidenceNavigation"
+
+vi.mock("@/features/evidence/evidenceNavigation", async (importOriginal) => ({ ...await importOriginal<typeof import("@/features/evidence/evidenceNavigation")>(), openEvidenceSelection: vi.fn() }))
 
 vi.mock("@/lib/query/hooks", () => ({
+  useEvidenceQuery: () => ({ data: { records: [] }, isSuccess: true, isError: false, isLoading: false }),
   useSnapshotQuery: () => ({ data: (globalThis as { surfaceFixture?: Snapshot }).surfaceFixture, isLoading: false, isError: false }),
   useRequirementMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTrafficOverrideMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -40,7 +44,7 @@ it("opens API details on every click, including the same row after collapsing th
     } }
     const user = userEvent.setup()
     render(<AppProviders><SurfacePage /></AppProviders>)
-    const details = screen.getAllByRole("button", { name: "상세 보기" })
+    const details = screen.getAllByRole("button", { name: /API 상세$/ })
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     await user.click(details[0])
     expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/order/search")
@@ -51,6 +55,10 @@ it("opens API details on every click, including the same row after collapsing th
     await user.click(screen.getByRole("button", { name: "선택 상세 패널 접기" }))
     await user.click(details[1])
     expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/orders")
+    fireEvent.pointerDown(screen.getByRole("complementary", { name: "API 상세" }))
+    expect(screen.getByRole("complementary", { name: "API 상세" })).toBeVisible()
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "API·입력 차이" }))
+    expect(screen.queryByRole("complementary", { name: "API 상세" })).not.toBeInTheDocument()
   } finally {
     window.matchMedia = originalMatchMedia
   }
@@ -65,10 +73,11 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   expect(screen.getByText("/api/order/search")).toBeVisible()
   expect(screen.getAllByText("H").length).toBeGreaterThan(0)
   expect(screen.queryByText(/%/)).not.toBeInTheDocument()
-  screen.getByRole("button", { name: "상세 보기" }).click()
+  screen.getByRole("button", { name: /API 상세$/ }).click()
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   await userEvent.click(screen.getByText("기록 연결 정보"))
   expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("ev-human")
+  await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
   await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
@@ -140,11 +149,13 @@ it("keeps a literal dotted key and a nested path distinguishable and never reuse
   ] }] } }
 
   render(<AppProviders><SurfacePage /></AppProviders>)
-  screen.getByRole("button", { name: "상세 보기" }).click()
+  screen.getByRole("button", { name: /API 상세$/ }).click()
 
-  // 표시 경로가 같아도 기계 좌표로 구분해 보여 준다.
-  expect(await screen.findByText("/a.b")).toBeVisible()
-  expect(screen.getByText("/a/b")).toBeVisible()
+  // 기계 좌표는 필드를 펼쳤을 때 표시한다.
+  const fields = await screen.findByLabelText("API 입력 필드 비교")
+  for (const summary of fields.querySelectorAll("summary")) await userEvent.click(summary)
+  expect(screen.getByText(/^\/a\.b ·/)).toBeVisible()
+  expect(screen.getByText(/^\/a\/b ·/)).toBeVisible()
   // source 필터 재계산이 미확정 좌표를 정상 미관측으로 되돌리지 않는다.
   expect(screen.getByText(/선언 좌표 미확정 · 관측 비교 제외/)).toBeVisible()
   expect(screen.queryByText(/산출물에서 발견 · 아직 요청 없음 · UNKNOWN/)).not.toBeInTheDocument()
@@ -170,20 +181,51 @@ it("does not show the run-gap hint when endpoints exist but are only hidden by a
   expect(screen.queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
 
- it("keeps comparison conditions in one dropdown and restores focus on dismissal", async () => {
+ it("keeps source filters visible and restores dropdown focus on dismissal", async () => {
   ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = snapshotFixture
   const user = userEvent.setup()
   render(<AppProviders><SurfacePage /></AppProviders>)
   expect(screen.queryByRole("combobox", { name: "API·입력 차이 상태" })).not.toBeInTheDocument()
-  expect(screen.queryByRole("checkbox", { name: "L · LLM" })).not.toBeInTheDocument()
+  expect(screen.getByRole("checkbox", { name: "L · LLM" })).toBeVisible()
   const comparison = screen.getByRole("region", { name: "API 비교" })
   const button = within(comparison).getByRole("button", { name: "필터" })
   expect(within(comparison).getByRole("button", { name: "집계" })).toBeVisible()
   await user.click(button)
   expect(screen.getByRole("combobox", { name: "API·입력 차이 상태" })).toBeVisible()
-  await user.click(screen.getByRole("checkbox", { name: "L · LLM" }))
   await user.keyboard("{Escape}")
   expect(button).toHaveFocus()
+  await user.click(screen.getByRole("checkbox", { name: "L · LLM" }))
   await user.click(button)
   expect(screen.getByRole("checkbox", { name: "L · LLM" })).not.toBeChecked()
  })
+
+
+it("opens existing observations when inputs are empty and makes linked ordinals open exact retained evidence", async () => {
+  const ids = [96, 102, 182, 412, 509, 606, 703]
+  const events = ids.map(id => ({ ...surfaceEvent, eventId: `ev-${id}` }))
+  const endpoint = {
+    key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" },
+    observedSources: ["HUMAN" as const],
+    observations: events.map(event => ({ evidenceId: event.eventId, source: "HUMAN" as const, runId: "human-1", identity: "anon", status: 200 })),
+    declarations: [], parameters: [], deltaState: "ONE_SOURCE_OBSERVED" as const,
+  }
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = {
+    ...snapshotFixture, events, evidenceOrdinals: Object.fromEntries(ids.map(id => [`ev-${id}`, id])),
+    surface: { extractions: [], probes: [], endpoints: [endpoint] },
+  }
+  const user = userEvent.setup()
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  expect(screen.getByRole("columnheader", { name: "비교 상태" })).toBeVisible()
+  expect(inputComparisonStatus(endpoint)).toBe("선언 근거 없음")
+  expect(inputComparisonStatus({ ...endpoint, observations: [] })).toBe("미관측")
+  await user.click(screen.getByRole("button", { name: /API 상세$/ }))
+  expect(screen.getByRole("tab", { name: "관측 기록" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.getAllByRole("button", { name: /관측 기록 상세/ })).toHaveLength(7)
+  await user.click(screen.getByRole("tab", { name: "입력 비교" }))
+  expect(screen.getByText("비교할 입력 필드가 추출되지 않았습니다.")).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "관측 기록 7건 보기" }))
+  expect(screen.getByRole("tab", { name: "관측 기록" })).toHaveAttribute("aria-selected", "true")
+  await user.click(screen.getByText("기록 연결 정보"))
+  await user.click(screen.getByRole("button", { name: "연결 관측 기록 #703 보기" }))
+  expect(openEvidenceSelection).toHaveBeenLastCalledWith("ev-703", surfaceEvent.op, snapshotFixture.datasetRevision ?? snapshotFixture.identityRevision ?? 0)
+})

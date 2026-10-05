@@ -6,7 +6,7 @@ import { ReferenceAnalysisWorkspace } from "./ReferenceAnalysisWorkspace"
 
 function setViewport(width: number) {
   window.matchMedia = vi.fn((query: string) => ({
-    matches: query.includes("1279") && width < 1280,
+    matches: query.startsWith("(max-width:") && width <= Number(query.match(/\d+/)?.[0]),
     media: query,
     onchange: null,
     addEventListener: vi.fn(),
@@ -154,4 +154,13 @@ it("leaves a visible filter strip with the active filter count after the left pa
   expect(within(reopen).getByLabelText("켜 둔 필터 2개")).toHaveTextContent("2")
   await user.click(reopen)
   expect(screen.getByRole("button", { name: "공유 필터" })).toBeVisible()
+})
+
+it("keeps observation inspectors docked and resizable in medium windows", () => {
+  setViewport(1000)
+  render(<ReferenceAnalysisWorkspace ariaLabel="관측 기록 분석 영역" context={null} inspector={<p>선택 관측 기록</p>} inspectorOpen compactMediaQuery="(max-width: 767px)"><p>관측 요청 표</p></ReferenceAnalysisWorkspace>)
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("선택 관측 기록")
+  expect(screen.getByRole("separator", { name: "선택 상세 너비 조절" })).toBeVisible()
+  expect(screen.getByRole("region", { name: "관측 기록 분석 영역" }).parentElement).toHaveClass("flex-row")
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
 })
