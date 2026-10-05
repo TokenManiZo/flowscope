@@ -1,4 +1,4 @@
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 
 import { SourceMarks } from "@/components/TrafficBadges"
 import { Button } from "@/components/ui/button"
@@ -25,16 +25,16 @@ export function SurfaceParameterComparison({ parameters, ordinal, onEvidence, di
   return <div className="grid min-w-0 gap-3">{parameters.map(parameter => {
     const comparison = parameterComparison(parameter)
     const declarations = [...new Set(parameter.declarations.map(item => item.declaredType || item.declaredShape).filter(Boolean))]
-    return <details key={`${parameter.location}:${parameter.coordinateResolved === false ? "?" : ""}${parameter.canonicalPath}`} className="group min-w-0 rounded-md border bg-background">
-      <summary className="grid cursor-pointer list-none gap-1.5 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+    return <details key={`${parameter.location}:${parameter.coordinateResolved === false ? "?" : ""}${parameter.canonicalPath}`} className="group min-w-0 rounded-md border border-border/80 bg-card">
+      <summary className="grid cursor-pointer list-none gap-1.5 rounded-t-md bg-muted/30 px-3 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
         <span className="flex min-w-0 flex-wrap items-center gap-2"><span className="rounded border px-1.5 text-[10px] text-muted-foreground">{parameter.location}</span><span className="min-w-0 break-all font-mono text-xs">{parameter.fieldPath}</span><span className="ml-auto text-[11px] text-muted-foreground">{comparison}</span><ChevronDown className="size-3.5 shrink-0 text-muted-foreground group-open:rotate-180" /></span>
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]"><span><span className="text-muted-foreground">선언 </span>{declarations.join(" / ") || (parameter.declarations.length ? "형식 미지정" : "없음")}<span className="px-1.5 text-muted-foreground">→</span><span className="text-muted-foreground">관측 </span>{parameter.observedShapes.join(" / ") || "없음"}</span><span className="ml-auto flex items-center gap-2"><SourceMarks sources={parameter.observedSources} /><span className="text-muted-foreground">{parameter.observations.length}건</span></span></span>
       </summary>
-      <div className="grid gap-3 border-t p-3 text-xs">
+      <div className="grid gap-3 border-t border-border/80 bg-background/40 p-3 text-xs">
         <p className="break-all font-mono text-[11px] text-muted-foreground">{parameter.canonicalPath} · {parameter.requirement}</p>
         {parameter.coordinateResolved === false && <p className="text-xs text-amber-800 dark:text-amber-300">선언 좌표 미확정 · 관측 비교 제외</p>}
         <p className="text-muted-foreground">관측 값의 형식과 근거를 표시합니다. 실제 값은 마스킹된 근거 원문에서 확인하세요.</p>
-        {parameter.observations.map((item, index) => <div key={`${item.evidenceId}:${index}`} className="flex flex-wrap items-center gap-2"><SourceMarks sources={[item.source]} /><span className="font-mono">{item.valueType || item.shape || "형식 미상"}</span><span className="text-muted-foreground">{item.masked ? "마스킹됨" : item.presence || ""}</span><Button size="sm" variant="outline" className="ml-auto h-7 text-xs" disabled={disabled} onClick={() => onEvidence(item.evidenceId)} aria-label={`입력 근거 기록 ${ordinal(item.evidenceId)} 보기`}>{ordinal(item.evidenceId)}</Button></div>)}
+        {parameter.observations.map((item, index) => <Button key={`${item.evidenceId}:${index}`} type="button" variant="outline" className="h-auto min-w-0 w-full justify-start gap-2 border-border/80 bg-muted/20 px-3 py-2.5 text-xs hover:bg-muted/60" disabled={disabled} onClick={() => onEvidence(item.evidenceId)} aria-label={`입력 근거 기록 ${ordinal(item.evidenceId)} 보기`}><SourceMarks sources={[item.source]} /><span className="break-all whitespace-normal font-mono">{item.valueType || item.shape || "형식 미상"}</span><span className="text-muted-foreground">{item.masked ? "마스킹됨" : item.presence || ""}</span><span className="ml-auto shrink-0 font-mono">{ordinal(item.evidenceId)}</span><ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /></Button>)}
         {parameter.declarations.map((item,index) => <p key={`${item.evidenceId}:${index}`} className="break-words text-[11px] text-muted-foreground">선언 · {item.type} · {item.adapter} · {item.declaredType || item.declaredShape || "형식 미지정"} · {ordinal(item.evidenceId)}</p>)}
       </div>
     </details>

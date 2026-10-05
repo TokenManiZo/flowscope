@@ -116,6 +116,20 @@ export function EvidencePage() {
     setOffset(Math.min(20_000, Math.floor(Math.max(0, index) / evidencePageLimit) * evidencePageLimit))
   }
 
+  useEffect(() => {
+    if (!inspectorOpen) return
+    const dismissOnBlankSpace = (event: PointerEvent) => {
+      // 열린 대화상자의 바깥 클릭은 해당 대화상자가 처리한다(편집 초안 보호).
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return
+      const target = event.target
+      if (!(target instanceof Element) || target.closest('[data-evidence-inspector], [role="dialog"], [role="menu"], [role="listbox"], [role="separator"], button, a, input, select, textarea, label, summary, tr')) return
+      setInspectorOpen(false)
+      setSelected(null)
+    }
+    document.addEventListener("pointerdown", dismissOnBlankSpace)
+    return () => document.removeEventListener("pointerdown", dismissOnBlankSpace)
+  }, [inspectorOpen])
+
   const page = evidence.data
   const records = selectedEvent && <section aria-label="작업 관측 기록 페이지" className="grid min-w-0 gap-3 border-t pt-4">
     <h2 className="text-sm font-semibold">요청 · 응답 <span className="ml-1 text-xs font-normal text-muted-foreground">마스킹됨{page ? ` · 같은 API ${page.total}건` : ""}</span></h2>
@@ -131,7 +145,7 @@ export function EvidencePage() {
     {page && page.records.length > 0 && !page.records.some(record => record.eventId === selectedEvent.eventId) && <p className="text-xs text-muted-foreground">선택 기록의 원문이 이 페이지에 없습니다. 관측 기록을 선택하거나 이전·다음 페이지를 확인하세요.</p>}
     {page && (page.offset > 0 || page.hasMore) && <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">총 {page.total}건 · {page.offset + 1}번째부터</span><Button variant="outline" size="sm" aria-label="이전 관측 기록 페이지" disabled={page.offset <= 0 || evidence.isFetching || snapshot.isError} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button><Button variant="outline" size="sm" aria-label="다음 관측 기록 페이지" disabled={!page.hasMore || evidence.isFetching || snapshot.isError} onClick={() => setOffset(page.offset + page.limit)}>다음</Button></div>}
   </section>
-  const inspector = <div className="grid min-w-0">
+  const inspector = <div data-evidence-inspector className="grid min-w-0">
     {selectedEvent && <section aria-label="관측 기록 분류 작업" className="grid gap-2 border-b p-4">
       <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.classificationReasons.includes("USER_REVIEW") ? "AUTO" : "REVIEW" })}>{selectedEvent.classificationReasons.includes("USER_REVIEW") ? "자동 분류로 복귀" : "검토 필요로 표시"}</Button><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.trafficDisposition === "EXCLUDE" ? "AUTO" : "EXCLUDE" })}>{selectedEvent.trafficDisposition === "EXCLUDE" ? "숨김 해제" : "목록에서 숨기기"}</Button><Button size="sm" className="ml-auto" disabled={snapshot.isError || !selectedEvent.op} onClick={() => openSurfaceSelection(selectedEvent.op, datasetRevision)}>API에서 보기</Button></div>
       <p className="text-[11px] text-muted-foreground">같은 API의 요청 전체에 적용합니다. 원본 관측 기록은 보존됩니다.</p>
@@ -141,7 +155,7 @@ export function EvidencePage() {
     <EvidenceSheet showMetadata={false} inline compactPolicy detailContent={records} event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
   </div>
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="관측 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={Math.max(420, window.innerWidth - 460)} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
+    <ReferenceAnalysisWorkspace ariaLabel="관측 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={Math.max(600, Math.round(window.innerWidth / 2))} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
       <section className="grid min-w-0 gap-3 p-4" aria-labelledby="evidence-title">
       <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">관측 기록</h1><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>관측 기록을 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
@@ -154,21 +168,25 @@ export function EvidencePage() {
         {(hidden > 0 || folded > 0) && <p className="text-xs text-muted-foreground">{[hidden > 0 && `필터로 가린 ${hidden}건`, folded > 0 && `반복 요청 ${folded}건은 한 줄로 묶음`].filter(Boolean).join(" · ")}</p>}
         <ScrollArea className="h-[calc(100dvh-20rem)] min-h-64 rounded-md border" aria-label="관측 기록 표">
           <Table>
-            <TableHeader><TableRow><TableHead>관측 요청</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead className="text-center">Method</TableHead><TableHead>API</TableHead><TableHead>HTTP</TableHead><TableHead>계정</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((event) => {
                 const review = event.trafficDisposition === "REVIEW"
                 return <TableRow key={event.eventId} data-state={selected?.eventId === event.eventId ? "selected" : undefined} className={cn(!snapshot.isError && "cursor-pointer")} onClick={() => selectEvent(event)}>
-                  <TableCell className="max-w-0 whitespace-normal p-3">
-                    <div className="flex items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</span><MethodBadge method={event.method} /><span className="ml-auto"><HttpStatusBadge status={event.status} /></span></div>
-                    <button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} title={event.path} className="my-2 block w-full min-w-0 truncate text-left font-mono text-xs hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button>
-                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground"><Badge variant="outline" className={sourceTone[event.source]}>{sourceLabel(event.source)}</Badge><span>{boundedText(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn), 48)}</span><span className="ml-auto tabular-nums">반복 {event.repeatCount}회</span></div>
-                    <p className="mt-1 text-[11px] text-muted-foreground" title={observedTimeLabel(event.firstSeen, event.lastSeen)}>{clockLabel(event)} · <span>{review ? "검토 필요" : trafficClassLabel(event.trafficClass)}</span></p>
-                    {review && <p className="mt-1 text-[11px] text-muted-foreground">{event.classificationReasons.map(trafficReasonLabel).join(" · ")}</p>}
-                  </TableCell>
+                  <TableCell className="font-mono text-muted-foreground">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</TableCell>
+                  <TableCell><Badge variant="outline" className={sourceTone[event.source]}>{sourceLabel(event.source)}</Badge></TableCell>
+                  <TableCell className="text-center"><MethodBadge method={event.method} /></TableCell>
+                  <TableCell className="max-w-96 whitespace-normal"><button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} className="min-w-0 break-all text-left font-mono text-sm hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button></TableCell>
+                  <TableCell><HttpStatusBadge status={event.status} /></TableCell>
+                  <TableCell className="text-sm">{boundedText(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn), 48)}</TableCell>
+                  <TableCell className="max-w-72 whitespace-normal text-sm">{review
+                    ? <><span className="mr-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">검토 필요</span><span className="text-muted-foreground">{event.classificationReasons.map(trafficReasonLabel).join(" · ")}</span></>
+                    : trafficClassLabel(event.trafficClass)}</TableCell>
+                  <TableCell className="tabular-nums">{event.repeatCount}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={observedTimeLabel(event.firstSeen, event.lastSeen)}>{clockLabel(event)}</TableCell>
                 </TableRow>
               })}
-              {rows.length === 0 && <TableRow><TableCell colSpan={1} className="whitespace-normal py-8 text-center text-muted-foreground">{tab === "REVIEW" ? "검토할 트래픽이 없습니다." : "현재 필터에 맞는 관측 기록이 없습니다."}</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={9} className="whitespace-normal py-8 text-center text-muted-foreground">{tab === "REVIEW" ? "검토할 트래픽이 없습니다." : "현재 필터에 맞는 관측 기록이 없습니다."}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </ScrollArea>

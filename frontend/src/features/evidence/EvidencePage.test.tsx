@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -103,6 +103,22 @@ describe("EvidencePage", () => {
     expect(screen.getByRole("button", { name: "선택 상세 패널 열기" })).toBeVisible()
     await userEvent.click(within(context).getByRole("checkbox", { name: "사람 H" }))
     expect(screen.queryByText("workspace-evidence")).not.toBeInTheDocument()
+  })
+
+  it("keeps the original table columns and dismisses details only from outside blank space", async () => {
+    installFetch([event({ eventId: "outside-evidence" })])
+    renderWithQueryClient(<EvidencePage />)
+    const row = (await screen.findByText("outside-evidence")).closest("tr")!
+    expect(within(row).getAllByRole("cell")).toHaveLength(9)
+    for (const name of ["#", "소스", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
+    await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
+    const detail = await screen.findByRole("region", { name: "관측 기록 상세" })
+    fireEvent.pointerDown(detail)
+    expect(screen.getByText("선택 관측 기록: outside-evidence")).toBeVisible()
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "관측 기록" }))
+    expect(screen.queryByText("선택 관측 기록: outside-evidence")).not.toBeInTheDocument()
+    await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
+    expect(await screen.findByText("선택 관측 기록: outside-evidence")).toBeVisible()
   })
 
   it("splits 관측 기록 into main, review and hidden tabs with counts, and filters by source, class and search", async () => {
