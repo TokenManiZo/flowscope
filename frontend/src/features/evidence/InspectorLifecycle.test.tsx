@@ -4,8 +4,8 @@ import userEvent from "@testing-library/user-event"
 import { afterAll, afterEach, expect, it, vi } from "vitest"
 import { EvidenceInspectorBody } from "@/components/layout/EvidenceSheet"
 import { GraphInspectorPanel } from "@/features/graph/GraphInspectorPanel"
-import { targetSnapshot } from "@/test/fixtures"
-import { createTestQueryClient } from "@/test/render"
+import { anonymousInspectionFixture, targetSnapshot } from "@/test/fixtures"
+import { createTestQueryClient, seedHumanRun } from "@/test/render"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { loadSample, openProject, resetProjectTraffic, startProject } from "@/lib/api/endpoints"
 
@@ -30,7 +30,7 @@ afterAll(() => {
 })
 
 function mount(kind: "evidence" | "graph") {
-  const client = createTestQueryClient()
+  const client = seedHumanRun(createTestQueryClient(), anonymousInspectionFixture)
   const tree = (selected: EventRecord | null, current: Snapshot) => <QueryClientProvider client={client}>{kind === "evidence" ? <EvidenceInspectorBody event={selected} snapshot={current} /> : <GraphInspectorPanel event={selected} snapshot={current} selection={{ operation: selected?.op ?? null, resource: selected?.resource ?? null, identity: selected?.idn ?? null, source: selected?.source ?? null, evidenceIds: selected ? [selected.eventId] : [] }} />}</QueryClientProvider>
   const view = render(tree(event, snapshot))
   return { ...view, client, change: (selected: EventRecord | null, current = snapshot) => view.rerender(tree(selected, current)) }
@@ -131,7 +131,7 @@ it.each(["evidence", "graph"] as const)("preserves %s Request Lab requests/lates
   const view = mount(kind)
   await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  // 열면 비로그인 편집본이 바로 준비된다.
+  // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
   await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   const edited = "GET /edited HTTP/1.1\nHost: api.example.test\n\n"
@@ -172,7 +172,7 @@ it.each([loadSample, () => openProject("missing"), resetProjectTraffic, () => st
   mount("evidence")
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
   const editor = await screen.findByLabelText("Request Lab 요청 원문")
-  // 열면 비로그인 편집본이 바로 준비된다.
+  // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
   await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(editor)
   await userEvent.type(editor, "unsaved operator edit")

@@ -1,13 +1,13 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { useState } from "react"
+import { useState, type ReactElement } from "react"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 
 import { activeAccounts, RequestLabDialog } from "./RequestLabDialog"
 import { OperationDetail } from "./OperationDetail"
-import { renderWithQueryClient } from "@/test/render"
+import { createTestQueryClient, renderWithQueryClient as renderWithClient, seedHumanRun } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
-import type { Account, EventRecord, ManagedSession, Snapshot } from "@/lib/api/types"
+import type { Account, EventRecord, HumanRun, ManagedSession, Snapshot } from "@/lib/api/types"
 import { createMemoryOnlyRawState } from "@/lib/security/memoryOnlyRawState"
 import { prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
 
@@ -28,6 +28,16 @@ const registeredAccounts: Account[] = [
   { id: "inactive", label: "비활성", role: "user", target: activeSession.service, color: "", authArtifactCount: 1 },
   { id: "other", label: "다른 서비스", role: "user", target: "https://other.example.test", color: "", authArtifactCount: 1 },
 ]
+
+/** 사이드바가 받아 온 점검 상태. accountId ""는 비로그인 점검이다. */
+const inspecting = (...accountIds: string[]): HumanRun => ({ active: accountIds.length > 0, completed: false, runId: "", accountId: "", proxy: "", runs: accountIds.map((accountId, index) => ({ runId: `run-${index}`, accountId, proxy: "" })) })
+function clientInspecting(run: HumanRun) {
+  return seedHumanRun(createTestQueryClient(), run)
+}
+// 이 파일의 기본은 비로그인으로 점검 중인 상태다. 점검 상태에 따른 기본 전송 인증은 따로 고정한다.
+function renderWithQueryClient(ui: ReactElement, client = clientInspecting(inspecting(""))) {
+  return renderWithClient(ui, client)
+}
 
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }) }
 
@@ -97,7 +107,7 @@ async function chooseAuthentication(user: ReturnType<typeof userEvent.setup>, va
 
 async function openDraft(currentSession: boolean | null = false) {
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  // 열면 원본에서 비로그인 편집본이 바로 준비된다(Original·+ 없음).
+  // 비로그인으로 점검 중이면 열자마자 원본에서 비로그인 편집본이 준비된다(Original·+ 없음).
   await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
   if (currentSession) {
@@ -133,6 +143,46 @@ describe("RequestLabDialog", () => {
     await user.click(screen.getByRole("button", { name: "편집으로 돌아가기" }))
     expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
     expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(false)
+  })
+
+  it.each([
+    ["the account being inspected", inspecting("acct-1"), "관리자"],
+    ["비로그인 while inspecting without logging in", inspecting(""), "비로그인"],
+  ])("defaults the send authentication to %s", async (_, run, label) => {
+    installTransport()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />, clientInspecting(run))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(label))
+  })
+
+  it.each([
+    ["nothing is being inspected", inspecting()],
+    ["several identities are being inspected", inspecting("acct-1", "")],
+    ["the inspected account has no usable session yet", inspecting("acct-2")],
+  ])("leaves the send authentication empty when %s", async (_, run) => {
+    const fetch = installTransport()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />, clientInspecting(run))
+    await screen.findByRole("button", { name: /^작성 중 · / })
+    // 고를 신원이 없으면 어떤 인증도 미리 적용하지 않는다.
+    expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab/credentials")).toBe(false)
+    expect(screen.getByRole("button", { name: "작성 중 · 인증 선택 전" })).toHaveAttribute("aria-pressed", "true")
+    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(/인증 선택/)
+    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
+  })
+
+  it("deletes any tab on its own and stays on the tab being viewed", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft()
+    for (const n of [1, 2, 3]) {
+      await user.click(screen.getByRole("button", { name: "요청 재전송" }))
+      await screen.findByRole("button", { name: `수정된 요청 ${n} · 비로그인 · 200` })
+    }
+    // 3번을 보는 채로 가운데 2번만 지운다. 뒤 탭을 먼저 지울 필요가 없다.
+    await user.click(screen.getByRole("button", { name: "수정된 요청 2 삭제" }))
+    await waitFor(() => expect(screen.queryByRole("button", { name: "수정된 요청 2 · 비로그인 · 200" })).not.toBeInTheDocument())
+    expect(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "수정된 요청 3 · 비로그인 · 200" })).toHaveAttribute("aria-pressed", "true")
   })
 
   it("stacks every send as 수정된 요청 N and continues edits or resends of a sent tab in a new tab", async () => {

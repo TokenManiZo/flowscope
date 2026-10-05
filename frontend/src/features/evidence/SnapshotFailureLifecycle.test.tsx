@@ -6,7 +6,8 @@ import { RelationshipGraphView } from "@/features/graph/RelationshipGraphView"
 import type { GraphSelection } from "@/features/graph/graphProjection"
 import { actualEvent, demoEndpoint, surfaceSnapshot } from "@/features/parameter-map/parameterMapFixtures"
 import { SurfacePage } from "@/features/surface/SurfacePage"
-import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
+import { anonymousInspectionFixture } from "@/test/fixtures"
+import { createTestQueryClient, renderWithQueryClient, seedHumanRun } from "@/test/render"
 import { EvidencePage } from "./EvidencePage"
 vi.mock("@/features/graph/useGraphWorkspace", async () => ({ useGraphWorkspace: (await import("@/test/graphWorkspace")).useMemoryGraphWorkspace }))
 
@@ -35,7 +36,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     return Promise.resolve(json(draft))
   })
   vi.stubGlobal("fetch", fetch)
-  const client = createTestQueryClient()
+  const client = seedHumanRun(createTestQueryClient(), anonymousInspectionFixture)
   client.setQueryDefaults(["snapshot"], { retryDelay: 0 })
   renderWithQueryClient(kind === "evidence" ? <EvidencePage /> : kind === "surface" ? <SurfacePage /> : <RelationshipGraphView />, client)
   await waitFor(() => expect(client.getQueryState(["snapshot"])?.status).toBe("success"))
@@ -62,7 +63,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await select()
   await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "Request Lab에서 보내기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
-  // 열면 비로그인 편집본이 바로 준비된다.
+  // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
   await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")

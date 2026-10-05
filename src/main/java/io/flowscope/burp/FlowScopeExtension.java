@@ -2740,16 +2740,8 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.orchestrator = Orchestrator.HUMAN;
             record.tool = ToolKind.BURP;
-            appendRequestLabRecord(record, epoch, () -> retainRawExchange(record, exchange.request(), response));
-            if (credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT && !"anon".equals(record.fp)) {
-                analysisConfig.bindSession(record.service, record.fp, accountId);
-                List<String> setCookies = response.headers().stream()
-                        .filter(header -> header.name().equalsIgnoreCase("Set-Cookie"))
-                        .map(HttpHeader::value).toList();
-                sessionBroker.observeResponse(sessionBroker.handleForAccount(accountId), URI.create(request.url()),
-                        response.statusCode(), response.headerValue("Location"), boundedResponseBody(response), setCookies,
-                        java.time.Instant.now());
-            }
+            recordRequestLabResponse(record, credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT ? accountId : null,
+                    epoch, () -> retainRawExchange(record, exchange.request(), response));
             RequestRecord published = analyzedRecord(record);
             executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
                     RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
@@ -3361,6 +3353,15 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /** 방금 추가한 레코드의 분석본. 다른 재분석이 먼저 게시돼도 Evidence ID는 내용 해시라 다음 게시와 같다. */
+    /**
+     * Request Lab 응답을 화면에 보여 줄 기록으로만 남긴다. 값을 바꿔 보낸 요청의 401·403은 점검 결과일 수 있으므로
+     * 응답으로 계정 세션 상태(인증값 만료)나 인증값 주인(세션 연결)을 바꾸지 않는다. 계정으로 보냈으면 신원은 고른 계정으로 적는다.
+     */
+    void recordRequestLabResponse(RequestRecord record, String accountId, long epoch, Runnable retainExchange) {
+        record.laneAccountId = emptyToNull(accountId);
+        appendRequestLabRecord(record, epoch, retainExchange);
+    }
+
     RequestRecord analyzedRecord(RequestRecord record) {
         return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
                 .findFirst().orElseThrow(() -> new IllegalStateException("검증 Evidence를 분석 결과에서 찾지 못했습니다."));

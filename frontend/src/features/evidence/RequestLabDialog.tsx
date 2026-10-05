@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getRequestLabDraft, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
+import { getHumanRun, getRequestLabDraft, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
 import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
 import { createMemoryOnlyRawState, REQUEST_LAB_MAX_BYTES, REQUEST_LAB_MAX_REQUESTS, type MemoryOnlyRawState, type RequestLabEntry } from "@/lib/security/memoryOnlyRawState"
@@ -78,6 +78,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const splitRef = useRef(50)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
 
+  // 점검 중인 실행은 사이드바 상태 표시가 계속 받아 온다. 여기서는 새로 요청하지 않고 같은 값을 읽기만 한다.
+  const inspection = useQuery({ queryKey: queryKeys.humanRun, queryFn: ({ signal }) => getHumanRun(signal), enabled: false }).data
   const accountOptions = useMemo(() => accounts.map(account => {
     const session = sessions.find(value => value.accountId === account.id && value.service === draft?.service)
     const ready = !!session && !session.credentialConflict
@@ -207,11 +209,24 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     changeView(next.id)
     return next
   }
-  /** 원본에서 새 편집본을 만들고 비로그인을 적용한다. 열 때와 탭을 모두 지웠을 때 쓴다. */
+  /**
+   * 새 편집본의 전송 인증: 점검이 하나만 돌고 있으면 그 신원(비로그인 점검이면 비로그인, 계정은 세션을 쓸 수 있을 때만).
+   * 점검이 없거나 여러 개면 어느 신원인지 알 수 없으므로 비워 두고 사용자가 고르게 한다.
+   */
+  function inspectedCredentials(): { mode: RequestLabCredentialMode; accountId: string } | null {
+    const runs = inspection?.runs?.length ? inspection.runs : inspection?.active ? [inspection] : []
+    const identities = [...new Set(runs.map(run => run.accountId || ""))]
+    if (identities.length !== 1) return null
+    const [accountId] = identities
+    if (!accountId) return { mode: "ANONYMOUS", accountId: "" }
+    return accountOptions.some(option => option.account.id === accountId && option.ready) ? { mode: "ACCOUNT", accountId } : null
+  }
+  /** 원본에서 새 편집본을 만들고 점검 중인 신원의 인증을 적용한다. 열 때와 탭을 모두 지웠을 때 쓴다. */
   function startDraft() {
     if (!draft?.requestEditable || busy || suspended) return
     const next = createDraft(raw.current.originalRequest, "ORIGINAL", "")
-    if (next) void changeCredentials("ANONYMOUS", "", next)
+    const credentials = inspectedCredentials()
+    if (next && credentials) void changeCredentials(credentials.mode, credentials.accountId, next)
   }
   /** 보낸 탭은 기록으로 남긴다. 고치거나 다시 보내면 같은 인증으로 새 탭을 만들어 이어 간다. */
   function forkFrom(source: RequestLabEntry, request = source.request) {
@@ -219,22 +234,24 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     if (next && request !== source.request) next.dirty = true
     return next
   }
-  async function removeRequest() {
-    if (busy || suspended || !entry) return
-    const index = raw.current.requests.indexOf(entry)
+  /** 탭마다 따로 지운다. 보고 있는 탭을 지우면 옆 탭으로 옮기고, 다른 탭을 지우면 보던 탭에 그대로 머문다. */
+  async function removeRequest(target: RequestLabEntry) {
+    if (busy || suspended) return
+    const index = raw.current.requests.indexOf(target)
     const next = raw.current.requests[index + 1] ?? raw.current.requests[index - 1]
+    const removingViewed = view === target.id
     if (persistence.current) {
       const generation = context.current.generation
       setDeleting(true)
       try {
         await persistence.current.retry()
-        await persistence.current.remove(entry, next?.id ?? null)
+        await persistence.current.remove(target, removingViewed ? next?.id ?? null : entry?.id ?? null)
         if (context.current.generation !== generation) return
       } catch { return }
       finally { setDeleting(false) }
     }
-    changeView(next?.id ?? "original")
-    raw.current.removeRequest(entry)
+    if (removingViewed) changeView(next?.id ?? "original")
+    raw.current.removeRequest(target)
     setVersion(value => value + 1)
     if (!next) prepared.current = false
   }
@@ -317,7 +334,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     return () => controller.abort()
   }, [open, event.eventId, snapshotRevision, suspended])
 
-  // 열자마자 보낼 수 있게 한다: 아직 보내지 않은 탭이 있으면 그 탭을, 없으면 원본에서 비로그인 편집본을 만들어 고른다.
+  // 열자마자 보낼 수 있게 한다: 아직 보내지 않은 탭이 있으면 그 탭을, 없으면 원본에서 점검 중인 신원으로 편집본을 만들어 고른다.
   useEffect(() => {
     if (!open || !draft || prepared.current || loading || busy || suspended) return
     prepared.current = true
@@ -555,8 +572,10 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         </div>
         <div className="mt-3.5 flex items-center justify-between gap-3">
           <div role="group" aria-label="보낸 요청" className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {raw.current.requests.map(item => <Button key={item.id} type="button" variant="outline" size="sm" className={`h-7 max-w-[260px] truncate px-2.5 text-xs ${selectedButtonClass}`} aria-pressed={view === item.id} title={tabLabel(item)} disabled={!draft || suspended || busy} onClick={() => changeView(item.id)}>{tabLabel(item)}</Button>)}
-            {entry && <Button type="button" variant="outline" size="icon" className="size-7 shrink-0" aria-label={`${entry.name} 삭제`} title="이 요청 삭제" disabled={suspended || busy} onClick={() => void removeRequest()}><X aria-hidden="true" className="size-3.5" /></Button>}
+            {raw.current.requests.map(item => <span key={item.id} className="flex items-center">
+              <Button type="button" variant="outline" size="sm" className={`h-7 max-w-[260px] truncate rounded-r-none px-2.5 text-xs ${selectedButtonClass}`} aria-pressed={view === item.id} title={tabLabel(item)} disabled={!draft || suspended || busy} onClick={() => changeView(item.id)}>{tabLabel(item)}</Button>
+              <Button type="button" variant="outline" size="icon" className="size-7 shrink-0 rounded-l-none border-l-0" aria-label={`${item.name} 삭제`} title="이 요청 삭제" disabled={suspended || busy} onClick={() => void removeRequest(item)}><X aria-hidden="true" className="size-3.5" /></Button>
+            </span>)}
           </div>
           {saveStatus && <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
             <span>{saveStatus.error ? "저장 실패" : !saveStatus.persisted ? "프로젝트 저장 필요" : saveStatus.saving ? "저장 중" : saveStatus.pending ? "저장 대기" : "프로젝트 저장됨"}</span>
