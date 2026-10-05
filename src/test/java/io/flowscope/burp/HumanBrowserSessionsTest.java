@@ -265,6 +265,56 @@ class HumanBrowserSessionsTest {
         }
     }
 
+    private static int freePort() throws IOException {
+        try (var socket = firstAvailableSocket(20_000)) { return socket.getLocalPort(); }
+    }
+
+    @Test void createsAMissingFixedScannerListenerOnceAndRemovesOnlyThatListenerOnClose() throws Exception {
+        try (var burp = new FakeBurp()) {
+            int port = freePort();
+            try (var listeners = new HumanProxyListeners(burp.api, Set.of(8080, port))) {
+                assertEquals(HumanProxyListeners.Ensured.CREATED, listeners.ensure(port));
+                assertEquals(HumanProxyListeners.Ensured.ALREADY_RUNNING, listeners.ensure(port));
+                assertEquals(2, burp.entries().size());
+                JsonNode created = burp.entries().get(1);
+                assertEquals(port, created.path("listener_port").asInt());
+                assertEquals("loopback_only", created.path("listen_mode").asText());
+                assertTrue(created.path("running").asBoolean());
+            }
+            // 확장을 내리면 FlowScope가 만든 리스너만 지운다.
+            assertEquals(1, burp.entries().size());
+            assertEquals(8080, burp.entries().get(0).path("listener_port").asInt());
+        }
+    }
+
+    @Test void startsAStoppedUserListenerOnTheFixedPortWithoutTakingOwnership() throws Exception {
+        try (var burp = new FakeBurp()) {
+            int port = freePort();
+            ((com.fasterxml.jackson.databind.node.ArrayNode) burp.entries()).addObject()
+                    .put("listener_port", port).put("running", false).put("listen_mode", "all_interfaces");
+            try (var listeners = new HumanProxyListeners(burp.api, Set.of(8080, port))) {
+                assertEquals(HumanProxyListeners.Ensured.STARTED_EXISTING, listeners.ensure(port));
+                assertEquals(2, burp.entries().size());
+                assertTrue(burp.entries().get(1).path("running").asBoolean());
+                assertEquals("all_interfaces", burp.entries().get(1).path("listen_mode").asText());
+                assertFalse(listeners.owns(port));
+            }
+            // 사용자가 만든 리스너는 확장을 내려도 남는다.
+            assertEquals(2, burp.entries().size());
+        }
+    }
+
+    @Test void reportsAFixedPortHeldByAnotherProgramWithoutAddingAListener() throws Exception {
+        try (var burp = new FakeBurp(); var occupied = firstAvailableSocket(21_000)) {
+            int port = occupied.getLocalPort();
+            try (var listeners = new HumanProxyListeners(burp.api, Set.of(8080, port))) {
+                IOException error = assertThrows(IOException.class, () -> listeners.ensure(port));
+                assertTrue(error.getMessage().contains("다른 프로그램"));
+                assertEquals(1, burp.entries().size());
+            }
+        }
+    }
+
     private static ServerSocket firstAvailableSocket(int start) throws IOException {
         for (int port = start; port <= 65535; port++) {
             try { return new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1")); }

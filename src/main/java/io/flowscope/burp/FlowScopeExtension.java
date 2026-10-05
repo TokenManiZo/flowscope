@@ -318,6 +318,9 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final HumanListenerBinding humanListeners = new HumanListenerBinding(PORT_SOURCE);
+    private HumanProxyListeners proxyListeners;
+    /** ZAP용 스캐너 리스너를 열지 못했을 때 화면에 보여 줄 안내. 정상이면 빈 문자열. */
+    private volatile String scannerListenerWarning = "";
     private HumanBrowserSessions humanBrowsers;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
@@ -405,7 +408,8 @@ public final class FlowScopeExtension implements BurpExtension {
         this.api = api;
         api.extension().setName("FlowScope");
         configureInitialScope();
-        humanBrowsers = new HumanBrowserSessions(new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet()),
+        proxyListeners = new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet());
+        humanBrowsers = new HumanBrowserSessions(proxyListeners,
                 new io.flowscope.explorer.HumanChromiumBrowser()::open);
         crossIdentityReplay = new CrossIdentityReplayOrchestrator(sessionBroker, () -> scope,
                 this::executeCrossIdentityReplay, this::openCrossIdentityReplayDraft,
@@ -452,6 +456,7 @@ public final class FlowScopeExtension implements BurpExtension {
         api.http().registerHttpHandler(new ToolHandler());
         registerAccountSessionCaptureMenu();
         api.extension().registerUnloadingHandler(this::shutdown);
+        ensureScannerProxyListener();
         startZapIntegration();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
@@ -1229,6 +1234,31 @@ public final class FlowScopeExtension implements BurpExtension {
     private static PortProfile profileOf(int listenerPort) {
         return PORT_SOURCE.getOrDefault(listenerPort,
                 new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN));
+    }
+
+    /**
+     * ZAP 요청이 들어올 스캐너 리스너(기본 127.0.0.1:8081)를 확장을 불러올 때 켜 둔다. 사용자가 Burp에서 직접 만들 필요가 없다.
+     * 이미 있으면 켜기만 하고, 없을 때만 만들며 확장을 내릴 때 그것만 지운다. 열지 못하면 로그와 ZAP 상태에 알린다.
+     */
+    private void ensureScannerProxyListener() {
+        Integer port = PORT_SOURCE.entrySet().stream()
+                .filter(entry -> entry.getValue().source() == Source.SCANNER)
+                .map(Map.Entry::getKey).sorted().findFirst().orElse(null);
+        if (port == null) return;
+        try {
+            HumanProxyListeners.Ensured result = proxyListeners.ensure(port);
+            scannerListenerWarning = "";
+            api.logging().logToOutput("FlowScope: ZAP용 Burp 프록시 리스너 127.0.0.1:" + port + " "
+                    + switch (result) {
+                        case CREATED -> "를 만들었습니다(확장을 내리면 지웁니다).";
+                        case STARTED_EXISTING -> "가 꺼져 있어 켰습니다.";
+                        case ALREADY_RUNNING -> "가 이미 켜져 있습니다.";
+                    });
+        } catch (IOException | RuntimeException error) {
+            scannerListenerWarning = "ZAP용 Burp 프록시 리스너 " + port + "을(를) 열지 못했습니다. 다른 프로그램이 이 포트를 쓰는지 확인하거나 "
+                    + "Burp Proxy 설정에서 " + port + " 리스너를 직접 추가하세요.";
+            api.logging().logToError("FlowScope: " + scannerListenerWarning, error);
+        }
     }
 
     private static int configuredScannerProxyPort() {
@@ -2300,6 +2330,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private com.fasterxml.jackson.databind.node.ObjectNode zapConnectionStatus() {
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.node.ObjectNode body = mapper.createObjectNode();
+        if (!scannerListenerWarning.isEmpty()) body.put("proxyListenerWarning", scannerListenerWarning);
         if (zapClient == null) {
             return body.put("connected", false).put("state", "STARTING")
                     .put("message", "FlowScope의 ZAP 제어면을 준비하는 중입니다.");

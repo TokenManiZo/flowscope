@@ -761,6 +761,8 @@ export interface ZapStatus {
   apiKeyConfigured?: boolean
   managedRuntime?: boolean
   version?: string
+  /** ZAP용 Burp 프록시 리스너(기본 8081)를 확장이 열지 못했을 때의 안내. 정상이면 없다. */
+  proxyListenerWarning?: string
 }
 
 export interface ScannerLane {
