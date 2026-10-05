@@ -42,7 +42,7 @@ Windows에서는 스크립트를 [PowerShell 7](https://learn.microsoft.com/powe
 
 ### 1. 내려받기
 
-[Releases](https://github.com/TokenManiZo/flowscope/releases)에서 최신 버전을 받습니다. 저장소가 비공개라서 권한이 있는 GitHub 계정으로 로그인해야 보입니다. 로그인하지 않으면 404 페이지가 나옵니다.
+[Releases](https://github.com/TokenManiZo/flowscope/releases)에서 최신 버전을 받습니다.
 
 처음이라면 `flowscope-<버전>-bundle.zip`을 받으세요. JAR 파일과 ZAP 실행 파일, 환경 점검 스크립트가 모두 들어 있습니다. `flowscope-<버전>.jar`는 JAR만 바꿔 끼우는 업그레이드나 ZAP 없이 쓸 때 받으면 됩니다. 함께 올라온 `SHA256SUMS.txt`로 받은 파일이 손상되지 않았는지 확인할 수 있습니다. 아래 명령으로 나온 값이 `SHA256SUMS.txt`에서 같은 파일 이름 줄의 값과 같으면 됩니다(대소문자는 무시합니다).
 

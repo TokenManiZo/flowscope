@@ -29,3 +29,15 @@ references
 /frontend/test-results/
 
 /test/
+
+# Local agent tools and working notes
+/CLAUDE.local.md
+/AGENTS.local.md
+/.agents/
+/.claude/
+/.headroom/
+/.impeccable/
+/graphify-out/
+/skills-lock.json
+/analysis.md
+/:memory:.ses

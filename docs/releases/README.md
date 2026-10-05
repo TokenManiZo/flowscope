@@ -7,8 +7,6 @@
 | [다음 릴리스 (미배포)](unreleased.md) | 미정 | ZAP 크롤링 범위 확대, LLM 브라우저 로그인과 탐색, 프로젝트 관리 창 |
 | [v1.2.0-beta.50](v1.2.0-beta.50.md) | 2026-09-30 | 화면 전면 개편, 계정·세션 재설계, 권한 판정 매트릭스, 교차 신원 검증 |
 
-beta.49 이전 기록은 이전 저장소의 [Releases](https://github.com/choewonwoo1817/testflowscope/releases)에 있습니다.
-
 ## 쓰는 법
 
 - 개발 중인 변경은 [unreleased.md](unreleased.md)에 모읍니다. 기능을 바꾸는 PR에 변경 기록도 함께 넣습니다.

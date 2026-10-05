@@ -12,8 +12,6 @@
 flowscope/
 ├── pom.xml                          빌드 중심 — 버전, shade 재배치, 프런트 빌드 연동, bundle 조립, 재현 빌드
 ├── README.md                        사용자 첫 안내 (소개·설치·첫 점검·화면 읽는 법)
-├── AGENTS.md                        코드 작성 규율
-├── CLAUDE.md                        제품 설계 규칙·용어·금지사항
 ├── SECURITY.md                      보안 정책
 ├── LICENSE
 │
@@ -25,7 +23,7 @@ flowscope/
 │   ├── releases/                    버전별 변경 기록 (정본) + 버전별 스크린샷
 │   ├── images/                      README용 최신 스크린샷
 │   ├── SESSION_ACCOUNT_ISOLATION.md 계정별 세션 격리 설계
-│   ├── CONTRIBUTING.md              협업 규약 (브랜치·커밋·PR)
+│   ├── CONTRIBUTING.md              기여 안내 (변경·검증·PR)
 │   ├── STRUCTURE.md                 이 문서
 │   └── RELEASE.md                   버전·태그·릴리즈 절차
 │
