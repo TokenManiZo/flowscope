@@ -63,6 +63,9 @@ public final class TrafficClassifier {
         if (override == TrafficOverride.INCLUDE) {
             return result(TrafficClass.API, Disposition.INCLUDE, true, "USER_INCLUDE");
         }
+        if (override == TrafficOverride.REVIEW) {
+            return result(inferredClass(record), Disposition.REVIEW, true, "USER_REVIEW");
+        }
         if (override == TrafficOverride.EXCLUDE) {
             return result(inferredClass(record), Disposition.EXCLUDE, true, "USER_EXCLUDE");
         }

@@ -194,8 +194,8 @@ describe("EvidencePage", () => {
     expect(detail).not.toHaveAccessibleName(/event-2/)
     await userEvent.click(detail)
     expect(await screen.findByText("선택 관측 기록: event-2")).toBeVisible()
-    // 표의 요청 칸과 상세의 경로 칸 모두 선택한 행(/orders/2)을 가리킨다.
-    expect(screen.getAllByText(/\/orders\/2$/).length).toBeGreaterThanOrEqual(2)
+    // 선택 식별자는 유지하고 요청·응답 위의 중복 메타데이터는 표시하지 않는다.
+    expect(screen.getAllByText(/\/orders\/2$/)).toHaveLength(1)
   })
 
   it("uses server pagination metadata without exposing Request Lab raw data", async () => {
@@ -226,14 +226,15 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
     await userEvent.click((await screen.findByText("e-204")).closest("tr")!)
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/evidence?operation=GET+%2Forders%2F%7Bid%7D&offset=200&limit=200", expect.any(Object)))
-    const request = await screen.findByText("GET /orders/1 HTTP/1.1")
+    const request = await screen.findByRole("textbox", { name: "마스킹된 요청 원문" })
     const policy = screen.getByText("정책 편집 · 펼치기/접기")
     expect(request.compareDocumentPosition(policy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(policy.closest("details")).not.toHaveAttribute("open")
     await userEvent.click(policy)
     await userEvent.selectOptions(screen.getByLabelText("필수 역할 지정"), "LV2")
     expect(screen.getByLabelText("필수 역할 지정")).toHaveValue("LV2")
-    expect(screen.getByText("user-a / User")).toBeVisible()
+    expect(screen.queryByText("user-a / User")).not.toBeInTheDocument()
+    expect(screen.queryByText("기록 번호")).not.toBeInTheDocument()
     expect(fetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
   })
 

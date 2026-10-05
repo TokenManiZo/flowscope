@@ -8,6 +8,7 @@ import { snapshotFixture } from "@/test/fixtures"
 import { SurfacePage } from "./SurfacePage"
 
 vi.mock("@/lib/query/hooks", () => ({
+  useEvidenceQuery: () => ({ data: { records: [] }, isSuccess: true, isError: false, isLoading: false }),
   useSnapshotQuery: () => ({ data: (globalThis as { surfaceFixture?: Snapshot }).surfaceFixture, isLoading: false, isError: false }),
   useRequirementMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTrafficOverrideMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -40,7 +41,7 @@ it("opens API details on every click, including the same row after collapsing th
     } }
     const user = userEvent.setup()
     render(<AppProviders><SurfacePage /></AppProviders>)
-    const details = screen.getAllByRole("button", { name: "상세 보기" })
+    const details = screen.getAllByRole("button", { name: /API 상세$/ })
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     await user.click(details[0])
     expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("/api/order/search")
@@ -65,10 +66,11 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   expect(screen.getByText("/api/order/search")).toBeVisible()
   expect(screen.getAllByText("H").length).toBeGreaterThan(0)
   expect(screen.queryByText(/%/)).not.toBeInTheDocument()
-  screen.getByRole("button", { name: "상세 보기" }).click()
+  screen.getByRole("button", { name: /API 상세$/ }).click()
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   await userEvent.click(screen.getByText("기록 연결 정보"))
   expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("ev-human")
+  await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
   await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
@@ -140,11 +142,13 @@ it("keeps a literal dotted key and a nested path distinguishable and never reuse
   ] }] } }
 
   render(<AppProviders><SurfacePage /></AppProviders>)
-  screen.getByRole("button", { name: "상세 보기" }).click()
+  screen.getByRole("button", { name: /API 상세$/ }).click()
 
-  // 표시 경로가 같아도 기계 좌표로 구분해 보여 준다.
-  expect(await screen.findByText("/a.b")).toBeVisible()
-  expect(screen.getByText("/a/b")).toBeVisible()
+  // 기계 좌표는 필드를 펼쳤을 때 표시한다.
+  const fields = await screen.findByLabelText("API 입력 필드 비교")
+  for (const summary of fields.querySelectorAll("summary")) await userEvent.click(summary)
+  expect(screen.getByText(/^\/a\.b ·/)).toBeVisible()
+  expect(screen.getByText(/^\/a\/b ·/)).toBeVisible()
   // source 필터 재계산이 미확정 좌표를 정상 미관측으로 되돌리지 않는다.
   expect(screen.getByText(/선언 좌표 미확정 · 관측 비교 제외/)).toBeVisible()
   expect(screen.queryByText(/산출물에서 발견 · 아직 요청 없음 · UNKNOWN/)).not.toBeInTheDocument()
@@ -170,20 +174,20 @@ it("does not show the run-gap hint when endpoints exist but are only hidden by a
   expect(screen.queryByRole("status", { name: "run 밖 API 트래픽 안내" })).not.toBeInTheDocument()
 })
 
- it("keeps comparison conditions in one dropdown and restores focus on dismissal", async () => {
+ it("keeps source filters visible and restores dropdown focus on dismissal", async () => {
   ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = snapshotFixture
   const user = userEvent.setup()
   render(<AppProviders><SurfacePage /></AppProviders>)
   expect(screen.queryByRole("combobox", { name: "API·입력 차이 상태" })).not.toBeInTheDocument()
-  expect(screen.queryByRole("checkbox", { name: "L · LLM" })).not.toBeInTheDocument()
+  expect(screen.getByRole("checkbox", { name: "L · LLM" })).toBeVisible()
   const comparison = screen.getByRole("region", { name: "API 비교" })
   const button = within(comparison).getByRole("button", { name: "필터" })
   expect(within(comparison).getByRole("button", { name: "집계" })).toBeVisible()
   await user.click(button)
   expect(screen.getByRole("combobox", { name: "API·입력 차이 상태" })).toBeVisible()
-  await user.click(screen.getByRole("checkbox", { name: "L · LLM" }))
   await user.keyboard("{Escape}")
   expect(button).toHaveFocus()
+  await user.click(screen.getByRole("checkbox", { name: "L · LLM" }))
   await user.click(button)
   expect(screen.getByRole("checkbox", { name: "L · LLM" })).not.toBeChecked()
  })

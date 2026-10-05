@@ -1014,6 +1014,11 @@ final class FlowScopeWebServerTest {
         assertEquals(io.flowscope.core.TrafficOverride.EXCLUDE, state.config.trafficOverride(operation));
         assertEquals(0, state.snapshot().coverageRecords.size());
         assertEquals(1, state.snapshot().records.size());
+        assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation) + "&value=REVIEW", token).statusCode());
+        assertEquals(io.flowscope.core.TrafficOverride.REVIEW, state.config.trafficOverride(operation));
+        assertEquals(0, state.snapshot().coverageRecords.size());
+        assertEquals(1, state.snapshot().records.size());
+        assertEquals("USER_REVIEW", json(get("/api/snapshot", token, origin())).at("/events/0/classificationReasons/0").asText());
         assertEquals(200, post("/api/traffic-override", "operation=" + encode(operation)
                 + "&value=AUTO", token).statusCode());
 

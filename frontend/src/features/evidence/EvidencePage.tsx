@@ -16,6 +16,8 @@ import { queryKeys, useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutati
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { trafficClassLabel, trafficReasonLabel } from "@/lib/display/traffic"
 import { cn } from "@/lib/utils"
+import { openSurfaceSelection, takePageSelection } from "./evidenceNavigation"
+import { EvidenceHttpViewer } from "./EvidenceHttpViewer"
 import { EvidenceFilters } from "./EvidenceFilters"
 import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, dispositionCounts, hiddenEvidenceCount, tabDispositions, visibleEvidence, type EvidenceTab } from "./evidenceSelectors"
@@ -58,6 +60,7 @@ function ReviewDecision({ event, disabled }: { event: EventRecord; disabled: boo
 
 export function EvidencePage() {
   const snapshot = useSnapshotQuery()
+  const trafficDecision = useTrafficOverrideMutation()
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<EvidenceTab>(initialTab)
   const [filters, setFilters] = useState(() => ({ ...defaultEvidenceFilters(), dispositions: tabDispositions(initialTab()) }))
@@ -67,6 +70,16 @@ export function EvidencePage() {
   const selectedEvent = selected ? snapshot.data?.events.find((item) => item.eventId === selected.eventId) ?? null : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
   const evidence = useEvidenceQuery(selectedEvent?.op ?? null, offset, evidencePageLimit, datasetRevision)
+
+  useEffect(() => {
+    if (!snapshot.data || snapshot.isError) return
+    const selection = takePageSelection("evidence", datasetRevision)
+    if (!selection?.evidenceId) return
+    const event = snapshot.data.events.find(item => item.eventId === selection.evidenceId)
+    if (!event) return
+    setTab("ALL"); setFilters({ ...defaultEvidenceFilters(), dispositions: tabDispositions("ALL"), expandRepeats: true })
+    selectEvent(event)
+  }, [snapshot.data, snapshot.isError, datasetRevision])
 
   // 같은 화면 안에서 #evidence ↔ #evidence-review로 주소만 바뀌면 화면이 다시 만들어지지 않으므로 탭을 직접 맞춘다.
   useEffect(() => {
@@ -110,29 +123,26 @@ export function EvidencePage() {
     {selectedEvent.op && evidence.isLoading && <p className="text-xs text-muted-foreground">불러오는 중…</p>}
     {evidence.isError && <div className="flex items-start justify-between gap-2"><p role="alert" className="min-w-0 break-words text-xs text-destructive">{evidence.error.message}</p><Button variant="outline" size="sm" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}>다시 시도</Button></div>}
     {page && page.records.length === 0 && <p className="text-sm text-muted-foreground">이 페이지에 관측 기록이 없습니다.</p>}
-    {page?.records.slice().sort((a, b) => Number(b.eventId === selectedEvent.eventId) - Number(a.eventId === selectedEvent.eventId)).map((record) => <details key={`${datasetRevision}:${page.offset}:${record.eventId}`} open={record.eventId === selectedEvent.eventId} className="min-w-0 rounded-md border p-3">
-      <summary className="cursor-pointer break-all font-mono text-sm">{boundedText(evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, record.eventId), 160)}</summary>
-      <div className="mt-3 grid min-w-0 gap-2">
-        <h3 className="text-xs font-medium">요청</h3>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-xs">{record.request || record.requestBody || "요청 전문 없음"}</pre>
-        <h3 className="mt-2 text-xs font-medium">응답</h3>
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/50 p-2 text-xs">{record.response || record.responseBody || "응답 전문 없음"}</pre>
-        <details className="mt-2 border-t pt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">분류 · 보존 정보</summary><div className="mt-2 grid gap-2">
-          <p className="break-words">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p>
-          <Retention label="요청 보존" value={record.requestPayload} />
-          <Retention label="응답 보존" value={record.responsePayload} />
-        </div></details>
-      </div>
-    </details>)}
+    {page && page.records.length > 0 && <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">같은 API 관측 기록<select aria-label="같은 API 관측 기록" className="max-w-full rounded-md border bg-background px-2 py-1 text-foreground" value={selectedEvent.eventId} onChange={event => { const record = snapshot.data?.events.find(item => item.eventId === event.target.value); if (record) selectEvent(record) }}>{page.records.map(record => <option key={record.eventId} value={record.eventId} disabled={!snapshot.data?.events.some(item => item.eventId === record.eventId)}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals,record.eventId)}</option>)}</select></label>}
+    {page?.records.filter(record => record.eventId === selectedEvent.eventId).map(record => <div key={`${datasetRevision}:${record.eventId}`} className="grid min-w-0 gap-2">
+      <EvidenceHttpViewer request={record.request || record.requestBody} response={record.response || record.responseBody} />
+      <details className="border-t pt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">분류 · 보존 정보</summary><div className="mt-2 grid gap-2"><p className="break-words">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p><Retention label="요청 보존" value={record.requestPayload} /><Retention label="응답 보존" value={record.responsePayload} /></div></details>
+    </div>)}
+    {page && page.records.length > 0 && !page.records.some(record => record.eventId === selectedEvent.eventId) && <p className="text-xs text-muted-foreground">선택 기록의 원문이 이 페이지에 없습니다. 관측 기록을 선택하거나 이전·다음 페이지를 확인하세요.</p>}
     {page && (page.offset > 0 || page.hasMore) && <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">총 {page.total}건 · {page.offset + 1}번째부터</span><Button variant="outline" size="sm" aria-label="이전 관측 기록 페이지" disabled={page.offset <= 0 || evidence.isFetching || snapshot.isError} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button><Button variant="outline" size="sm" aria-label="다음 관측 기록 페이지" disabled={!page.hasMore || evidence.isFetching || snapshot.isError} onClick={() => setOffset(page.offset + page.limit)}>다음</Button></div>}
   </section>
   const inspector = <div className="grid min-w-0">
+    {selectedEvent && <section aria-label="관측 기록 분류 작업" className="grid gap-2 border-b p-4">
+      <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.classificationReasons.includes("USER_REVIEW") ? "AUTO" : "REVIEW" })}>{selectedEvent.classificationReasons.includes("USER_REVIEW") ? "자동 분류로 복귀" : "검토 필요로 표시"}</Button><Button size="sm" variant="outline" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.trafficDisposition === "EXCLUDE" ? "AUTO" : "EXCLUDE" })}>{selectedEvent.trafficDisposition === "EXCLUDE" ? "숨김 해제" : "목록에서 숨기기"}</Button><Button size="sm" className="ml-auto" disabled={snapshot.isError || !selectedEvent.op} onClick={() => openSurfaceSelection(selectedEvent.op, datasetRevision)}>API에서 보기</Button></div>
+      <p className="text-[11px] text-muted-foreground">같은 API의 요청 전체에 적용합니다. 원본 관측 기록은 보존됩니다.</p>
+      {trafficDecision.isError && <p role="alert" className="text-xs text-destructive">{trafficDecision.error instanceof Error ? trafficDecision.error.message : "분류를 저장하지 못했습니다."}</p>}
+    </section>}
     {selectedEvent?.trafficDisposition === "REVIEW" && <ReviewDecision key={selectedEvent.eventId} event={selectedEvent} disabled={snapshot.isError} />}
-    <EvidenceSheet inline compactPolicy detailContent={records} event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
+    <EvidenceSheet showMetadata={false} inline compactPolicy detailContent={records} event={selectedEvent} snapshot={snapshot.data} disabled={snapshot.isError} onOpenChange={() => undefined} />
   </div>
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="관측 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={420} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
-      <section className="grid gap-3 p-4" aria-labelledby="evidence-title">
+    <ReferenceAnalysisWorkspace ariaLabel="관측 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={Math.max(420, window.innerWidth - 460)} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
+      <section className="grid min-w-0 gap-3 p-4" aria-labelledby="evidence-title">
       <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">관측 기록</h1><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>관측 기록을 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
       <div role="tablist" aria-label="관측 기록 판정" className="flex gap-5 border-b">{tabs.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} aria-label={`${label} ${counts[key]}`} onClick={() => selectTab(key)}
@@ -142,27 +152,23 @@ export function EvidencePage() {
       <EvidenceFilters value={filters} onChange={setFilters} />
       {snapshot.isLoading ? <Skeleton className="h-64" /> : snapshot.data && <>
         {(hidden > 0 || folded > 0) && <p className="text-xs text-muted-foreground">{[hidden > 0 && `필터로 가린 ${hidden}건`, folded > 0 && `반복 요청 ${folded}건은 한 줄로 묶음`].filter(Boolean).join(" · ")}</p>}
-        <ScrollArea className="h-[32rem] rounded-md border" aria-label="관측 기록 표">
+        <ScrollArea className="h-[calc(100dvh-20rem)] min-h-64 rounded-md border" aria-label="관측 기록 표">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>소스</TableHead><TableHead className="text-center">Method</TableHead><TableHead>API</TableHead><TableHead>HTTP</TableHead><TableHead>계정</TableHead><TableHead>분류</TableHead><TableHead>반복</TableHead><TableHead>관측 시각</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>관측 요청</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((event) => {
                 const review = event.trafficDisposition === "REVIEW"
                 return <TableRow key={event.eventId} data-state={selected?.eventId === event.eventId ? "selected" : undefined} className={cn(!snapshot.isError && "cursor-pointer")} onClick={() => selectEvent(event)}>
-                  <TableCell className="font-mono text-muted-foreground">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</TableCell>
-                  <TableCell><Badge variant="outline" className={sourceTone[event.source]}>{sourceLabel(event.source)}</Badge></TableCell>
-                  <TableCell className="text-center"><MethodBadge method={event.method} /></TableCell>
-                  <TableCell className="max-w-96 whitespace-normal"><button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} className="min-w-0 break-all text-left font-mono text-sm hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button></TableCell>
-                  <TableCell><HttpStatusBadge status={event.status} /></TableCell>
-                  <TableCell className="text-sm">{boundedText(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn), 48)}</TableCell>
-                  <TableCell className="max-w-72 whitespace-normal text-sm">{review
-                    ? <><span className="mr-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">검토 필요</span><span className="text-muted-foreground">{event.classificationReasons.map(trafficReasonLabel).join(" · ")}</span></>
-                    : trafficClassLabel(event.trafficClass)}</TableCell>
-                  <TableCell className="tabular-nums">{event.repeatCount}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={observedTimeLabel(event.firstSeen, event.lastSeen)}>{clockLabel(event)}</TableCell>
+                  <TableCell className="max-w-0 whitespace-normal p-3">
+                    <div className="flex items-center gap-2"><span className="font-mono text-xs text-muted-foreground">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId)}</span><MethodBadge method={event.method} /><span className="ml-auto"><HttpStatusBadge status={event.status} /></span></div>
+                    <button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} title={event.path} className="my-2 block w-full min-w-0 truncate text-left font-mono text-xs hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground"><Badge variant="outline" className={sourceTone[event.source]}>{sourceLabel(event.source)}</Badge><span>{boundedText(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn), 48)}</span><span className="ml-auto tabular-nums">반복 {event.repeatCount}회</span></div>
+                    <p className="mt-1 text-[11px] text-muted-foreground" title={observedTimeLabel(event.firstSeen, event.lastSeen)}>{clockLabel(event)} · <span>{review ? "검토 필요" : trafficClassLabel(event.trafficClass)}</span></p>
+                    {review && <p className="mt-1 text-[11px] text-muted-foreground">{event.classificationReasons.map(trafficReasonLabel).join(" · ")}</p>}
+                  </TableCell>
                 </TableRow>
               })}
-              {rows.length === 0 && <TableRow><TableCell colSpan={9} className="whitespace-normal py-8 text-center text-muted-foreground">{tab === "REVIEW" ? "검토할 트래픽이 없습니다." : "현재 필터에 맞는 관측 기록이 없습니다."}</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={1} className="whitespace-normal py-8 text-center text-muted-foreground">{tab === "REVIEW" ? "검토할 트래픽이 없습니다." : "현재 필터에 맞는 관측 기록이 없습니다."}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </ScrollArea>
