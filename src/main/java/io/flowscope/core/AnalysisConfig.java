@@ -28,6 +28,7 @@ public final class AnalysisConfig {
      * 이 여덟 맵은 하나의 정책 상태다. 개별 ConcurrentHashMap으로 나누면 replaceWith 중간의
      * 비어 있는 조합을 독자가 볼 수 있으므로, 모든 접근을 같은 모니터로 직렬화한다.
      */
+    private ApiState apiState = ApiState.empty();
     private final Map<String, AccessRole> identityRoles = new LinkedHashMap<>();
     private final Map<String, AccessRole> endpointRequirements = new LinkedHashMap<>();
     private final Map<String, String> resourceOwners = new LinkedHashMap<>();
@@ -305,6 +306,22 @@ public final class AnalysisConfig {
         return Map.copyOf(accountVerificationRules);
     }
 
+    public synchronized void removeResources(java.util.Set<String> resources) {
+        resources.forEach(resourceOwners::remove);
+        resourcePolicies.keySet().removeIf(key -> resources.contains(key) || resources.stream().anyMatch(resource -> key.endsWith(" @ " + resource)));
+    }
+
+    public synchronized void removeReview(String itemId) { reviews.remove(itemId); }
+    public synchronized ApiState apiState() { return apiState; }
+    public synchronized void restoreApiState(ApiState value) { apiState = value == null ? ApiState.empty() : value; }
+    public synchronized void removeReviews(java.util.Set<String> evidenceIds, java.util.Set<String> operations) {
+        reviews.entrySet().removeIf(entry -> operations.stream().anyMatch(op -> entry.getKey().equals(ApiManagement.reviewId(op)))
+                || entry.getValue().evidenceIds().stream().anyMatch(evidenceIds::contains)
+                || entry.getValue().validationEvidenceIds().stream().anyMatch(evidenceIds::contains));
+        operations.forEach(op -> { endpointRequirements.remove(op); trafficOverrides.remove(op); });
+        resourcePolicies.keySet().removeIf(key -> operations.stream().anyMatch(op -> (key.equals(op) || key.startsWith(op + " @ "))));
+    }
+
     public void replaceWith(AnalysisConfig other) {
         ConfigSnapshot replacement = other == null ? ConfigSnapshot.empty() : other.snapshot();
         apply(replacement);
@@ -318,6 +335,7 @@ public final class AnalysisConfig {
     }
 
     private synchronized void apply(ConfigSnapshot replacement) {
+        apiState = replacement.apiState();
         identityRoles.clear(); identityRoles.putAll(replacement.identityRoles());
         endpointRequirements.clear(); endpointRequirements.putAll(replacement.endpointRequirements());
         resourceOwners.clear(); resourceOwners.putAll(replacement.resourceOwners());
@@ -332,7 +350,7 @@ public final class AnalysisConfig {
     private synchronized ConfigSnapshot snapshot() {
         return new ConfigSnapshot(Map.copyOf(identityRoles), Map.copyOf(endpointRequirements),
                 Map.copyOf(resourceOwners), Map.copyOf(resourcePolicies), Map.copyOf(accounts), Map.copyOf(sessionBindings),
-                Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules));
+                Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules), apiState);
     }
 
     private record ConfigSnapshot(
@@ -344,10 +362,10 @@ public final class AnalysisConfig {
             Map<String, String> sessionBindings,
             Map<String, ReviewDecision> reviews,
             Map<String, TrafficOverride> trafficOverrides,
-            Map<String, AccountVerificationRule> accountVerificationRules) {
+            Map<String, AccountVerificationRule> accountVerificationRules, ApiState apiState) {
         static ConfigSnapshot empty() {
             return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-                    Map.of());
+                    Map.of(), ApiState.empty());
         }
     }
 

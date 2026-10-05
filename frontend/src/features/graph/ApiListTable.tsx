@@ -1,3 +1,4 @@
+import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { Fragment, useMemo, useState, type KeyboardEvent } from "react"
 import { ChevronDown, ChevronRight, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -30,7 +31,7 @@ function StatCells({ stats, rowKey, openObjects, onObject }: { stats: ApiRowStat
   </>
 }
 
-type TableSnapshot = Pick<Snapshot, "events" | "cells" | "owners">
+type TableSnapshot = Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix">
 
 function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: { operations: readonly string[]; type: string; snapshot: TableSnapshot; selectedId: string | null; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
   const [all, setAll] = useState(false)
@@ -79,7 +80,7 @@ export function ApiListTable({ operations, snapshot, selectedId, revealNodeId, s
     <tr data-graph-node-id={node.id} title={pathOf(node)} tabIndex={0} aria-label={node.label} aria-selected={selectedId === node.id} className={cn("cursor-pointer border-b border-border/70 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none", child ? "h-10" : "h-12", selectedId === node.id && "bg-sky-500/10 shadow-[inset_3px_0_0_rgb(14_165_233)]", searchMatches?.has(node.id) && "outline-2 outline-dashed -outline-offset-2 outline-emerald-600 dark:outline-emerald-300")} onClick={() => onSelectApi(node)} onKeyDown={activate(() => onSelectApi(node))}>
       <td />
       <td className="px-2">{!child && <Method method={operationParts(node.label).method} />}</td>
-      <td className={cn("truncate px-2 font-mono", child ? "pl-6 text-sm" : "text-[15px]")}>{child ? shortPath(pathOf(node)) : pathOf(node)}</td>
+      <td className={cn("truncate px-2 font-mono", child ? "pl-6 text-sm" : "text-[15px]", apiTint(snapshot, node.selection.operation ?? ""))}>{child ? shortPath(pathOf(node)) : pathOf(node)}{apiConfirmed(snapshot, node.selection.operation ?? "") && <span className="ml-2 rounded border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 font-sans text-[11px] text-red-700 dark:text-red-300">취약점 확정</span>}</td>
       <StatCells stats={statsOf([node])} rowKey={node.id} openObjects={openObjects} onObject={toggleObject} />
     </tr>
     {objectRow(node.id, [node])}

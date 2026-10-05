@@ -318,6 +318,9 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AnalysisConfig analysisConfig = new AnalysisConfig();
     private final RunContextRegistry runContexts = new RunContextRegistry();
     private final HumanListenerBinding humanListeners = new HumanListenerBinding(PORT_SOURCE);
+    private HumanProxyListeners proxyListeners;
+    /** ZAP용 스캐너 리스너를 열지 못했을 때 화면에 보여 줄 안내. 정상이면 빈 문자열. */
+    private volatile String scannerListenerWarning = "";
     private HumanBrowserSessions humanBrowsers;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
@@ -405,7 +408,8 @@ public final class FlowScopeExtension implements BurpExtension {
         this.api = api;
         api.extension().setName("FlowScope");
         configureInitialScope();
-        humanBrowsers = new HumanBrowserSessions(new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet()),
+        proxyListeners = new HumanProxyListeners(api.burpSuite(), PORT_SOURCE.keySet());
+        humanBrowsers = new HumanBrowserSessions(proxyListeners,
                 new io.flowscope.explorer.HumanChromiumBrowser()::open);
         crossIdentityReplay = new CrossIdentityReplayOrchestrator(sessionBroker, () -> scope,
                 this::executeCrossIdentityReplay, this::openCrossIdentityReplayDraft,
@@ -452,6 +456,7 @@ public final class FlowScopeExtension implements BurpExtension {
         api.http().registerHttpHandler(new ToolHandler());
         registerAccountSessionCaptureMenu();
         api.extension().registerUnloadingHandler(this::shutdown);
+        ensureScannerProxyListener();
         startZapIntegration();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
@@ -1231,6 +1236,31 @@ public final class FlowScopeExtension implements BurpExtension {
                 new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN));
     }
 
+    /**
+     * ZAP 요청이 들어올 스캐너 리스너(기본 127.0.0.1:8081)를 확장을 불러올 때 켜 둔다. 사용자가 Burp에서 직접 만들 필요가 없다.
+     * 이미 있으면 켜기만 하고, 없을 때만 만들며 확장을 내릴 때 그것만 지운다. 열지 못하면 로그와 ZAP 상태에 알린다.
+     */
+    private void ensureScannerProxyListener() {
+        Integer port = PORT_SOURCE.entrySet().stream()
+                .filter(entry -> entry.getValue().source() == Source.SCANNER)
+                .map(Map.Entry::getKey).sorted().findFirst().orElse(null);
+        if (port == null) return;
+        try {
+            HumanProxyListeners.Ensured result = proxyListeners.ensure(port);
+            scannerListenerWarning = "";
+            api.logging().logToOutput("FlowScope: ZAP용 Burp 프록시 리스너 127.0.0.1:" + port + " "
+                    + switch (result) {
+                        case CREATED -> "를 만들었습니다(확장을 내리면 지웁니다).";
+                        case STARTED_EXISTING -> "가 꺼져 있어 켰습니다.";
+                        case ALREADY_RUNNING -> "가 이미 켜져 있습니다.";
+                    });
+        } catch (IOException | RuntimeException error) {
+            scannerListenerWarning = "ZAP용 Burp 프록시 리스너 " + port + "을(를) 열지 못했습니다. 다른 프로그램이 이 포트를 쓰는지 확인하거나 "
+                    + "Burp Proxy 설정에서 " + port + " 리스너를 직접 추가하세요.";
+            api.logging().logToError("FlowScope: " + scannerListenerWarning, error);
+        }
+    }
+
     private static int configuredScannerProxyPort() {
         return PORT_SOURCE.entrySet().stream()
                 .filter(entry -> entry.getValue().source() == Source.SCANNER)
@@ -1939,6 +1969,53 @@ public final class FlowScopeExtension implements BurpExtension {
                     return new GraphWorkspace.State(datasetEpoch.get(), graphWorkspaceRevision, graphWorkspace);
                 });
             }
+            @Override public io.flowscope.core.ApiManagement.Preview manageApi(io.flowscope.core.ApiManagement.Request request) {
+                return runProjectTask(() -> {
+                    if (shuttingDown.get() || request.datasetRevision() != datasetEpoch.get() || request.revision() != revision.get()) throw new IllegalStateException("프로젝트 데이터가 변경되었습니다. 다시 확인해 주세요.");
+                    synchronized (records) {
+                        Pipeline.Result current = request.marksOnly() || (!rebuildPending.get() && latest.records.size() == records.size()) ? latest : Pipeline.runIsolated(new ArrayList<>(records), analysisConfig);
+                        var routes = current == latest ? routeCandidates : routeCandidatesFor(current.records);
+                        var change = io.flowscope.core.ApiManagement.prepare(request, current, new ArrayList<>(records), analysisConfig, routes, requestLabWorkspace);
+                        if (request.action().equals("preview-delete")) return change.preview();
+                        if (request.marksOnly()) {
+                            boolean wasDirty = databaseDirty();
+                            if (activeProjectDatabase != null && !sqliteProjectStore.saveApiMarks(activeProjectDatabase, change.config(), request.operations().getFirst()))
+                                sqliteProjectStore.save(activeProjectDatabase, records, change.config(), archivedAssessments, archivedValidations,
+                                        runContexts.completedRuns(), routes, executionLedger.attempts(), activeProjectContext, graphWorkspace, requestLabWorkspace);
+                            analysisConfig.replaceWith(change.config()); revision.incrementAndGet();
+                            if (activeProjectDatabase != null) {
+                                if (!wasDirty) markDatabaseSaved(revision.get());
+                                else scheduleDatabaseSave();
+                            }
+                            return change.preview().withMarks(revision.get(), datasetEpoch.get(), io.flowscope.core.ApiManagement.marks(current, analysisConfig, routes));
+                        }
+
+                        var ids = new java.util.HashSet<>(change.preview().evidenceIds());
+                        var assessments = archivedAssessments.stream().filter(a -> a.evidenceIds().stream().noneMatch(ids::contains)).toList();
+                        var validations = archivedValidations.stream().filter(v -> java.util.stream.Stream.of(v.originalEvidenceIds(), v.validationEvidenceIds(), v.controlEvidenceIds()).flatMap(List::stream).noneMatch(ids::contains)).toList();
+                        var attempts = executionLedger.attempts().stream().filter(a -> !ids.contains(a.evidenceId()) && !ids.contains(a.originEvidenceId())).toList();
+                        var completed = io.flowscope.core.ApiManagement.retainedRuns(runContexts.completedRuns(), change.records(), ids);
+                        if (activeProjectDatabase != null && !sqliteProjectStore.saveAfterDeletion(activeProjectDatabase,
+                                records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet()), ids, change.config(), assessments, validations,
+                                completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab()))
+                            sqliteProjectStore.save(activeProjectDatabase, change.records(), change.config(), assessments, validations,
+                                    completed, change.routes(), attempts, activeProjectContext, graphWorkspace, change.requestLab());
+                        long analysisEpoch = analysisPublication.invalidate();
+                        records.clear(); records.addAll(change.records()); analysisConfig.replaceWith(change.config());
+                        archivedAssessments = assessments; archivedValidations = validations; executionLedger.replace(attempts);
+                        requestLabWorkspace = change.requestLab(); runContexts.restoreCompletedRuns(completed); rawExchanges.discard(change.removedRuntimeIds());
+                        if (!change.removedRuntimeIds().isEmpty()) {
+                            resetPayloadPool();
+                            records.forEach(r -> { internPayload(r.requestPayload); internPayload(r.responsePayload); });
+                            pendingLiveReplays.removeAll(change.removedRuntimeIds());
+                        }
+                        pendingAnonymousRequests.keySet().removeAll(change.removedRuntimeIds());
+                        publishAnalysis(analysisEpoch, Pipeline.runIsolated(new ArrayList<>(records), analysisConfig));
+                        if (activeProjectDatabase != null) markDatabaseSaved(revision.get());
+                        return change.preview();
+                    }
+                });
+            }
             @Override public RequestLabWorkspace.State requestLabWorkspace(String evidenceId) {
                 return runProjectTask(() -> {
                     evidenceRecord(evidenceId);
@@ -2300,6 +2377,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private com.fasterxml.jackson.databind.node.ObjectNode zapConnectionStatus() {
         com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         com.fasterxml.jackson.databind.node.ObjectNode body = mapper.createObjectNode();
+        if (!scannerListenerWarning.isEmpty()) body.put("proxyListenerWarning", scannerListenerWarning);
         if (zapClient == null) {
             return body.put("connected", false).put("state", "STARTING")
                     .put("message", "FlowScope의 ZAP 제어면을 준비하는 중입니다.");
@@ -2743,11 +2821,16 @@ public final class FlowScopeExtension implements BurpExtension {
             recordRequestLabResponse(record, credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT ? accountId : null,
                     epoch, () -> retainRawExchange(record, exchange.request(), response));
             RequestRecord published = analyzedRecord(record);
-            executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
-                    RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
-                    java.time.Instant.now(), durationMs, evidenceId);
-            revision.incrementAndGet();
-            scheduleDatabaseSave();
+            synchronized (records) {
+                if (!retainedEvidence(evidenceId) || !retainedEvidence(published.evidenceId)) {
+                    throw new IllegalStateException("관측 기록이 삭제되어 결과를 저장할 수 없습니다.");
+                }
+                executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
+                        RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
+                        java.time.Instant.now(), durationMs, evidenceId);
+                revision.incrementAndGet();
+                scheduleDatabaseSave();
+            }
             int requestBytes = exchange.request().toByteArray().length();
             String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
                     : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
@@ -2758,11 +2841,14 @@ public final class FlowScopeExtension implements BurpExtension {
             RunExecutionLedger.Outcome outcome = received ? RunExecutionLedger.Outcome.RECORDING_FAILURE
                     : !sent ? RunExecutionLedger.Outcome.INVALID_REQUEST
                     : noResponse ? RunExecutionLedger.Outcome.NO_RESPONSE : executionOutcome(error);
-            executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request == null ? seed.method : request.method(),
-                    request == null ? seed.service + seed.path : request.url(), outcome, 0, null,
-                    java.time.Instant.now(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), evidenceId);
-            revision.incrementAndGet();
-            scheduleDatabaseSave();
+            synchronized (records) {
+                if (!retainedEvidence(evidenceId)) throw error;
+                executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request == null ? seed.method : request.method(),
+                        request == null ? seed.service + seed.path : request.url(), outcome, 0, null,
+                        java.time.Instant.now(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), evidenceId);
+                revision.incrementAndGet();
+                scheduleDatabaseSave();
+            }
             throw new IllegalStateException(received ? "응답 수신 · Evidence 기록 실패. 결과를 확인한 후 재전송을 판단하세요."
                     : sent ? "응답 미확인 · " + outcome + ". 대상 처리 여부는 확인되지 않았습니다."
                     : "전송 전 차단 · " + Masking.maskSecrets(error.getMessage()), error);
@@ -3370,12 +3456,22 @@ public final class FlowScopeExtension implements BurpExtension {
                 .findFirst().orElseThrow(() -> new IllegalStateException("검증 Evidence를 분석 결과에서 찾지 못했습니다."));
     }
 
+    /** Called under records lock: a publication may still contain a just-deleted record. */
+    private boolean retainedEvidence(String evidenceId) {
+        return latest.records.stream().filter(r -> evidenceId.equals(r.evidenceId))
+                .anyMatch(r -> records.stream().anyMatch(raw -> raw.runtimeId() == r.runtimeId()));
+    }
+
     void appendControlledToolRecord(RequestRecord record, Runnable retainExchange) {
         synchronized (records) {
             if (shuttingDown.get()) {
                 throw new IllegalStateException("FlowScope 종료 중에는 새 Evidence를 기록할 수 없습니다.");
             }
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
+            if ((record.originEvidenceId != null && !retainedEvidence(record.originEvidenceId))
+                    || (record.replayBasisEvidenceId != null && !retainedEvidence(record.replayBasisEvidenceId))) {
+                throw new IllegalStateException("원본 관측 기록이 삭제되어 응답을 저장할 수 없습니다.");
+            }
             records.add(record);
             retainExchange.run();
             if (liveCrossIdentityReplay != null
@@ -3521,7 +3617,7 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (restoredRouteCandidates) { restored = List.copyOf(restoredRouteCandidates); }
         List<RouteCandidate> combined = new ArrayList<>(restored);
         combined.addAll(extracted);
-        return RouteCandidateExtractor.prioritized(combined);
+        return io.flowscope.core.ApiManagement.filterRoutes(RouteCandidateExtractor.prioritized(combined), analysisConfig);
     }
 
     private static String shortDigest(String value) {

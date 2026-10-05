@@ -1,6 +1,8 @@
+import { ApiActions, DeleteTrafficButton } from "@/features/api-management/ApiActions"
+import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { HttpStatusBadge, MethodBadge, SourceMarks } from "@/components/TrafficBadges"
 import { useEffect, useMemo, useState } from "react"
-import { ChartNoAxesColumn, ChevronRight, Filter } from "lucide-react"
+import { ChartNoAxesColumn, ChevronRight, Filter, CircleAlert } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
@@ -85,6 +87,8 @@ function filterEndpoint(endpoint: SurfaceEndpoint, enabled: ReadonlySet<SurfaceS
   return { ...endpoint, observations, declarations, observedSources, parameters, deltaState: filteredDelta(declarations.length > 0, observedSources) }
 }
 
+function operation(endpoint: SurfaceEndpoint): string { return `${endpoint.key.service} ${endpoint.key.method} ${endpoint.key.pathTemplate}` }
+
 function endpointId(endpoint: SurfaceEndpoint): string {
   return [endpoint.key.service, endpoint.key.method, endpoint.key.pathTemplate].join("\u0000")
 }
@@ -114,6 +118,7 @@ function endpointKinds(endpoint: SurfaceEndpoint): string {
 
 export function SurfacePage() {
   const snapshot = useSnapshotQuery()
+  const [checkedApis, setCheckedApis] = useState<string[]>([])
   const [search, setSearch] = useState("")
   const [method, setMethod] = useState("ALL")
   const [category, setCategory] = useState("ALL")
@@ -138,6 +143,7 @@ export function SurfacePage() {
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
     : null
   const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
+  useEffect(() => setCheckedApis([]), [datasetRevision])
   const evidence = useEvidenceQuery(selectedEvent?.op ?? null, evidenceOffset, 200, datasetRevision)
   const selectedRecord = evidence.data?.records.find(record => record.eventId === selectedEvent?.eventId)
   useEffect(() => {
@@ -227,7 +233,7 @@ export function SurfacePage() {
   )
 
   const inspector = selected ? (
-    <div data-surface-inspector><InspectorPanel title="API 상세" tabs={null} description={<><span className="mt-2 flex items-start gap-2"><MethodBadge method={selected.key.method} /><span className="min-w-0 break-all font-mono text-sm text-foreground">{selected.key.pathTemplate}</span></span><span className="mt-1 block break-all text-xs">{selected.key.service}</span></>}>
+    <div data-surface-inspector><InspectorPanel title="API 상세" actions={snapshot.data && <ApiActions snapshot={snapshot.data} operation={operation(selected)} disabled={snapshot.isError} />} tabs={null} description={<><span className="mt-2 flex items-start gap-2"><MethodBadge method={selected.key.method} /><span className="min-w-0 break-all font-mono text-sm text-foreground">{selected.key.pathTemplate}</span></span><span className="mt-1 block break-all text-xs">{selected.key.service}</span></>}>
       <div className="grid gap-5">
       <div><dl className="grid min-w-0 flex-1 grid-cols-3 divide-x rounded-md border bg-muted/20">{[["관측 요청", selected.observations.length], ["선언 근거", selected.declarations.length], ["입력 필드", selected.parameters.length]].map(([name, count]) => <div className="px-3 py-2" key={name}><dt className="text-[11px] text-muted-foreground">{name}</dt><dd className="mt-1 text-sm font-semibold tabular-nums">{count}</dd></div>)}</dl></div>
       <div role="tablist" aria-label="API 상세 보기" className="flex gap-3 border-b">{[["inputs", "입력 비교"], ["observations", "관측 기록"], ["declarations", "선언 정보"]].map(([value,label]) => <button type="button" role="tab" aria-selected={detailTab === value} className={`border-b-2 py-2 text-xs ${detailTab === value ? "border-primary text-foreground" : "border-transparent text-muted-foreground"}`} key={value} aria-label={label} onClick={() => setDetailTab(value)}>{label}<span className="ml-1 rounded bg-muted px-1 tabular-nums">{value === "inputs" ? selected.parameters.length : value === "observations" ? selected.observations.length : selected.declarations.length}</span></button>)}</div>
@@ -267,13 +273,14 @@ export function SurfacePage() {
           <header className="flex items-center gap-3 border-b bg-card px-3 py-2"><h2 id="surface-comparison-title" className="shrink-0 text-sm font-semibold">API 비교</h2>{filters}</header>
           {snapshot.isError && <Alert variant="destructive"><AlertTitle>API·입력 차이를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
           <div role="tablist" aria-label="API 비교 분류" className="flex flex-wrap gap-3 border-b px-3">{[["ALL", "전체"], ["DIFFERENT", "입력 차이"], ["UNOBSERVED", "미관측"], ["UNDECLARED", "선언 근거 없음"]].map(([value,label]) => <button type="button" role="tab" aria-selected={category === value} key={value} className={`border-b-2 py-2 text-xs ${category === value ? "border-primary" : "border-transparent text-muted-foreground"}`} onClick={() => setCategory(value)}>{label} <span className="tabular-nums">{endpoints.filter(endpoint => matchesCategory(endpoint,value)).length}</span></button>)}</div>
+          {snapshot.data && checkedApis.length > 0 && <div className="flex items-center gap-3 border-b bg-muted/30 px-3 py-2 text-xs"><span>API {checkedApis.length}개 선택</span><DeleteTrafficButton snapshot={snapshot.data} operations={checkedApis} label="선택 API 삭제" disabled={snapshot.isError} onDeleted={() => setCheckedApis([])} /><Button size="sm" variant="ghost" onClick={() => setCheckedApis([])}>선택 해제</Button></div>}
           <div className="overflow-auto">
-          <Table className="min-w-[48rem]"><TableHeader><TableRow><TableHead className="w-20 text-center">Method</TableHead><TableHead>API</TableHead><TableHead>H S L</TableHead><TableHead>HTTP</TableHead><TableHead>관측</TableHead><TableHead>선언</TableHead><TableHead>입력</TableHead><TableHead>비교 상태</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
+          <Table className="min-w-[48rem]"><TableHeader><TableRow><TableHead className="w-10"><Checkbox aria-label="표시된 API 모두 선택" disabled={snapshot.isError || rows.length === 0} checked={rows.length > 0 && rows.every(endpoint => checkedApis.includes(operation(endpoint)))} onCheckedChange={checked => setCheckedApis(current => checked ? [...new Set([...current, ...rows.map(operation)])] : current.filter(op => !rows.some(endpoint => operation(endpoint) === op)))} /></TableHead><TableHead className="w-20 text-center">Method</TableHead><TableHead>API</TableHead><TableHead>H S L</TableHead><TableHead>HTTP</TableHead><TableHead>관측</TableHead><TableHead>선언</TableHead><TableHead>입력</TableHead><TableHead>비교 상태</TableHead><TableHead><span className="sr-only">동작</span></TableHead></TableRow></TableHeader>
             <TableBody>{rows.map((endpoint) => <TableRow key={endpointId(endpoint)} data-state={selectedId === endpointId(endpoint) ? "selected" : undefined} className={!snapshot.isError ? "cursor-pointer" : undefined} onClick={() => selectEndpoint(endpoint)}>
-              <TableCell className="text-center"><MethodBadge method={endpoint.key.method} /></TableCell><TableCell className="max-w-[32rem] whitespace-normal"><button type="button" disabled={snapshot.isError} aria-label={`${endpoint.key.method} ${endpoint.key.pathTemplate} API 상세`} className="block max-w-full truncate text-left font-mono text-xs hover:underline" title={endpoint.key.pathTemplate} onClick={event => { event.stopPropagation(); selectEndpoint(endpoint) }}>{endpoint.key.pathTemplate}</button><p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={endpoint.key.service}>{endpoint.key.service} · {endpointKinds(endpoint)}</p></TableCell>
+              <TableCell onClick={event => event.stopPropagation()}><Checkbox aria-label={`${endpoint.key.method} ${endpoint.key.pathTemplate} 선택`} checked={checkedApis.includes(operation(endpoint))} disabled={snapshot.isError} onCheckedChange={checked => setCheckedApis(current => checked ? [...current, operation(endpoint)] : current.filter(op => op !== operation(endpoint)))} /></TableCell><TableCell className="text-center"><MethodBadge method={endpoint.key.method} /></TableCell><TableCell className={`max-w-[32rem] whitespace-normal ${snapshot.data ? apiTint(snapshot.data, operation(endpoint)) : ""}`}><div className="flex min-w-0 items-center gap-2"><button type="button" disabled={snapshot.isError} aria-label={`${endpoint.key.method} ${endpoint.key.pathTemplate} API 상세`} className="min-w-0 truncate text-left font-mono text-xs hover:underline" title={endpoint.key.pathTemplate} onClick={event => { event.stopPropagation(); selectEndpoint(endpoint) }}>{endpoint.key.pathTemplate}</button>{snapshot.data && apiConfirmed(snapshot.data, operation(endpoint)) && <span role="img" aria-label="Confirmed finding" title="Confirmed finding" className="shrink-0 text-red-700 dark:text-red-300"><CircleAlert className="size-4" aria-hidden="true" /></span>}</div><p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={endpoint.key.service}>{endpoint.key.service} · {endpointKinds(endpoint)}</p></TableCell>
               <TableCell><span title={deltaLabels[endpoint.deltaState]}><SourceMarks sources={endpoint.observedSources} /></span></TableCell><TableCell><div className="flex flex-wrap gap-1">{[...new Set(endpoint.observations.map((item) => item.status))].sort((a, b) => a - b).map((status) => <HttpStatusBadge status={status} key={status} />)}{endpoint.observations.length === 0 && <span className="text-muted-foreground">—</span>}</div></TableCell>
               <TableCell className="tabular-nums">{endpoint.observations.length}</TableCell><TableCell className="tabular-nums">{endpoint.declarations.length}</TableCell><TableCell className="tabular-nums">{endpoint.parameters.length}</TableCell><TableCell><ComparisonStatus endpoint={endpoint} /></TableCell><TableCell><ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" /></TableCell>
-            </TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">현재 필터에 맞는 API·입력 근거가 없습니다.</TableCell></TableRow>}</TableBody></Table>
+            </TableRow>)}{rows.length === 0 && <TableRow><TableCell colSpan={10} className="py-8 text-center text-muted-foreground">현재 필터에 맞는 API·입력 근거가 없습니다.</TableCell></TableRow>}</TableBody></Table>
           </div>
         </section>
       </section>

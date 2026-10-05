@@ -23,6 +23,51 @@ final class StandaloneTest {
     Path temporaryDirectory;
 
     @Test
+    void failedDeleteCheckpointLeavesTheOriginalDatasetUntouched() throws Exception {
+        Path root = temporaryDirectory.resolve("failed-delete");
+        var state = new Standalone.DemoState(new String[0], new ProjectWorkspace(root));
+        var project = state.startProject("checkpoint", "https://api.example.test/");
+        state.loadSample();
+        String op = io.flowscope.core.ApiManagement.operation(state.snapshot().records.getFirst());
+        var preview = state.manageApi(new io.flowscope.core.ApiManagement.Request("preview-delete", state.datasetRevision(), state.revision(), List.of(op), List.of(), "", null));
+        int count = state.snapshot().records.size(); long revision = state.revision();
+        Path db = root.resolve(project.active().id()).resolve(ProjectWorkspace.DATABASE_NAME);
+        Files.move(db, db.resolveSibling("checkpoint.backup"));
+        Files.createDirectory(db); Files.writeString(db.resolve("block-replacement"), "test");
+        assertThrows(IllegalStateException.class, () -> state.manageApi(new io.flowscope.core.ApiManagement.Request("delete", state.datasetRevision(), revision, List.of(op), List.of(), "", preview.evidenceIds())));
+        assertEquals(count, state.snapshot().records.size()); assertEquals(revision, state.revision());
+    }
+
+    @Test
+    void apiChangesPersistAcrossProjectReopenAndRejectStaleDeletion() throws Exception {
+        var workspace = new ProjectWorkspace(temporaryDirectory.resolve("api-actions"));
+        var state = new Standalone.DemoState(new String[0], workspace);
+        var project = state.startProject("API actions", "https://api.example.test/");
+        state.loadSample();
+        var record = state.snapshot().records.getFirst();
+        String op = io.flowscope.core.ApiManagement.operation(record);
+        var beforeHighlight = state.snapshot();
+        long oldRevision = state.revision();
+        var acknowledged = state.manageApi(new io.flowscope.core.ApiManagement.Request("highlight", state.datasetRevision(), state.revision(), List.of(op), List.of(), "blue", null));
+        org.junit.jupiter.api.Assertions.assertSame(beforeHighlight, state.snapshot());
+        assertEquals(oldRevision + 1, acknowledged.revision());
+        assertEquals(state.datasetRevision(), acknowledged.datasetRevision());
+        assertEquals("blue", acknowledged.apiMarks().get(op).color());
+        state.manageApi(new io.flowscope.core.ApiManagement.Request("register", state.datasetRevision(), state.revision(), List.of(op), List.of(record.evidenceId), "", null));
+        state.openProject(project.active().id());
+        var marks = io.flowscope.core.ApiManagement.marks(state.snapshot(), state.config(), state.routeCandidates());
+        assertEquals("blue", marks.get(op).color()); assertTrue(marks.get(op).registered());
+        long revision = state.revision();
+        var preview = state.manageApi(new io.flowscope.core.ApiManagement.Request("preview-delete", state.datasetRevision(), revision, List.of(op), List.of(), "", null));
+        assertEquals(revision, state.revision());
+        assertThrows(IllegalStateException.class, () -> state.manageApi(new io.flowscope.core.ApiManagement.Request("delete", state.datasetRevision(), revision - 1, List.of(op), List.of(), "", preview.evidenceIds())));
+        state.manageApi(new io.flowscope.core.ApiManagement.Request("delete", state.datasetRevision(), revision, List.of(op), List.of(), "", preview.evidenceIds()));
+        state.openProject(project.active().id());
+        assertTrue(state.snapshot().records.stream().noneMatch(r -> io.flowscope.core.ApiManagement.operation(r).equals(op)));
+        assertFalse(state.config().apiState().highlights().containsKey(op));
+    }
+
+    @Test
     void exposesAnExactSampleEvidenceAsAMaskedReadOnlyDraftWithoutReusableSession() throws Exception {
         FlowScopeWebServer.State state = newDemoState();
         RequestRecord sample = state.snapshot().records.getFirst();

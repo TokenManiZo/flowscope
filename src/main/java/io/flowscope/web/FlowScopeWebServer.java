@@ -80,6 +80,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                                                                     RequestLabWorkspace.Change change) {
             throw new UnsupportedOperationException("Request Lab 저장을 사용할 수 없습니다.");
         }
+        default io.flowscope.core.ApiManagement.Preview manageApi(io.flowscope.core.ApiManagement.Request request) {
+            throw new UnsupportedOperationException("API 관리를 사용할 수 없습니다.");
+        }
         AnalysisConfig config();
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
@@ -329,6 +332,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/clear" -> clear(request);
             case "/api/projects" -> projects(request);
             case "/api/graph-workspace" -> graphWorkspace(request);
+            case "/api/api-management" -> apiManagement(request);
             case "/api/human-run" -> humanRun(request);
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
@@ -783,6 +787,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private static void putNullable(ObjectNode node, String name, String value) {
         if (value == null) node.putNull(name);
         else node.put(name, value);
+    }
+
+    private LoopbackHttpServer.Response apiManagement(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            var change = json.readValue(requiredRaw(form, "change"), io.flowscope.core.ApiManagement.Request.class);
+            if (change == null) throw new IllegalArgumentException("API 변경 요청이 없습니다.");
+            return json(200, json.valueToTree(state.manageApi(change)));
+        } catch (IllegalStateException error) { return error(409, error.getMessage()); }
+        catch (IllegalArgumentException | IOException error) { return error(400, error.getMessage()); }
     }
 
     private LoopbackHttpServer.Response clear(LoopbackHttpServer.Request request) throws IOException {

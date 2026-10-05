@@ -1,3 +1,4 @@
+import { ApiActions } from "@/features/api-management/ApiActions"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import type { EventRecord, Snapshot, Verdict } from "@/lib/api/types"
@@ -49,9 +50,10 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const judgedIds = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
   const unjudgedCount = events.filter(item => ![item.eventId, ...(item.clusterEvidenceIds ?? [])].some(id => judgedIds.has(id))).length
   const title = structural && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : "선택한 그래프 항목"
+  const apiOp = selection.routeCandidate ? `${selection.routeCandidate.service} ${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : selection.operation && (!node || ["operation", "observed-operation"].includes(node.kind)) ? selection.operation : null
   const subtitle = [selection.identity, selection.resource ? stripOrigin(selection.resource) || selection.resource : null].filter(Boolean).join(" · ")
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
-    <InspectorPanel title="선택 작업" description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
+    <InspectorPanel title="선택 작업" actions={apiOp && <ApiActions snapshot={snapshot} operation={apiOp} disabled={suspended} />} description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
       {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}

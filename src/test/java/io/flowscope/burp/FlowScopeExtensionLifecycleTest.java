@@ -41,6 +41,28 @@ class FlowScopeExtensionLifecycleTest {
     @TempDir Path temp;
 
     @Test
+    void lateResponseCannotRecreateADeletedObservation() throws Exception {
+        var extension = new FlowScopeExtension();
+        var retained = new AtomicBoolean();
+        var response = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders", 200, "anon");
+        var original = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders", 200, "anon");
+        var stalePublication = Pipeline.runIsolated(List.of(original), new AnalysisConfig());
+        field("latest").set(extension, stalePublication);
+        response.originEvidenceId = stalePublication.records.getFirst().evidenceId;
+        try {
+            assertThrows(IllegalStateException.class, () -> extension.appendRequestLabRecord(response, 0, () -> retained.set(true)));
+            assertTrue(!retained.get());
+            assertTrue(((List<?>) field("records").get(extension)).isEmpty());
+            response.originEvidenceId = null;
+            response.replayBasisEvidenceId = "ev-deleted";
+            assertThrows(IllegalStateException.class, () -> extension.appendReplayRecord(response, 0, () -> retained.set(true)));
+            response.replayBasisEvidenceId = null;
+            extension.appendRequestLabRecord(response, 0, () -> retained.set(true));
+            assertTrue(retained.get(), "a genuinely new request can appear again");
+        } finally { ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow(); }
+    }
+
+    @Test
     void shutdownCheckpointsEvidenceAcceptedBeforeItsRebuildWasScheduled() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());

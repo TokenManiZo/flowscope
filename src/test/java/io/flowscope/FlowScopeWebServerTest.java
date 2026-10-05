@@ -66,6 +66,19 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void apiDeletionPreviewUsesTheAuthenticatedLocalPostBoundary() throws Exception {
+        start();
+        var change = new io.flowscope.core.ApiManagement.Request("preview-delete", state.datasetRevision(), state.revision(), List.of(io.flowscope.core.ApiManagement.operation(state.record)), List.of(), "", null);
+        String body = "change=" + encode(JSON.writeValueAsString(change));
+        assertEquals(403, post("/api/api-management", body, "wrong-token").statusCode());
+        assertEquals(405, get("/api/api-management", token, origin()).statusCode());
+        assertEquals(400, post("/api/api-management", "change=null", token).statusCode());
+        assertEquals(400, post("/api/api-management", "change=" + encode("{\"action\":\"invalid\"}"), token).statusCode());
+        var preview = post("/api/api-management", body, token);
+        assertEquals(200, preview.statusCode()); assertEquals(1, json(preview).path("records").asInt());
+        assertEquals(1, state.snapshot().records.size());
+    }
+
     @Test void requestLabWorkspacePersistsMaskedStateChecksRevisionsAndNeverSendsTraffic() throws Exception {
         start();
         long dataset = state.datasetRevision();
@@ -1841,6 +1854,9 @@ final class FlowScopeWebServerTest {
             if (dataset != datasetRevision() || expectedRevision != requestLabWorkspace.revision()) throw new IllegalStateException("stale Request Lab workspace");
             requestLabWorkspace = change.apply(requestLabWorkspace, evidenceId);
             return requestLabWorkspace(evidenceId);
+        }
+        @Override public io.flowscope.core.ApiManagement.Preview manageApi(io.flowscope.core.ApiManagement.Request request) {
+            return io.flowscope.core.ApiManagement.prepare(request, result, result.records, config, List.of(), RequestLabWorkspace.empty()).preview();
         }
         @Override public AnalysisConfig config() { return config; }
         private List<LegacyAssessment> archivedAssessments = List.of();

@@ -58,6 +58,49 @@ final class HumanProxyListeners implements AutoCloseable {
         throw new IOException("수집용 프록시 포트를 열지 못했습니다. Burp 리스너 상태를 확인하세요.");
     }
 
+    enum Ensured { ALREADY_RUNNING, STARTED_EXISTING, CREATED }
+
+    /**
+     * 고정 포트 리스너(ZAP용 스캐너 8081 등)를 켜 둔다. 사용자가 만든 리스너가 있으면 켜기만 하고 소유하지 않으며,
+     * 없을 때만 Loopback only로 만들어 소유한다(close에서 이것만 지운다). 다른 프로그램이 포트를 쓰면 IOException.
+     */
+    synchronized Ensured ensure(int port) throws IOException {
+        ArrayNode listeners = listeners();
+        JsonNode existing = find(listeners, port);
+        if (existing != null) {
+            if (existing.path("running").asBoolean()) return Ensured.ALREADY_RUNNING;
+            ((ObjectNode) existing).put("running", true);
+            apply(listeners);
+            JsonNode actual = find(listeners(), port);
+            if (actual == null || !actual.path("running").asBoolean() || !reachable(port)) {
+                throw new IOException("Burp 프록시 리스너 " + port + "을(를) 켜지 못했습니다. 다른 프로그램이 이 포트를 쓰는지 확인하세요.");
+            }
+            return Ensured.STARTED_EXISTING;
+        }
+        try (var candidate = new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"))) {
+            // 비어 있는 포트다. 바로 닫고 Burp가 쓰게 한다.
+        } catch (BindException occupied) {
+            throw new IOException("포트 " + port + "을(를) 다른 프로그램이 쓰고 있어 Burp 프록시 리스너를 만들지 못했습니다.", occupied);
+        }
+        ObjectNode entry = JSON.createObjectNode().put("listen_mode", "loopback_only")
+                .put("listener_port", port).put("running", true).put("certificate_mode", "per_host")
+                .put("enable_http2", true);
+        listeners.add(entry);
+        owned.put(port, entry);
+        try {
+            apply(listeners);
+            JsonNode actual = find(listeners(), port);
+            if (actual != null) owned.put(port, actual.deepCopy());
+            if (actual != null && actual.path("running").asBoolean() && reachable(port)) return Ensured.CREATED;
+        } catch (IOException | RuntimeException failure) {
+            try { remove(port); }
+            catch (IOException | RuntimeException cleanup) { failure.addSuppressed(cleanup); }
+            throw new IOException("Burp 프록시 리스너 " + port + " 설정을 적용하지 못했습니다.", failure);
+        }
+        remove(port);
+        throw new IOException("Burp 프록시 리스너 " + port + "을(를) 열지 못했습니다. Burp 리스너 상태를 확인하세요.");
+    }
+
     private boolean portAvailable(int port, ArrayNode listeners) throws IOException {
         if (reserved.contains(port) || contains(listeners, port)) return false;
         try (var candidate = new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"))) {
