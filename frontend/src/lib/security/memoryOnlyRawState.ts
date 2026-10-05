@@ -15,7 +15,7 @@ export interface RequestLabEntry {
   id: number
   name: string
   request: string
-  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT"
+  credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"
   accountId: string
   result: RequestLabResult | null
   restored?: boolean
