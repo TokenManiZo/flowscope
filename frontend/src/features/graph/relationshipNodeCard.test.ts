@@ -16,7 +16,7 @@ const node = (kind: HierarchyNode["kind"], label: string, extra: Partial<Hierarc
 const projection = (nodes: readonly HierarchyNode[]): HierarchyProjection => ({
   kind: "operation", view: "source",
   navigation: { level: "operation", groupId: "orders", operation, operationLimit: 18, objectLimit: 18, focusCandidateKey: "" },
-  groups: [{ id: "orders", service, key: "orders", label: "ORDERS APIs", cells: [], operations: [operation], routeCandidates: [], endpointCount: 4, sourceCounts: { human: 7, scanner: 3, llm: 2 }, gapCount: 2, routeCandidateCount: 1 }],
+  groups: [{ id: "orders", service, key: "orders", label: "ORDERS APIs", cells: [], operations: [operation], routeCandidates: [], endpointCount: 4, observedCount: 0, sourceCounts: { human: 7, scanner: 3, llm: 2 }, gapCount: 2, routeCandidateCount: 1 }],
   nodes, edges: [], identities: nodes.filter(item => item.kind === "identity"), operations: nodes.filter(item => item.kind === "operation"), resources: nodes.filter(item => item.kind === "resource"), routeCandidates: [], listItems: nodes, hiddenOperationCount: 0, hiddenObjectCount: 0,
 })
 

@@ -657,6 +657,23 @@ it("keeps unconfirmed route candidates neutral and dotted", () => {
   ]) }))
 })
 
+it("renders a response-backed non-cell GET as a neutral graph node", () => {
+  const service = "https://api.example.test"
+  const snapshot = targetSnapshot({ events: [{
+    eventId: "observed-1", method: "GET", path: "/account/edit?ticket=alpha", status: 200, fp: "", idn: "alice", role: "USER", source: "human", op: `${service} GET /account/edit`, resource: null, timestamp: 1,
+    sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", coverageEligible: false,
+    classificationOverride: false, classificationReasons: ["AMBIGUOUS_KEEP"], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["observed-1"], objects: [], verdict: "untested",
+  }] })
+  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+  const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; kind?: string; accessibleLabel?: string; confirmed?: string } }>
+  expect(added).toEqual(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
+    id: `observed-operation:${service} GET /account/edit`, kind: "observed-operation", accessibleLabel: expect.stringContaining("응답 관측"), confirmed: "no",
+  }) })]))
+})
+
 it("publishes a bounded node-kind geometry snapshot only through the explicit browser test seam", () => {
   window.history.replaceState({}, "", "/?flowscope-e2e-geometry=1")
   render(<CytoscapeGraph projection={projection} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)

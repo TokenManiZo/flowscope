@@ -128,7 +128,7 @@ function elementsFor(projection: GraphProjection | HierarchyProjection, selected
   // 접힌 API 묶음의 멤버는 그리지 않는다(엣지는 이미 묶음 노드로 모였다).
   const nodes = (hierarchy ? hierarchy.nodes.filter(node => node.kind !== "route-candidate" && !node.hiddenInGraph) : [...projection.identities, ...projection.operations, ...projection.resources]).map((node) => {
     // 접근 주체 아이콘은 오른쪽 API·Object 노드에만 둔다.
-    const sources = node.kind === "operation" || node.kind === "resource" ? [...(nodeSources.get(node.id) ?? [])] : []
+    const sources = node.kind === "operation" || node.kind === "observed-operation" || node.kind === "resource" ? [...(nodeSources.get(node.id) ?? [])] : []
     const base = relationshipNodeCard(node, projection, statusesByNode.get(node.id))
     const card = sources.length ? { ...base, sources, accessibleLabel: `${base.accessibleLabel}; 접근 주체 ${sources.map(source => source.toUpperCase()).join(", ")}` } : base
     cards?.set(node.id, card)

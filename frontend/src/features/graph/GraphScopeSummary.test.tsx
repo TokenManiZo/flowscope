@@ -9,7 +9,7 @@ import { scopeFindings, undecidedReason } from "./graphScopeFindings"
 
 const svc = "https://demo.test:443"
 const cell = (overrides: Partial<Cell>): Cell => ({ idn: "user-1", op: `${svc} GET /orders/{id}`, resource: null, perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: [], ...overrides })
-const group = (id: string, label: string, cells: Cell[]): ApiGroup => ({ id, service: svc, key: label, label, cells, operations: [...new Set(cells.map(item => item.op))], routeCandidates: [], endpointCount: new Set(cells.map(item => item.op)).size, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 })
+const group = (id: string, label: string, cells: Cell[]): ApiGroup => ({ id, service: svc, key: label, label, cells, operations: [...new Set(cells.map(item => item.op))], routeCandidates: [], endpointCount: new Set(cells.map(item => item.op)).size, observedCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 })
 
 it("splits server verdicts into IDOR/BFLA candidates (writes first), undecided reasons and per-identity counts", () => {
   const cells = [

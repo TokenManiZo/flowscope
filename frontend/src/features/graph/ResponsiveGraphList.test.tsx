@@ -65,3 +65,17 @@ it("keeps site structure neutral and routes the original group node into navigat
   await userEvent.click(screen.getByRole("button", { name: /ORDERS APIs/ }))
   expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ kind: "api-group", groupId: '["Target","orders"]' }))
 })
+
+it("keeps observed-only GET nodes selectable in the compact group list", async () => {
+  const op = "https://api.test GET /account/edit"
+  const snapshot = targetSnapshot({ events: [{
+    eventId: "observed-1", method: "GET", path: "/account/edit?ticket=alpha", status: 200, fp: "", idn: "alice", role: "USER", source: "human", op, resource: null, timestamp: 1,
+    sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", coverageEligible: false,
+    classificationOverride: false, classificationReasons: ["AMBIGUOUS_KEEP"], pathTemplateStatus: "LITERAL", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["observed-1"], objects: [], verdict: "untested",
+  }] })
+  const group = projectHierarchy(snapshot, hierarchyFilters, { level: "group", groupId: '["https://api.test","account"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const select = vi.fn()
+  render(<ResponsiveGraphList projection={group} snapshot={snapshot} onSelect={select} />)
+  await userEvent.click(screen.getByRole("button", { name: /응답 관측/ }))
+  expect(select).toHaveBeenCalledWith(expect.objectContaining({ operation: op, evidenceIds: ["observed-1"] }), `observed-operation:${op}`)
+})

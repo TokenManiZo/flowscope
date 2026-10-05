@@ -1,5 +1,5 @@
 import { operationShapeKey } from "./graphPathShape"
-import type { Cell, Snapshot, Source } from "@/lib/api/types"
+import type { Cell, EventRecord, Snapshot, Source } from "@/lib/api/types"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
 export const GRAPH_PAGE_SIZE = 18
@@ -20,13 +20,14 @@ export interface ApiGroup extends ApiGroupDescriptor {
   operations: readonly string[]
   routeCandidates: readonly GraphRouteCandidate[]
   endpointCount: number
+  observedCount: number
   sourceCounts: Record<"human" | "scanner" | "llm", number>
   gapCount: number
   routeCandidateCount: number
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "object-group" | "operation-group"
+  kind: GraphNode["kind"] | "target" | "api-group" | "support-operation" | "observed-operation" | "object-group" | "operation-group"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -39,7 +40,7 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   hiddenInGraph?: boolean
 }
 export interface HierarchyEdge extends Omit<GraphEdge, "relation" | "source" | "selection"> {
-  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support"
+  relation: "target-group" | "identity-operation" | "operation-resource" | "candidate" | "support" | "observed"
   source: Source | null
   structural: boolean
   selection: HierarchySelection
@@ -112,12 +113,35 @@ const compareText = (left: string, right: string) => left.localeCompare(right, "
 const observedSources = (cell: Cell) => (Object.keys(cell.perSource) as Source[]).filter(source => cell.perSource[source] !== undefined)
 const isPartial = (cell: Cell) => cell.missedSources.length > 0
 const emptySelection = (): HierarchySelection => ({ ...graphCellSelection([]), gapIds: [] })
+const nonFunctionTraffic = new Set(["STATIC_ASSET", "DISCOVERY_METADATA", "PREFLIGHT", "POLLING", "BACKGROUND", "TELEMETRY_CANDIDATE", "AUTH_SESSION"])
+const nonDiscoveryPhases = new Set(["VALIDATION", "COACH_PROBE", "SESSION_SETUP", "AUTHORIZATION_REPLAY"])
+
+/** 실제 응답을 받은 요청만 중립 노드 후보로 둔다. 분류·상태 코드는 존재/권한 판정이 아니다. */
+function observedFunction(event: EventRecord): boolean {
+  return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME"
+    && event.status >= 100 && event.status <= 599
+    && !event.classificationReasons.includes("NO_RESPONSE")
+    && !event.classificationReasons.includes("USER_EXCLUDE")
+    && !(event.classificationOverride && event.trafficDisposition === "EXCLUDE")
+    && !nonFunctionTraffic.has(event.trafficClass)
+    && !nonDiscoveryPhases.has(event.phase)
+}
 
 export interface GraphReveal { operations?: readonly string[]; resource?: string }
 
 export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const cells = snapshot.cells.filter(cell => identityMatches(cell.idn) && observedSources(cell).some(source => filters.source.includes(source)) && (!filters.reviewStates || filters.reviewStates.includes(cell.overall)))
+  const cellOperations = new Set(snapshot.cells.map(cell => cell.op))
+  const observedEvents = snapshot.events.filter(event => observedFunction(event)
+    && !cellOperations.has(event.op) && filters.source.includes(event.source) && identityMatches(event.idn))
+  const observedByGroup = new Map<string, EventRecord[]>()
+  for (const event of observedEvents) {
+    const id = operationGroup(event.op).id
+    const grouped = observedByGroup.get(id)
+    if (grouped) grouped.push(event)
+    else observedByGroup.set(id, [event])
+  }
   const gapIdsByCell = new Map<string, string[]>()
   for (const gap of snapshot.gaps) {
     const key = graphCellKey(gap)
@@ -139,7 +163,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   const ensure = (descriptor: ApiGroupDescriptor) => {
     let group = groupsById.get(descriptor.id)
     if (!group) {
-      group = { ...descriptor, cells: [], operations: [], routeCandidates: [], endpointCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 }
+      group = { ...descriptor, cells: [], operations: [], routeCandidates: [], endpointCount: 0, observedCount: 0, sourceCounts: { human: 0, scanner: 0, llm: 0 }, gapCount: 0, routeCandidateCount: 0 }
       groupsById.set(group.id, group)
     }
     return group
@@ -148,6 +172,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const group = ensure(operationGroup(cell.op))
     group.cells.push(cell)
   }
+  for (const event of observedEvents) ensure(operationGroup(event.op))
   // Route candidates keep the existing source/identity filter semantics of the flat projection.
   for (const candidate of projectRouteCandidates(snapshot, filters)) {
     const group = ensure(apiGroupDescriptor(candidate.service, candidate.pathTemplate))
@@ -156,6 +181,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   for (const group of groupsById.values()) {
     group.operations = [...new Set(group.cells.map(cell => cell.op))]
     group.endpointCount = group.operations.length
+    group.observedCount = new Set((observedByGroup.get(group.id) ?? []).map(event => event.op)).size
     group.routeCandidateCount = group.routeCandidates.length
     for (const source of ["human", "scanner", "llm"] as const) group.sourceCounts[source] = group.cells.reduce((sum, cell) => sum + sourceCount(cell, source), 0)
     const gapKeys = new Set(group.cells.filter(cell => cell.conflict || isPartial(cell)).map(graphCellKey))
@@ -298,6 +324,34 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
     listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
     addAccess(related)
+    const observed = observedByGroup.get(group.id) ?? []
+    const observedByOperation = new Map<string, EventRecord[]>()
+    for (const event of observed) {
+      const grouped = observedByOperation.get(event.op)
+      if (grouped) grouped.push(event)
+      else observedByOperation.set(event.op, [event])
+    }
+    const observedOps = [...observedByOperation.keys()].sort(compareText)
+    const visibleObserved = observedOps.slice(0, Math.max(0, resolved.operationLimit - visible.length))
+    for (const op of visibleObserved) {
+      const relatedEvents = observedByOperation.get(op) ?? []
+      const evidenceIds = [...new Set(relatedEvents.map(event => event.eventId))].sort(compareText)
+      const node = addNode("observed-operation", op, { ...emptySelection(), operation: op, evidenceIds })
+      listItems.push(node)
+      const buckets = new Map<string, EventRecord[]>()
+      for (const event of relatedEvents) {
+        const key = JSON.stringify([event.idn, event.source])
+        const grouped = buckets.get(key)
+        if (grouped) grouped.push(event)
+        else buckets.set(key, [event])
+      }
+      for (const [key, events] of buckets) {
+        const [identity, source] = JSON.parse(key) as [string, Source]
+        addNode("identity", identity, { ...emptySelection(), identity })
+        addEdge("observed", `identity:${identity}`, node.id,
+          { ...emptySelection(), identity, operation: op, source, evidenceIds: events.map(event => event.eventId) }, events.length)
+      }
+    }
     // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
     // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
     const resourceScores = new Map<string, number>()
@@ -307,13 +361,13 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     const visibleResources = objects.drawn
     for (const cell of related.filter(cell => cell.resource && visibleResources.includes(cell.resource))) for (const source of observedSources(cell).filter(source => filters.source.includes(source))) addEdge("operation-resource", `operation:${cell.op}`, `resource:${cell.resource}`, selectionFor([cell], source), sourceCount(cell, source))
     hiddenObjectCount = objects.hidden
-    hiddenOperationCount = operations.length - visible.length
+    hiddenOperationCount = operations.length - visible.length + observedOps.length - visibleObserved.length
     groupOperations(visible, related)
     routeCandidates = group.routeCandidates.slice(0, resolved.operationLimit)
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
     if (filters.includeSupportTraffic) {
       const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
-      const supportEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && operationGroup(event.op).id === group.id)
+      const supportEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn) && event.trafficDisposition !== "INCLUDE" && supportClasses.has(event.trafficClass) && !observedFunction(event) && operationGroup(event.op).id === group.id)
       const supportOps = [...new Set(supportEvents.map(event => event.op).filter(op => !visible.includes(op)))].slice(0, resolved.operationLimit)
       const supportEvidence = (event: Snapshot["events"][number]) => event.clusterEvidenceIds?.length ? event.clusterEvidenceIds : [event.eventId]
       for (const op of supportOps) {

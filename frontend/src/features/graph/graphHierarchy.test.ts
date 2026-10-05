@@ -248,6 +248,44 @@ describe("API hierarchy", () => {
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "support-operation")).toBe(false)
   })
 
+  it("shows response-backed GET and POST without authorization cells as neutral graph nodes", () => {
+    const getOp = `${service} GET /account/edit`, postOp = `${service} POST /account/update`
+    const snapshot = targetSnapshot({ events: [
+      event({ eventId: "get-1", op: getOp, method: "GET", path: "/account/edit?ticket=alpha&page=1", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", classificationReasons: ["AMBIGUOUS_KEEP"] }),
+      event({ eventId: "get-2", op: getOp, method: "GET", path: "/account/edit?ticket=beta&page=2", source: "scanner", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", classificationReasons: ["DOCUMENT_NAVIGATION"] }),
+      event({ eventId: "post-1", op: postOp, method: "POST", path: "/account/update", trafficClass: "API", trafficDisposition: "EXCLUDE", phase: "BASELINE", classificationReasons: ["HUMAN_OUTSIDE_EXPLORATION_RUN"] }),
+    ] })
+    const site = projectHierarchy(snapshot, filters, initial)
+    expect(site.groups).toEqual([expect.objectContaining({ key: "account", endpointCount: 0, observedCount: 2 })])
+    const group = projectHierarchy(snapshot, filters, navigateHierarchy(initial, "group", site.groups[0].id))
+    expect(group.nodes.filter(node => node.kind === "observed-operation").map(node => [node.selection.operation, node.verdict, node.selection.evidenceIds])).toEqual([
+      [getOp, "unknown", ["get-1", "get-2"]], [postOp, "unknown", ["post-1"]],
+    ])
+    expect(group.edges.filter(edge => edge.relation === "observed").map(edge => [edge.source, edge.selection.evidenceIds])).toEqual([
+      ["human", ["get-1"]], ["scanner", ["get-2"]], ["human", ["post-1"]],
+    ])
+    expect(group.nodes.every(node => node.selection.cells.length === 0)).toBe(true)
+  })
+
+  it("does not turn assets, request-only attempts, validation or explicit exclusions into graph nodes", () => {
+    const snapshot = targetSnapshot({ events: [
+      event({ eventId: "asset", op: `${service} GET /account/app.js`, path: "/account/app.js", trafficClass: "STATIC_ASSET", trafficDisposition: "EXCLUDE" }),
+      event({ eventId: "no-response", op: `${service} GET /account/attempt`, path: "/account/attempt", status: 0, trafficClass: "UNKNOWN", trafficDisposition: "EXCLUDE", classificationReasons: ["NO_RESPONSE"] }),
+      event({ eventId: "validation", op: `${service} POST /account/update`, method: "POST", path: "/account/update", phase: "VALIDATION", trafficClass: "API", trafficDisposition: "EXCLUDE" }),
+      event({ eventId: "excluded", op: `${service} GET /account/private`, path: "/account/private", trafficClass: "UNKNOWN", trafficDisposition: "EXCLUDE", classificationOverride: true, classificationReasons: ["USER_EXCLUDE"] }),
+    ] })
+    expect(projectHierarchy(snapshot, filters, initial).groups).toEqual([])
+  })
+
+  it("retains manually reviewed functions while excluding manually hidden functions", () => {
+    const reviewed = event({ eventId: "reviewed", op: get, trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", classificationOverride: true, classificationReasons: ["USER_REVIEW"] })
+    const hidden = { ...reviewed, eventId: "hidden", op: patch, trafficDisposition: "EXCLUDE", classificationReasons: ["USER_EXCLUDE"] }
+    const snapshot = targetSnapshot({ events: [reviewed, hidden] })
+    const group = projectHierarchy(snapshot, filters, groupNav())
+    expect(group.nodes.filter(node => node.kind === "observed-operation").map(node => node.selection.operation)).toEqual([get])
+    expect(group.edges.find(edge => edge.relation === "observed")?.selection.evidenceIds).toEqual(["reviewed"])
+  })
+
   it("never mutates the input snapshot, filters, or navigation", () => {
     const snapshot = data()
     const before = JSON.stringify({ snapshot, filters, initial })

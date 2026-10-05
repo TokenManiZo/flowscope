@@ -38,10 +38,11 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     const group = "kind" in projection ? projection.groups.find(item => item.id === node.groupId) : undefined
     // 카드는 이름과 API 수만 둔다. 출처 수·Gap은 선택했을 때 오른쪽 패널에서 본다.
     const endpointCount = group?.endpointCount ?? 0
+    const observedCount = group?.observedCount ?? 0
     const candidates = candidateCount(group?.cells ?? [])
     return {
-      kind: "target", badge: "API GROUP", title: node.label, detail: `${endpointCount} APIs`, footer: "", icon: "network",
-      accessibleLabel: `${node.label}; ${node.service ?? "Target"}; API group; ${endpointCount} APIs${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}`,
+      kind: "target", badge: "API GROUP", title: node.label, detail: `${endpointCount} APIs${observedCount ? ` · 관측 기능 ${observedCount}` : ""}`, footer: "", icon: "network",
+      accessibleLabel: `${node.label}; ${node.service ?? "Target"}; API group; ${endpointCount} APIs${observedCount ? `; 관측 기능 ${observedCount}` : ""}${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}`,
       ...(candidates ? { candidates } : {}),
     }
   }
@@ -85,6 +86,10 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   if (node.kind === "support-operation") return {
     kind: "operation", badge: "SUPPORT", title: `${operation.method} ${operation.path}`, detail: "보조 흐름", footer: "", icon: "none",
     accessibleLabel: `Support operation ${node.label}`,
+  }
+  if (node.kind === "observed-operation") return {
+    kind: "operation", badge: operation.method, title: pathAfterGroup(operation.path), detail: "응답 관측 · 판정 없음", footer: evidenceFooter(node), icon: "none",
+    accessibleLabel: `${node.label}; 응답 관측; 판정 없음; ${evidenceFooter(node)}`,
   }
 
   const candidates = "kind" in projection ? candidateCount((node as HierarchyNode).selection.cells ?? []) : 0
