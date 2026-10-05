@@ -10,7 +10,6 @@ it('other-source allow cannot fold a HUMAN suspicious API',()=>{
  const data=targetSnapshot({cells:[cell({perSource:{human:'suspicious',scanner:'allow',llm:'allow'},conflict:true})]})
  const graph=projectHierarchy(data,filters,nav)
  expect(graph.nodes.some(n=>n.kind==='operation'&&!n.hiddenInGraph)).toBe(true)
- expect(graph.nodes.find(n=>n.kind==='quiet-group')).toBeUndefined()
 })
 it('HUMAN signal retains a first-page place among scanner-only signals',()=>{
  const scanners=Array.from({length:18},(_,i)=>cell({op:`${service} GET /api/orders/scanner-${i}`,perSource:{scanner:'suspicious'},evidenceIds:[`s${i}-1`,`s${i}-2`]}))

@@ -29,7 +29,7 @@ export interface ApiGroup extends ApiGroupDescriptor {
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
-  kind: GraphNode["kind"] | "target" | "api-group" | "observed-operation" | "object-group" | "operation-group" | "quiet-group" | "support-operation" | "resend-operation"
+  kind: GraphNode["kind"] | "target" | "api-group" | "observed-operation" | "object-group" | "operation-group" | "support-operation" | "resend-operation"
   selection: HierarchySelection
   groupId?: string
   service?: string
@@ -156,7 +156,7 @@ export function objectGroupKey(resource: string): { id: string; key: string } | 
 }
 
 export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | null {
-  if (kind === "object-group" || kind === "operation-group" || kind === "quiet-group") return "toggle"
+  if (kind === "object-group" || kind === "operation-group") return "toggle"
   if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
   if (kind === "identity" && level !== "site") return "back"
   return null
@@ -410,19 +410,14 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       priorities.set(cell.op, Math.min(priorities.get(cell.op) ?? 2, humanSignal ? 0 : signal ? 1 : 2))
     }
     const operations = [...group.operations].sort((left, right) => (priorities.get(left)! - priorities.get(right)!) || (scores.get(right) ?? 0) - (scores.get(left) ?? 0) || compareText(left, right))
-    const signalled = (op: string) => priorities.get(op)! < 2
-    const quietId = `quiet-group:${group.id}`, quietOpen = expandedGroups.has(quietId)
-    // 목록 보기는 신호 있는 기능 다음에 접힌 기능을 이어서 18개씩 넘긴다. 접혀 있으면 그래프에는 신호 있는 기능만 그린다.
-    // 펼쳐도 같은 순서를 쓴다. 점수순으로 바꾸면 펼치는 순간 신호 있는 기능이 18개 밖으로 밀려 사라질 수 있다.
-    const ordered = [...operations.filter(signalled), ...operations.filter(op => !signalled(op))]
+    // 접지 않고 모두 그린다. 점검할 것(사람 신호 → 의심·확인 필요·충돌·쓰기)이 앞에 오고, 많으면 18개씩 넘긴다.
+    const ordered = operations
     const listed = ordered.slice(0, resolved.operationLimit)
     for (const op of reveal.operations ?? []) if (ordered.includes(op) && !listed.includes(op)) { listed.push(op); revealedNodeCount++ }
-    const visible = listed.filter(op => quietOpen || signalled(op) || reveal.operations?.includes(op))
+    const visible = listed
     const related = group.cells.filter(cell => visible.includes(cell.op))
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
     listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
-    for (const op of listed.filter(op => !visible.includes(op))) listItems.push(addNode("operation", op, selectionFor(group.cells.filter(cell => cell.op === op)), { hiddenInGraph: true }))
-    const quietMembers = operations.filter(op => !signalled(op))
     addAccess(related)
     // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
     // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
@@ -444,11 +439,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     if (filters.includeSupportTraffic) {
       const supportEvents = observedEvents.filter(event => operationGroup(event.op).id === group.id)
       const humanWrites = new Set(supportEvents.filter(event => event.source === "human" && isWriteOperation(event.op)).map(event => event.op))
-      const allSupportOps = [...new Set(supportEvents.map(event => event.op))].filter(op => {
-        if (!isWriteOperation(op)) quietMembers.push(op)
-        if (!quietOpen && !isWriteOperation(op) && reveal.operations?.includes(op)) revealedNodeCount++
-        return quietOpen || isWriteOperation(op) || !!reveal.operations?.includes(op)
-      }).sort((left, right) => Number(humanWrites.has(right)) - Number(humanWrites.has(left)) || Number(isWriteOperation(right)) - Number(isWriteOperation(left)) || compareText(left, right))
+      const allSupportOps = [...new Set(supportEvents.map(event => event.op))].sort((left, right) => Number(humanWrites.has(right)) - Number(humanWrites.has(left)) || Number(isWriteOperation(right)) - Number(isWriteOperation(left)) || compareText(left, right))
       const supportOps = allSupportOps.slice(0, resolved.operationLimit)
       for (const op of reveal.operations ?? []) if (allSupportOps.includes(op) && !supportOps.includes(op)) { supportOps.push(op); revealedNodeCount++ }
       hiddenOperationCount += allSupportOps.length - supportOps.length
@@ -471,13 +462,6 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
         identity.selection = { ...identity.selection, evidenceIds: [...new Set([...identity.selection.evidenceIds, ...evidenceIds])].sort(compareText) }
         addEdge("support", `identity:${idn}`, `observed-operation:${op}`, { ...emptySelection(), identity: idn, operation: op, source, evidenceIds }, bucket.length)
       }
-    }
-    if (quietMembers.length) {
-      const label = `신호 없는 기능 ${quietMembers.length}개`
-      const selection = selectionFor(group.cells.filter(cell => quietMembers.includes(cell.op)))
-      const events = [...attachedEvents, ...observedEvents].filter(event => quietMembers.includes(event.op))
-      selection.evidenceIds = [...new Set([...selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText)
-      addNode("quiet-group", group.id, selection, { label, wrappedLabel: label, objectGroup: { key: "신호 없는 기능", members: quietMembers, owners: {}, expanded: quietOpen } })
     }
   } else if (group) {
     const operation = resolved.operation

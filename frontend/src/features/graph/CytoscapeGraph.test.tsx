@@ -667,7 +667,7 @@ it("renders a response-backed non-cell GET as a neutral graph node", () => {
   }] })
   const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: true, expanded: false }
   const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
-  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [`quiet-group:${site.groups[0].id}`] }, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
   render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
   const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; kind?: string; accessibleLabel?: string; confirmed?: string } }>
   expect(added).toEqual(expect.arrayContaining([expect.objectContaining({ data: expect.objectContaining({
@@ -862,7 +862,7 @@ it("opens and closes an object group from a double click or Enter instead of nav
   const snapshot = targetSnapshot({ cells: [{ idn: "alice", op: "https://api.example.test GET /orders/{id}", resource: "orders:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
   const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
   const site = projectHierarchy(snapshot, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
-  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [`quiet-group:${site.groups[0].id}`] }, { ...site.navigation, level: "group", groupId: site.groups[0].id })
+  const group = projectHierarchy(snapshot, filters, { ...site.navigation, level: "group", groupId: site.groups[0].id })
   const groupNode = group.nodes.find(node => node.kind === "object-group")!
   const onToggleObjectGroup = vi.fn(), onNavigate = vi.fn()
   render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onNavigate={onNavigate} onToggleObjectGroup={onToggleObjectGroup} onPreferencesChange={vi.fn()} />)
@@ -889,7 +889,7 @@ it("wraps each expanded object group and its members in one screen-space band fo
 
 it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout through theme switches", async () => {
   const cell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["a"] }
-  const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell, { ...cell, idn: "USER B", resource: "orders:202", evidenceIds: ["b"] }, { ...cell, idn: "USER C", op: "GET /api/orders/profile", resource: "user-profile:1", evidenceIds: ["c"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders", 'quiet-group:["Target","orders"]'] }, { level: "group", groupId: '["Target","orders"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell, { ...cell, idn: "USER B", resource: "orders:202", evidenceIds: ["b"] }, { ...cell, idn: "USER C", op: "GET /api/orders/profile", resource: "user-profile:1", evidenceIds: ["c"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders"] }, { level: "group", groupId: '["Target","orders"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
   const group = hierarchy.nodes.find(node => node.kind === "object-group" && node.objectGroup?.key === "orders")!
   const focus = graphFocusStates(hierarchy, "resource:orders:101", group.id)
   expect(focus.node("resource:orders:101")).toBe("yes")
@@ -929,22 +929,6 @@ it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout throug
   expect(remove).not.toHaveBeenCalled()
   expect(core.add).not.toHaveBeenCalled()
 })
-
-it("marks judged and observed-only members of an opened quiet card so its band covers both", () => {
-  const service = "https://api.example.test"
-  const page = { eventId: "p-1", clusterEvidenceIds: ["p-1"], method: "GET", path: "/orders/help.php", status: 200, op: `${service} GET /orders/help.php`, idn: "alice", source: "human", resource: null, phase: "EXPLORATION", executionTrust: "OBSERVED", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", classificationOverride: false, classificationReasons: [] } as unknown as EventRecord
-  const snapshot = targetSnapshot({ events: [page], cells: [{ idn: "alice", op: `${service} GET /orders/list`, resource: null, perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["e-1"] }] })
-  const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: true, expanded: false }
-  const groupId = JSON.stringify([service, "orders"]), quietId = `quiet-group:${groupId}`
-  const group = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: [quietId] }, { level: "group", groupId, operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
-  render(<CytoscapeGraph projection={group} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
-  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; memberOf?: string; groupKey?: string } }>
-  // 접기 버튼 이름은 내부 묶음 ID(JSON) 대신 읽을 수 있는 이름을 쓴다.
-  expect(added.find(item => item.data.id === quietId)?.data.groupKey).toBe("신호 없는 기능")
-  expect(added.find(item => item.data.id === `operation:${service} GET /orders/list`)?.data.memberOf).toBe(quietId)
-  expect(added.find(item => item.data.id === `observed-operation:${service} GET /orders/help.php`)?.data.memberOf).toBe(quietId)
-})
-
 
 /** 레인 노드 사이 세로 간격(CytoscapeGraph의 LANE_NODE_GAP)과 테스트 카드 높이. */
 const GAP = 20, CARD = 40
