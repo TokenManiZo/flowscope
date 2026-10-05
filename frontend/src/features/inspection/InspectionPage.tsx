@@ -36,6 +36,12 @@ function isAuthorizationReplay(event: EventRecord): boolean {
   return event.sourceDetail === "AUTHORIZATION_REPLAY" || event.phase === "AUTHORIZATION_REPLAY"
 }
 
+function isZapRequest(event: EventRecord): boolean {
+  // SCANNER나 tool=ZAP만으로는 Burp Scanner·출처 미상 기록과 구분되지 않는다.
+  return event.source === "scanner" && !isAuthorizationReplay(event)
+    && (event.sourceDetail.startsWith("ZAP_") || event.sourceDetail === "HAR_IMPORT")
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "요청을 완료하지 못했습니다."
 }
@@ -153,9 +159,9 @@ export function InspectionPage() {
     .sort((a, b) => b.timestamp - a.timestamp).slice(0, 200).map(feedItem),
     [events, identityLabel, snapshot.data?.evidenceOrdinals])
 
-  // ZAP 작업 피드는 권한 자동 검증을 제외한 SCANNER 요청을 표시한다.
+  // 저장된 수집 방식으로 ZAP 요청을 먼저 고른 뒤 최근 200건을 표시한다.
   const scannerFeedItems = useMemo<readonly SourceFeedItem[]>(() => events
-    .filter((event) => event.source === "scanner" && !isAuthorizationReplay(event))
+    .filter(isZapRequest)
     .slice()
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, 200)
@@ -250,10 +256,10 @@ export function InspectionPage() {
               </div>
             </div>}
             feedItems={scannerFeedItems}
-            feedTitle="기록된 요청"
+            feedTitle="ZAP 요청 기록"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
-            emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다."
-            feedContent={(view) => <HumanRequestFeed view={view} context={`ZAP 스캔 · ${displayOrigin(target)}`} items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined} emptyHint="스캔을 시작하면 ZAP이 기록한 요청이 여기에 표시됩니다." />}
+            emptyHint="아직 기록된 ZAP 요청이 없습니다."
+            feedContent={(view) => <HumanRequestFeed view={view} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
           />
         </TabsContent>
 
