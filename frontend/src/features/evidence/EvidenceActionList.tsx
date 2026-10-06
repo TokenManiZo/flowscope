@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { useEffect, useState } from "react"
 import { Bot, ChevronDown, ChevronRight, CircleHelp, ScanLine, Send, UserRound } from "lucide-react"
 
@@ -66,16 +67,16 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
     <h3 className="text-lg font-semibold">관측 기록</h3>
     <ul className="grid gap-4">{cards.map(card => {
       const verdict = identityVerdicts?.get(card.idn), tone = verdict ? matrixVerdictTone(verdict) : null
-      return <li key={card.idn} aria-label={`${card.idn} 관측 기록 ${card.count}건`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+      return <li key={card.idn} aria-label={`${identityLabel(card.idn)} 관측 기록 ${card.count}건`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
         <div className="flex min-w-0 items-center gap-2 px-4 py-3">
-          <span className="truncate text-lg font-semibold">{card.idn}</span>
+          <span className="truncate text-lg font-semibold">{identityLabel(card.idn)}</span>
           {tone && <span className={`ms-auto shrink-0 rounded px-2 py-0.5 text-[13px] font-medium ${tone.className}`}>{tone.label}</span>}
         </div>
         {!card.rows.length && <p className="border-t border-border/70 px-4 py-2.5 text-[13px] text-muted-foreground">연결된 요청 기록이 없습니다.</p>}
         {card.rows.map(row => {
           const latest = row.events[0], mark = SOURCE_MARK[row.source] ?? SOURCE_MARK.unknown, open = openGroups.includes(row.key)
           const methods = [...new Set(row.events.map(event => event.method))], codes = [...new Set(row.events.map(event => event.status))].sort((left, right) => left - right)
-          return <div key={row.key} role="group" aria-label={`${card.idn} · ${mark.label} ${row.events.length}건`} className="grid gap-2 border-t border-border/70 px-4 py-2.5">
+          return <div key={row.key} role="group" aria-label={`${identityLabel(card.idn)} · ${mark.label} ${row.events.length}건`} className="grid gap-2 border-t border-border/70 px-4 py-2.5">
             <div className="flex min-w-0 items-center gap-2">
               <span role="img" aria-label={mark.label} title={mark.label} className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full border ${mark.className}`}><mark.Icon className="size-4" aria-hidden="true" /></span>
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">{methods.map(method => <MethodBadge key={method} method={method} />)}{codes.map(code => <StatusBadge key={code} code={code} />)}</span>
@@ -86,7 +87,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
                 <Button type="button" size="icon-sm" variant="outline" aria-label="Request Lab에서 보내기" title="Request Lab에서 보내기" disabled={disabled} onClick={() => openLab(latest)}><Send className="size-4" /></Button>
               </span>
             </div>
-            {open && <ul aria-label={`${card.idn} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
+            {open && <ul aria-label={`${identityLabel(card.idn)} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
               <span className="font-mono text-xs text-muted-foreground">{ordinal(event)}</span>
               <StatusBadge code={event.status} />
               <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>

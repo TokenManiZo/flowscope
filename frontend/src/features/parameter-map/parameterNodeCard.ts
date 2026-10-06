@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { SurfaceParameter, SurfaceParameterGap } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
 import { wrapPath } from "@/lib/display/pathLines"
@@ -78,7 +79,7 @@ export function resourceLabel(resource: string, service: string): string {
 
 /** 점검 우선순위 카드는 배지·제목만 그린다. 역할·Gap 종류·값 형태·HTTP 결과·owner는 접근 이름(마우스 설명)과 상세 패널에 남긴다. */
 export function conditionNodeCard(gap: SurfaceParameterGap, parameter: SurfaceParameter | undefined): ParameterNodeCardView {
-  const identity = gap.identity ?? "UNKNOWN", role = gap.role ?? "UNKNOWN"
+  const identity = identityLabel(gap.identity ?? "UNKNOWN"), role = gap.role ?? "UNKNOWN"
   const observations = gap.identity ? parameter?.profile?.identityCounts[gap.identity] ?? 0 : 0
   return {
     kind: "condition", badge: "IDENTITY", title: identity, detail: "", footer: "", icon: "user",
@@ -112,7 +113,7 @@ export function inputNodeCard(key: ParameterMapKey, gap: SurfaceParameterGap, pa
 }
 
 export function targetNodeCard(resource: string | null, confidence: string, owner: string | null, service = ""): ParameterNodeCardView {
-  const title = resource ? resourceLabel(resource, service) : "UNKNOWN", targetOwner = owner ?? "UNKNOWN"
+  const title = resource ? resourceLabel(resource, service) : "UNKNOWN", targetOwner = identityLabel(owner ?? "UNKNOWN")
   return {
     kind: "target", badge: "RESOURCE", title, detail: "", footer: "", icon: "box",
     accessibleLabel: `Authorization target ${resource ?? "UNKNOWN"}; ${confidence}; owner: ${targetOwner}`,

@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { ArrowUpRight, Eye, EyeOff, Check, RotateCcw } from "lucide-react"
 import { DeleteTrafficButton } from "@/features/api-management/ApiActions"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -198,7 +199,7 @@ export function EvidencePage() {
                   <TableCell className="text-center"><MethodBadge method={event.method} /></TableCell>
                   <TableCell className="max-w-96 whitespace-normal"><button type="button" disabled={snapshot.isError} aria-label={`${event.method} ${boundedText(event.path, 120)} 상세 보기`} className="min-w-0 break-all text-left font-mono text-sm hover:underline disabled:cursor-not-allowed" onClick={(click) => { click.stopPropagation(); selectEvent(event) }}>{boundedText(event.path, 120)}</button></TableCell>
                   <TableCell><HttpStatusBadge status={event.status} /></TableCell>
-                  <TableCell className="text-sm">{boundedText(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn), 48)}</TableCell>
+                  <TableCell className="text-sm">{boundedText(identityLabel(snapshot.data?.accounts.find((account) => account.id === (event.laneAccountId?.trim() || event.idn))?.label ?? (event.laneAccountId?.trim() || event.idn)), 48)}</TableCell>
                   <TableCell className="max-w-72 whitespace-normal text-sm">{review
                     ? <><span className="mr-1.5 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300">검토 필요</span><span className="text-muted-foreground">{event.classificationReasons.map(trafficReasonLabel).join(" · ")}</span></>
                     : trafficClassLabel(event.trafficClass)}</TableCell>

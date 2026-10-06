@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { Snapshot } from "@/lib/api/types"
 import { verdictStyles, wrapOperationLabel, type GraphView } from "./graphProjection"
 import type { GraphNavigation, HierarchyEdge, HierarchyNode, HierarchyProjection, HierarchySelection } from "./graphHierarchy"
@@ -63,7 +64,7 @@ export function projectResendGraph(snapshot: Snapshot, navigation: GraphNavigati
     const byIdentity = new Map<string, ResendSend[]>()
     for (const send of group) byIdentity.set(send.identity, [...(byIdentity.get(send.identity) ?? []), send])
     for (const [identity, identitySends] of byIdentity) {
-      addNode(`identity:${identity}`, "identity", identity, sends.filter(send => send.identity === identity), { identity })
+      addNode(`identity:${identity}`, "identity", identityLabel(identity), sends.filter(send => send.identity === identity), { identity })
       edges.push(resendEdge(tool, `identity:${identity}`, operationId, identitySends, { identity, operation }))
     }
     const byResource = new Map<string, ResendSend[]>()

@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { ReactNode } from "react"
 import type { Cell, Verdict } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
@@ -60,7 +61,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     return {
       stats: [["객체", node.objectGroup.members.length], ["접근 신원", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
       listTitle: "묶음 객체 · 소유자",
-      list: node.objectGroup.members.map(member => [stripOrigin(member) || member, node.objectGroup?.owners[member] ?? "소유자 미확정"] as [string, string]),
+      list: node.objectGroup.members.map(member => [stripOrigin(member) || member, identityLabel(node.objectGroup?.owners[member] ?? "소유자 미확정")] as [string, string]),
     }
   }
   if (node.kind === "resource") {
@@ -68,8 +69,8 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     const owner = node.owner ?? null
     return {
       stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["관측 기록", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
-      listTitle: owner ? `접근한 신원 · 소유자 ${owner}` : "접근한 신원",
-      list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identity} (소유자)` : identity, mostUrgent(items)]),
+      listTitle: owner ? `접근한 신원 · 소유자 ${identityLabel(owner)}` : "접근한 신원",
+      list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identityLabel(identity)} (소유자)` : identity, mostUrgent(items)]),
     }
   }
   if (node.kind === "operation") {
@@ -77,6 +78,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     return {
       stats: [["신원", byIdentity.size], ["객체", new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
       listTitle: "접근한 신원",
+      // 상세 패널의 identityVerdicts 조회 키로도 쓰므로 원본 신원을 유지한다.
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity, mostUrgent(items)]),
     }
   }
@@ -93,7 +95,7 @@ export function GraphNodeSummary({ summary, hint, children }: { summary: Summary
     {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />HUMAN {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />SCANNER {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
     {summary.list.length > 0 && <div><h3 className="mb-1 text-sm font-semibold text-muted-foreground">{summary.listTitle}</h3><ul className="grid">{summary.list.map(([label, value]) => {
       const tone = verdicts.has(value) ? matrixVerdictTone(value as Verdict) : null
-      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 break-all font-mono text-sm">{label}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
+      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 break-all font-mono text-sm">{identityLabel(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
     })}</ul></div>}
     {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
   </section>

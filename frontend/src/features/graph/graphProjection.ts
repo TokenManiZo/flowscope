@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { Cell, EventRecord, RouteCandidate, Snapshot, Source, Verdict } from "@/lib/api/types"
 
 export type GraphView = "source" | "authz"
@@ -155,7 +156,7 @@ function toNode(kind: GraphNode["kind"], key: string, events: readonly EventReco
   const verdicts = new Set(events.map((event) => graphReviewVerdict(snapshot, event)))
   const verdict = verdicts.size === 1 ? [...verdicts][0] : "unknown"
   const style = verdictStyles[verdict]
-  return { id: `${kind}:${key}`, kind, label: key, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : key, verdict, verdictText: style.text, verdictColor: style.color, selection }
+  return { id: `${kind}:${key}`, kind, label: kind === "identity" ? identityLabel(key) : key, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : kind === "identity" ? identityLabel(key) : key, verdict, verdictText: style.text, verdictColor: style.color, selection }
 }
 
 function includesSupport(event: EventRecord) { return supportClasses.has(event.trafficClass) }
