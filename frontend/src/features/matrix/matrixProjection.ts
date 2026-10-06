@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { Cell, Gap, Snapshot, Source } from "@/lib/api/types"
 
 export type MatrixMode = "identity" | "role"
@@ -77,7 +78,7 @@ export function projectMatrix(snapshot: Snapshot, mode: MatrixMode, gapsOnly: bo
         const key = matrixCoordinateKey(cell.op, cell.resource)
         ;(membersByColumn[key] ??= []).push(matrixMember(snapshot, mode, group, cell))
       }
-      return { key: JSON.stringify([mode, group]), label: mode === "identity" ? group : `역할: ${group}`, membersByColumn }
+      return { key: JSON.stringify([mode, group]), label: mode === "identity" ? identityLabel(group) : `역할: ${group}`, membersByColumn }
     }),
   }
 }

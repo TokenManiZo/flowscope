@@ -37,6 +37,7 @@ it("keeps Repeater and Intruder sends out of the collected graph", () => {
 it("draws sender identity, resent API per tool and object with tool-coloured dashed edges and no verdict cells", () => {
   const graph = projectResendGraph(snapshot(), initial, "source", ["lab", "repeater"])
   expect(graph.navigation).toBe(initial)
+  expect(graph.nodes.find(node => node.id === "identity:anon")).toMatchObject({ label: "비로그인", wrappedLabel: "비로그인", selection: { identity: "anon" } })
   expect(graph.nodes.map(node => node.id).sort()).toEqual([
     "identity:anon", "identity:user-b",
     `resend-operation:lab:${op("GET", "/api/profile")}`, `resend-operation:lab:${op("PATCH", "/api/orders/{id}")}`, `resend-operation:repeater:${op("GET", "/api/orders/{id}")}`,

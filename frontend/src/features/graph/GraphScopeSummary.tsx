@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 
@@ -72,9 +73,9 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
   const idor = candidates.filter(item => item.type === "IDOR").length, bfla = candidates.length - idor
   const filtered = typeFilter === "all" ? candidates : candidates.filter(item => item.type === typeFilter)
   const candidateSub = (item: ScopeCandidate) => {
-    if (!item.resource) return item.idn
+    if (!item.resource) return identityLabel(item.idn)
     const owner = owners[item.resource]
-    return `${item.idn} → ${label(item.resource)}${owner && owner !== item.idn ? ` (소유자 ${owner})` : ""}`
+    return `${identityLabel(item.idn)} → ${label(item.resource)}${owner && owner !== item.idn ? ` (소유자 ${identityLabel(owner)})` : ""}`
   }
   const toggle = <T,>(list: readonly T[], value: T) => list.includes(value) ? list.filter(item => item !== value) : [...list, value]
   const endpointCount = groups.reduce((sum, group) => sum + group.endpointCount, 0)
@@ -118,7 +119,7 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
             <span className="ms-auto font-mono text-xs text-muted-foreground">{items.length}</span>
           </button>
           {open && <div className="px-2 pb-1">
-            <ul aria-label={`${UNDECIDED_REASON_LABEL[reason]} 목록`}>{(all ? items : items.slice(0, PREVIEW)).map(item => <Row key={item.key} method={item.method} path={item.path} sub={item.resource ? `${item.idn} → ${label(item.resource)}` : item.idn} badge="확인 필요" badgeClass="bg-amber-500/15 text-amber-700 dark:text-amber-300" onClick={() => reveal(item.op)} />)}</ul>
+            <ul aria-label={`${UNDECIDED_REASON_LABEL[reason]} 목록`}>{(all ? items : items.slice(0, PREVIEW)).map(item => <Row key={item.key} method={item.method} path={item.path} sub={item.resource ? `${identityLabel(item.idn)} → ${label(item.resource)}` : identityLabel(item.idn)} badge="확인 필요" badgeClass="bg-amber-500/15 text-amber-700 dark:text-amber-300" onClick={() => reveal(item.op)} />)}</ul>
             <More hidden={items.length - PREVIEW} open={all} onToggle={() => setAllReasons(current => toggle(current, reason))} noun="요청" />
           </div>}
         </li>
@@ -137,9 +138,9 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
 
     {identities.length > 0 && <div>
       <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">신원별 접근</h3>
-      <ul className="grid gap-2" aria-label="신원별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${identity.idn} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+      <ul className="grid gap-2" aria-label="신원별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${identityLabel(identity.idn)} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[15px] font-semibold">{identity.idn}</span>
+          <span className="truncate text-[15px] font-semibold">{identityLabel(identity.idn)}</span>
           <span className="ms-auto flex shrink-0 gap-1">{identity.sources.map(source => { const mark = SOURCE_MARK[source]; return <span key={source} role="img" aria-label={mark.label} title={mark.label} className={`inline-flex size-6 items-center justify-center rounded-full border ${mark.className}`}><mark.Icon className="size-3.5" aria-hidden="true" /></span> })}</span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">API {identity.apis}{VERDICT_CHIP.map(([verdict, text, className]) => identity.counts[verdict] ? <span key={verdict} className={`rounded px-1.5 py-0.5 font-medium ${className}`}>{text} {identity.counts[verdict]}</span> : null)}</div>

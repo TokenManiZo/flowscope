@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { ReactNode } from "react"
 
 import type { EventRecord, ReviewStatus, Scenario } from "@/lib/api/types"
@@ -132,7 +133,7 @@ const sourceColor: Record<string, string> = { human: "text-observation-human", s
 export function RecentEventList({ events, ordinals }: { events: readonly EventRecord[]; ordinals?: Readonly<Record<string, number>> }) {
   return <ListCard title="최근 관측" href="#evidence" linkLabel="관측 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
     <span className={cn("text-center text-xs font-semibold", sourceColor[event.source] ?? "text-muted-foreground")}>{sourceShort[event.source] ?? "?"}</span>
-    <span className="min-w-0"><span className="block truncate font-mono text-xs">{event.method} {event.path} <span className="text-muted-foreground">({event.status})</span></span><span className="block truncate text-[11px] text-muted-foreground">{evidenceOrdinalLabel(ordinals, event.eventId)} · {event.idn}</span></span>
+    <span className="min-w-0"><span className="block truncate font-mono text-xs">{event.method} {event.path} <span className="text-muted-foreground">({event.status})</span></span><span className="block truncate text-[11px] text-muted-foreground">{evidenceOrdinalLabel(ordinals, event.eventId)} · {identityLabel(event.idn)}</span></span>
     <span className="text-[11px] tabular-nums text-muted-foreground">{observedTimeLabel(event.lastSeen, event.lastSeen)}</span>
   </a></li>)}</ListCard>
 }
