@@ -18,7 +18,6 @@ export interface RequestLabEntry {
   credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"
   accountId: string
   result: RequestLabResult | null
-  restored?: boolean
   dirty: boolean
   editRejected: boolean
   position: { start: number; end: number; top: number; left: number; responseTop: number; responseLeft: number }
@@ -72,7 +71,7 @@ export function createMemoryOnlyRawState(initial: { request?: string; response?:
         || selectedId !== 0 && !entries.some(entry => entry.id === selectedId)
         || bytes() + 2 * entries.reduce((size, entry) => size + entry.request.length + (entry.result?.response.length ?? 0), 0) > REQUEST_LAB_WORKSPACE_BYTES) return false
       for (const entry of state.requests) scrubEntry(entry)
-      state.requests = entries.map(entry => ({ ...entry, accountId: "", result: entry.result ? { ...entry.result } : null, restored: true, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }))
+      state.requests = entries.map(entry => ({ ...entry, accountId: "", result: entry.result ? { ...entry.result } : null, editRejected: false, position: { start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 } }))
       state.selectedId = selectedId || null
       sequence = nextId - 1
       return true

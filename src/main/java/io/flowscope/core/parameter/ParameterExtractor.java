@@ -8,7 +8,6 @@ import com.fasterxml.jackson.core.exc.StreamConstraintsException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.flowscope.core.Masking;
 import io.flowscope.core.Normalizer;
 import io.flowscope.core.RequestRecord;
 import org.w3c.dom.Element;
@@ -100,7 +99,7 @@ public final class ParameterExtractor {
             }
             if (bounded(record.path)) path();
             if (bounded(record.query)) form(record.query, Location.QUERY);
-            // The analysis accessor selects the retained, already-masked request body when available.
+            // The analysis accessor selects the retained request body when available.
             String body = record.requestBodyForAnalysis();
             if (bounded(body) && body != null && !body.isBlank()) {
                 String type = record.requestContentType == null ? "" : record.requestContentType.toLowerCase(Locale.ROOT);
@@ -140,8 +139,6 @@ public final class ParameterExtractor {
                 if (!visit()) return;
                 int i = slot.segment();
                 if (i < original.length) {
-                    if (omittedSensitivePath(String.join("/", java.util.Arrays.copyOf(original, i)))) continue;
-                    if (omittedSensitivePath(slot.declaredName())) continue;
                     try {
                         String pathValue = decode(original[i].replace("+", "%2B"));
                         add(Location.PATH, slot.canonicalPath(), Shape.SCALAR, ValueType.STRING, pathValue);
@@ -195,7 +192,6 @@ public final class ParameterExtractor {
                 if (!visit()) return;
                 JsonEntry entry = stack.pop();
                 String path = coordinateLimit ? "/" : entry.parent + entry.segment;
-                if (omittedSensitivePath(path)) continue;
                 JsonNode node = entry.node;
                 Shape shape = node.isObject() ? Shape.OBJECT : node.isArray() ? Shape.ARRAY : node.isNull() ? Shape.NULL : Shape.SCALAR;
                 if (!path.isEmpty()) add(location, path, shape, type(node), node.isContainerNode() ? null : scalar(node));
@@ -274,14 +270,12 @@ public final class ParameterExtractor {
                 });
                 root = builder.parse(new InputSource(new StringReader(body))).getDocumentElement();
             } catch (Exception ignored) { diagnostic("INVALID_XML", 1); return; }
-            if (omittedSensitivePath(xmlName(root))) return;
             var stack = new ArrayDeque<XmlEntry>();
             stack.push(new XmlEntry(root, "", ""));
             while (!stack.isEmpty()) {
                 if (!visit()) return;
                 XmlEntry entry = stack.pop();
                 String path = coordinateLimit ? "/" : entry.parent + entry.segment;
-                if (omittedSensitivePath(path)) continue;
                 var children = new ArrayList<Element>();
                 StringBuilder scalar = new StringBuilder();
                 for (Node child = entry.node.getFirstChild(); child != null; child = child.getNextSibling()) {
@@ -310,7 +304,6 @@ public final class ParameterExtractor {
                 diagnostic("COORDINATE_LIMIT", 1);
                 return;
             }
-            if (omittedSensitivePath(path)) return;
             var key = new ParameterKey(record.service, record.method, operation, location, path);
             Values values = parameters.get(key);
             if (values == null) {
@@ -329,12 +322,6 @@ public final class ParameterExtractor {
         }
 
         private void diagnostic(String reason, int count) { diagnostics.merge(reason, count, Integer::sum); }
-
-        private boolean omittedSensitivePath(String path) {
-            if (!Masking.isSensitiveParameterPath(path)) return false;
-            diagnostic("SENSITIVE_PARAMETER_OMITTED", 1);
-            return true;
-        }
 
         private ParameterExtraction result() {
             StringBuilder context = new StringBuilder("ctx:v1;").append(record.role).append(';').append(record.phase).append(';');
@@ -392,33 +379,9 @@ public final class ParameterExtractor {
             if (container) return null;
             String canonical = count == 1 ? firstScalar : sequence + "]";
             byte[] utf8 = canonical.getBytes(StandardCharsets.UTF_8);
-            String masked = Masking.maskSecrets(canonical);
-            boolean sensitive = !canonical.equals(masked) || containsSensitiveValue(canonical);
-            // Encoded nested secrets may not be changed by the ordinary text masker.
-            if (sensitive && canonical.equals(masked)) masked = "***MASKED***";
-            String preview = Masking.maskSecrets(masked.substring(0, Math.min(MAX_PREVIEW_CHARS, masked.length())));
-            preview = preview.substring(0, Math.min(MAX_PREVIEW_CHARS, preview.length()));
-            if (!isSafeMaskedPreview(preview)) preview = "***MASKED***";
-            return new ValueSummary(type, utf8.length, sensitive ? null : digest(canonical), preview, format);
+            String preview = canonical.substring(0, Math.min(MAX_PREVIEW_CHARS, canonical.length()));
+            return new ValueSummary(type, utf8.length, digest(canonical), preview, format);
         }
-    }
-
-    /** Inspect the complete value, never only the preview; bounded decoding handles nested URL expressions. */
-    public static boolean containsSensitiveValue(String value) {
-        if (value == null) return false;
-        return value.contains("***MASKED***") || value.contains("[BODY REDACTED:") || !isSafeMaskedPreview(value);
-    }
-
-    /** A masking marker never exempts the rest of the value from validation. */
-    public static boolean isSafeMaskedPreview(String value) {
-        if (value == null) return true;
-        for (int pass = 0; pass < 8; pass++) {
-            if (!value.equals(Masking.maskHeaders(value))) return false;
-            if (value.indexOf('%') < 0) return true;
-            try { value = decode(value); }
-            catch (IllegalArgumentException malformed) { return false; }
-        }
-        return false; // Ambiguous deeper encodings cannot safely support a preview or digest.
     }
 
     // Siblings share the parent string; long prefixes are not multiplied in the work stack.

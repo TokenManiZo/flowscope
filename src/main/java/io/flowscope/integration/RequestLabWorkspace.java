@@ -1,12 +1,10 @@
 package io.flowscope.integration;
 
-import io.flowscope.core.Masking;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Durable, masked editing state. Live credentials never belong to this model. */
+/** Durable Request Lab editing state: saved requests and their latest responses, kept as written. */
 public record RequestLabWorkspace(long revision, Map<String, Tab> tabs) {
-    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     private static final long MAX_TEXT_BYTES = 40L * 1024 * 1024;
     public RequestLabWorkspace {
         if (revision < 0) throw new IllegalArgumentException("invalid Request Lab revision");
@@ -14,8 +12,7 @@ public record RequestLabWorkspace(long revision, Map<String, Tab> tabs) {
         if (tabs.size() > 20_000) throw new IllegalArgumentException("Request Lab limit exceeded");
         long bytes = 0;
         for (var tab : tabs.entrySet()) {
-            if (tab.getKey().isBlank() || tab.getKey().length() > 256
-                    || !tab.getKey().equals(Masking.maskSecrets(tab.getKey()))) {
+            if (tab.getKey().isBlank() || tab.getKey().length() > 256) {
                 throw new IllegalArgumentException("invalid Request Lab Evidence ID");
             }
             for (Entry entry : tab.getValue().entries().values()) {
@@ -50,8 +47,7 @@ public record RequestLabWorkspace(long revision, Map<String, Tab> tabs) {
     public record Entry(String name, String request, String credentialMode, Result result, boolean dirty) {
         public Entry {
             if (name == null || name.isBlank() || name.length() > 80) throw new IllegalArgumentException("invalid Request Lab name");
-            name = Masking.maskSecrets(name.trim());
-            if (name.length() > 80 || !name.equals(Masking.maskSecrets(name))) throw new IllegalArgumentException("invalid masked Request Lab name");
+            name = name.trim();
             request = safeHttp(request, 1_048_576);
             // RAW는 Request Lab의 '직접 입력' 전송 인증이다. 웹 서버의 CredentialMode와 같은 목록을 받아야 저장이 실패하지 않는다.
             if (credentialMode == null || !java.util.Set.of("ORIGINAL", "ANONYMOUS", "ACCOUNT", "RAW").contains(credentialMode)) {
@@ -95,75 +91,6 @@ public record RequestLabWorkspace(long revision, Map<String, Tab> tabs) {
     }
     private static String safeHttp(String value, int limit) {
         if (value == null || value.length() > limit) throw new IllegalArgumentException("Request Lab text limit exceeded");
-        String masked = maskHttp(value);
-        if (masked.length() > limit) throw new IllegalArgumentException("Request Lab masked text limit exceeded");
-        if (!masked.equals(maskHttp(masked))) throw new IllegalArgumentException("Request Lab 마스킹을 완료하지 못했습니다.");
-        return masked;
-    }
-
-    private static String maskHttp(String value) {
-        int separator = value.indexOf("\r\n\r\n");
-        if (separator < 0) separator = value.indexOf("\n\n");
-        int separatorLength = separator < 0 ? 0 : value.startsWith("\r\n\r\n", separator) ? 4 : 2;
-        String headers = Masking.maskHeaders(separator < 0 ? value : value.substring(0, separator));
-        var pattern = java.util.regex.Pattern.compile("(?m)^([^:\r\n \t]+):[ \t]*([^\r\n]*(?:\r?\n[ \t]+[^\r\n]+)*)");
-        headers = pattern.matcher(headers).replaceAll(match -> {
-            String name = match.group(1);
-            return java.util.regex.Matcher.quoteReplacement(Masking.isSensitiveParameterPath(name)
-                    || SessionBroker.managedHeaderNames().stream().anyMatch(name::equalsIgnoreCase)
-                    || name.equalsIgnoreCase("Set-Cookie")
-                    ? name + ": ***MASKED***" : match.group());
-        });
-        headers = java.util.regex.Pattern.compile("([?&])([^=&\\s]+)=([^&\\s]*)").matcher(headers).replaceAll(match ->
-                java.util.regex.Matcher.quoteReplacement(Masking.isSensitiveParameterPath(match.group(2))
-                        ? match.group(1) + match.group(2) + "=***MASKED***" : match.group()));
-        if (separator < 0) return headers;
-        String body = value.substring(separator + separatorLength);
-        var type = java.util.regex.Pattern.compile("(?im)^Content-Type:[ \t]*([^\r\n]+)").matcher(headers);
-        String contentType = type.find() ? type.group(1) : "";
-        String trimmed = body.stripLeading();
-        String maskedBody = contentType.toLowerCase(java.util.Locale.ROOT).contains("json")
-                || trimmed.startsWith("{") || trimmed.startsWith("[") ? maskJsonTokens(body) : Masking.maskBody(body, contentType);
-        return headers + value.substring(separator, separator + separatorLength) + maskedBody;
-    }
-
-    /** Replace only secret values; retain whitespace, duplicate keys and numeric/string tokens. */
-    private static String maskJsonTokens(String body) {
-        try (var parser = JSON.getFactory().createParser(body)) {
-            StringBuilder result = new StringBuilder(body.length());
-            int copied = 0, depth = 0, roots = 0;
-            com.fasterxml.jackson.core.JsonToken token;
-            while ((token = parser.nextToken()) != null) {
-                if (depth == 0) roots++;
-                if (roots > 1) throw new IllegalArgumentException("multiple JSON values");
-                if (token == com.fasterxml.jackson.core.JsonToken.FIELD_NAME
-                        && Masking.isSensitiveParameterPath(parser.currentName())) {
-                    token = parser.nextToken();
-                    if (token == null) throw new IllegalArgumentException("missing JSON value");
-                    int start = (int) parser.currentTokenLocation().getCharOffset();
-                    parser.skipChildren();
-                    if (token == com.fasterxml.jackson.core.JsonToken.VALUE_STRING) parser.getText();
-                    int end = (int) parser.currentLocation().getCharOffset();
-                    result.append(body, copied, start).append("\"***MASKED***\"");
-                    copied = end;
-                } else if (token == com.fasterxml.jackson.core.JsonToken.VALUE_STRING) {
-                    String text = parser.getText();
-                    String masked = Masking.maskSecrets("text: " + text).substring(6);
-                    if (!text.equals(masked)) {
-                        int start = (int) parser.currentTokenLocation().getCharOffset();
-                        int end = (int) parser.currentLocation().getCharOffset();
-                        result.append(body, copied, start).append(JSON.writeValueAsString(masked));
-                        copied = end;
-                    }
-                } else if (token.isStructStart()) {
-                    if (++depth > 128) throw new IllegalArgumentException("JSON depth exceeded");
-                } else if (token.isStructEnd()) depth--;
-            }
-            if (roots == 0 || depth != 0) throw new IllegalArgumentException("invalid JSON");
-            return result.append(body, copied, body.length()).toString();
-        } catch (java.io.IOException | RuntimeException error) {
-            // Do not retain a malformed or too deeply nested secret-bearing JSON body.
-            return "[BODY REDACTED: JSON could not be safely masked]";
-        }
+        return value;
     }
 }

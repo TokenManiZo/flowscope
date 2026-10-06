@@ -1,6 +1,5 @@
 package io.flowscope.integration;
 
-import io.flowscope.core.Masking;
 import io.flowscope.core.Source;
 
 import java.net.URI;
@@ -53,7 +52,7 @@ public final class RunExecutionLedger {
             method = bounded(method == null ? "UNKNOWN" : method.toUpperCase(Locale.ROOT),
                     "method", 16, true);
             service = bounded(service, "service", 512, false);
-            path = bounded(path == null || path.isBlank() ? "/" : Masking.maskSecrets(path),
+            path = bounded(path == null || path.isBlank() ? "/" : path,
                     "path", 2_048, true);
             if (path.indexOf('?') >= 0 || path.indexOf('#') >= 0) {
                 throw new IllegalArgumentException("attempt path must not contain query or fragment");
@@ -182,7 +181,7 @@ public final class RunExecutionLedger {
             if (required) throw new IllegalArgumentException(label + " is required");
             return null;
         }
-        String safe = Masking.maskSecrets(value.trim());
+        String safe = value.trim();
         if (safe.length() > max) throw new IllegalArgumentException(label + " is too long");
         return safe;
     }

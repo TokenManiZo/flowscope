@@ -1517,7 +1517,7 @@ public final class ZapCampaign implements AutoCloseable {
         String rule = firstText(task, "name", "rule", "scannerName", "pluginId");
         String url = firstText(task, "url", "uri", "message");
         String summary = (rule.isBlank() ? "Passive rule 실행 중" : rule)
-                + (url.isBlank() ? "" : " · " + io.flowscope.core.Masking.maskSecrets(url));
+                + (url.isBlank() ? "" : " · " + url);
         return summary.length() <= 320 ? summary : summary.substring(0, 317) + "...";
     }
 
@@ -1613,7 +1613,7 @@ public final class ZapCampaign implements AutoCloseable {
                                                 String level, String message) {
         List<ZapProgressEvent> copy = new ArrayList<>(zapProgressEvents);
         copy.add(new ZapProgressEvent(System.currentTimeMillis(), accountLabel, stage, level,
-                Masking.maskSecrets(message)));
+                message));
         if (copy.size() > MAX_ZAP_PROGRESS_EVENTS) {
             copy = new ArrayList<>(copy.subList(copy.size() - MAX_ZAP_PROGRESS_EVENTS, copy.size()));
         }
@@ -1854,14 +1854,14 @@ public final class ZapCampaign implements AutoCloseable {
             object.fieldNames().forEachRemaining(fields::add);
             for (String field : fields) {
                 JsonNode child = object.get(field);
-                if (child != null && child.isTextual()) object.put(field, Masking.maskHeaders(child.asText()));
+                if (child != null && child.isTextual()) object.put(field, child.asText());
                 else maskTextValuesInPlace(child);
             }
         } else if (value instanceof ArrayNode array) {
             for (int i = 0; i < array.size(); i++) {
                 JsonNode child = array.get(i);
                 if (child.isTextual()) array.set(i,
-                        com.fasterxml.jackson.databind.node.TextNode.valueOf(Masking.maskHeaders(child.asText())));
+                        com.fasterxml.jackson.databind.node.TextNode.valueOf(child.asText()));
                 else maskTextValuesInPlace(child);
             }
         }

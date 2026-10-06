@@ -3,7 +3,6 @@ package io.flowscope.explorer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.flowscope.core.Masking;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -259,10 +258,10 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             List<Element> elements = new ArrayList<>();
             for (JsonNode value : page.path("elements")) {
                 elements.add(new Element(value.path("ref").asText(), value.path("role").asText(),
-                        Masking.maskSecrets(value.path("name").asText())));
+                        value.path("name").asText()));
             }
-            return new Page(page.path("url").asText(""), Masking.maskSecrets(page.path("title").asText("")),
-                    elements, Masking.maskBody(page.path("text").asText(""), "text/plain"));
+            return new Page(page.path("url").asText(""), page.path("title").asText(""),
+                    elements, page.path("text").asText(""));
         }
 
         /** Waits for the document to finish loading so the snapshot shows the page the action produced. */

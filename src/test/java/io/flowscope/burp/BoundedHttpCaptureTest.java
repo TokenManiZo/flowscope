@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class BoundedHttpCaptureTest {
     @Test
-    void maskedJavascriptRetainedFromHttpResponseStillYieldsItsCallSite() {
+    void javascriptRetainedFromHttpResponseYieldsItsCallSite() {
         String headers = "HTTP/1.1 200 OK\r\nContent-Type: application/javascript\r\n"
                 + "Set-Cookie: sid=synthetic-secret\r\n\r\n";
         String script = "const token=readToken();const config={apiKey:'sk-synthetic'};"
@@ -23,8 +23,8 @@ final class BoundedHttpCaptureTest {
                 1024 * 1024, 64 * 1024);
 
         String retained = captured.payload().text();
-        assertFalse(retained.contains("synthetic-secret"));
-        assertFalse(retained.contains("sk-synthetic"));
+        assertTrue(retained.contains("synthetic-secret"), "응답 원문은 가리지 않고 그대로 보관한다");
+        assertTrue(retained.contains("sk-synthetic"));
         String body = retained.substring(retained.indexOf("\r\n\r\n") + 4);
         JavascriptAnalysis analysis = JavascriptCallSiteAnalyzer.analyze(body);
         assertEquals(JavascriptAnalysis.Status.PARSED, analysis.status(), analysis.detail());
@@ -46,7 +46,7 @@ final class BoundedHttpCaptureTest {
         assertEquals(StoredPayload.Retention.OVER_LIMIT_METADATA_ONLY, result.payload().retention());
         assertEquals(message.length, result.payload().originalBytes());
         assertTrue(result.decoded().text().length() <= 64 * 1024);
-        assertFalse(result.maskedText().contains("secret-session"));
+        assertTrue(result.text().contains("secret-session"), "미리보기 헤더도 원문 그대로다");
         assertNull(result.payload().text());
     }
 

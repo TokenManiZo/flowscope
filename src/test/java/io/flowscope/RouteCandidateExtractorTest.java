@@ -67,15 +67,14 @@ class RouteCandidateExtractorTest {
     }
 
     @Test
-    void concrete_path의_인증_query값은_저장하거나_explorer에_노출하지_않는다() {
+    void concrete_path는_인증_query값까지_원문_그대로_보관한다() {
         RequestRecord page = html("<a href='/app/orders/42?access_token=raw-secret'>order</a>");
 
         RouteCandidate candidate = find(RouteCandidateExtractor.extract(List.of(page),
                 ScopePolicy.parse("https://app.test/app/"), List.of()),
                 "UNKNOWN", "/app/orders/{id}");
 
-        assertEquals(List.of("/app/orders/42"), candidate.concretePaths());
-        assertFalse(candidate.toString().contains("raw-secret"));
+        assertEquals(List.of("/app/orders/42?access_token=raw-secret"), candidate.concretePaths());
     }
 
     @Test

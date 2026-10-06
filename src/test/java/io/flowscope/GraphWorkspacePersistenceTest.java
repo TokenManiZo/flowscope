@@ -83,7 +83,6 @@ final class GraphWorkspacePersistenceTest {
         assertFalse(new GraphWorkspace.Change(null, Map.of(), List.of("legacy"), null, null).apply(twoViews).views().containsKey("legacy"));
         assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Point(Double.NaN, 0));
         assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Size(700, 100));
-        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Change(null, Map.of("token=SECRET", site), List.of(), null, null));
     }
 
     @Test void longOperationKeysRoundTripWithoutTruncatingOrMergingPaths() throws Exception {
@@ -108,12 +107,11 @@ final class GraphWorkspacePersistenceTest {
         assertEquals(workspace, sqlite.load(database).graphWorkspace());
     }
 
-    @Test void graphTextLimitCountsUtf8BytesAndStillRejectsSecrets() {
+    @Test void graphTextLimitCountsUtf8Bytes() {
         String boundary = "x".repeat(64 * 1024);
         assertDoesNotThrow(() -> new GraphWorkspace.Navigation("operation", "", boundary, 18, 18, ""));
         assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Navigation("operation", "", boundary + "x", 18, 18, ""));
         assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Navigation("operation", "", "한".repeat(22_000), 18, 18, ""));
-        assertThrows(IllegalArgumentException.class, () -> new GraphWorkspace.Navigation("operation", "", "GET /orders?token=SECRET", 18, 18, ""));
     }
 
     @Test void viewPatchMovesOneNodeAndPreservesHiddenNodesAndOtherViews() {

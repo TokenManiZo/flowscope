@@ -1,6 +1,6 @@
 package io.flowscope.integration;
 
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.AccessRole;
 
 import java.net.URI;
@@ -92,7 +92,7 @@ public final class ZapAccountVault implements AutoCloseable {
     synchronized void status(String id, AuthStatus status, String message) {
         Entry entry = entry(id);
         entry.status = status == null ? AuthStatus.FAILED : status;
-        entry.message = Masking.truncate(Masking.maskSecrets(message == null ? "" : message), 500);
+        entry.message = TextLimits.truncate(message == null ? "" : message, 500);
         entry.updatedAt = Instant.now();
     }
 

@@ -3,7 +3,6 @@ package io.flowscope.integration;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.Nulls;
-import io.flowscope.core.Masking;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -153,8 +152,7 @@ public record GraphWorkspace(int version, Navigation navigation, Map<String, Vie
     }
 
     private static void text(String value) {
-        if (value == null || value.getBytes(StandardCharsets.UTF_8).length > 64 * 1024 || Set.of("__proto__", "constructor", "prototype").contains(value)
-                || !Masking.maskSecrets(value).equals(value)) {
+        if (value == null || value.getBytes(StandardCharsets.UTF_8).length > 64 * 1024 || Set.of("__proto__", "constructor", "prototype").contains(value)) {
             throw new IllegalArgumentException("invalid graph key");
         }
     }

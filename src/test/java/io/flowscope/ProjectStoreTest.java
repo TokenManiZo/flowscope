@@ -56,7 +56,7 @@ final class ProjectStoreTest {
     }
 
     @Test
-    void maskedSessionRoundTripsWithPolicyAndAssessment() throws Exception {
+    void sessionRoundTripsWithPolicyAndAssessment() throws Exception {
         RequestRecord record = new RequestRecord(Source.LLM, "https://api.test:443",
                 "POST", "/orders/7", 200, "raw-session-value");
         record.sourceDetail = SourceDetail.LLM_VALIDATION;
@@ -69,11 +69,11 @@ final class ProjectStoreTest {
         record.query = "token=QUERYSECRET&id=7";
         record.reqBody = "{\"password\":\"BODYSECRET\",\"orderId\":7}";
         record.reqText = "POST /orders/7 HTTP/1.1\r\nAuthorization: Bearer HEADERSECRET\r\n\r\n" + record.reqBody;
-        record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText),
+        record.requestPayload = StoredPayload.capture(record.reqText,
                 "application/json", 1024 * 1024);
         record.body = "{\"ownerId\":\"user-a\"}";
         record.respText = "HTTP/1.1 200 OK\r\nSet-Cookie: sid=COOKIESECRET\r\n\r\n" + record.body;
-        record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText),
+        record.responsePayload = StoredPayload.capture(record.respText,
                 "application/json", 1024 * 1024);
         record.location = "/next?token=REDIRECTSECRET";
         record.hasResponse = true;
@@ -116,8 +116,10 @@ final class ProjectStoreTest {
         String raw = Files.readString(file);
         assertEquals(TrafficClassifier.VERSION,
                 new ObjectMapper().readTree(raw).path("traffic_classifier_version").asInt());
+        // 요청·응답·검토 메모는 원문 그대로 저장한다. 신원 지문(raw-session-value)은 원문이 아니라 해시로만 남는다.
         for (String secret : List.of("QUERYSECRET", "BODYSECRET", "HEADERSECRET", "COOKIESECRET",
-                "REDIRECTSECRET", "REVIEWSECRET", "raw-session-value")) assertFalse(raw.contains(secret), secret);
+                "REDIRECTSECRET", "REVIEWSECRET")) assertTrue(raw.contains(secret), secret);
+        assertFalse(raw.contains("raw-session-value"));
 
         ProjectStore.ProjectData loaded = store.load(file);
         assertEquals(1, loaded.records().size());
@@ -245,7 +247,7 @@ final class ProjectStoreTest {
         String raw = Files.readString(file);
         RequestRecord restored = store.load(file).records().getFirst();
 
-        assertFalse(raw.contains("never-persist-this"));
+        assertTrue(raw.contains("never-persist-this"), "재전송 요청의 인증 헤더도 원문 그대로 저장한다");
         assertFalse(raw.contains("raw-replay-secret"));
         assertEquals("user-a", restored.replayBasisIdentity);
         assertEquals("ev-basis", restored.replayBasisEvidenceId);
@@ -357,8 +359,8 @@ final class ProjectStoreTest {
         RequestRecord first = new RequestRecord(Source.HUMAN, "https://api.test:443",
                 "POST", "/orders", 200, "anon");
         first.requestPayload = StoredPayload.capture(request, "application/json", 1024 * 1024);
-        first.reqText = Masking.truncate(request, 8192);
-        first.reqBody = Masking.truncate(body, 8192);
+        first.reqText = TextLimits.truncate(request, 8192);
+        first.reqBody = TextLimits.truncate(body, 8192);
         first.hasResponse = true;
         RequestRecord second = new RequestRecord(Source.HUMAN, "https://api.test:443",
                 "POST", "/orders", 201, "anon");
@@ -380,20 +382,18 @@ final class ProjectStoreTest {
     }
 
     @Test
-    void unmaskedRetainedPayloadIsReMaskedInsteadOfFailingTheWholeSave() throws Exception {
+    void retainedPayloadWithCredentialsIsSavedAsWritten() throws Exception {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/", 200, "anon");
         record.requestPayload = StoredPayload.capture(
                 "GET / HTTP/1.1\r\nAuthorization: Bearer raw-secret\r\n\r\n", "text/plain", Integer.MAX_VALUE);
-        Path file = temp.resolve("remask.flowscope.json");
+        Path file = temp.resolve("raw.flowscope.json");
 
         ProjectStore store = new ProjectStore();
         store.save(file, List.of(record), new AnalysisConfig(), List.of());
 
-        assertFalse(Files.readString(file).contains("raw-secret"));
         StoredPayload restored = store.load(file).records().getFirst().requestPayload;
         assertTrue(restored.retained());
-        assertFalse(restored.text().contains("raw-secret"));
-        assertEquals(Masking.maskHeaders(restored.text()), restored.text());
+        assertTrue(restored.text().contains("Bearer raw-secret"), "다시 열어도 Request Lab이 같은 요청을 보낼 수 있다");
     }
 
     @Test

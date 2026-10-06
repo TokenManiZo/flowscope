@@ -5,7 +5,6 @@ import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.ExecutionTrust;
 import io.flowscope.core.LaneCompletionPolicy;
-import io.flowscope.core.Masking;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
@@ -92,7 +91,7 @@ final class SqliteProjectStoreTest {
         var records = List.of(first, second, third);
         for (var r : records) {
             r.hasResponse = true; r.reqText = r.method + " " + r.path + " HTTP/1.1"; r.body = "{}";
-            r.requestPayload = StoredPayload.capture("shared masked request", "text/plain", 1024);
+            r.requestPayload = StoredPayload.capture("shared stored request", "text/plain", 1024);
             r.responsePayload = StoredPayload.capture("response " + r.path, "text/plain", 1024);
         }
         var config = new AnalysisConfig();
@@ -141,7 +140,7 @@ final class SqliteProjectStoreTest {
         record.runId = "human-1";
         record.laneAccountId = "acct-test1";
         record.executionTrust = ExecutionTrust.OBSERVED;
-        record.reqText = Masking.maskHeaders("GET /orders/7 HTTP/1.1\r\nCookie: session=RAWCOOKIE");
+        record.reqText = "GET /orders/7 HTTP/1.1\r\nCookie: session=RAWCOOKIE";
         record.requestPayload = StoredPayload.capture(record.reqText, "text/plain", 1024 * 1024);
         record.body = "{\"id\":7,\"ownerId\":\"test1\"}";
         record.respText = "HTTP/1.1 200 OK\r\n\r\n" + record.body;
@@ -185,7 +184,7 @@ final class SqliteProjectStoreTest {
 
         byte[] bytes = Files.readAllBytes(database);
         assertEquals("SQLite format 3\000", new String(bytes, 0, 16, StandardCharsets.ISO_8859_1));
-        assertFalse(new String(bytes, StandardCharsets.ISO_8859_1).contains("RAWCOOKIE"));
+        assertTrue(new String(bytes, StandardCharsets.ISO_8859_1).contains("RAWCOOKIE"), "요청 원문을 그대로 저장한다");
         try (var connection = DriverManager.getConnection("jdbc:sqlite:" + database);
              var statement = connection.createStatement()) {
             assertEquals(1, scalar(statement.executeQuery("SELECT COUNT(*) FROM records")));

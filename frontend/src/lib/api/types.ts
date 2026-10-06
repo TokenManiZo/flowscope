@@ -301,7 +301,6 @@ export interface SurfaceObservation {
   presence?: string
   valueType?: string
   byteLength?: number
-  masked?: boolean
   contextSignature?: string
   confidence?: string
 }

@@ -862,7 +862,7 @@ final class SurfaceAnalyzerTest {
     }
 
     @Test
-    void OpenAPI_외부ref_순환ref_민감이름_선언은_건너뛴다() {
+    void OpenAPI_외부ref_순환ref_선언은_건너뛴다() {
         RequestRecord openapi = document("/openapi.json", "application/json", """
                 {"openapi":"3.0.0","components":{"schemas":{"Loop":{"$ref":"#/components/schemas/Loop"}}},
                  "paths":{"/orders":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{
@@ -876,8 +876,8 @@ final class SurfaceAnalyzerTest {
         SurfaceAnalysis analysis = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, candidates);
 
         SurfaceAnalysis.EndpointFact post = endpoint(analysis, "POST", "/orders");
-        assertEquals(Set.of("/safe"), post.parameters().stream().map(SurfaceAnalysis.ParameterFact::canonicalPath)
-                .collect(Collectors.toSet()), "외부 $ref·순환 $ref·민감 이름은 선언하지 않는다");
+        assertEquals(Set.of("/password", "/safe"), post.parameters().stream().map(SurfaceAnalysis.ParameterFact::canonicalPath)
+                .collect(Collectors.toSet()), "외부 $ref·순환 $ref는 선언하지 않는다. password도 다른 이름과 똑같이 선언한다");
     }
 
     @Test

@@ -39,22 +39,22 @@ final class RequestLabWorkspacePersistenceTest {
                 ProjectStore.ProjectContext.empty(), GraphWorkspace.empty(), workspace);
     }
 
-    @Test void maskedNamesRequestLatestResponseRoundTripWithoutChangingOtherJsonTokens() throws Exception {
+    @Test void namesRequestLatestResponseRoundTripAsWrittenWithoutChangingJsonTokens() throws Exception {
         var codec = new ProjectStore();
         var sqlite = new SqliteProjectStore(codec);
         var workspace = create(1).apply(RequestLabWorkspace.empty(), EVIDENCE);
         var request = workspace.tab(EVIDENCE).entries().get(1).request();
-        for (String secret : List.of("URL-SECRET", "COOKIE-SECRET", "AUTH-SECRET", "KEY-SECRET", "CSRF-SECRET", "BODY-SECRET")) assertFalse(request.contains(secret));
+        for (String secret : List.of("URL-SECRET", "COOKIE-SECRET", "AUTH-SECRET", "KEY-SECRET", "CSRF-SECRET", "BODY-SECRET")) assertTrue(request.contains(secret), secret);
         assertTrue(request.contains("\"amount\":1.2300,\"id\":9007199254740993,\"text\":\"\\u0041\""));
         assertTrue(request.contains("\r\n\r\n"));
-        assertFalse(workspace.tab(EVIDENCE).entries().get(1).result().response().contains("RES-SECRET"));
+        assertTrue(workspace.tab(EVIDENCE).entries().get(1).result().response().contains("RES-SECRET"));
         Path file = temp.resolve("requests.json"), database = temp.resolve("requests.db");
         codec.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(),
                 ProjectStore.ProjectContext.empty(), GraphWorkspace.empty(), workspace);
         save(sqlite, database, workspace);
         assertEquals(workspace, codec.load(file).requestLabWorkspace());
         assertEquals(workspace, sqlite.load(database).requestLabWorkspace());
-        assertFalse(Files.readString(file).contains("AUTH-SECRET"));
+        assertTrue(Files.readString(file).contains("AUTH-SECRET"), "다시 열어도 같은 요청을 보낼 수 있게 원문 그대로 저장한다");
     }
 
     @Test void deletePhysicallyRemovesRowAndLateChangesCannotResurrectIt() throws Exception {
@@ -143,7 +143,7 @@ final class RequestLabWorkspacePersistenceTest {
         }
         var raw = new RequestLabWorkspace.Change("update", 1, null, null, "RAW", null, false, null, null).apply(workspace, EVIDENCE);
         assertEquals("RAW", raw.tab(EVIDENCE).entries().get(1).credentialMode());
-        assertFalse(raw.tab(EVIDENCE).entries().get(1).request().contains("AUTH-SECRET"), "직접 입력도 저장본의 인증값은 가린다");
+        assertTrue(raw.tab(EVIDENCE).entries().get(1).request().contains("AUTH-SECRET"), "직접 입력 탭도 쓴 인증값 그대로 저장한다");
         Path database = temp.resolve("modes.db");
         var sqlite = new SqliteProjectStore(new ProjectStore());
         save(sqlite, database, raw);
@@ -153,12 +153,12 @@ final class RequestLabWorkspacePersistenceTest {
                 .apply(unchanged, EVIDENCE));
     }
 
-    @Test void masksFoldedHeadersAllDuplicateKeysAndSecretObjectsAndEnforcesLimits() {
-        var entry = new RequestLabWorkspace.Entry("token=NAME-SECRET", "POST / HTTP/1.1\nX-Api-Key: FIRST\n SECOND\nContent-Type: application/json\n\n"
-                + "{\"token\":{\"v\":\"NESTED\"},\"token\":\"DUPLICATE\",\"n\":1.2300}", "ORIGINAL", null, false);
-        assertFalse(entry.name().contains("NAME-SECRET"));
-        for (String secret : List.of("FIRST", "SECOND", "NESTED", "DUPLICATE")) assertFalse(entry.request().contains(secret));
-        assertTrue(entry.request().contains("\"n\":1.2300"));
+    @Test void keepsRequestsExactlyAsWrittenAndEnforcesLimits() {
+        String request = "POST / HTTP/1.1\nX-Api-Key: FIRST\n SECOND\nContent-Type: application/json\n\n"
+                + "{\"token\":{\"v\":\"NESTED\"},\"token\":\"DUPLICATE\",\"n\":1.2300}";
+        var entry = new RequestLabWorkspace.Entry("token=NAME-SECRET", request, "ORIGINAL", null, false);
+        assertEquals("token=NAME-SECRET", entry.name());
+        assertEquals(request, entry.request());
         assertThrows(IllegalArgumentException.class, () -> new RequestLabWorkspace.Entry("large", "x".repeat(1_048_577), "ORIGINAL", null, false));
         var workspace = RequestLabWorkspace.empty();
         for (int i = 1; i <= 32; i++) workspace = create(i).apply(workspace, EVIDENCE);

@@ -1,11 +1,10 @@
 /**
  * 원문(요청·응답) 신택스 하이라이트 토큰. 값 자체는 바꾸지 않고 색만 입힌다.
- * 마스킹(***MASKED*** / ***)은 그대로 남기고 강조한다. 색은 --syntax-* 토큰.
+ * 색은 --syntax-* 토큰.
  */
-export type RawTokenKind = "plain" | "key" | "value" | "string" | "number" | "method" | "status" | "mask"
+export type RawTokenKind = "plain" | "key" | "value" | "string" | "number" | "method" | "status"
 export interface RawToken { text: string; kind: RawTokenKind }
 
-const MASK = /\*{3}[A-Z_]*\*{3}|\*{3}/g
 const REQUEST_LINE = /^([A-Z]+)(\s+)(\S+)(\s+)(HTTP\/[\d.]+)\s*$/
 const STATUS_LINE = /^(HTTP\/[\d.]+)(\s+)(\d{3})(.*)$/
 const HEADER_LINE = /^([A-Za-z0-9!#$%&'*+\-.^_`|~]+)(:\s*)(.*)$/
@@ -14,28 +13,14 @@ function push(tokens: RawToken[], text: string, kind: RawTokenKind) {
   if (text) tokens.push({ text, kind })
 }
 
-/** 마스킹만 분리해 강조한다(값은 그대로 유지). */
-function maskAware(text: string, kind: RawTokenKind): RawToken[] {
-  const tokens: RawToken[] = []
-  let index = 0
-  for (const match of text.matchAll(MASK)) {
-    push(tokens, text.slice(index, match.index), kind)
-    push(tokens, match[0], "mask")
-    index = match.index + match[0].length
-  }
-  push(tokens, text.slice(index), kind)
-  return tokens
-}
-
 /** JSON 본문: key / 문자열 / 숫자를 구분한다. */
 function bodyTokens(line: string): RawToken[] {
-  const pattern = /("(?:[^"\\]|\\.)*")(\s*:)?|(-?\b\d+(?:\.\d+)?\b)|(\*{3}[A-Z_]*\*{3}|\*{3})/g
+  const pattern = /("(?:[^"\\]|\\.)*")(\s*:)?|(-?\b\d+(?:\.\d+)?\b)/g
   const tokens: RawToken[] = []
   let index = 0
   for (const match of line.matchAll(pattern)) {
     push(tokens, line.slice(index, match.index), "plain")
-    if (match[4]) push(tokens, match[4], "mask")
-    else if (match[1]) {
+    if (match[1]) {
       push(tokens, match[1], match[2] ? "key" : "string")
       if (match[2]) push(tokens, match[2], "plain")
     } else if (match[3]) push(tokens, match[3], "number")
@@ -73,8 +58,8 @@ export function highlightRaw(text: string): RawToken[][] {
       { text: status[3], kind: "status" as const }, { text: status[4], kind: "status" as const },
     ]
     const header = HEADER_LINE.exec(line)
-    if (header) return [{ text: header[1], kind: "key" as const }, { text: header[2], kind: "plain" as const }, ...maskAware(header[3], "value")]
-    return maskAware(line, "plain")
+    if (header) return [{ text: header[1], kind: "key" as const }, { text: header[2], kind: "plain" as const }, { text: header[3], kind: "value" as const }].filter(token => token.text)
+    return line ? [{ text: line, kind: "plain" as const }] : []
   }
 }
 
@@ -86,5 +71,4 @@ export const rawTokenClass: Record<RawTokenKind, string> = {
   number: "text-syntax-number",
   method: "text-syntax-method",
   status: "text-syntax-string",
-  mask: "text-syntax-mask",
 }

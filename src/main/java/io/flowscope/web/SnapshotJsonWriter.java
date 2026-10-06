@@ -11,7 +11,6 @@ import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.DataFlowAnalyzer;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.GraphObservationFact;
-import io.flowscope.core.Masking;
 import io.flowscope.core.ObservationCollapser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
@@ -37,7 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Serializes the masked analysis state consumed by the bundled localhost UI. */
+/** Serializes the analysis state consumed by the bundled localhost UI. */
 public final class SnapshotJsonWriter {
     private final ObjectMapper json = new ObjectMapper();
     private long surfaceRevision = Long.MIN_VALUE;
@@ -159,11 +158,11 @@ public final class SnapshotJsonWriter {
         history.put("readOnly", true);
         history.set("assessments", json.valueToTree(assessments.stream().map(value -> Map.of(
                 "id", value.id(), "type", value.type(), "verdict", value.verdict(),
-                "title", Masking.maskSecrets(value.title()), "reason", Masking.maskSecrets(value.reason()),
+                "title", value.title(), "reason", value.reason(),
                 "evidenceIds", value.evidenceIds(), "createdAt", value.createdAt().toString())).toList()));
         history.set("validations", json.valueToTree(validations.stream().map(value -> Map.of(
                 "candidateId", value.candidateId(), "verdict", value.verdict().name(),
-                "reason", Masking.maskSecrets(value.reason()), "originalEvidenceIds", value.originalEvidenceIds(),
+                "reason", value.reason(), "originalEvidenceIds", value.originalEvidenceIds(),
                 "validationEvidenceIds", value.validationEvidenceIds(), "controlEvidenceIds", value.controlEvidenceIds(),
                 "runId", value.runId(), "decidedAt", value.decidedAt().toString())).toList()));
         root.set("accounts", accounts(config, result.records));
@@ -349,13 +348,13 @@ public final class SnapshotJsonWriter {
         matching.stream().skip(offset).limit(limit).forEach(record -> {
             ObjectNode value = records.addObject();
             value.put("eventId", record.evidenceId);
-            value.put("query", masked(record.query));
+            value.put("query", orEmpty(record.query));
             parameterEvidence(value, record);
-            value.put("requestBody", masked(record.requestBodyForAnalysis()));
-            value.put("request", Masking.maskHeaders(masked(record.requestTextForEvidence())));
-            value.put("responseBody", masked(record.responseBodyForAnalysis()));
-            value.put("response", Masking.maskHeaders(masked(record.responseTextForEvidence())));
-            value.put("location", masked(record.location));
+            value.put("requestBody", orEmpty(record.requestBodyForAnalysis()));
+            value.put("request", orEmpty(record.requestTextForEvidence()));
+            value.put("responseBody", orEmpty(record.responseBodyForAnalysis()));
+            value.put("response", orEmpty(record.responseTextForEvidence()));
+            value.put("location", orEmpty(record.location));
             payloadMetadata(value, "requestPayload", record.requestPayload);
             payloadMetadata(value, "responsePayload", record.responsePayload);
             value.put("trafficClass", record.trafficClassification.trafficClass().name());
@@ -373,8 +372,8 @@ public final class SnapshotJsonWriter {
 
     /**
      * PR #11 evidence contract (D-145): per-record structured parameter metadata for the request diff.
-     * Derived from the same masked stored record the Surface uses; never values, preview, HTTP text or raw vault.
-     * Sensitive paths are dropped, the digest is a SHA-256 of a non-sensitive value only, and the count is bounded.
+     * Derived from the same stored record the Surface uses; never values, preview, HTTP text or raw vault.
+     * The digest is a SHA-256 of the value, and the count is bounded.
      */
     private void parameterEvidence(ObjectNode value, RequestRecord record) {
         ObjectNode context = value.putObject("parameterContext");
@@ -395,7 +394,6 @@ public final class SnapshotJsonWriter {
         if (!complete) context.put("completenessReason", retained ? "EXTRACTION_DIAGNOSTICS" : "REQUEST_NOT_RETAINED");
         ArrayNode observations = value.putArray("parameterObservations");
         extraction.observations().stream().limit(10_000).forEach(observation -> {
-            if (Masking.isSensitiveParameterPath(observation.key().canonicalPath())) return;
             ObjectNode item = observations.addObject();
             item.set("key", parameterKey(observation.key()));
             item.put("presence", observation.presence() == null ? "UNKNOWN" : observation.presence().name());
@@ -614,8 +612,8 @@ public final class SnapshotJsonWriter {
         return palette[Math.floorMod(id.hashCode(), palette.length)];
     }
 
-    private static String masked(String value) {
-        return value == null ? "" : Masking.maskSecrets(value);
+    private static String orEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static String wire(Source source) { return source.name().toLowerCase(java.util.Locale.ROOT); }

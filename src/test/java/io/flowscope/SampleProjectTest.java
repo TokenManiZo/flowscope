@@ -39,7 +39,7 @@ final class SampleProjectTest {
                 record.resource != null && record.resource.endsWith("posts:301")));
         assertTrue(result.coverageRecords.stream().anyMatch(record ->
                 record.resource != null && record.resource.endsWith("posts:302")));
-        assertTrue(result.records.stream().allMatch(record -> record.reqText.contains("***MASKED***")));
+        assertTrue(result.records.stream().allMatch(record -> record.reqText.contains("Authorization: Bearer demo-")));
         assertTrue(result.records.stream().anyMatch(record ->
                 record.trafficClassification.trafficClass() == TrafficClassification.TrafficClass.AUTH_SESSION));
         assertEquals(3, result.records.stream().filter(record ->
