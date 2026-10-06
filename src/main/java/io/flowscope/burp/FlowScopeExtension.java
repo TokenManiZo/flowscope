@@ -612,28 +612,21 @@ public final class FlowScopeExtension implements BurpExtension {
             if (profile.source() == Source.HUMAN && humanRun != null && captureGeneration < 0) {
                 rememberObservation(proxyObservations, request.messageId(), humanRun, null,
                         true, "프록시", profile, observedPort, captureGeneration);
-                return managed != null ? ProxyRequestReceivedAction.doNotIntercept(request)
-                        : ProxyRequestReceivedAction.continueWith(request);
+                return ProxyRequestReceivedAction.continueWith(request);
             }
             try {
                 RunContextRegistry.Context context = profile.source() == Source.HUMAN ? humanRun : runContexts.current(profile.source());
                 // Operator choice is authoritative: between 시작 and 종료 every credentialed browser request belongs to
                 // the selected account, even if an older binding said otherwise. Requests without credentials stay anonymous.
                 // The handle is resolved before profile selection so the bound Burp listener (e.g. 8888) also counts (#30).
-                String captureHandle = profile.source() == Source.HUMAN && hasCredentials(request) ? loginCaptureHandle : null;
+                String captureHandle = profile.source() == Source.HUMAN ? loginCaptureHandle : null;
                 String requestCaptureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 boolean captureSuppressed = managed != null && captureHandle == null;
                 rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
                         captureSuppressed, "프록시", profile, observedPort, captureGeneration);
-                if (captureHandle != null) {
-                    sessionBroker.observeRequest(captureHandle, URI.create(request.url()), headersOf(request.headers()),
-                            java.time.Instant.now());
-                    sessionBroker.noteRecordedRequest(captureHandle, request.method() + " " + request.pathWithoutQuery());
-                }
                 HttpRequest prepared = prepareSession(request, profile, context);
-                return managed != null ? ProxyRequestReceivedAction.doNotIntercept(prepared)
-                        : ProxyRequestReceivedAction.continueWith(prepared);
+                return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
                 return ProxyRequestReceivedAction.drop();
@@ -644,16 +637,45 @@ public final class FlowScopeExtension implements BurpExtension {
         public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest request) {
             int port = listenerPort(request.listenerInterface());
             var observation = proxyObservations.get(request.messageId());
+            var managed = humanBrowsers.context(port);
+            // A closed account window may leave its run active while analysis finishes.
+            if (observation != null && observation.managedHuman()
+                    && (managed == null || !managed.runId().equals(observation.context().runId()))) {
+                proxyObservations.remove(request.messageId());
+                return ProxyRequestToBeSentAction.drop();
+            }
             if (observation != null && observation.source() == Source.HUMAN
                     && observation.detail() == SourceDetail.BROWSER && observation.context() != null
                     && runContexts.current(Source.HUMAN, observation.context().runId()) == null) {
                 return ProxyRequestToBeSentAction.drop();
             }
             if (humanBrowsers.ownsPort(port) && humanBrowsers.context(port) == null) return ProxyRequestToBeSentAction.drop();
-            return allowed(request, humanBrowsers.ownsPort(port)
-                    ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER) : profileOf(request.listenerInterface()))
-                    ? ProxyRequestToBeSentAction.continueWith(request)
-                    : ProxyRequestToBeSentAction.drop();
+            if (!allowed(request, humanBrowsers.ownsPort(port)
+                    ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER) : profileOf(request.listenerInterface()))) {
+                return ProxyRequestToBeSentAction.drop();
+            }
+            // Learn only the final Forward request, never credentials from a held or dropped request.
+            if (observation != null && observation.source() == Source.HUMAN && !staleObservation(observation)) {
+                try {
+                    synchronized (sessionBroker) {
+                        String accountId = hasCredentials(request) ? observation.humanCaptureAccountId() : null;
+                        var session = accountId == null ? null : sessionBroker.viewForAccount(accountId)
+                                .filter(SessionBroker.SessionView::capturing)
+                                .filter(view -> view.service().equals(serviceOf(request))).orElse(null);
+                        if (session != null) {
+                            sessionBroker.observeRequest(session.handle(), URI.create(request.url()), headersOf(request.headers()), Instant.now());
+                            sessionBroker.noteRecordedRequest(session.handle(), request.method() + " " + request.pathWithoutQuery());
+                        }
+                        proxyObservations.forwarded(request.messageId(), session == null ? null : accountId,
+                                observation.managedHuman() && session == null);
+                    }
+                } catch (RuntimeException error) {
+                    api.logging().logToError("FlowScope: Forward 요청의 세션 캡처 실패", error);
+                    proxyObservations.remove(request.messageId());
+                    return ProxyRequestToBeSentAction.drop();
+                }
+            }
+            return ProxyRequestToBeSentAction.continueWith(request);
         }
 
         private boolean allowed(InterceptedRequest request, PortProfile profile) {
@@ -1152,7 +1174,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 humanCaptureSuppressed, datasetEpoch.get(), now,
                 profile == null ? Source.UNKNOWN : profile.source(),
                 profile == null ? SourceDetail.UNKNOWN : profile.detail(), listenerPort,
-                generation)) {
+                generation, profile != null && profile.source() == Source.HUMAN && humanBrowsers != null
+                        && context != null && humanBrowsers.contains(context.runId()))) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
