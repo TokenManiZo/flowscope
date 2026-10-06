@@ -11,7 +11,7 @@ import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.LaneCompletionPolicy;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.ResourcePolicy;
@@ -102,6 +102,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default RequestLabDraft requestLabDraft(String evidenceId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
+        /** Request Lab이 이 기록을 편집·재전송할 원문(메모리 또는 저장본)을 갖고 있는지. 화면이 열 기록을 고르는 데 쓴다. */
+        default boolean requestLabRawAvailable(RequestRecord record) { return false; }
         default List<RequestLabCredentialHeader> requestLabCredentials(String evidenceId, String request,
                                                                        CredentialMode mode, String accountId) {
             throw new UnsupportedOperationException("request lab credentials are unavailable");
@@ -241,7 +243,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     // RAW: 편집한 인증 헤더를 바꾸지 않고 그대로 보낸다(직접 입력). ANONYMOUS·ACCOUNT만 인증 헤더를 지우거나 교체한다.
     public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT, RAW }
 
-    /** Safe metadata plus the stored masked request/response text. Raw credential values never cross the local API. */
+    /** Metadata plus the stored request/response text. */
     public record AccountRequestCandidate(String id, int status, String method, String path, String mime,
                                           boolean hasCookie, boolean hasAuthorization, boolean markMatched,
                                           boolean eligible, String reason, String request, String response) {}
@@ -406,7 +408,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.datasetRevision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
-                        state.droppedRecords(), state.executionSummaries()));
+                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -818,7 +820,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("directory", status.directory());
         body.put("saveState", status.saveState());
         body.put("lastSavedAt", status.lastSavedAt());
-        body.put("saveError", Masking.maskSecrets(status.saveError()));
+        body.put("saveError", status.saveError());
         if (status.active() == null) body.putNull("active");
         else body.set("active", projectEntry(status.active()));
         var projects = body.putArray("projects");
@@ -1794,7 +1796,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private static String required(Map<String, String> form, String key) {
         String value = form.getOrDefault(key, "").trim();
         if (value.isBlank()) throw new IllegalArgumentException(key + " is required");
-        return Masking.truncate(Masking.maskSecrets(value), 2_000);
+        return TextLimits.truncate(value, 2_000);
     }
 
     private static String requiredRaw(Map<String, String> form, String key) {

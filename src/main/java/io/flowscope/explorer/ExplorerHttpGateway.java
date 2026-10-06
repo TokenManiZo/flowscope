@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Normalizer;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.Source;
@@ -220,7 +220,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             }
             var supporting = result.putArray("supporting_assets");
             linkedAssets.forEach(supporting::add);
-            String safeBody = Masking.maskBody(response.body(), response.contentType());
+            String safeBody = response.body();
             byte[] encoded = safeBody.getBytes(StandardCharsets.UTF_8);
             if (encoded.length > INLINE_BODY_LIMIT) {
                 result.put("body", utf8Prefix(safeBody, INLINE_BODY_LIMIT));
@@ -235,7 +235,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     result.put("artifact_bytes", artifact.bytes());
                     result.put("artifact_error", "");
                 } catch (ExplorerArtifactStore.CapacityExceededException error) {
-                    String safe = Masking.truncate(Masking.maskSecrets(error.getMessage()), 500);
+                    String safe = TextLimits.truncate(error.getMessage(), 500);
                     result.put("artifact_id", "");
                     result.put("artifact_complete", false);
                     result.put("artifact_sha256", sha256(encoded));
@@ -259,8 +259,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         } catch (Exception error) {
             synchronized (this) { requestKeys.remove(requestKey); }
             long duration = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
-            String safe = Masking.truncate(Masking.maskSecrets(error.getMessage() == null
-                    ? error.getClass().getSimpleName() : error.getMessage()), 500);
+            String safe = TextLimits.truncate(error.getMessage() == null
+                    ? error.getClass().getSimpleName() : error.getMessage(), 500);
             emit("FAILED", accountId, method, target, 0, "", duration, safe);
             return error(502, safe);
         }
@@ -282,7 +282,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             ref = body.path("ref").asText("").trim();
             text = body.path("text").asText("");
         } catch (IllegalArgumentException error) {
-            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 500));
+            return error(400, TextLimits.truncate(error.getMessage(), 500));
         }
         try {
             LoginBrowser.Page page = driver.act(account, action, url, ref, text);
@@ -295,13 +295,13 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             }
             return json(200, result);
         } catch (IllegalArgumentException error) {
-            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 500));
+            return error(400, TextLimits.truncate(error.getMessage(), 500));
         } catch (IllegalStateException error) {
             // Window closed, budget spent, run over: the turn must stop driving, not retry.
-            return error(409, Masking.truncate(Masking.maskSecrets(error.getMessage()), 500));
+            return error(409, TextLimits.truncate(error.getMessage(), 500));
         } catch (Exception error) {
-            return error(502, Masking.truncate(Masking.maskSecrets(error.getMessage() == null
-                    ? error.getClass().getSimpleName() : error.getMessage()), 500));
+            return error(502, TextLimits.truncate(error.getMessage() == null
+                    ? error.getClass().getSimpleName() : error.getMessage(), 500));
         }
     }
 
@@ -317,7 +317,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         } catch (ExplorerArtifactStore.CapacityExceededException error) {
             return error(413, error.getMessage());
         } catch (IllegalArgumentException error) {
-            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
+            return error(400, TextLimits.truncate(error.getMessage(), 1_000));
         } catch (Exception error) {
             return error(500, "artifact 처리 중 오류가 발생했습니다.");
         }
@@ -470,8 +470,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 }
                 String locator = optionalText(value, "locator", 1_000);
                 String suppliedReason = optionalText(value, "reason", 1_000);
-                String reason = Masking.truncate(Masking.maskSecrets((locator.isBlank() ? "" : locator + " · ")
-                        + (suppliedReason.isBlank() ? "Explorer 산출물 분석" : suppliedReason)), 1_500);
+                String reason = TextLimits.truncate((locator.isBlank() ? "" : locator + " · ")
+                        + (suppliedReason.isBlank() ? "Explorer 산출물 분석" : suppliedReason), 1_500);
                 String adapter = "llm-" + artifactKind.toLowerCase(Locale.ROOT).replace('_', '-');
                 List<String> evidenceIds = evidenceIds(value.path("evidence_ids"));
                 JsonNode parameterValues = value.path("parameters");
@@ -555,7 +555,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     .put("run_parameter_total", declaredParameterKeys.size());
             return json(200, result);
         } catch (IllegalArgumentException error) {
-            return error(400, Masking.truncate(Masking.maskSecrets(error.getMessage()), 1_000));
+            return error(400, TextLimits.truncate(error.getMessage(), 1_000));
         } catch (RuntimeException error) {
             return error(500, "Explorer 선언 저장 중 오류가 발생했습니다.");
         }
@@ -691,9 +691,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private void emit(String status, String accountId, String method, String url, int httpStatus,
                       String evidenceId, long duration, String message) {
         events.accept(new Event(Instant.now(), status, accountId, method,
-                Masking.truncate(Masking.maskSecrets(url), 2_048), httpStatus,
+                TextLimits.truncate(url, 2_048), httpStatus,
                 evidenceId == null ? "" : evidenceId, duration,
-                Masking.truncate(Masking.maskSecrets(message), 500)));
+                TextLimits.truncate(message, 500)));
     }
 
     private boolean authorized(String header) {

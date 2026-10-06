@@ -55,15 +55,15 @@ public final class RequestRecord {
     //  F-09(Flow): 요청·응답의 ID/토큰 → 데이터 의존성
     //  F-18/19(재전송): 원본 Request  ·  F-22(상세): 요청/응답 상세
     public String query;          // 쿼리스트링(? 뒤). 없으면 null
-    public String reqBody;        // 요청 본문(마스킹). 없으면 null
-    public String reqText;        // 원본 요청 전문(인증 헤더 마스킹). 재전송·상세용
-    public StoredPayload requestPayload; // 마스킹된 전체 요청. reqText는 UI용 preview다.
+    public String reqBody;        // 요청 본문. 없으면 null
+    public String reqText;        // 원본 요청 전문. 재전송·상세용
+    public StoredPayload requestPayload; // 전체 요청. reqText는 UI용 preview다.
     public long timestamp;        // 관측 시각(epoch ms). 0 이면 미상 — F-09 순서 판단용
 
     // 응답 (수집단이 채움) — F-10 판정·F-22 상세·F-02 후보 분리용
-    public String body;           // 응답 본문(마스킹). 없으면 null
-    public String respText;       // 응답 전문(인증/비밀 필드 마스킹). 상세·리다이렉트 판정용
-    public StoredPayload responsePayload; // 마스킹된 전체 응답. respText는 UI용 preview다.
+    public String body;           // 응답 본문. 없으면 null
+    public String respText;       // 응답 전문. 상세·리다이렉트 판정용
+    public StoredPayload responsePayload; // 전체 응답. respText는 UI용 preview다.
     public String location;       // 리다이렉트 Location. 없으면 null
     public boolean hasResponse;   // 실제 응답 관측 여부. false면 관측 아닌 '후보'(F-02)
 

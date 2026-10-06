@@ -88,7 +88,7 @@ public record SurfaceAnalysis(List<EndpointFact> endpoints, List<ExtractionRepor
 
     public record ParameterObservation(String evidenceId, Source source, String runId, String identity,
                                        int status, ValueShape shape, AccessRole role, RunPhase phase,
-                                       Presence presence, ValueType valueType, int byteLength, boolean masked,
+                                       Presence presence, ValueType valueType, int byteLength,
                                        String contextSignature, Confidence confidence) {}
 
     /**

@@ -34,7 +34,7 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.VerificationOutcome;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RecordMerge;
 import io.flowscope.core.RequestRecord;
@@ -285,7 +285,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** 저장 본문 상한 — 메모리 폭증 방지. */
     private static final int MAX_BODY = 8192;
-    /** 마스킹된 텍스트 원문 압축 보존 상한. 초과·바이너리는 크기와 해시만 보존한다. */
+    /** 텍스트 원문 압축 보존 상한. 초과·바이너리는 크기와 해시만 보존한다. */
     private static final int MAX_PAYLOAD_BYTES = Integer.getInteger(
             "flowscope.payload.maxBytes", 1024 * 1024);
     /** 상한 초과 메시지는 분석/UI에 필요한 앞부분만 복사한다. */
@@ -983,24 +983,22 @@ public final class FlowScopeExtension implements BurpExtension {
             catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
-        // 저장 전 반드시 마스킹 (F-05 원문 토큰 저장 금지, F-22 인증정보 가림).
-        String maskedRequest = capturedRequest.maskedText();
-        String maskedResponse = capturedResponse.maskedText();
+        String capturedRequestText = capturedRequest.text();
+        String capturedResponseText = capturedResponse.text();
         rec.requestPayload = internPayload(capturedRequest.payload());
         rec.responsePayload = internPayload(capturedResponse.payload());
-        rec.query = Masking.truncate(Masking.maskBody(emptyToNull(req.query()),
-                "application/x-www-form-urlencoded"), MAX_BODY);
-        rec.reqBody = Masking.truncate(Masking.maskBody(requestBody, req.headerValue("Content-Type")), MAX_BODY);
-        rec.reqText = Masking.truncate(maskedRequest, MAX_BODY);
+        rec.query = TextLimits.truncate(emptyToNull(req.query()), MAX_BODY);
+        rec.reqBody = TextLimits.truncate(requestBody, MAX_BODY);
+        rec.reqText = TextLimits.truncate(capturedRequestText, MAX_BODY);
         rec.requestContentType = emptyToNull(req.headerValue("Content-Type"));
         rec.responseContentType = emptyToNull(responseContentType);
         rec.secFetchDest = emptyToNull(req.headerValue("Sec-Fetch-Dest"));
         rec.secFetchMode = emptyToNull(req.headerValue("Sec-Fetch-Mode"));
         rec.accessControlRequestMethod = emptyToNull(req.headerValue("Access-Control-Request-Method"));
         rec.timestamp = timestamp;
-        rec.body = Masking.truncate(Masking.maskBody(responseBody, responseContentType), MAX_BODY);
-        rec.respText = Masking.truncate(maskedResponse, MAX_BODY);
-        rec.location = Masking.truncate(Masking.maskSecrets(location), MAX_BODY);
+        rec.body = TextLimits.truncate(responseBody, MAX_BODY);
+        rec.respText = TextLimits.truncate(capturedResponseText, MAX_BODY);
+        rec.location = TextLimits.truncate(location, MAX_BODY);
         // 이 메서드는 응답 수신 콜백에서만 호출된다. 204/빈 본문도 실제 응답이다.
         rec.hasResponse = true;
         return rec;
@@ -1899,7 +1897,7 @@ public final class FlowScopeExtension implements BurpExtension {
         String message = error == null || error.getMessage() == null
                 ? "로컬 프로젝트 DB 저장에 실패했습니다."
                 : error.getMessage();
-        databaseSaveError = Masking.truncate(Masking.maskSecrets(message), 512);
+        databaseSaveError = TextLimits.truncate(message, 512);
     }
 
     private ProjectWorkspace.Status currentProjectStatus() {
@@ -2251,26 +2249,31 @@ public final class FlowScopeExtension implements BurpExtension {
                 openDraftInRepeater(record, prepareHumanRequest(record, request, credentialMode, accountId));
                 return record;
             }
+            @Override public boolean requestLabRawAvailable(RequestRecord record) {
+                // 메모리 원문이 없어도 프로젝트에 잘리지 않고 저장된 원문이 있으면 Request Lab으로 보낼 수 있다.
+                return rawExchanges.requestRetained(record)
+                        || record.requestPayload != null && record.requestPayload.retained();
+            }
             @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
                 RequestRecord record = evidenceRecord(evidenceId);
                 TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
                 boolean rawRequest = raw != null && raw.requestRetained();
                 boolean rawResponse = raw != null && raw.responseRetained();
+                // 메모리 원문이 없으면(재시작·다시 열기·메모리 상한) 프로젝트에 잘리지 않고 저장된 원문을 쓴다.
+                boolean storedRequest = !rawRequest && record.requestPayload != null && record.requestPayload.retained();
+                boolean storedResponse = !rawResponse && record.responsePayload != null && record.responsePayload.retained();
                 HttpMessageTextCodec.Decoded decodedRequest = rawRequest ? decodeRequest(raw, record.requestContentType)
-                        : new HttpMessageTextCodec.Decoded(record.requestTextForEvidence(), false, null,
-                        "마스킹된 저장 전문입니다.");
+                        : new HttpMessageTextCodec.Decoded(record.requestTextForEvidence(), storedRequest, storedRequest ? "UTF-8" : null,
+                        storedRequest ? "저장된 원문입니다." : "요청이 저장 한도를 넘었거나 바이너리라 일부만 남아 있습니다.");
                 HttpMessageTextCodec.Decoded decodedResponse = rawResponse ? decodeResponse(raw, record.responseContentType)
-                        : new HttpMessageTextCodec.Decoded(record.responseTextForEvidence(), false, null,
-                        "마스킹된 저장 전문입니다.");
+                        : new HttpMessageTextCodec.Decoded(record.responseTextForEvidence(), storedResponse, storedResponse ? "UTF-8" : null,
+                        storedResponse ? "저장된 원문입니다." : "응답이 저장 한도를 넘었거나 바이너리라 일부만 남아 있습니다.");
                 String request = decodedRequest.text();
                 String response = decodedResponse.text();
-                String message = raw == null
-                        ? "이 Evidence의 메모리 원문이 없습니다(가져오기·메모리 상한/eviction 가능). 마스킹된 전문을 표시합니다."
-                        : !rawRequest
-                        ? "요청 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
-                        : !rawResponse
-                        ? "응답 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
-                        : "원문은 현재 Burp 프로세스 메모리에서만 불러왔으며 저장·내보내기하지 않습니다.";
+                String message = rawRequest && rawResponse ? "원문은 현재 Burp 프로세스 메모리에서 불러왔습니다."
+                        : storedRequest ? "메모리 원문이 없어 프로젝트에 저장된 원문을 불러왔습니다."
+                        : rawRequest ? "응답 원문은 메모리 상한을 넘어 일부만 남아 있습니다."
+                        : "이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다.";
                 if (rawRequest && !decodedRequest.editable()) message += " " + decodedRequest.note();
                 var observedAccount = record.laneAccountId == null
                         ? analysisConfig.boundAccount(record.service, record.fp)
@@ -2284,7 +2287,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 String reusableSession = reusable.map(view -> view.accountLabel() + " · 사용 가능").orElse("없음");
                 String reusableAccountId = reusable.map(SessionBroker.SessionView::accountId).orElse("");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
-                        request, response, rawRequest, rawResponse, decodedRequest.editable(),
+                        request, response, rawRequest || storedRequest, rawResponse || storedResponse, decodedRequest.editable(),
                         decodedRequest.charset(), decodedResponse.charset(), observedIdentity,
                         reusableSession, reusableAccountId, message,
                         observedAccount.map(io.flowscope.core.AccountProfile::id).orElse(""));
@@ -2297,15 +2300,18 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
                     String evidenceId, String requestText, FlowScopeWebServer.CredentialMode mode, String accountId) {
                 RequestRecord seed = evidenceRecord(evidenceId);
-                TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElse(null);
-                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL && (original == null
-                        || !original.requestRetained() || !decodeRequest(original, seed.requestContentType).editable())) {
-                    throw new IllegalStateException("편집 가능한 원문이 없습니다.");
+                String originalText = null;
+                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL) {
+                    TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElse(null);
+                    HttpMessageTextCodec.Decoded decoded = original != null && original.requestRetained()
+                            ? decodeRequest(original, seed.requestContentType) : null;
+                    if (decoded != null && decoded.editable()) originalText = decoded.text();
+                    else if (seed.requestPayload != null && seed.requestPayload.retained()) originalText = seed.requestPayload.text();
+                    else throw new IllegalStateException("편집 가능한 원문이 없습니다.");
                 }
                 // Same URL/scope/session rules as send, without sending or recording an attempt.
                 HttpRequest prepared = prepareHumanRequest(seed,
-                        mode == FlowScopeWebServer.CredentialMode.ORIGINAL
-                                ? decodeRequest(original, seed.requestContentType).text() : requestText,
+                        mode == FlowScopeWebServer.CredentialMode.ORIGINAL ? originalText : requestText,
                         mode, accountId);
                 if (prepared.toByteArray().length() > RAW_REQUEST_LIMIT_BYTES) {
                     throw new IllegalArgumentException("인증 적용 요청이 너무 큽니다.");
@@ -2359,7 +2365,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /**
-     * 저장된 마스킹 Request를 자동 전송하지 않고 Repeater 초안으로만 연다.
+     * 저장된 Request를 자동 전송하지 않고 Repeater 초안으로만 연다.
      * 인증정보를 재삽입하고 전송하는 최종 행위는 사용자가 Burp에서 수행한다.
      */
     private RequestRecord evidenceRecord(String evidenceId) {
@@ -2631,7 +2637,7 @@ public final class FlowScopeExtension implements BurpExtension {
             return true;
         } catch (RuntimeException error) {
             api.logging().logToOutput("FlowScope ZAP 로그인 세션의 계정 슬롯 연결 생략: "
-                    + Masking.maskSecrets(error.getMessage() == null ? error.getClass().getSimpleName()
+                    + (error.getMessage() == null ? error.getClass().getSimpleName()
                     : error.getMessage()));
             return false;
         }
@@ -2835,7 +2841,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             int requestBytes = exchange.request().toByteArray().length();
             String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
-                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 요약만 보존했습니다.";
             return new FlowScopeWebServer.RequestLabResult(published.evidenceId, published.status, displayResponse,
                     durationMs, requestBytes, responseBytes);
         } catch (RuntimeException error) {
@@ -2853,7 +2859,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             throw new IllegalStateException(received ? "응답 수신 · Evidence 기록 실패. 결과를 확인한 후 재전송을 판단하세요."
                     : sent ? "응답 미확인 · " + outcome + ". 대상 처리 여부는 확인되지 않았습니다."
-                    : "전송 전 차단 · " + Masking.maskSecrets(error.getMessage()), error);
+                    : "전송 전 차단 · " + error.getMessage(), error);
         }
     }
 
@@ -3091,7 +3097,7 @@ public final class FlowScopeExtension implements BurpExtension {
         String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
                 ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
                 response.headerValue("Content-Type")).text()
-                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 요약만 보존했습니다.";
         FlowScopeWebServer.RequestLabResult result = new FlowScopeWebServer.RequestLabResult(
                 published.evidenceId, response.statusCode(), responseText, durationMs, requestBytes, responseBytes);
         List<String> setCookies = response.headers().stream()
@@ -3192,9 +3198,6 @@ public final class FlowScopeExtension implements BurpExtension {
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
                 request = request.withHeader(header.getKey(), header.getValue());
             }
-        }
-        if (request.toString().contains("***MASKED***") || request.toString().contains("[BODY REDACTED:")) {
-            throw new IllegalArgumentException("마스킹된 값이 남아 있습니다. 인증을 다시 선택하고 필요한 내용을 채워 주세요.");
         }
         if (!originalBytesUsed && request.hasHeader("Content-Length")) {
             String actualLength = String.valueOf(request.body().length());
@@ -3351,7 +3354,7 @@ public final class FlowScopeExtension implements BurpExtension {
             scheduleRebuildForNewRecords();
         } catch (Exception error) {
             api.logging().logToError("FlowScope 브라우저 탐색 수집 실패: " + exchange.method() + " "
-                    + Masking.maskSecrets(exchange.url()), error);
+                    + exchange.url(), error);
         }
     }
 

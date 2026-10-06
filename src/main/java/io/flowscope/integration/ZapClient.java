@@ -285,8 +285,8 @@ public final class ZapClient {
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String detail = io.flowscope.core.Masking.truncate(
-                        io.flowscope.core.Masking.maskSecrets(response.body()), 512);
+                String detail = io.flowscope.core.TextLimits.truncate(
+                        response.body(), 512);
                 throw new IllegalStateException("ZAP API HTTP " + response.statusCode()
                         + (detail == null || detail.isBlank() ? "" : ": " + detail));
             }
@@ -324,8 +324,8 @@ public final class ZapClient {
         try {
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                String detail = includeErrorBody ? io.flowscope.core.Masking.truncate(
-                        io.flowscope.core.Masking.maskSecrets(response.body()), 512) : "";
+                String detail = includeErrorBody ? io.flowscope.core.TextLimits.truncate(
+                        response.body(), 512) : "";
                 throw new IllegalStateException("ZAP API HTTP " + response.statusCode()
                         + (detail == null || detail.isBlank() ? "" : ": " + detail));
             }

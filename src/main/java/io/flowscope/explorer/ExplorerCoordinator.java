@@ -1,7 +1,7 @@
 package io.flowscope.explorer;
 
 import io.flowscope.core.LaneCompletionPolicy;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RunContextRegistry;
@@ -585,7 +585,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (snapshot == null) return;
         List<Activity> next = new ArrayList<>(snapshot.activities());
         next.add(new Activity(activitySequence.incrementAndGet(), Instant.now(), kind,
-                Masking.truncate(Masking.maskSecrets(title == null ? "" : title), 2_048),
+                TextLimits.truncate(title == null ? "" : title, 2_048),
                 safe(detail), status, durationMillis));
         if (next.size() > ACTIVITY_LIMIT) next = new ArrayList<>(next.subList(next.size() - ACTIVITY_LIMIT, next.size()));
         snapshot = new Snapshot(snapshot.status(), snapshot.runId(), snapshot.target(), snapshot.startedAt(),
@@ -647,7 +647,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     private static String safe(String value) {
-        return Masking.truncate(Masking.maskSecrets(value == null ? "" : value), 4_000);
+        return TextLimits.truncate(value == null ? "" : value, 4_000);
     }
 
     @Override public synchronized void close() {

@@ -11,6 +11,7 @@ import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
 import { useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
+import { requestLabEvent } from "./requestLabEvent"
 import { findJudgmentItem, isReviewable, judgmentTone, projectJudgmentMatrix, quietStatusLabel, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -92,8 +93,8 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
   const recommendation = item.recommendation
   // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 인증에서 고른다(자동 전송 없음).
   const basisId = recommendation?.basisEvidenceIds[0] ?? item.evidenceIds[0]
-  const basisEvent = (basisId ? snapshot?.events.find(event => event.eventId === basisId || event.clusterEvidenceIds?.includes(basisId)) : undefined)
-    ?? snapshot?.events.filter(event => event.op === item.operation).sort((left, right) => right.timestamp - left.timestamp)[0]
+  // 근거 기록을 보낼 수 없으면(원문이 일부만 남음) 같은 API에서 보낼 수 있는 기록을 대신 연다.
+  const basisEvent = snapshot ? requestLabEvent(snapshot.events, item.operation, basisId, resource) : undefined
   // 사람 판정은 추천·공백·수동 검토 셀에서만 저장된다. 다른 셀은 같은 자리에 두되 입력을 잠근다.
   const reviewable = isReviewable(item) || judgmentTone(item.status) === "gap"
   const submit = async (status: ReviewStatus) => {

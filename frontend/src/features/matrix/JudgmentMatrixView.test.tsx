@@ -164,6 +164,18 @@ it("opens the recommendation's basis record in Request Lab without the removed a
   expect(runAuthorizationReplay).not.toHaveBeenCalled()
 })
 
+it("opens a same-API record whose raw is still in memory when the basis record lost its raw", async () => {
+  // 근거 기록(ev-a)은 원문이 일부만 남아 보낼 수 없다. 같은 API·같은 신원의 최신 원문 기록을 대신 연다.
+  const live = { ...snapshot.events[0], eventId: "ev-live", clusterEvidenceIds: ["ev-live"], timestamp: 5, rawAvailable: true }
+  current = { ...snapshot, events: [...snapshot.events, live] }
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  await user.click(within(screen.getByRole("complementary", { name: "분석 필터" })).getByRole("tab", { name: "BOLA/IDOR · 계정 × 객체" }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `BOLA/IDOR 수동 테스트 추천: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(screen.getByRole("region", { name: "Request Lab 전송" })).getByRole("button", { name: "Request Lab에서 보내기" }))
+  expect(await screen.findByRole("dialog", { name: "Request Lab" })).toHaveTextContent("ev-live")
+})
+
 it("keeps the same sections on non-reviewable observed cells, locks review, and still opens Request Lab", async () => {
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)

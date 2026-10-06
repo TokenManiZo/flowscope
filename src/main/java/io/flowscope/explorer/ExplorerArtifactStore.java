@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/** Run-scoped masked response artifacts. Files never become project or snapshot state. */
+/** Run-scoped response artifacts. Files never become project or snapshot state. */
 final class ExplorerArtifactStore implements AutoCloseable {
     record Provenance(String evidenceId, String url, String contentType) {}
     record Metadata(String id, String evidenceId, String url, String contentType, String sha256,
@@ -54,8 +54,8 @@ final class ExplorerArtifactStore implements AutoCloseable {
     }
 
     synchronized Metadata store(String evidenceId, String url, String contentType,
-                                String maskedText, boolean complete) throws IOException {
-        byte[] bytes = (maskedText == null ? "" : maskedText).getBytes(StandardCharsets.UTF_8);
+                                String text, boolean complete) throws IOException {
+        byte[] bytes = (text == null ? "" : text).getBytes(StandardCharsets.UTF_8);
         String digest = sha256(bytes);
         String existingId = idsByDigest.get(digest);
         if (existingId != null) {

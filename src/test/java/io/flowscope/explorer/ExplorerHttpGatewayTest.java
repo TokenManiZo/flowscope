@@ -93,7 +93,7 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
-    void exposesLargeMaskedBodyAsLoopbackArtifact() throws Exception {
+    void exposesLargeBodyAsLoopbackArtifact() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
                 "application/javascript", Map.of(), "x".repeat(600_000) + "token=secret-value",
@@ -110,7 +110,7 @@ final class ExplorerHttpGatewayTest {
                     HttpResponse.BodyHandlers.ofByteArray());
             assertEquals(200, artifact.statusCode());
             assertTrue(artifact.body().length > 512 * 1024);
-            assertFalse(new String(artifact.body(), StandardCharsets.UTF_8).contains("secret-value"));
+            assertTrue(new String(artifact.body(), StandardCharsets.UTF_8).contains("secret-value"), "산출물은 원문 그대로다");
         }
     }
 

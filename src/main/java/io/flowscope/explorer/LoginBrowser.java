@@ -22,7 +22,7 @@ interface LoginBrowser {
     /** One interactive element the Explorer may click or type into. */
     record Element(String ref, String role, String name) {}
 
-    /** What the window shows now. {@code text} is masked before it leaves FlowScope. */
+    /** What the window shows now. */
     record Page(String url, String title, List<Element> elements, String text) {}
 
     interface Session extends AutoCloseable {

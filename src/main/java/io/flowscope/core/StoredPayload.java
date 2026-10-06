@@ -39,11 +39,11 @@ public final class StoredPayload {
         this.gzip = gzip == null ? null : Arrays.copyOf(gzip, gzip.length);
     }
 
-    public static StoredPayload capture(String maskedText, String contentType, int maxBytes) {
-        if (maskedText == null) return null;
-        byte[] plain = maskedText.getBytes(StandardCharsets.UTF_8);
+    public static StoredPayload capture(String text, String contentType, int maxBytes) {
+        if (text == null) return null;
+        byte[] plain = text.getBytes(StandardCharsets.UTF_8);
         String digest = sha256(plain);
-        if (!isTextual(contentType, maskedText)) {
+        if (!isTextual(contentType, text)) {
             return new StoredPayload(digest, plain.length, Retention.BINARY_METADATA_ONLY, null);
         }
         if (plain.length > maxBytes) {
@@ -101,17 +101,17 @@ public final class StoredPayload {
         return new StoredPayload(digest, originalBytes, reason, null);
     }
 
-    /** 마스킹된 제한 미리보기의 digest와 실제 메시지 크기만 보존한다. */
-    public static StoredPayload metadataOnly(byte[] maskedBytes, int originalBytes, Retention reason) {
-        if (reason == null || reason == Retention.FULL || maskedBytes == null || originalBytes < 0) {
+    /** 제한 미리보기의 digest와 실제 메시지 크기만 보존한다. */
+    public static StoredPayload metadataOnly(byte[] textBytes, int originalBytes, Retention reason) {
+        if (reason == null || reason == Retention.FULL || textBytes == null || originalBytes < 0) {
             throw new IllegalArgumentException("metadata-only bytes and reason required");
         }
-        return new StoredPayload(sha256(maskedBytes), originalBytes, reason, null);
+        return new StoredPayload(sha256(textBytes), originalBytes, reason, null);
     }
 
     /** 제한 미리보기·실제 크기·보존 사유를 함께 묶어 같은 접두부의 대형 메시지를 구분한다. */
-    public static StoredPayload previewMetadataOnly(byte[] maskedPreview, int originalBytes, Retention reason) {
-        if (reason == null || reason == Retention.FULL || maskedPreview == null || originalBytes < 0) {
+    public static StoredPayload previewMetadataOnly(byte[] preview, int originalBytes, Retention reason) {
+        if (reason == null || reason == Retention.FULL || preview == null || originalBytes < 0) {
             throw new IllegalArgumentException("metadata-only preview, size and reason required");
         }
         try {
@@ -121,8 +121,8 @@ public final class StoredPayload {
             byte[] reasonBytes = reason.name().getBytes(StandardCharsets.US_ASCII);
             digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(reasonBytes.length).array());
             digest.update(reasonBytes);
-            digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(maskedPreview.length).array());
-            digest.update(maskedPreview);
+            digest.update(ByteBuffer.allocate(Integer.BYTES).putInt(preview.length).array());
+            digest.update(preview);
             return new StoredPayload(hex(digest.digest()), originalBytes, reason, null);
         } catch (NoSuchAlgorithmException error) {
             throw new IllegalStateException("SHA-256 unavailable", error);
@@ -148,7 +148,7 @@ public final class StoredPayload {
 
     public String preview(int maxChars) {
         String text = text();
-        return text == null ? null : Masking.truncate(text, maxChars);
+        return text == null ? null : TextLimits.truncate(text, maxChars);
     }
 
     private static boolean isTextual(String contentType, String value) {

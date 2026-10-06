@@ -38,7 +38,7 @@ public final class SampleProject {
         records.add(record(Source.HUMAN, "sess:demo-b", "GET", "/api/orders/202", 200, null,
                 "{\"id\":202,\"ownerId\":\"acct-demo-user-b\",\"total\":8300}", 2));
         records.add(record(Source.HUMAN, "sess:demo-a", "POST", "/api/admin/invites", 403,
-                "{\"email\":\"masked@example.test\"}", "{\"error\":\"forbidden\"}", 3));
+                "{\"email\":\"user-b@example.test\"}", "{\"error\":\"forbidden\"}", 3));
         records.add(record(Source.HUMAN, "sess:demo-admin", "GET", "/api/admin/users", 200, null,
                 "[{\"id\":\"acct-demo-user-a\"},{\"id\":\"acct-demo-user-b\"}]", 4));
 
@@ -49,7 +49,7 @@ public final class SampleProject {
         records.add(record(Source.LLM, "sess:demo-b", "GET", "/api/orders/101", 200, null,
                 "{\"id\":101,\"ownerId\":\"acct-demo-user-a\",\"total\":12000}", 7));
         records.add(record(Source.LLM, "sess:demo-a", "POST", "/api/admin/invites", 200,
-                "{\"email\":\"masked@example.test\"}", "{\"created\":true}", 8));
+                "{\"email\":\"user-b@example.test\"}", "{\"created\":true}", 8));
         records.add(record(Source.LLM, "sess:demo-a", "GET", "/api/orders/202", 404, null,
                 "{\"error\":\"not found\"}", 9));
 
@@ -72,7 +72,7 @@ public final class SampleProject {
                 "{\"error\":\"forbidden\"}", 16));
 
         RequestRecord login = record(Source.HUMAN, "sess:demo-a", "POST", "/login", 302,
-                "{\"username\":\"demo\",\"password\":\"***MASKED***\"}", "", 17);
+                "{\"username\":\"demo\",\"password\":\"demo-password\"}", "", 17);
         login.phase = RunPhase.SESSION_SETUP;
         records.add(login);
         for (int i = 0; i < 3; i++) {
@@ -90,12 +90,13 @@ public final class SampleProject {
         record.reqBody = requestBody;
         record.query = null;
         record.reqText = method + " " + path + " HTTP/1.1\r\nHost: demo.flowscope.test\r\n"
-                + "Authorization: ***MASKED***\r\n\r\n" + (requestBody == null ? "" : requestBody);
+                + "Authorization: Bearer " + fingerprint.substring(fingerprint.indexOf(':') + 1) + "-token\r\n\r\n"
+                + (requestBody == null ? "" : requestBody);
         record.body = responseBody;
         record.respText = "HTTP/1.1 " + status + " Demo\r\nContent-Type: application/json\r\n\r\n"
                 + (responseBody == null ? "" : responseBody);
-        record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText), "", 1024 * 1024);
-        record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText), "", 1024 * 1024);
+        record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
+        record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
         // The demo responses are JSON API representations; record the media type the way a live capture would
         // so identity-bound APIs without an object signal still classify as API traffic.
         if (requestBody != null) record.requestContentType = "application/json";

@@ -1,7 +1,7 @@
 package io.flowscope;
 
 import io.flowscope.core.BurpXmlParser;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.Source;
@@ -75,19 +75,17 @@ class CaptureSchemaTest {
     }
 
     @Test
-    void 인증정보는_가린다_F05_F22() {
+    void 인증정보와_비밀값도_원문_그대로_보관한다() {
         RequestRecord r = parsed();
-        // 원문 토큰이 어디에도 남으면 안 된다
-        String all = String.join("|", r.reqText, String.valueOf(r.reqBody),
-                String.valueOf(r.query), String.valueOf(r.body), r.fp);
-        assertFalse(all.contains("SECRETSESSION"), "세션 원문 저장 금지(F-05)");
-        assertFalse(all.contains("SUPERSECRET"), "쿼리의 토큰 값 마스킹");
-        assertFalse(all.contains("hunter2"), "본문의 password 마스킹");
-        assertFalse(all.contains("LEAKED"), "응답의 access_token 마스킹");
-        assertFalse(r.reqText.contains("eyJhbGciOiJIUzI1NiJ9.PAYLOAD.SIG"), "Authorization 값 마스킹");
-        // 구조는 남아야 상세 보기가 가능
-        assertTrue(r.reqText.contains("Authorization:"), "헤더 이름은 남긴다(F-22)");
-        assertTrue(r.reqText.contains("theme=dark") || r.reqText.contains("theme=***"), "비밀 아닌 쿠키 이름은 유지");
+        // 마스킹을 하지 않는다: 재시작 뒤에도 Request Lab이 같은 요청을 다시 보낼 수 있어야 한다.
+        assertTrue(r.reqText.contains("eyJhbGciOiJIUzI1NiJ9.PAYLOAD.SIG"), "Authorization 값 보존");
+        assertTrue(r.reqText.contains("SECRETSESSION"), "세션 쿠키 보존");
+        assertTrue(r.query.contains("SUPERSECRET"), "쿼리의 토큰 값 보존");
+        assertTrue(r.reqBody.contains("hunter2"), "본문의 password 보존");
+        assertTrue(r.body.contains("LEAKED"), "응답의 access_token 보존");
+        assertTrue(r.reqText.contains("theme=dark"), "일반 쿠키 보존");
+        // 신원 지문은 원문이 아니라 해시다.
+        assertFalse(r.fp.contains("SECRETSESSION"));
     }
 
     @Test
@@ -95,54 +93,12 @@ class CaptureSchemaTest {
         RequestRecord r = parsed();
         assertTrue(r.hasResponse);
         assertTrue(r.body.contains("\"owner\":\"user-a\""),
-                "F-10 판정 오라클이 쓰는 소유필드는 마스킹하면 안 된다");
+                "F-10 판정 오라클이 쓰는 소유필드를 보존한다");
     }
 
     @Test
-    void 마스킹_유틸_단독_동작() {
-        assertFalse(Masking.maskSecrets("{\"token\":\"abc123\"}").contains("abc123"));
-        assertTrue(Masking.maskSecrets("{\"id\":101}").contains("101"), "일반 필드는 그대로");
-        assertTrue(Masking.truncate("x".repeat(100), 10).endsWith("(truncated)"));
-    }
-
-    @Test
-    void 공백과_중첩값이_있는_JSON_secret_전체를_가린다() {
-        String masked = Masking.maskBody("""
-                {"password":"correct horse battery staple","profile":{"access_token":"alpha beta"}}
-                """, "application/json");
-
-        assertFalse(masked.contains("correct horse battery staple"));
-        assertFalse(masked.contains("alpha beta"));
-        assertTrue(masked.contains("***MASKED***"));
-    }
-
-    @Test
-    void multipart_secret_part_전체를_가린다() {
-        String body = """
-                --AaB03x\r
-                Content-Disposition: form-data; name="username"\r
-                \r
-                alice\r
-                --AaB03x\r
-                Content-Disposition: form-data; name="password"\r
-                \r
-                correct horse battery staple\r
-                --AaB03x--\r
-                """;
-
-        String masked = Masking.maskBody(body, "multipart/form-data; boundary=AaB03x");
-
-        assertTrue(masked.contains("alice"));
-        assertFalse(masked.contains("correct horse battery staple"));
-        assertTrue(masked.contains("***MASKED***"));
-    }
-
-    @Test
-    void 전문_마스킹도_Content_Type에_따라_본문을_가린다() {
-        String message = "POST /login HTTP/1.1\r\nContent-Type: application/json\r\n\r\n"
-                + "{\"password\":\"alpha beta\"}";
-
-        assertFalse(Masking.maskHeaders(message).contains("alpha beta"));
+    void 긴_본문은_길이_상한에서_자른다() {
+        assertTrue(TextLimits.truncate("x".repeat(100), 10).endsWith("(truncated)"));
     }
 
     @Test
