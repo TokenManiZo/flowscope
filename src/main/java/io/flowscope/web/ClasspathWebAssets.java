@@ -1,21 +1,12 @@
 package io.flowscope.web;
 
-import java.util.Objects;
 import java.util.Optional;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 final class ClasspathWebAssets {
-    enum DefaultUi { LEGACY, REACT }
-
     record Asset(String resource, String contentType, boolean html) {}
-
-    private final DefaultUi defaultUi;
-
-    ClasspathWebAssets(DefaultUi defaultUi) {
-        this.defaultUi = Objects.requireNonNull(defaultUi, "defaultUi");
-    }
 
     Optional<Asset> resolve(String rawPath) {
         if (rawPath == null || !rawPath.startsWith("/") || containsEncodedSeparator(rawPath)) return Optional.empty();
@@ -26,17 +17,12 @@ final class ClasspathWebAssets {
             return Optional.empty();
         }
         if (path.indexOf('\\') >= 0 || path.indexOf('\0') >= 0 || hasDotSegment(path)) return Optional.empty();
-        if (path.equals("/")) return Optional.of(defaultUi == DefaultUi.LEGACY ? legacyIndex() : reactIndex());
-        if (path.equals("/legacy/")) return Optional.of(legacyIndex());
-        if (path.equals("/app/")) return Optional.of(reactIndex());
+        if (path.equals("/") || path.equals("/app/")) return Optional.of(reactIndex());
         if (path.startsWith("/app/assets/")) return appAsset(path.substring("/app/assets/".length()));
-        if (defaultUi == DefaultUi.REACT && path.startsWith("/assets/")) {
-            return appAsset(path.substring("/assets/".length()));
-        }
+        if (path.startsWith("/assets/")) return appAsset(path.substring("/assets/".length()));
         return Optional.empty();
     }
 
-    private static Asset legacyIndex() { return new Asset("/web/index.html", "text/html; charset=utf-8", true); }
     private static Asset reactIndex() { return new Asset("/web/app/index.html", "text/html; charset=utf-8", true); }
 
     private static Optional<Asset> appAsset(String name) {

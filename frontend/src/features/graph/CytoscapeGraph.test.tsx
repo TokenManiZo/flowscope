@@ -1,4 +1,3 @@
-import type { EventRecord } from "@/lib/api/types"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import cytoscape from "cytoscape"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"

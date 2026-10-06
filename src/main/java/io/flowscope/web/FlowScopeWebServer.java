@@ -267,7 +267,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private final String capabilityToken = randomCapabilityToken();
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
-    private final ClasspathWebAssets webAssets = new ClasspathWebAssets(ClasspathWebAssets.DefaultUi.REACT);
+    private final ClasspathWebAssets webAssets = new ClasspathWebAssets();
     private final Map<String, RequestLabOperation> requestLabOperations = new ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<String> requestLabOperationOrder = new ConcurrentLinkedDeque<>();
     private record HumanEnd(RunContextRegistry.Context context, boolean analyzing, String message) {}
@@ -313,7 +313,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (path.equals("/app")) return appRedirect(request);
         Optional<ClasspathWebAssets.Asset> asset = webAssets.resolve(target.getRawPath());
         if (asset.isPresent()) return staticAsset(request, asset.orElseThrow());
-        if (path.equals("/vendor/cytoscape-3.26.0.min.js")) return cytoscape(request);
         if (staticPath(target.getRawPath())) return staticError(request, 404, "Not found");
         if (!path.startsWith("/api/")) return error(404, "Not found");
         if (!authorized(request)) return error(403, "FlowScope 로컬 API 인증에 실패했습니다. UI를 다시 여세요.");
@@ -323,13 +322,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/manual-attempts" -> request.method().equals("GET")
                     ? response(200, "application/json; charset=utf-8", json.writeValueAsBytes(state.manualAttempts()))
                     : method("GET");
-            case "/api/cluster-evidence" -> clusterEvidence(request, target);
             case "/api/replay" -> replay(request);
             case "/api/request-lab" -> requestLab(request, target);
             case "/api/request-lab/credentials" -> requestLabCredentials(request);
             case "/api/request-lab/workspace" -> requestLabWorkspace(request);
             case "/api/authorization-replay" -> authorizationReplay(request);
-            case "/api/clear" -> clear(request);
             case "/api/projects" -> projects(request);
             case "/api/graph-workspace" -> graphWorkspace(request);
             case "/api/api-management" -> apiManagement(request);
@@ -357,8 +354,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/import-xml" -> importXml(request, target);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
-            case "/api/verdict", "/api/replay-verdict" -> error(409,
-                    "Repeater 결과는 자동 확정하지 않습니다. 새 Evidence를 확인한 뒤 후보 검토에서 판정하세요.");
             default -> error(404, "Not found");
         };
     }
@@ -403,19 +398,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
 
     private static boolean staticPath(String rawPath) {
         return rawPath != null && (rawPath.equals("/") || rawPath.startsWith("/app/")
-                || rawPath.startsWith("/legacy/") || rawPath.startsWith("/assets/")
-                || rawPath.startsWith("/vendor/"));
-    }
-
-    private LoopbackHttpServer.Response cytoscape(LoopbackHttpServer.Request request) throws IOException {
-        if (!staticMethod(request)) return method("GET, HEAD");
-        try (var input = FlowScopeWebServer.class.getResourceAsStream("/web/vendor/cytoscape-3.26.0.min.js")) {
-            if (input == null) return staticError(request, 500, "Graph library missing");
-            byte[] body = input.readAllBytes();
-            return new LoopbackHttpServer.Response(200,
-                    headers("application/javascript; charset=utf-8", Map.of()),
-                    request.method().equals("HEAD") ? new byte[0] : body, body.length);
-        }
+                || rawPath.startsWith("/assets/"));
     }
 
     private LoopbackHttpServer.Response snapshot(LoopbackHttpServer.Request request) throws IOException {
@@ -436,22 +419,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     1, EVIDENCE_PAGE_LIMIT, "limit");
             return response(200, "application/json; charset=utf-8",
                     snapshots.evidence(state.snapshot(), operation, offset, limit));
-        } catch (RuntimeException error) {
-            return error(400, error.getMessage());
-        }
-    }
-
-    private LoopbackHttpServer.Response clusterEvidence(LoopbackHttpServer.Request request, URI target)
-            throws IOException {
-        if (!request.method().equals("GET")) return method("GET");
-        try {
-            Map<String, String> query = form(target.getRawQuery());
-            String clusterId = required(query, "clusterId");
-            int offset = boundedInteger(query.get("offset"), 0, 0, 20_000, "offset");
-            int limit = boundedInteger(query.get("limit"), EVIDENCE_PAGE_LIMIT,
-                    1, EVIDENCE_PAGE_LIMIT, "limit");
-            return response(200, "application/json; charset=utf-8",
-                    snapshots.clusterEvidence(state.snapshot(), clusterId, offset, limit));
         } catch (RuntimeException error) {
             return error(400, error.getMessage());
         }
@@ -798,11 +765,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return json(200, json.valueToTree(state.manageApi(change)));
         } catch (IllegalStateException error) { return error(409, error.getMessage()); }
         catch (IllegalArgumentException | IOException error) { return error(400, error.getMessage()); }
-    }
-
-    private LoopbackHttpServer.Response clear(LoopbackHttpServer.Request request) throws IOException {
-        if (postForm(request) == null) return invalidForm(request);
-        return error(409, "Evidence 삭제형 초기화는 지원하지 않습니다. 새 진단 시작으로 현재 프로젝트를 보존하세요.");
     }
 
     private LoopbackHttpServer.Response graphWorkspace(LoopbackHttpServer.Request request) throws IOException {

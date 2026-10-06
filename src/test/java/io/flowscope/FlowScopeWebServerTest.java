@@ -208,12 +208,8 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void keepsLegacyClearBlockedAndOffersExplicitProjectResetAndDelete() throws Exception {
+    void offersExplicitProjectResetAndDelete() throws Exception {
         start();
-
-        HttpResponse<String> clear = post("/api/clear", "", token);
-        assertEquals(409, clear.statusCode());
-        assertEquals(1, state.records.size(), "legacy reset must not delete Evidence");
 
         HttpResponse<String> started = post("/api/projects", "action=start&name=Target+A&scope="
                 + URLEncoder.encode("https://app.example.test/", StandardCharsets.UTF_8), token);
@@ -238,16 +234,15 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void servesReactUiAtTheBurpLaunchRootAndKeepsLegacyAtItsExplicitMount() throws Exception {
+    void servesReactUiAtTheBurpLaunchRootWithoutTheRemovedLegacyMount() throws Exception {
         start();
 
         HttpResponse<String> root = get("/", null, null);
-        HttpResponse<String> legacy = get("/legacy/", null, null);
 
         assertEquals(200, root.statusCode());
         assertTrue(root.body().contains("<div id=\"root\"></div>"));
-        assertFalse(root.body().contains("<h1>FlowScope</h1>"));
-        assertTrue(legacy.body().contains("<h1>FlowScope</h1>"));
+        assertEquals(404, get("/legacy/", null, null).statusCode());
+        assertEquals(404, get("/vendor/cytoscape-3.26.0.min.js", null, null).statusCode());
     }
 
     @Test
@@ -255,14 +250,9 @@ final class FlowScopeWebServerTest {
         start();
 
         HttpResponse<String> root = get("/", null, null);
-        HttpResponse<String> legacy = get("/legacy/", null, null);
         HttpResponse<String> app = get("/app/", null, null);
         assertEquals(200, root.statusCode());
         assertTrue(root.body().contains("<div id=\"root\"></div>"));
-        assertFalse(root.body().contains("<h1>FlowScope</h1>"));
-        assertEquals(200, legacy.statusCode());
-        assertTrue(legacy.body().contains("<h1>FlowScope</h1>"));
-        assertTrue(legacy.body().contains(token));
         assertEquals(200, app.statusCode());
         assertTrue(app.body().contains("<div id=\"root\"></div>"));
         assertTrue(app.body().matches("(?s).*name=\"flowscope-capability\" content=\"[0-9a-f]{64}\".*"));
@@ -474,136 +464,8 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void servesBrandedUiAndProtectsApiWithCapabilityAndOrigin() throws Exception {
+    void protectsApiWithCapabilityAndOrigin() throws Exception {
         start();
-        HttpResponse<String> index = get("/legacy/", null, null);
-        assertEquals(200, index.statusCode());
-        assertTrue(index.body().contains("<h1>FlowScope</h1>"));
-        assertTrue(index.body().contains("HUMAN pass 시작"));
-        assertTrue(index.body().contains("Evidence 표시"));
-        assertTrue(index.body().contains("--human:#2563EB; --scanner:#DC2626; --llm:#111827;"));
-        assertTrue(index.body().contains("human:{n:'사람',c:'--human',ab:'H'}"));
-        assertTrue(index.body().contains("scanner:{n:'스캐너',c:'--scanner',ab:'S'}"));
-        assertTrue(index.body().contains("llm:{n:'LLM',c:'--llm',ab:'L'}"));
-        assertTrue(index.body().contains("사람 H (파랑·실선)"));
-        assertTrue(index.body().contains("스캐너 S (빨강·파선)"));
-        assertTrue(index.body().contains("LLM L (검정·점선)"));
-        assertTrue(index.body().contains("검토 대기"));
-        assertTrue(index.body().contains("인증·화면·반복 보조 흐름 표시"));
-        assertTrue(index.body().contains("저장 상한으로 유실"));
-        assertTrue(index.body().contains("샘플 데이터 · 실제 HUMAN/ZAP/LLM 점검 결과가 아님"));
-        assertTrue(index.body().contains("activeDispositions={INCLUDE:true,REVIEW:true,EXCLUDE:false}"));
-        assertTrue(index.body().contains("첫 점검을 시작하세요"));
-        assertTrue(index.body().contains("Burp exact scope → 로그인/HUMAN pass → ZAP 기준선 → Evidence 검토"));
-        assertTrue(index.body().contains("완료되지 않은 단계 하나만 엽니다"));
-        assertTrue(index.body().contains("data-setup-stage=\"scope\""));
-        assertTrue(index.body().contains("data-setup-pane=\"scanner\""));
-        assertTrue(index.body().contains("function selectSetupStage(stage,pinned=true)"));
-        assertTrue(index.body().contains("const autoStage=!scopeReady?'scope':!humanReady?'human':!scannerReady?'scanner':'review'"));
-        assertTrue(index.body().contains("pane.hidden=pane.dataset.setupPane!==stage"));
-        assertFalse(index.body().contains("/api/llm-run"));
-        assertFalse(index.body().contains("LLM Explorer 시작"));
-        assertFalse(index.body().contains("Judge 시작"));
-        assertTrue(index.body().contains("executionQualityLabel"));
-        assertTrue(index.body().contains("전송 전부 실패"));
-        assertTrue(index.body().contains("TLS 인증서 검증"));
-        assertTrue(index.body().contains("scannerlane"));
-        assertTrue(index.body().contains("Client "));
-        assertTrue(index.body().contains("scannerstate.completed_with_warnings"));
-        assertTrue(index.body().contains("SCANNER_RUN.status==='COMPLETED_WITH_WARNINGS'"));
-        assertTrue(index.body().contains("scannerWarning?'경고 완료'"));
-        assertTrue(index.body().contains("SCANNER_RUN.elapsed_seconds"));
-        assertTrue(index.body().contains("SCANNER_RUN.last_heartbeat_age_seconds"));
-        assertTrue(index.body().contains("lane.wait_reason"));
-        assertTrue(index.body().contains("RESPONDING_NO_NEW_TRAFFIC"));
-        assertTrue(index.body().contains("STARTING:'실행 준비 중'"));
-        assertTrue(index.body().contains("lane.passive_remaining"));
-        assertTrue(index.body().contains("lane.passive_task"));
-        assertTrue(index.body().contains("Alert 집계 전"));
-        assertFalse(index.body().contains("Traditional Spider"));
-        assertFalse(index.body().contains("AJAX Spider 보완"));
-        assertTrue(index.body().contains("실시간 실행 기록"));
-        assertTrue(index.body().contains("SCANNER_RUN.events"));
-        assertTrue(index.body().contains("id=\"scannerRunCancel\""));
-        assertTrue(index.body().contains("출처 검증 차단"));
-        assertTrue(index.body().contains("WAITING_FOR_ZAP_RESPONSE"));
-        assertTrue(index.body().contains("작업 신호"));
-        assertTrue(index.body().contains("마지막 정상 상태를 유지합니다"));
-        assertTrue(index.body().contains("1초마다 갱신"));
-        assertFalse(index.body().contains("ZAP Desktop 설정"));
-        assertTrue(index.body().contains("Docker Chromium 시작"));
-        assertTrue(index.body().contains("/api/zap-status"));
-        assertTrue(index.body().contains("!ZAP_STATUS.connected"));
-        assertTrue(index.body().contains("classList.toggle('empty-state',!EVENTS.length&&!SERVER_ROUTE_CANDIDATES.length)"));
-        assertTrue(index.body().contains("v1.0.0 · 3소스"));
-        assertTrue(index.body().contains("id=\"fScanner\" accept=\".xml,.har\""));
-        assertTrue(index.body().contains("ZAP HAR"));
-        assertTrue(index.body().contains("/api/import-har"));
-        assertTrue(index.body().contains(".graphcanvas{display:none}.graphlist{display:block}"));
-        assertTrue(index.body().contains("<div class=\"graphcanvas\" id=\"graphCanvas\" style=\"display:none\"><div id=\"cy\"></div></div>"));
-        assertTrue(index.body().contains("API·입력 차이 작업목록"));
-        assertTrue(index.body().contains("surfaceExtraction"));
-        assertTrue(index.body().contains("SERVER_SURFACE=data.surface||{endpoints:[],extractions:[]}"));
-        assertTrue(index.body().contains("function renderSurface()"));
-        assertTrue(index.body().contains("function filteredSurface()"));
-        assertTrue(index.body().contains("visibleObservations:observations"));
-        assertTrue(index.body().contains("선언은 대상 산출물에서 읽은 검토 기준이고 관측은 실제 HTTP Evidence"));
-        assertTrue(index.body().contains("item.evidenceId,item.applicability,item.reason].map(esc)"));
-        assertTrue(index.body().contains("· 로그인 필요"));
-        assertTrue(index.body().contains("등록 계정과 로그인 상태"));
-        assertTrue(index.body().contains("쿠키·토큰·subject 단서는 같은 로그인 세션의 내부 근거로 묶"));
-        assertTrue(index.body().contains("고급 세션 진단"));
-        assertTrue(index.body().contains("사용 가능"));
-        assertTrue(index.body().contains("다시 로그인 필요"));
-        assertTrue(index.body().contains("동일 인증정보 충돌"));
-        assertTrue(index.body().contains("요청 실험실"));
-        assertTrue(index.body().contains("원문 그대로"));
-        assertTrue(index.body().contains("비로그인으로 전송"));
-        assertTrue(index.body().contains("/api/request-lab"));
-        assertTrue(index.body().contains("REQUEST_LAB_GENERATION"));
-        assertTrue(index.body().contains("REQUEST_LAB_IN_FLIGHT"));
-        assertTrue(index.body().contains("REQUEST_LAB_RETRY"));
-        assertTrue(index.body().contains("sameRetry?REQUEST_LAB_RETRY.operationId:requestLabOperationId()"));
-        assertTrue(index.body().contains("eventId!==REQUEST_LAB_EVENT_ID"));
-        assertTrue(index.body().contains("data-gap=\"'+candidate+'\""));
-        assertTrue(index.body().contains("일반 미검증 조합"));
-        assertTrue(index.body().contains("SERVER_MANAGED_SESSIONS.filter(session=>session.status==='ACTIVE'"));
-        assertTrue(index.body().contains("좁은 화면용 API 목록"));
-        assertTrue(index.body().contains("renderGraphList(cellValues,visibleOperations)"));
-        assertTrue(index.body().contains("let GRAPH_LEVEL='api', GRAPH_SELECTED_GROUP=''"));
-        assertTrue(index.body().contains("<button class=\"vbtn on\" data-graph-level=\"api\">API</button>"));
-        assertTrue(index.body().contains("counts:{human:new Set(),scanner:new Set(),llm:new Set()}"));
-        assertTrue(index.body().contains("flowscope.graph-state.v5"));
-        assertTrue(index.body().contains("GRAPH_STATE.viewports[CY_GRAPH_LEVEL||GRAPH_LEVEL]"));
-        assertTrue(index.body().contains("data-detail="));
-        assertTrue(index.body().contains("상세 보기"));
-        assertTrue(index.body().contains("showOperation(item.op,0,item.eventId)"));
-        assertTrue(index.body().contains("text-overflow-wrap':'whitespace'"));
-        assertTrue(index.body().contains("관측 신원과 재사용 가능한 등록 계정 세션은 별도 상태"));
-        assertTrue(index.body().contains("ACTIVE 등록 계정 없음"));
-        assertTrue(index.body().contains("let HUMAN_RUN={active:false,completed:false,runId:''}"));
-        assertTrue(index.body().contains("const humanReady=HUMAN_RUN.completed"));
-        assertTrue(index.body().contains("syncHumanRun();syncExtension();syncScannerRun();"));
-        assertTrue(index.body().contains("setInterval(()=>{syncHumanRun();syncExtension();syncScannerRun();},1000)"));
-        assertFalse(index.body().contains("counts.human+'건 완료'"));
-        assertTrue(index.body().contains("data-source-count=\"human\""));
-        assertTrue(index.body().contains("EVENTS.filter(event=>event.coverageEligible)"));
-        assertTrue(index.body().contains("cb.addEventListener('change',()=>{activeSources[cb.value]=cb.checked;renderSurface();renderGraph();})"));
-        assertTrue(index.body().contains("if(view==='source')cy.edges('[src]').forEach"));
-        assertTrue(index.body().contains("accessByRelation=new Map()"));
-        assertTrue(index.body().contains("function showAccessEdge(edge)"));
-        assertTrue(index.body().contains("taxiTurn:accessTurn(c.idn,s)"));
-        assertTrue(index.body().contains("'label':'data(label)'"));
-        assertTrue(index.body().contains("wrapGraphLabel"));
-        assertTrue(index.body().contains("nodeHeight"));
-        assertFalse(index.body().contains("shortLabel(value.slice(p+1),36)"));
-        assertTrue(index.body().contains("API 요구 권한 0개 · BFLA 비교 비활성"));
-        assertTrue(index.body().contains("identityKindLabel(idn)"));
-        assertFalse(index.body().contains("세션 '+sessions+'개"));
-        assertTrue(index.body().contains("응답 ID가 다음 요청으로 전달된 관계는 메인 접근 그래프와 섞지 않고"));
-        assertFalse(index.body().contains("etype:'flow'"));
-        assertFalse(index.body().contains("cycleRole("));
-        assertFalse(index.body().contains("__FLOWSCOPE_CAPABILITY__"));
 
         assertEquals(403, get("/api/snapshot", null, null).statusCode());
         assertEquals(403, get("/api/snapshot", token, "https://evil.example").statusCode());
@@ -646,16 +508,12 @@ final class FlowScopeWebServerTest {
         assertEquals("OBSERVED_NOT_DECLARED", observedSurface.path("deltaState").asText());
         assertEquals("human", observedSurface.at("/observations/0/source").asText().toLowerCase());
         assertTrue(body.at("/surface/extractions").isArray());
-        assertTrue(index.body().contains("해석 실패 지점"));
-        assertTrue(index.body().contains("data-rail=\"surface\""));
-        assertTrue(index.body().contains("접근 대상 ID"));
 
         JsonNode evidence = json(get("/api/evidence?operation="
                 + encode(body.at("/events/0/op").asText()), token, origin()));
         assertEquals("FULL", evidence.at("/records/0/requestPayload/retention").asText());
         assertTrue(evidence.at("/records/0/requestPayload/bytes").asInt() > 0);
         assertEquals(64, evidence.at("/records/0/requestPayload/digest").asText().length());
-        assertTrue(index.body().contains("압축 전문 총량 상한 초과"));
     }
 
     @Test
@@ -1634,15 +1492,6 @@ final class FlowScopeWebServerTest {
         JsonNode clustered = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
                 .filter(value -> value.path("repeatCount").asInt() == 206).findFirst().orElseThrow();
         assertFalse(clustered.has("clusterEvidenceIds"));
-        JsonNode clusterFirst = json(get("/api/cluster-evidence?clusterId="
-                + encode(clustered.path("clusterId").asText()), token, origin()));
-        assertEquals(206, clusterFirst.path("total").asInt());
-        assertEquals(200, clusterFirst.path("evidenceIds").size());
-        assertTrue(clusterFirst.path("hasMore").asBoolean());
-        JsonNode clusterSecond = json(get("/api/cluster-evidence?clusterId="
-                + encode(clustered.path("clusterId").asText()) + "&offset=200", token, origin()));
-        assertEquals(6, clusterSecond.path("evidenceIds").size());
-        assertFalse(clusterSecond.path("hasMore").asBoolean());
     }
 
     private void start() throws Exception {

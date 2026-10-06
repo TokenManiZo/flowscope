@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { useState, type ReactElement } from "react"
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
@@ -484,7 +484,7 @@ describe("RequestLabDialog", () => {
     }))
     const user = userEvent.setup()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    const request = await openDraft()
+    await openDraft()
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(owner.response).toBe("HTTP/1.1 403 Forbidden"))
     const oldResult = owner.requests[0]!.result!

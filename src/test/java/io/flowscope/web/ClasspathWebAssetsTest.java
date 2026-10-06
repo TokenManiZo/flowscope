@@ -3,17 +3,16 @@ package io.flowscope.web;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ClasspathWebAssetsTest {
-    private final ClasspathWebAssets assets = new ClasspathWebAssets(ClasspathWebAssets.DefaultUi.LEGACY);
+    private final ClasspathWebAssets assets = new ClasspathWebAssets();
 
     @Test
-    void resolvesEachMigrationHtmlMount() {
-        assertEquals("/web/index.html", assets.resolve("/").orElseThrow().resource());
-        assertEquals("/web/index.html", assets.resolve("/legacy/").orElseThrow().resource());
+    void resolvesTheReactAppAtRootAndAppMount() {
+        assertEquals("/web/app/index.html", assets.resolve("/").orElseThrow().resource());
         assertEquals("/web/app/index.html", assets.resolve("/app/").orElseThrow().resource());
+        assertTrue(assets.resolve("/legacy/").isEmpty());
     }
 
     @Test
@@ -29,10 +28,5 @@ final class ClasspathWebAssetsTest {
     @Test
     void rejectsEncodedBackslashBeforeLookingUpResources() {
         assertTrue(assets.resolve("/app/assets/%5csecret").isEmpty());
-    }
-
-    @Test
-    void rejectsNullDefaultUi() {
-        assertThrows(NullPointerException.class, () -> new ClasspathWebAssets(null));
     }
 }

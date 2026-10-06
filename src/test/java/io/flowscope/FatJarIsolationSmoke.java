@@ -129,21 +129,13 @@ public final class FatJarIsolationSmoke {
             requireEntry(entries, "META-INF/NOTICE-frontend.txt");
             requireAny(entries, "hashed React JavaScript", name -> name.matches("web/app/assets/[^/]+-[A-Za-z0-9_-]+\\.js"));
             requireAny(entries, "hashed React CSS", name -> name.matches("web/app/assets/[^/]+-[A-Za-z0-9_-]+\\.css"));
-            requireExactly(entries, "web/vendor/cytoscape-3.26.0.min.js", 1);
+            requireNone(entries, "legacy web UI", name -> name.equals("web/index.html") || name.startsWith("web/vendor/"));
             requireNone(entries, "node_modules", name -> name.contains("node_modules/"));
             requireNone(entries, "Playwright", name -> name.toLowerCase(Locale.ROOT).contains("playwright"));
             requireNone(entries, "Vitest", name -> name.toLowerCase(Locale.ROOT).contains("vitest"));
             assertAllVersionedSourceNamespacesWereRelocated(jar, entries);
             assertNoForeignClassNamespace(entries);
             assertNoFixtureSentinels(jar, entries);
-
-            String legacyCytoscapeReference = "/vendor/cytoscape-3.26.0.min.js";
-            assertDoesNotReference(jar, "web/app/index.html", legacyCytoscapeReference);
-            for (String entry : entries) {
-                if (entry.matches("web/app/assets/[^/]+-[A-Za-z0-9_-]+\\.js")) {
-                    assertDoesNotReference(jar, entry, legacyCytoscapeReference);
-                }
-            }
         }
     }
 
@@ -331,17 +323,6 @@ public final class FatJarIsolationSmoke {
         String unexpected = entries.stream().filter(matches).findFirst().orElse(null);
         if (unexpected != null) {
             throw new IllegalStateException("Release JAR must not contain " + description + ": " + unexpected);
-        }
-    }
-
-    private static void assertDoesNotReference(JarFile jar, String entryName, String forbiddenReference) throws Exception {
-        JarEntry entry = jar.getJarEntry(entryName);
-        if (entry == null) {
-            throw new IllegalStateException("Release JAR is missing " + entryName);
-        }
-        String content = new String(jar.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8);
-        if (content.contains(forbiddenReference)) {
-            throw new IllegalStateException(entryName + " must not reference legacy Cytoscape vendor asset");
         }
     }
 

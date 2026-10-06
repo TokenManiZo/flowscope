@@ -371,26 +371,6 @@ public final class SnapshotJsonWriter {
         return json.writeValueAsBytes(out);
     }
 
-    public byte[] clusterEvidence(Pipeline.Result result, String clusterId, int offset, int limit)
-            throws JsonProcessingException {
-        ObservationCollapser.Group cluster = ObservationCollapser.byEvidence(result.records).values().stream()
-                .filter(value -> value.id().equals(clusterId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("해당 반복 묶음을 찾을 수 없습니다."));
-        List<String> page = cluster.evidenceIds().stream().skip(offset).limit(limit).toList();
-        ObjectNode out = json.createObjectNode();
-        out.put("clusterId", cluster.id());
-        out.put("repeatCount", cluster.count());
-        out.put("firstSeen", cluster.firstSeen());
-        out.put("lastSeen", cluster.lastSeen());
-        out.set("evidenceIds", json.valueToTree(page));
-        out.put("total", cluster.evidenceIds().size());
-        out.put("offset", offset);
-        out.put("limit", limit);
-        out.put("hasMore", (long) offset + page.size() < cluster.evidenceIds().size());
-        return json.writeValueAsBytes(out);
-    }
-
     /**
      * PR #11 evidence contract (D-145): per-record structured parameter metadata for the request diff.
      * Derived from the same masked stored record the Surface uses; never values, preview, HTTP text or raw vault.

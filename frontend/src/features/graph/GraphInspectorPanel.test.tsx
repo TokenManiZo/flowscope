@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, expect, it, vi } from "vitest"
 
-import type { ManagedSession, Snapshot } from "@/lib/api/types"
+import type { Snapshot } from "@/lib/api/types"
 import { anonymousInspectionFixture } from "@/test/fixtures"
 import { createTestQueryClient, renderWithQueryClient, seedHumanRun } from "@/test/render"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
@@ -21,7 +21,6 @@ const snapshot: Snapshot = {
 const selection: GraphSelection = { operation: "GET /orders/{id}", resource: "order:1", identity: "alice", source: "human", evidenceIds: ["ev-1"] }
 
 const secret = "GET /orders/1 HTTP/1.1\nCookie: SECRET-RAW"
-const session: ManagedSession = { handle: "opaque", accountId: "acct-1", accountLabel: "alice", service: "https://api.example.test", status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "now", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }
 const draft = (extra: Record<string, unknown> = {}) => ({ eventId: "ev-1", service: "https://api.example.test", request: secret, response: "RAW-RESPONSE", rawRequestRetained: true, rawResponseRetained: true, requestEditable: true, requestCharset: "UTF-8", responseCharset: "UTF-8", observedIdentity: "alice", reusableSession: "managed", reusableAccountId: "acct-1", message: "draft", ...extra })
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
 function stubFetch(body = draft()) {

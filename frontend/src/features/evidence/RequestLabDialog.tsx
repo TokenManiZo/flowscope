@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Maximize2, Minimize2, Pencil, Plus, Send, X } from "lucide-react"
+import { Maximize2, Minimize2, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -97,7 +97,6 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const credentialsRequired = !!entry && (mode === "ORIGINAL" || (entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
   const busy = sending || applyingCredentials || deleting || closing
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
-  const controlClass = "h-7 rounded-md border border-input bg-background px-2 text-[0.8rem] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
   const settingClass = "h-[36px] rounded-md border border-input bg-background px-2.5 text-[14px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
 
   function boundSize(width: number, height: number) {
