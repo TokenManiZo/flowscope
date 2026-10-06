@@ -78,7 +78,7 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   await userEvent.click(screen.getByText("기록 연결 정보"))
   expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("ev-human")
   await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
-  await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ }))
+  await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · 비로그인 · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
 })

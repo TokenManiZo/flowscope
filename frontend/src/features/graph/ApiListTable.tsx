@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { Fragment, useMemo, useState, type KeyboardEvent } from "react"
 import { ChevronDown, ChevronRight, Search } from "lucide-react"
@@ -44,8 +45,8 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
       <tbody>
         {shown.map(row => <tr key={row.resource} tabIndex={0} aria-label={row.label} aria-selected={selectedId === `resource:${row.resource}`} onClick={() => onSelectObject(row.resource, row.cells)} onKeyDown={activate(() => onSelectObject(row.resource, row.cells))} className={cn("h-10 cursor-pointer border-b border-border/70 last:border-0 hover:bg-muted/40", selectedId === `resource:${row.resource}` && "bg-sky-500/10")}>
           <td className="truncate px-2 font-mono text-sm" title={row.resource}>{row.label}</td>
-          <td className="truncate px-2">{row.owner ?? <span className="text-muted-foreground/70">미확정</span>}</td>
-          <td className="px-2"><div className="flex flex-wrap gap-x-3 gap-y-1">{row.identities.map(identity => <span key={identity.name} className="inline-flex items-center gap-1 whitespace-nowrap">{identity.name}{identity.codes.map(code => <StatusBadge key={code} code={code} />)}{identity.suspicious && <span className="rounded border border-red-500/50 bg-red-500/15 px-1 text-[11px] font-semibold text-red-600 dark:text-red-300">IDOR 후보</span>}</span>)}</div></td>
+          <td className="truncate px-2">{row.owner ? identityLabel(row.owner) : <span className="text-muted-foreground/70">미확정</span>}</td>
+          <td className="px-2"><div className="flex flex-wrap gap-x-3 gap-y-1">{row.identities.map(identity => <span key={identity.name} className="inline-flex items-center gap-1 whitespace-nowrap">{identityLabel(identity.name)}{identity.codes.map(code => <StatusBadge key={code} code={code} />)}{identity.suspicious && <span className="rounded border border-red-500/50 bg-red-500/15 px-1 text-[11px] font-semibold text-red-600 dark:text-red-300">IDOR 후보</span>}</span>)}</div></td>
         </tr>)}
         {!all && rows.length > OBJECT_PREVIEW && <tr tabIndex={0} className="h-10 cursor-pointer text-muted-foreground hover:bg-muted/40" onClick={() => setAll(true)} onKeyDown={activate(() => setAll(true))}><td colSpan={3} className="px-2 font-mono">… {rows.length - OBJECT_PREVIEW}개 더</td></tr>}
       </tbody>

@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible"
@@ -85,7 +86,7 @@ export function ParameterMapPage({ viewSwitcher }: { viewSwitcher?: ReactNode })
         <option value="">모든 주체</option><option value="HUMAN">H · HUMAN</option><option value="SCANNER">S · SCANNER</option><option value="LLM">L · LLM</option><option value="UNKNOWN">UNKNOWN</option>
       </select></label>
       <label className="mt-3 block space-y-2"><span>관측 신원 / Gap 신원</span><select className={selectClass} value={filters.identity[0] ?? ""} onChange={event => setFilters(current => ({ ...current, identity: event.target.value ? [event.target.value] : [] }))}>
-        <option value="">모든 신원</option>{[...new Set((snapshot.data?.surface?.parameterGaps ?? []).map(gap => gap.identity ?? "UNKNOWN"))].sort().map(identity => <option key={identity}>{identity}</option>)}
+        <option value="">모든 신원</option>{[...new Set((snapshot.data?.surface?.parameterGaps ?? []).map(gap => gap.identity ?? "UNKNOWN"))].sort().map(identity => <option key={identity} value={identity}>{identityLabel(identity)}</option>)}
       </select></label>
       <label className="block space-y-2"><span>Gap 종류</span><select className={selectClass} value={gapType} onChange={event => setFilters(current => ({ ...current, gapTypes: event.target.value ? [event.target.value as SurfaceParameterGap["type"]] : [] }))}>
         <option value="">모든 Gap 종류</option>{gapType === "discovery" && <option value="discovery" disabled>발견 범위 전체</option>}{availableGapTypes.map(value => <option key={value} value={value}>{gapTypeLabels[value]}</option>)}

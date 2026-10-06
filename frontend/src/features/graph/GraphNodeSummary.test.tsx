@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
-import type { Cell } from "@/lib/api/types"
+import type { Cell, EventRecord } from "@/lib/api/types"
 import { targetSnapshot } from "@/test/fixtures"
 import { GraphInspectorPanel, GRAPH_OPEN_HINT } from "./GraphInspectorPanel"
 import { navigateHierarchy, projectHierarchy, type GraphNavigation } from "./graphHierarchy"
@@ -64,4 +64,21 @@ it("shows a publicly readable object as 공개 instead of naming an owner", () =
   const summary = screen.getByRole("region", { name: "노드 요약" })
   expect(within(summary).getByText("접근한 신원 · 조회 공개")).toBeVisible()
   expect(within(summary).queryByText(/소유자 USER A|\(소유자\)/)).not.toBeInTheDocument()
+})
+
+
+it("keeps anonymous verdicts and evidence on one 비로그인 card after selecting an API", () => {
+  const anonymousCell = cell({ idn: "anon", overall: "deny", perSource: { human: "deny" } })
+  const observed: EventRecord = { eventId: "anon-evidence", method: "GET", path: "/api/orders/101", status: 401, fp: "anon", idn: "anon", role: "Anonymous", source: "human", op: anonymousCell.op, resource: anonymousCell.resource, timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN", tool: "BROWSER", phase: "EXPLORATION", executionTrust: "OBSERVED", runId: "run", authState: "ANONYMOUS", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "anon-cluster", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: [], objects: [], verdict: "deny" }
+  anonymousCell.evidenceIds = [observed.eventId]
+  const data = targetSnapshot({ cells: [anonymousCell], events: [observed] })
+  const groupId = projectHierarchy(data, filters, site).groups[0].id
+  const projection = projectHierarchy(data, filters, navigateHierarchy(site, "operation", groupId, anonymousCell.op))
+  const api = projection.operations[0]
+  renderWithQueryClient(<GraphInspectorPanel selection={api.selection} event={null} snapshot={data} node={api} projection={projection} />)
+  const card = screen.getByRole("listitem", { name: "비로그인 관측 기록 1건" })
+  expect(within(card).getByText("비로그인")).toBeVisible()
+  expect(within(card).getByText("DENY")).toBeVisible()
+  expect(screen.queryByText("anon")).not.toBeInTheDocument()
+  expect(api.selection.cells[0].idn).toBe("anon")
 })

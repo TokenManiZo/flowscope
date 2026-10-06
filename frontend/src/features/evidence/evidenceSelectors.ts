@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { EventRecord, Source } from "@/lib/api/types"
 
 export const trafficClassDefaults = {
@@ -35,7 +36,7 @@ export function visibleEvidence(events: readonly EventRecord[], filters: Evidenc
     const dispositionVisible = filters.dispositions[item.trafficDisposition as keyof typeof filters.dispositions] === true
     const trafficVisible = !(item.trafficClass in trafficClassDefaults) || filters.trafficClasses[item.trafficClass] === true
     const query = filters.query?.trim().toLowerCase()
-    const queryVisible = !query || `${item.method} ${item.path} ${item.idn}`.toLowerCase().includes(query)
+    const queryVisible = !query || `${item.method} ${item.path} ${item.idn} ${identityLabel(item.idn)}`.toLowerCase().includes(query)
     return sourceVisible && dispositionVisible && trafficVisible && queryVisible
   })
   if (filters.expandRepeats) return visible

@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { useState } from "react"
 import { Check, CircleHelp, CircleMinus, Clock, ShieldAlert, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -41,13 +42,13 @@ export function ParameterCoverageMatrix({ cells, onSelect }: { cells: readonly P
     <div role="region" aria-label="파라미터 커버리지 표" tabIndex={0} className="max-h-[36rem] min-w-0 max-w-full overflow-auto overscroll-contain rounded-md border">
       <Table containerClassName="w-max min-w-full overflow-visible" className="min-w-[48rem]">
         <TableHeader><TableRow><TableHead className="sticky left-0 bg-background">{mode === "source" ? "요청 생성 주체" : "신원 / 역할"}</TableHead>{columns.map(([key, label]) => <TableHead key={key}>{label}</TableHead>)}</TableRow></TableHeader>
-        <TableBody>{rows.map(row => <TableRow key={row}><TableHead scope="row" className="sticky left-0 max-w-40 whitespace-normal bg-background [overflow-wrap:anywhere]">{mode === "source" ? sourceLabel[row] : row}</TableHead>{columns.map(([subject]) => <TableCell key={subject} className="w-56 whitespace-normal align-top">
+        <TableBody>{rows.map(row => <TableRow key={row}><TableHead scope="row" className="sticky left-0 max-w-40 whitespace-normal bg-background [overflow-wrap:anywhere]">{mode === "source" ? sourceLabel[row] : row.split(" / ").map((part, index) => index === 0 ? identityLabel(part) : part).join(" / ")}</TableHead>{columns.map(([subject]) => <TableCell key={subject} className="w-56 whitespace-normal align-top">
           {(grouped.get(JSON.stringify([row, subject])) ?? []).map(cell => {
             const state = validationCellState(cell), presentation = states[state], Icon = presentation.icon
             const target = cell.targetResource ? resourceLabel(cell.targetResource, cell.endpoint.service) : "UNKNOWN"
             const label = `${state} · ${presentation.label}`
-            return <div role="group" key={cell.id} aria-label={`검증 좌표 ${cell.identity ?? "UNKNOWN"} / ${cell.role ?? "UNKNOWN"} / ${cell.source ?? "UNKNOWN"} / ${cell.subjectClass} / ${cell.targetResource ?? "UNKNOWN"}`} className="mb-2 max-w-64">
-              <Button type="button" size="sm" variant="outline" disabled={!onSelect} aria-label={`${label} 상세 보기`} className={`h-auto w-full justify-start whitespace-normal py-2 text-left ${presentation.color}`} onClick={() => onSelect?.(cell)}><Icon aria-hidden="true" className="size-4" /><span><b>{state}</b><span className="block text-xs font-normal">{presentation.label}</span><span className="sr-only"> · 검증 신원 {cell.identity ?? "UNKNOWN"} · 검증 역할 {cell.role ?? "UNKNOWN"} · {cell.source} · {target}</span></span></Button>
+            return <div role="group" key={cell.id} aria-label={`검증 좌표 ${identityLabel(cell.identity ?? "UNKNOWN")} / ${cell.role ?? "UNKNOWN"} / ${cell.source ?? "UNKNOWN"} / ${cell.subjectClass} / ${cell.targetResource ?? "UNKNOWN"}`} className="mb-2 max-w-64">
+              <Button type="button" size="sm" variant="outline" disabled={!onSelect} aria-label={`${label} 상세 보기`} className={`h-auto w-full justify-start whitespace-normal py-2 text-left ${presentation.color}`} onClick={() => onSelect?.(cell)}><Icon aria-hidden="true" className="size-4" /><span><b>{state}</b><span className="block text-xs font-normal">{presentation.label}</span><span className="sr-only"> · 검증 신원 {identityLabel(cell.identity ?? "UNKNOWN")} · 검증 역할 {cell.role ?? "UNKNOWN"} · {cell.source} · {target}</span></span></Button>
             </div>
           })}
           {!grouped.has(JSON.stringify([row, subject])) && <span className="text-muted-foreground">— 서버 좌표 없음</span>}

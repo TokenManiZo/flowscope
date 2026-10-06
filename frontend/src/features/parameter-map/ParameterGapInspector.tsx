@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
@@ -33,7 +34,7 @@ function InspectorBody({ snapshot, projection, suspended = false, onClose }: Pro
   if (!gap || !projection.selection || !key) return null
   return <section aria-label="Parameter Gap 상세" data-gap-id={gap.id} className="min-w-0 space-y-4 p-4 text-sm [overflow-wrap:anywhere]">
     <header className="flex items-start justify-between gap-2">
-      <div className="min-w-0"><h2 className="break-all font-mono font-semibold">{key.method} {stripOrigin(key.pathTemplate) || key.pathTemplate}</h2><p className="text-muted-foreground">{locationLabel(key.location)} {stripOrigin(parameter?.fieldPath ?? key.canonicalPath) || key.canonicalPath} · {gap.identity ?? "UNKNOWN"}</p></div>
+      <div className="min-w-0"><h2 className="break-all font-mono font-semibold">{key.method} {stripOrigin(key.pathTemplate) || key.pathTemplate}</h2><p className="text-muted-foreground">{locationLabel(key.location)} {stripOrigin(parameter?.fieldPath ?? key.canonicalPath) || key.canonicalPath} · {identityLabel(gap.identity ?? "UNKNOWN")}</p></div>
       <Button variant="ghost" size="icon-sm" aria-label="선택 상세 닫기" onClick={onClose}><X /></Button>
     </header>
     <EvidenceActionList events={[...eventById.values()]} snapshot={snapshot} disabled={suspended} />

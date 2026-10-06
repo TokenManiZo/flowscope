@@ -209,3 +209,14 @@ it("uses the displayed ROOT group for API and group search destinations", () => 
   expect(searchDestination(group, initial, site, false).nodeId).toBe(`api-group:${root}`)
   expect(index.byKey.has(searchKey("api-group", service, JSON.stringify([service, "login"])))).toBe(false)
 })
+
+
+it("finds 비로그인 and anon by the same canonical identity and reveals the labelled node", () => {
+  const anonymousCell = cell({ idn: "anon" })
+  const index = buildGraphSearchIndex([anonymousCell])
+  const key = searchKey("identity", service, "anon")
+  expect(index.byKey.get(key)).toMatchObject({ title: "비로그인", value: "anon" })
+  for (const query of ["비로그인", "anon"]) expect(searchGraph(index, query, initial).keys.has(key)).toBe(true)
+  const graph = projectHierarchy(targetSnapshot({ cells: [anonymousCell] }), filters, { ...initial, level: "group", groupId: operationGroup(operation).id })
+  expect(graph.identities.find(node => node.id === "identity:anon")).toMatchObject({ label: "비로그인", selection: { identity: "anon", cells: [anonymousCell] } })
+})

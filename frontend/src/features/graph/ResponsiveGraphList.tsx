@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { Button } from "@/components/ui/button"
 import type { Snapshot } from "@/lib/api/types"
@@ -43,7 +44,7 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, r
       }
       const edges = hierarchy ? hierarchy.edges.filter(edge => (hierarchy.kind === "group" ? edge.targetId === item.id : edge.relation === (item.selection.resource ? "operation-resource" : "identity-operation") && edge.selection.cellKeys.some(key => (item as HierarchyNode).selection.cellKeys.includes(key)))) : projection.edges.filter((edge) => edge.targetId === item.id)
       const semantics = edges.map((edge) => `${edge.sourceText} · ${item.verdictText}${edge.countLabel ? ` · ${edge.countLabel}` : ""}`).join(" / ") || `UNKNOWN · ${item.verdictText}`
-      const identityResource = hierarchy?.kind === "group" ? item.selection.identity ?? "복수 신원" : `${item.selection.identity ?? "UNKNOWN"} · ${item.selection.resource ?? "객체 없음"}`
+      const identityResource = hierarchy?.kind === "group" ? identityLabel(item.selection.identity ?? "복수 신원") : `${identityLabel(item.selection.identity ?? "UNKNOWN")} · ${item.selection.resource ?? "객체 없음"}`
       const card = relationshipNodeCard(item, projection)
       const op = ["operation", "observed-operation"].includes(item.kind) ? item.selection.operation ?? "" : ""
       const nodeId = ["observed-operation", "support-operation"].includes(item.kind) ? item.id : item.selection.resource ? `resource:${item.selection.resource}` : `operation:${item.selection.operation}`

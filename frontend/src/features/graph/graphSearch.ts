@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { Snapshot } from "@/lib/api/types"
 import type { GraphFilters } from "./graphProjection"
 import { graphContents, objectGroupKey, operationGroup, navigateHierarchy, type GraphNavigation, type GraphReveal, type HierarchyProjection } from "./graphHierarchy"
@@ -37,7 +38,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     add("target", group.service, group.service, group.service, context)
     add("api-group", group.service, group.id, group.label, context)
     add("operation", group.service, cell.op, cell.op.replace(/^https?:\/\/\S+\s+/i, ""), context)
-    add("identity", group.service, cell.idn, cell.idn, context)
+    add("identity", group.service, cell.idn, identityLabel(cell.idn), context)
     if (cell.resource) {
       add("resource", group.service, cell.resource, cell.resource, context)
       const object = objectGroupKey(cell.resource)
@@ -56,7 +57,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     add("target", group.service, group.service, group.service, context)
     add("api-group", group.service, group.id, group.label, context)
     add(kind, group.service, event.op, event.op.replace(/^https?:\/\/\S+\s+/i, ""), context)
-    add("identity", group.service, event.idn, event.idn, context)
+    add("identity", group.service, event.idn, identityLabel(event.idn), context)
   }
   for (const candidate of routeCandidates) {
     const group = resolveGroup(candidate.service, candidate.pathTemplate)

@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { ApiActions } from "@/features/api-management/ApiActions"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
@@ -51,7 +52,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const unjudgedCount = events.filter(item => ![item.eventId, ...(item.clusterEvidenceIds ?? [])].some(id => judgedIds.has(id))).length
   const title = structural && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : "선택한 그래프 항목"
   const apiOp = selection.routeCandidate ? `${selection.routeCandidate.service} ${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : selection.operation && (!node || ["operation", "observed-operation"].includes(node.kind)) ? selection.operation : null
-  const subtitle = [selection.identity, selection.resource ? stripOrigin(selection.resource) || selection.resource : null].filter(Boolean).join(" · ")
+  const subtitle = [selection.identity ? identityLabel(selection.identity) : null, selection.resource ? stripOrigin(selection.resource) || selection.resource : null].filter(Boolean).join(" · ")
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="선택 작업" actions={apiOp && <ApiActions snapshot={snapshot} operation={apiOp} disabled={suspended} />} description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
       {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
