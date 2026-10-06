@@ -102,6 +102,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default RequestLabDraft requestLabDraft(String evidenceId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
+        /** Request Lab이 이 기록을 편집·재전송할 원문(메모리 또는 저장본)을 갖고 있는지. 화면이 열 기록을 고르는 데 쓴다. */
+        default boolean requestLabRawAvailable(RequestRecord record) { return false; }
         default List<RequestLabCredentialHeader> requestLabCredentials(String evidenceId, String request,
                                                                        CredentialMode mode, String accountId) {
             throw new UnsupportedOperationException("request lab credentials are unavailable");
@@ -406,7 +408,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.datasetRevision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
-                        state.droppedRecords(), state.executionSummaries()));
+                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {

@@ -606,7 +606,9 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {/* 전송 인증 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
           {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 인증으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}
           {entry && view !== "original" && mode === "RAW" && <p className="px-3 py-1.5 text-xs text-muted-foreground">직접 입력: 요청에 쓴 인증 헤더를 바꾸지 않고 그대로 보냅니다.</p>}
-          {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부만 남아 있습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
+          {draft && <>{!draft.rawRequestRetained
+            ? <p role="status" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다. 이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요.</p>
+            : !draft.rawResponseRetained && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">응답 원문은 일부만 남아 있습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
         </div>
         {draft && <>
           <div ref={editorsRef} role="group" aria-label="Request Lab 요청 및 응답" className="grid min-h-0 min-w-0 flex-1 overflow-hidden" style={{ "--request-lab-split": `${split}%`, gridTemplateColumns: panelFocus === "both" ? "minmax(0,var(--request-lab-split)) 10px minmax(0,1fr)" : "minmax(0,1fr)" } as CSSProperties}>

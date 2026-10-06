@@ -576,6 +576,9 @@ describe("RequestLabDialog", () => {
     expect(status.closest('[data-slot="card"]')).toBeNull()
     expect(status).not.toHaveTextContent("GET /masked")
     expect(status).not.toHaveTextContent("event-7")
+    // 원문이 없어 보낼 수 없는 이유와, 다시 보내려면 무엇을 해야 하는지 알려 준다.
+    expect(status).toHaveTextContent("일부만 남아 있어 편집·재전송할 수 없습니다")
+    expect(status).toHaveTextContent("이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요")
   })
 
   it("leaves an absent server owner unset instead of proposing the observed requester as owner", () => {

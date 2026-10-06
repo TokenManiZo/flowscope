@@ -2249,6 +2249,11 @@ public final class FlowScopeExtension implements BurpExtension {
                 openDraftInRepeater(record, prepareHumanRequest(record, request, credentialMode, accountId));
                 return record;
             }
+            @Override public boolean requestLabRawAvailable(RequestRecord record) {
+                // 메모리 원문이 없어도 프로젝트에 잘리지 않고 저장된 원문이 있으면 Request Lab으로 보낼 수 있다.
+                return rawExchanges.requestRetained(record)
+                        || record.requestPayload != null && record.requestPayload.retained();
+            }
             @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
                 RequestRecord record = evidenceRecord(evidenceId);
                 TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);

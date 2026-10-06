@@ -85,6 +85,17 @@ public final class SnapshotJsonWriter {
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords,
                         List<RunExecutionLedger.Summary> executionSummaries) throws JsonProcessingException {
+        return write(revision, datasetRevision, result, config, assessments, validations, managedSessions,
+                routeCandidates, droppedRecords, executionSummaries, record -> false);
+    }
+
+    /** {@code rawAvailable}: Request Lab이 편집·재전송할 원문(메모리 또는 저장본)이 있는 기록. 값 자체는 내보내지 않는다. */
+    public byte[] write(long revision, long datasetRevision, Pipeline.Result result, AnalysisConfig config,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates, long droppedRecords,
+                        List<RunExecutionLedger.Summary> executionSummaries,
+                        java.util.function.Predicate<RequestRecord> rawAvailable) throws JsonProcessingException {
         config = config.snapshotCopy();
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
@@ -95,7 +106,7 @@ public final class SnapshotJsonWriter {
                         && record.runId != null && record.runId.startsWith("demo-")));
         var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
-        root.set("events", events(result));
+        root.set("events", events(result, rawAvailable));
         root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
                 .map(GraphObservationFact::from).toList()));
@@ -226,7 +237,7 @@ public final class SnapshotJsonWriter {
     }
 
 
-    private ArrayNode events(Pipeline.Result result) {
+    private ArrayNode events(Pipeline.Result result, java.util.function.Predicate<RequestRecord> rawAvailable) {
         Map<String, ObservationCollapser.Group> clusters = ObservationCollapser.byEvidence(result.records);
         Map<String, Verdict> verdicts = new LinkedHashMap<>();
         for (AuthorizationAnalysis.CoverageCell cell : result.analysis.cells()) {
@@ -248,6 +259,7 @@ public final class SnapshotJsonWriter {
             event.put("op", record.op);
             if (record.resource == null) event.putNull("resource"); else event.put("resource", record.resource);
             event.put("timestamp", record.timestamp);
+            if (rawAvailable.test(record)) event.put("rawAvailable", true);
             event.put("sourceDetail", record.sourceDetail.name());
             event.put("orchestrator", record.orchestrator.name());
             event.put("tool", record.tool.name());

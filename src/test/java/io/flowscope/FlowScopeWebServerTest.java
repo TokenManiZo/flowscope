@@ -1496,6 +1496,18 @@ final class FlowScopeWebServerTest {
         assertFalse(clustered.has("clusterEvidenceIds"));
     }
 
+    @Test
+    void marksOnlyEventsWhoseRequestLabRawIsStillInMemory() throws Exception {
+        start();
+        // 원문이 없으면 표시하지 않는다(화면은 없는 값을 false로 본다). 원문 값 자체는 스냅샷에 넣지 않는다.
+        JsonNode without = json(get("/api/snapshot", token, origin()));
+        assertFalse(without.at("/events/0").has("rawAvailable"));
+        state.rawAvailable = true;
+        state.rebuild();
+        JsonNode with = json(get("/api/snapshot", token, origin()));
+        assertTrue(with.at("/events/0/rawAvailable").asBoolean());
+    }
+
     private void start() throws Exception {
         server = new FlowScopeWebServer(state, 0);
         server.start();
@@ -1634,6 +1646,7 @@ final class FlowScopeWebServerTest {
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
+        private volatile boolean rawAvailable;
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
         private volatile int credentialPreviewCount;
         private volatile boolean rejectCredentialPreview;
@@ -1857,6 +1870,7 @@ final class FlowScopeWebServerTest {
             repeaterAccountId = accountId;
             return value;
         }
+        @Override public boolean requestLabRawAvailable(RequestRecord record) { return rawAvailable; }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
             RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId))
                     .findFirst().orElseThrow();

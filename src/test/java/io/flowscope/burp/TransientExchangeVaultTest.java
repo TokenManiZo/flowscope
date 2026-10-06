@@ -92,6 +92,23 @@ final class TransientExchangeVaultTest {
     }
 
     @Test
+    void requestRetainedMatchesWhatRequestLabCanEdit() {
+        // 스냅샷이 매번 부르는 보존 여부 확인은 원문 조회와 같은 답을 내야 한다(없음·한도 초과·보존·삭제 후).
+        TransientExchangeVault vault = new TransientExchangeVault(8, 64, 128);
+        RequestRecord small = record("/small"), large = record("/large"), missing = record("/missing");
+        vault.put(small, new byte[]{1, 2}, 2, new byte[]{3}, 1);
+        byte[] oversized = "GET /large HTTP/1.1".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        vault.put(large, oversized, oversized.length, null, 0);
+
+        assertTrue(vault.requestRetained(small));
+        assertFalse(vault.requestRetained(large));
+        assertFalse(vault.requestRetained(missing));
+        assertFalse(vault.requestRetained(null));
+        vault.clear();
+        assertFalse(vault.requestRetained(small));
+    }
+
+    @Test
     void reportsOversizedPartsWithoutRetainingTheirContents() {
         TransientExchangeVault vault = new TransientExchangeVault(8, 8, 32);
         RequestRecord record = record("/large");
