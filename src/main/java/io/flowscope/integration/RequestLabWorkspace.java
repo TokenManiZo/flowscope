@@ -53,7 +53,8 @@ public record RequestLabWorkspace(long revision, Map<String, Tab> tabs) {
             name = Masking.maskSecrets(name.trim());
             if (name.length() > 80 || !name.equals(Masking.maskSecrets(name))) throw new IllegalArgumentException("invalid masked Request Lab name");
             request = safeHttp(request, 1_048_576);
-            if (credentialMode == null || !java.util.Set.of("ORIGINAL", "ANONYMOUS", "ACCOUNT").contains(credentialMode)) {
+            // RAW는 Request Lab의 '직접 입력' 전송 인증이다. 웹 서버의 CredentialMode와 같은 목록을 받아야 저장이 실패하지 않는다.
+            if (credentialMode == null || !java.util.Set.of("ORIGINAL", "ANONYMOUS", "ACCOUNT", "RAW").contains(credentialMode)) {
                 throw new IllegalArgumentException("invalid Request Lab credentials");
             }
         }
