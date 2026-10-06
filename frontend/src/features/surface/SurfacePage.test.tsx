@@ -229,3 +229,23 @@ it("opens existing observations when inputs are empty and makes linked ordinals 
   await user.click(screen.getByRole("button", { name: "연결 관측 기록 #703 보기" }))
   expect(openEvidenceSelection).toHaveBeenLastCalledWith("ev-703", surfaceEvent.op, snapshotFixture.datasetRevision ?? snapshotFixture.identityRevision ?? 0)
 })
+
+
+it("preserves a registered account named anon instead of calling it 비로그인", async () => {
+  const accountId = "registered-user"
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = {
+    ...snapshotFixture,
+    accounts: [{ id: accountId, label: "anon", role: "User", target: "https://api.example.test:443", color: "", authArtifactCount: 0 }],
+    events: [{ ...surfaceEvent, idn: accountId }],
+    surface: { extractions: [], probes: [], endpoints: [{
+      key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" },
+      observedSources: ["HUMAN"], observations: [{ evidenceId: surfaceEvent.eventId, source: "HUMAN", runId: "human-1", identity: accountId, status: 200 }],
+      declarations: [], parameters: [], deltaState: "ONE_SOURCE_OBSERVED",
+    }] },
+  }
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  await userEvent.click(screen.getByRole("button", { name: /API 상세$/ }))
+  await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
+  expect(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ })).toBeVisible()
+  expect(screen.queryByRole("button", { name: /관측 기록 상세.*비로그인/ })).not.toBeInTheDocument()
+})
