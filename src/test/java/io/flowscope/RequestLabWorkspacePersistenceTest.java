@@ -9,6 +9,7 @@ import io.flowscope.integration.GraphWorkspace;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.RequestLabWorkspace;
 import io.flowscope.integration.SqliteProjectStore;
+import io.flowscope.web.FlowScopeWebServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
@@ -128,6 +129,28 @@ final class RequestLabWorkspacePersistenceTest {
         ObjectNode old = (ObjectNode) new ObjectMapper().readTree(Files.readString(file));
         old.put("schema_version", 7); old.remove("requestLabWorkspace"); Files.writeString(file, old.toString());
         assertEquals(RequestLabWorkspace.empty(), codec.load(file).requestLabWorkspace());
+    }
+
+    @Test void savesEveryRequestLabCredentialModeIncludingDirectInputAndRejectsUnknownModes() throws Exception {
+        // 직접 입력(RAW)으로 보낸 요청도 저장돼야 한다. 거부되면 자동 저장이 실패하고 Request Lab 닫기가 막힌다.
+        var workspace = RequestLabWorkspace.empty();
+        int id = 1;
+        for (FlowScopeWebServer.CredentialMode mode : FlowScopeWebServer.CredentialMode.values()) {
+            workspace = new RequestLabWorkspace.Change("create", id, "모드 " + mode, REQUEST, mode.name(), null, false, false, id)
+                    .apply(workspace, EVIDENCE);
+            assertEquals(mode.name(), workspace.tab(EVIDENCE).entries().get(id).credentialMode());
+            id++;
+        }
+        var raw = new RequestLabWorkspace.Change("update", 1, null, null, "RAW", null, false, null, null).apply(workspace, EVIDENCE);
+        assertEquals("RAW", raw.tab(EVIDENCE).entries().get(1).credentialMode());
+        assertFalse(raw.tab(EVIDENCE).entries().get(1).request().contains("AUTH-SECRET"), "직접 입력도 저장본의 인증값은 가린다");
+        Path database = temp.resolve("modes.db");
+        var sqlite = new SqliteProjectStore(new ProjectStore());
+        save(sqlite, database, raw);
+        assertEquals(raw, sqlite.load(database).requestLabWorkspace());
+        var unchanged = raw;
+        assertThrows(IllegalArgumentException.class, () -> new RequestLabWorkspace.Change("update", 1, null, null, "TYPO", null, false, null, null)
+                .apply(unchanged, EVIDENCE));
     }
 
     @Test void masksFoldedHeadersAllDuplicateKeysAndSecretObjectsAndEnforcesLimits() {
