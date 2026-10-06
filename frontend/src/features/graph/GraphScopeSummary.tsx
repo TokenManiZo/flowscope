@@ -8,6 +8,7 @@ import type { Cell, Verdict } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
 import type { ApiGroup } from "./graphHierarchy"
 import { MethodBadge } from "./httpBadges"
+import { identityName } from "./identityName"
 import { operationParts } from "./relationshipNodeCard"
 import { scopeFindings, UNDECIDED_REASON_LABEL, UNDECIDED_REASON_ORDER, type ScopeCandidate, type UndecidedReason } from "./graphScopeFindings"
 
@@ -32,6 +33,8 @@ interface Props {
   scope: "site" | "group"
   groups: readonly ApiGroup[]
   owners?: Readonly<Record<string, string>>
+  /** 등록 계정·비로그인에 연결되지 않은 신원. "미확인 신원"으로 보여 준다. */
+  unconfirmed?: ReadonlySet<string>
   /** 후보·확인 필요 줄: 그 API가 있는 그룹을 열고 API 카드를 고른다. */
   onRevealOperation?(groupId: string, operation: string): void
   /** 사이트 요약의 그룹 줄: 그 그룹 카드를 고른다. */
@@ -58,7 +61,7 @@ function More({ hidden, open, onToggle, noun }: { hidden: number; open: boolean;
  * 순서: 숫자 → IDOR·BFLA 후보 → 확인 필요(이유별) → (사이트) API 그룹 → 신원별 접근 → (그룹) 나머지 API·그룹 열기.
  * 후보·확인 필요가 많아도 기본 화면은 후보 3줄과 이유 몇 줄로 짧게 유지한다.
  */
-export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperation, onSelectGroup, onOpenGroup }: Props) {
+export function GraphScopeSummary({ scope, groups, owners = {}, unconfirmed = new Set(), onRevealOperation, onSelectGroup, onOpenGroup }: Props) {
   const [typeFilter, setTypeFilter] = useState<"all" | "IDOR" | "BFLA">("all")
   const [allCandidates, setAllCandidates] = useState(false)
   const [openReasons, setOpenReasons] = useState<readonly UndecidedReason[]>([])
@@ -66,15 +69,16 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
   const [allGroups, setAllGroups] = useState(false)
   const [restOpen, setRestOpen] = useState(false)
   const cells: readonly Cell[] = groups.flatMap(group => group.cells)
+  const who = (idn: string) => identityName(idn, unconfirmed)
   const { candidates, undecided, identities } = scopeFindings(cells)
   const groupOf = (operation: string) => groups.find(group => group.operations.includes(operation))?.id ?? groups[0]?.id ?? ""
   const reveal = (operation: string) => onRevealOperation?.(groupOf(operation), operation)
   const idor = candidates.filter(item => item.type === "IDOR").length, bfla = candidates.length - idor
   const filtered = typeFilter === "all" ? candidates : candidates.filter(item => item.type === typeFilter)
   const candidateSub = (item: ScopeCandidate) => {
-    if (!item.resource) return item.idn
+    if (!item.resource) return who(item.idn)
     const owner = owners[item.resource]
-    return `${item.idn} → ${label(item.resource)}${owner && owner !== item.idn ? ` (소유자 ${owner})` : ""}`
+    return `${who(item.idn)} → ${label(item.resource)}${owner && owner !== item.idn ? ` (소유자 ${owner})` : ""}`
   }
   const toggle = <T,>(list: readonly T[], value: T) => list.includes(value) ? list.filter(item => item !== value) : [...list, value]
   const endpointCount = groups.reduce((sum, group) => sum + group.endpointCount, 0)
@@ -118,7 +122,7 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
             <span className="ms-auto font-mono text-xs text-muted-foreground">{items.length}</span>
           </button>
           {open && <div className="px-2 pb-1">
-            <ul aria-label={`${UNDECIDED_REASON_LABEL[reason]} 목록`}>{(all ? items : items.slice(0, PREVIEW)).map(item => <Row key={item.key} method={item.method} path={item.path} sub={item.resource ? `${item.idn} → ${label(item.resource)}` : item.idn} badge="확인 필요" badgeClass="bg-amber-500/15 text-amber-700 dark:text-amber-300" onClick={() => reveal(item.op)} />)}</ul>
+            <ul aria-label={`${UNDECIDED_REASON_LABEL[reason]} 목록`}>{(all ? items : items.slice(0, PREVIEW)).map(item => <Row key={item.key} method={item.method} path={item.path} sub={item.resource ? `${who(item.idn)} → ${label(item.resource)}` : who(item.idn)} badge="확인 필요" badgeClass="bg-amber-500/15 text-amber-700 dark:text-amber-300" onClick={() => reveal(item.op)} />)}</ul>
             <More hidden={items.length - PREVIEW} open={all} onToggle={() => setAllReasons(current => toggle(current, reason))} noun="요청" />
           </div>}
         </li>
@@ -137,9 +141,9 @@ export function GraphScopeSummary({ scope, groups, owners = {}, onRevealOperatio
 
     {identities.length > 0 && <div>
       <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">신원별 접근</h3>
-      <ul className="grid gap-2" aria-label="신원별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${identity.idn} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+      <ul className="grid gap-2" aria-label="신원별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${who(identity.idn)} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[15px] font-semibold">{identity.idn}</span>
+          <span className="truncate text-[15px] font-semibold">{who(identity.idn)}</span>
           <span className="ms-auto flex shrink-0 gap-1">{identity.sources.map(source => { const mark = SOURCE_MARK[source]; return <span key={source} role="img" aria-label={mark.label} title={mark.label} className={`inline-flex size-6 items-center justify-center rounded-full border ${mark.className}`}><mark.Icon className="size-3.5" aria-hidden="true" /></span> })}</span>
         </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">API {identity.apis}{VERDICT_CHIP.map(([verdict, text, className]) => identity.counts[verdict] ? <span key={verdict} className={`rounded px-1.5 py-0.5 font-medium ${className}`}>{text} {identity.counts[verdict]}</span> : null)}</div>

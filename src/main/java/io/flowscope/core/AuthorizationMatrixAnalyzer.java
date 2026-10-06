@@ -7,6 +7,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -119,10 +120,17 @@ public final class AuthorizationMatrixAnalyzer {
     private static List<Identity> identities(Pipeline.Result result, AnalysisConfig config) {
         Set<String> ids = new LinkedHashSet<>(config.accounts().keySet());
         result.analysis.cells().forEach(cell -> ids.add(cell.key().identity()));
+        // 등록 계정·비로그인에 연결되지 않은 자동 이름(user-e 등)은 계정처럼 보이므로 그래프와 같이 "미확인 신원"으로 보여 준다.
+        Set<String> linked = new HashSet<>(), unlinked = new HashSet<>();
+        for (RequestRecord record : result.records) {
+            if (record.idn == null) continue;
+            (record.authState == AuthState.UNRESOLVED ? unlinked : linked).add(record.idn);
+        }
         return ids.stream().map(id -> {
             AccountProfile account = config.account(id).orElse(null);
             AccessRole role = config.identityRole(id);
-            String label = account == null ? identityLabel(id) : account.label();
+            String label = account != null ? account.label()
+                    : unlinked.contains(id) && !linked.contains(id) ? UNCONFIRMED_IDENTITY : identityLabel(id);
             String kind = account != null ? "REGISTERED"
                     : Fingerprints.ANONYMOUS.equals(id) ? "ANONYMOUS"
                     : id != null && id.startsWith("unresolved-") ? "UNRESOLVED" : "OBSERVED";
@@ -915,9 +923,11 @@ public final class AuthorizationMatrixAnalyzer {
         };
     }
 
+    private static final String UNCONFIRMED_IDENTITY = "미확인 신원";
+
     private static String identityLabel(String id) {
         if (Fingerprints.ANONYMOUS.equals(id)) return "ANONYMOUS";
-        if (id != null && id.startsWith("unresolved-")) return "미확정 세션";
+        if (id != null && id.startsWith("unresolved-")) return UNCONFIRMED_IDENTITY;
         return id == null || id.isBlank() ? "UNKNOWN" : id;
     }
 

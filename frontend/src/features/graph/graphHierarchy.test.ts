@@ -4,6 +4,7 @@ import type { Cell, EventRecord, RouteCandidate, Snapshot } from "@/lib/api/type
 import { targetSnapshot } from "@/test/fixtures"
 import { apiGroupDescriptor, GRAPH_PAGE_SIZE, graphOpenAction, isObservedTraffic, objectGroupKey, navigateHierarchy, projectHierarchy, stepBack, type GraphNavigation } from "./graphHierarchy"
 import type { GraphFilters } from "./graphProjection"
+import { UNCONFIRMED_IDENTITY } from "./identityName"
 
 const service = "https://demo.test:443"
 const get = `${service} GET /api/orders/{id}`
@@ -414,6 +415,24 @@ it.each(["UNKNOWN", "POLLING"])("keeps B evidence neutral on A's existing API in
     expect(graph.groups[0]).toMatchObject({ endpointCount: 1, observedCount: 0, sourceCounts: { human: 1, scanner: 0, llm: 0 } })
   }
   expect(JSON.stringify(snapshot)).toBe(before)
+})
+
+it("keeps unjudged identities out of the core view and shows unlinked ones as 미확인 신원 in the broad view", () => {
+  const snapshot = targetSnapshot({ cells: [cell()], events: [
+    event({ eventId: "e-1", clusterEvidenceIds: ["e-1"], idn: "user-e", op: get, trafficClass: "API", authState: "UNRESOLVED" }),
+    event({ eventId: "s-1", clusterEvidenceIds: ["s-1"], idn: "unresolved-abc", op: get, trafficClass: "API", authState: "UNRESOLVED" }),
+  ] })
+  for (const navigation of [groupNav(), operationNav()]) {
+    // 핵심 API만: 판정 밖 기록은 API 카드 상세에만 붙고, 그 신원 노드와 보조 엣지는 그리지 않는다.
+    const core = projectHierarchy(snapshot, filters, navigation)
+    expect(core.nodes.find(node => node.id === `operation:${get}`)!.selection.evidenceIds).toEqual(["e-1", "h-101", "s-1"])
+    expect(core.identities.map(node => node.id)).toEqual(["identity:USER A"])
+    expect(core.edges.some(edge => edge.relation === "support")).toBe(false)
+    // 관측 전체: 판정 밖 신원도 그리되, 계정에 연결되지 않은 신원은 모두 "미확인 신원"으로 보인다.
+    const broad = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, navigation)
+    expect(broad.identities.filter(node => node.label === UNCONFIRMED_IDENTITY).map(node => node.id).sort()).toEqual(["identity:unresolved-abc", "identity:user-e"])
+    expect(broad.identities.find(node => node.id === "identity:USER A")?.label).toBe("USER A")
+  }
 })
 
 it("retains neutral evidence and identity when API shape cards are folded", () => {

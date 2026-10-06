@@ -1,6 +1,7 @@
 import { operationShapeKey } from "./graphPathShape"
 import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
 import { manualResendDetails } from "./resendGraph"
+import { identityName, unconfirmedIdentities } from "./identityName"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
 export const GRAPH_PAGE_SIZE = 18
@@ -64,6 +65,8 @@ export interface HierarchyProjection {
   hiddenOperationCount: number
   hiddenObjectCount: number
   revealedNodeCount: number
+  /** 등록 계정·비로그인에 연결되지 않은 신원. 화면에서는 "미확인 신원"으로 보인다. */
+  unconfirmedIdentities?: ReadonlySet<string>
 }
 
 /** 이 조회 API가 이 객체에 대해 공개 정책(PUBLIC)인지. 서버 권한 매트릭스의 객체 칸을 따른다. */
@@ -203,6 +206,7 @@ export interface GraphReveal { operations?: readonly string[]; resource?: string
 export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const { cells, observedEvents, attachedEvents, routeCandidates: candidateList, resolveGroup } = graphContents(snapshot, filters)
+  const unconfirmed = unconfirmedIdentities(snapshot.events)
   const operationGroup = (operation: string) => { const { service, path } = splitOperation(operation); return resolveGroup(service, path) }
   const gapIdsByCell = new Map<string, string[]>()
   for (const gap of snapshot.gaps) {
@@ -276,7 +280,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // in selection; only show a verdict when all selected cells already agree.
     const first = selection.cells[0]?.overall
     const verdict = first && selection.cells.every(cell => cell.overall === first) ? first : "unknown"
-    const node: HierarchyNode = { id, kind, label: key, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : key, verdict, verdictText: verdictStyles[verdict].text, verdictColor: verdictStyles[verdict].color, selection, ...extra }
+    const label = kind === "identity" ? identityName(key, unconfirmed) : key
+    const node: HierarchyNode = { id, kind, label, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : label, verdict, verdictText: verdictStyles[verdict].text, verdictColor: verdictStyles[verdict].color, selection, ...extra }
     nodes.push(node)
     return node
   }
@@ -300,9 +305,11 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   }
 
   // 미판정 관측은 기존 API의 근거만 보강한다. 판정 셀·객체·coverage는 만들지 않는다.
+  // 핵심 API만에서는 API 카드 상세에만 붙이고, 판정에 쓰지 않은 신원 노드는 관측 전체에서만 그린다.
   const addAttached = (node: HierarchyNode) => {
     const events = attachedEvents.filter(event => event.op === node.selection.operation)
     node.selection = { ...node.selection, evidenceIds: [...new Set([...node.selection.evidenceIds, ...events.flatMap(eventEvidenceIds)])].sort(compareText) }
+    if (!filters.includeSupportTraffic) return
     const buckets = new Map<string, Snapshot["events"][number][]>()
     for (const event of events) {
       const key = JSON.stringify([event.idn, event.source])
@@ -494,5 +501,5 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
-  return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount, revealedNodeCount }
+  return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount, revealedNodeCount, unconfirmedIdentities: unconfirmed }
 }

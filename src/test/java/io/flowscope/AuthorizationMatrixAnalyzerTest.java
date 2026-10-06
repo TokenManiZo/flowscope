@@ -450,6 +450,26 @@ class AuthorizationMatrixAnalyzerTest {
     }
 
     @Test
+    void 계정에_연결되지_않은_신원은_자동_이름_대신_미확인_신원으로_표시한다() {
+        AnalysisConfig config = users();
+        Pipeline.Result result = Pipeline.run(List.of(
+                record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/24", 200, "{\"id\":24}"),
+                record(Source.HUMAN, "tok:user-b", "GET", "/api/orders/27", 200, "{\"id\":27}"),
+                record(Source.HUMAN, "tok:stranger", "GET", "/api/orders/25", 200, "{\"id\":25}"),
+                record(Source.HUMAN, "ck:session", "GET", "/api/orders/26", 200, "{\"id\":26}")), config);
+
+        List<AuthorizationMatrix.Identity> identities = AuthorizationMatrixAnalyzer.analyze(result, config, List.of()).identities();
+
+        assertEquals("USER A", identities.stream().filter(identity -> identity.id().equals("user-a")).findFirst().orElseThrow().label());
+        List<AuthorizationMatrix.Identity> unconfirmed = identities.stream()
+                .filter(identity -> identity.label().equals("미확인 신원")).toList();
+        assertEquals(2, unconfirmed.size(), "자동 이름 토큰 신원과 unresolved 세션이 모두 미확인 신원으로 보인다");
+        assertTrue(unconfirmed.stream().anyMatch(identity -> identity.id().startsWith("unresolved-")));
+        assertTrue(unconfirmed.stream().anyMatch(identity -> identity.id().startsWith("user-")
+                && !identity.id().equals("user-a") && !identity.id().equals("user-b")));
+    }
+
+    @Test
     void policyOnlyOperationMatchesTheRegisteredAccountServiceWithoutWarning() {
         String operation = "https://policy-only.test:443 GET /api/admin/export";
         AnalysisConfig config = new AnalysisConfig()

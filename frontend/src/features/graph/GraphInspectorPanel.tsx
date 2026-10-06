@@ -58,7 +58,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
-      {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
+      {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} unconfirmed={projection.unconfirmedIdentities} {...actions} />
         : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
       {!structural && !selection.routeCandidate && unjudgedCount > 0 && <p className="mb-4 text-xs text-muted-foreground">인가 판정에 포함되지 않은 관측 기록 {unjudgedCount}건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>}
       {node?.kind === "resend-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">Request Lab·Repeater로 값을 바꿔 다시 보낸 요청입니다. 판정과 Gap에 쓰지 않습니다.</p>}
@@ -85,7 +85,7 @@ export function GraphViewOverview({ projection, owners, actions = {} }: { projec
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="현재 보기" description={<span className="block break-all font-mono text-foreground">{title}</span>} tabs={null}>
       {projection.kind === "operation" ? summary ? <GraphNodeSummary summary={summary} /> : null
-        : <GraphScopeSummary scope={projection.kind === "site" ? "site" : "group"} groups={projection.kind === "site" ? projection.groups : projection.groups.filter(group => group.id === projection.navigation.groupId)} owners={owners} {...actions} onOpenGroup={undefined} />}
+        : <GraphScopeSummary scope={projection.kind === "site" ? "site" : "group"} groups={projection.kind === "site" ? projection.groups : projection.groups.filter(group => group.id === projection.navigation.groupId)} owners={owners} unconfirmed={projection.unconfirmedIdentities} {...actions} onOpenGroup={undefined} />}
       <p className="p-4 text-xs text-muted-foreground">노드를 누르면 그 노드의 정보가 여기에 나옵니다. 빈 곳을 누르면 이 요약으로 돌아옵니다.</p>
     </InspectorPanel>
   </div>

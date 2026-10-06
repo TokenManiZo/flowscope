@@ -1,6 +1,7 @@
 import type { Snapshot } from "@/lib/api/types"
 import { verdictStyles, wrapOperationLabel, type GraphView } from "./graphProjection"
 import type { GraphNavigation, HierarchyEdge, HierarchyNode, HierarchyProjection, HierarchySelection } from "./graphHierarchy"
+import { identityName, unconfirmedIdentities } from "./identityName"
 
 /** 재전송 그래프에 그릴 도구. Intruder는 대량 전송이라 그리지 않고 관측 기록에만 남긴다. */
 export type ResendTool = "lab" | "repeater"
@@ -44,6 +45,7 @@ export function projectResendGraph(snapshot: Snapshot, navigation: GraphNavigati
   const nodes: HierarchyNode[] = []
   const edges: HierarchyEdge[] = []
   const unknown = verdictStyles.unknown
+  const unconfirmed = unconfirmedIdentities(snapshot.events)
   const addNode = (id: string, kind: HierarchyNode["kind"], label: string, related: readonly ResendSend[], picked: Partial<HierarchySelection>, extra: Partial<HierarchyNode> = {}) => {
     if (nodes.some(node => node.id === id)) return
     nodes.push({ id, kind, label, wrappedLabel: kind === "resend-operation" ? wrapOperationLabel(label) : label, verdict: "unknown", verdictText: unknown.text, verdictColor: unknown.color, ...extra, selection: selection(related, picked) })
@@ -63,7 +65,7 @@ export function projectResendGraph(snapshot: Snapshot, navigation: GraphNavigati
     const byIdentity = new Map<string, ResendSend[]>()
     for (const send of group) byIdentity.set(send.identity, [...(byIdentity.get(send.identity) ?? []), send])
     for (const [identity, identitySends] of byIdentity) {
-      addNode(`identity:${identity}`, "identity", identity, sends.filter(send => send.identity === identity), { identity })
+      addNode(`identity:${identity}`, "identity", identityName(identity, unconfirmed), sends.filter(send => send.identity === identity), { identity })
       edges.push(resendEdge(tool, `identity:${identity}`, operationId, identitySends, { identity, operation }))
     }
     const byResource = new Map<string, ResendSend[]>()
@@ -77,7 +79,7 @@ export function projectResendGraph(snapshot: Snapshot, navigation: GraphNavigati
   return {
     kind: "group", view, navigation, groups: [], nodes, edges,
     identities: nodes.filter(node => node.kind === "identity"), operations, resources: nodes.filter(node => node.kind === "resource"),
-    routeCandidates: [], listItems: operations, hiddenOperationCount: 0, hiddenObjectCount: 0, revealedNodeCount: 0,
+    routeCandidates: [], listItems: operations, hiddenOperationCount: 0, hiddenObjectCount: 0, revealedNodeCount: 0, unconfirmedIdentities: unconfirmed,
   }
 }
 

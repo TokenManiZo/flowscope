@@ -136,7 +136,8 @@ it("requires explicit 18-item expansion for APIs and retains group paging on Bac
 
 it("switches the graph between judged APIs and every observed non-static request, and resets to judged APIs", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
-  const page = { ...snapshot.events[0], eventId: "php-1", clusterEvidenceIds: ["php-1"], path: "/board/list.php", op: "GET /board/list.php", resource: null, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", coverageEligible: false }
+  // 계정에 연결되지 않은 토큰(user-e)으로 본 화면: 판정에 쓰지 않으므로 관측 전체에서만 신원 필터에 나온다.
+  const page = { ...snapshot.events[0], eventId: "php-1", clusterEvidenceIds: ["php-1"], path: "/board/list.php", op: "GET /board/list.php", resource: null, idn: "user-e", authState: "UNRESOLVED", trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", coverageEligible: false }
   const style = { ...page, eventId: "css-1", clusterEvidenceIds: ["css-1"], path: "/theme/site.css", op: "GET /theme/site.css", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW" }
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, events: [...snapshot.events, page, style] }
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
@@ -144,12 +145,16 @@ it("switches the graph between judged APIs and every observed non-static request
   const rail = screen.getByRole("complementary", { name: "분석 필터" })
   expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
   expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
+  expect(within(rail).queryByText("미확인 신원")).not.toBeInTheDocument()
   await userEvent.click(within(rail).getByRole("button", { name: "관측 전체" }))
   expect(within(rail).getByRole("button", { name: "관측 전체" })).toHaveAttribute("aria-pressed", "true")
   expect(within(rail).getByText(/추가로 보이는 요청은 판정에 쓰지 않습니다/)).toBeVisible()
   // 정적 파일(/theme/site.css)은 관측 전체에서도 빠지고, 서버 렌더링 화면(/board/list.php) 묶음만 더해진다.
   expect(screen.queryAllByText("BOARD APIs").length).toBeGreaterThan(0)
   expect(screen.queryAllByText("THEME APIs")).toHaveLength(0)
+  const unconfirmed = within(rail).getByText("미확인 신원")
+  expect(unconfirmed.parentElement).toHaveAttribute("title", "user-e")
+  expect(within(unconfirmed.parentElement!).getByText("판정 제외")).toBeVisible()
   await userEvent.click(within(rail).getByRole("button", { name: "초기화" }))
   expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
   expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
