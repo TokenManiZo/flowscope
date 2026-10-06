@@ -83,7 +83,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
   const hasRun = Boolean(run && run.status !== "IDLE")
   const readyAccounts = new Set((data?.accounts ?? []).filter((item) => item.status === "READY").map((item) => item.id))
   const availableAccounts = new Set(accounts.map((item) => item.id))
-  const nextAnonymous = anonymous ?? (run && run.status !== "IDLE" ? run.anonymous : true)
+  const nextAnonymous = anonymous ?? (run && run.status !== "IDLE" ? run.anonymous : false)
   const nextSelected = (selected ?? (run && run.status !== "IDLE" ? run.accountIds : []))
     .filter((id) => readyAccounts.has(id) && availableAccounts.has(id))
   const shownAnonymous = canConfigure ? nextAnonymous : (run?.anonymous ?? nextAnonymous)

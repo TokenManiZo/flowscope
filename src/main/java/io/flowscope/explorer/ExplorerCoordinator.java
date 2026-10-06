@@ -194,6 +194,11 @@ public final class ExplorerCoordinator implements AutoCloseable {
 
     void loginBrowser(LoginBrowser browser) { this.loginBrowser = browser; }
 
+    public void browserProxy(ExplorerBrowserProxy proxy) {
+        if (!loginWindows.isEmpty()) throw new IllegalStateException("로그인 브라우저를 닫은 뒤 프록시를 변경하세요.");
+        loginBrowser = new ChromiumLoginBrowser(proxy);
+    }
+
     /** One request/response the driven window performed, handed to FlowScope to store as LLM Evidence. */
     public record BrowserExchange(String runId, String accountId, String method, String url,
                                   Map<String, String> requestHeaders, String requestBody,
@@ -236,7 +241,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
 
     /**
      * Opens a login window for a registered account at an exact-scope URL. The operator logs in there and then calls
-     * {@link #completeBrowserLogin}. The window bypasses every Burp listener, so the login is never HUMAN traffic.
+     * {@link #completeBrowserLogin}. Burp uses a dedicated LLM listener; CDP retains account/run attribution.
      */
     public ExplorerAccountVault.View openBrowserLogin(String accountId, String label, String role, String url)
             throws IOException {
@@ -278,6 +283,13 @@ public final class ExplorerCoordinator implements AutoCloseable {
         // The window outlives the run and keeps its runId, so without the status check everything the operator
         // does in it afterwards would be filed as this run's LLM Evidence.
         if (!active(current.status()) || runId == null || runId.isBlank()) return;
+        // Account browser traffic is collected only after explicit login completion, for this run's account.
+        if (!current.accountIds().contains(accountId)
+                || vault.view(accountId).status() != ExplorerAccountVault.AuthStatus.READY) return;
+        // A public resource fetched in an account window is not an anonymous exploration run.
+        if (exchange.requestHeaders().entrySet().stream().noneMatch(header ->
+                (header.getKey().equalsIgnoreCase("Cookie") || header.getKey().equalsIgnoreCase("Authorization"))
+                        && header.getValue() != null && !header.getValue().isBlank())) return;
         if (!exactScope.test(exchange.url())) return;
         if (browserExchanges.incrementAndGet() > maxBrowserExchanges()) return;
         browserSink.accept(new BrowserExchange(runId, accountId, exchange.method(), exchange.url(),

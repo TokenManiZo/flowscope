@@ -45,9 +45,17 @@ final class ChromiumLoginBrowser implements LoginBrowser {
     private static final long STARTUP_SECONDS = 20;
     private static final long LOAD_TIMEOUT_MILLIS = 15_000;
     private static final int PAGE_TEXT_LIMIT = 4_000;
+    private final ExplorerBrowserProxy proxy;
+
+    ChromiumLoginBrowser() { this(null); }
+    ChromiumLoginBrowser(ExplorerBrowserProxy proxy) { this.proxy = proxy; }
 
     /** Visible for tests: the launch arguments decide what the target can detect and what the window trusts. */
     static List<String> arguments(String executable, Path profile, URI loginUrl) {
+        return arguments(executable, profile, loginUrl, null);
+    }
+
+    static List<String> arguments(String executable, Path profile, URI loginUrl, ExplorerBrowserProxy proxy) {
         List<String> command = new ArrayList<>(List.of(executable,
                 "--user-data-dir=" + profile, "--remote-debugging-port=0",
                 "--no-first-run", "--no-default-browser-check",
@@ -56,11 +64,14 @@ final class ChromiumLoginBrowser implements LoginBrowser {
                 // Without this the page sees navigator.webdriver === true and a target with bot detection
                 // behaves differently for the Explorer than it did for the operator who just logged in.
                 "--disable-blink-features=AutomationControlled"));
-        // No Burp listener is involved: FlowScope records this window from DevTools, so its traffic can never be
-        // attributed to HUMAN collection and the operator needs no proxy configuration.
-        command.add("--no-proxy-server");
+        if (proxy == null) command.add("--no-proxy-server");
+        else {
+            command.add("--proxy-server=http://127.0.0.1:" + proxy.port());
+            command.add("--proxy-bypass-list=<-loopback>");
+        }
         command.add("--new-window");
-        command.add(loginUrl.toString());
+        // Attach and configure the page before any login request can reach Burp untagged.
+        command.add(proxy == null ? loginUrl.toString() : "about:blank");
         return command;
     }
 
@@ -69,8 +80,13 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         if (executable == null) {
             throw new IOException("Chromium/Chrome 실행 파일을 찾지 못했습니다. -Dflowscope.browser.path로 지정하세요.");
         }
+        return open(executable, loginUrl, recorder, false);
+    }
+
+    Session open(Path executable, URI loginUrl, Consumer<Exchange> recorder, boolean headless) throws IOException {
         Path profile = Files.createTempDirectory("flowscope-login-browser-");
-        List<String> command = arguments(executable.toString(), profile, loginUrl);
+        List<String> command = arguments(executable.toString(), profile, loginUrl, proxy);
+        if (headless) command.add(1, "--headless=new");
         Process process = new ProcessBuilder(command).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
         try {
             CompletableFuture<Matcher> devtools = new CompletableFuture<>();
@@ -79,8 +95,12 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             reader.start();
             Matcher line = devtools.get(STARTUP_SECONDS, TimeUnit.SECONDS);
             Cdp cdp = Cdp.connect(URI.create(line.group(1)), line.group(2), recorder);
-            // Discover every tab (including ones the operator opens) to watch requests and to drive the page.
-            cdp.call("Target.setDiscoverTargets", JSON.createObjectNode().put("discover", true));
+            if (proxy == null) {
+                cdp.call("Target.setDiscoverTargets", JSON.createObjectNode().put("discover", true));
+            } else {
+                try { cdp.proxy(proxy, loginUrl); }
+                catch (Exception error) { cdp.close(); throw error; }
+            }
             return new ChromiumSession(process, profile, cdp);
         } catch (Exception error) {
             stop(process, profile);
@@ -293,7 +313,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             return JSON.getNodeFactory().textNode(value == null ? "" : value).toString();
         }
 
-        @Override public boolean alive() { return process.isAlive(); }
+        @Override public boolean alive() { return process.isAlive() && !cdp.closed.get(); }
 
         @Override public void close() {
             cdp.close();
@@ -328,6 +348,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
          */
         private final Map<String, Map<String, String>> extraRequestHeaders = new ConcurrentHashMap<>();
         final AtomicBoolean recording = new AtomicBoolean();
+        private final AtomicBoolean closed = new AtomicBoolean();
         /** Response bodies are fetched off the WebSocket thread; replying there would deadlock the read loop. */
         private final ExecutorService bodies = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "flowscope-browser-bodies");
@@ -337,6 +358,41 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         private Consumer<Exchange> recorder = exchange -> { };
         private Consumer<JsonNode> targetObserver = message -> { };
         private boolean attachPages = true;
+        private ExplorerBrowserProxy proxy;
+        private String proxyUserAgent;
+        private final CompletableFuture<String> proxyPage = new CompletableFuture<>();
+
+        void proxy(ExplorerBrowserProxy value, URI loginUrl) throws Exception {
+            proxy = value;
+            proxyUserAgent = value.tagUserAgent(call("Browser.getVersion").path("userAgent").asText());
+            call("Target.setAutoAttach", JSON.createObjectNode().put("autoAttach", true)
+                    .put("waitForDebuggerOnStart", true).put("flatten", true));
+            String session = proxyPage.get(STARTUP_SECONDS, TimeUnit.SECONDS);
+            send(session, "Page.navigate", JSON.createObjectNode().put("url", loginUrl.toString()));
+        }
+
+        /** A newly opened page/worker waits until its network headers are configured. Never block the WS reader. */
+        private void configureProxyTarget(String session, boolean page) {
+            bodies.execute(() -> {
+                try {
+                    send(session, "Network.enable", JSON.createObjectNode());
+                    send(session, "Network.setExtraHTTPHeaders", JSON.createObjectNode().set("headers",
+                            JSON.createObjectNode().put("User-Agent", proxyUserAgent)));
+                    send(session, "Target.setAutoAttach", JSON.createObjectNode().put("autoAttach", true)
+                            .put("waitForDebuggerOnStart", true).put("flatten", true));
+                    if (page) send(session, "Page.enable", JSON.createObjectNode());
+                    send(session, "Runtime.runIfWaitingForDebugger", JSON.createObjectNode());
+                    if (page) {
+                        pageSession.set(session);
+                        proxyPage.complete(session);
+                    }
+                } catch (IOException error) {
+                    proxyPage.completeExceptionally(error);
+                    // A target without the proxy tag must not send login requests through the generic LLM lane.
+                    close();
+                }
+            });
+        }
 
         /** HUMAN uses only target lifetime events; no page attachment, raw traffic or auth headers. */
         void watchTargets(Consumer<JsonNode> observer) throws IOException {
@@ -433,13 +489,17 @@ final class ChromiumLoginBrowser implements LoginBrowser {
                 case "Target.targetCreated", "Target.targetInfoChanged" -> {
                     JsonNode info = params.path("targetInfo");
                     String targetId = info.path("targetId").asText("");
-                    if (attachPages && "page".equals(info.path("type").asText()) && attached.add(targetId)) {
+                    if (proxy == null && attachPages && "page".equals(info.path("type").asText()) && attached.add(targetId)) {
                         fireAndForget(null, "Target.attachToTarget",
                                 JSON.createObjectNode().put("targetId", targetId).put("flatten", true));
                     }
                 }
                 case "Target.attachedToTarget" -> {
                     String session = params.path("sessionId").asText();
+                    if (proxy != null) {
+                        configureProxyTarget(session, "page".equals(params.path("targetInfo").path("type").asText()));
+                        return;
+                    }
                     if (!"page".equals(params.path("targetInfo").path("type").asText())) return;
                     pageSession.set(session);
                     fireAndForget(session, "Network.enable", JSON.createObjectNode());
@@ -531,6 +591,10 @@ final class ChromiumLoginBrowser implements LoginBrowser {
             pending.responseHeaders.forEach((name, value) -> {
                 if (!DECODED_AWAY.contains(name.toLowerCase(Locale.ROOT))) responseHeaders.put(name, value);
             });
+            if (proxy != null) pending.requestHeaders.replaceAll((name, value) -> {
+                String original = name.equalsIgnoreCase("User-Agent") ? proxy.originalUserAgent(value) : null;
+                return original == null ? value : original;
+            });
             try {
                 recorder.accept(new Exchange(pending.method, pending.url, Map.copyOf(pending.requestHeaders),
                         pending.requestBody, pending.status, responseHeaders, body));
@@ -554,6 +618,7 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         }
 
         void close() {
+            closed.set(true);
             bodies.shutdownNow();
             if (socket != null) socket.abort();
         }

@@ -120,8 +120,9 @@ final class ExplorerCoordinatorTest {
         java.util.function.Consumer<Exchange> sink = exchange -> { };
 
         /** Replays what the page itself fetched, without the Explorer having asked for it. */
-        void emit(String url) {
-            sink.accept(new Exchange("GET", url, java.util.Map.of(), "", 200,
+        void emit(String url) { emit(url, java.util.Map.of("Cookie", "session=abc")); }
+        void emit(String url, java.util.Map<String, String> requestHeaders) {
+            sink.accept(new Exchange("GET", url, requestHeaders, "", 200,
                     java.util.Map.of("Content-Type", "application/json"), "{}"));
         }
         @Override public Session open(java.net.URI loginUrl,
@@ -143,7 +144,7 @@ final class ExplorerCoordinatorTest {
                 @Override public Page back() { return page("https://app.example.test/"); }
                 private Page page(java.lang.String url) {
                     acted++;
-                    recorder.accept(new Exchange("GET", url, java.util.Map.of(), "", 200,
+                    recorder.accept(new Exchange("GET", url, java.util.Map.of("Cookie", "session=abc"), "", 200,
                             java.util.Map.of("Content-Type", "text/html"), "<html></html>"));
                     return new Page(url, "title", List.of(new Element("e1", "button", "열기")), "text");
                 }
@@ -300,6 +301,27 @@ final class ExplorerCoordinatorTest {
             assertThrows(IllegalStateException.class,
                     () -> coordinator.browserAction("usera", "click", "", "e1", ""));
             assertEquals(1, recorded.size());
+        }
+    }
+
+    @Test
+    void accountBrowserDoesNotCollectAnonymousResourcesOrPendingLoginTraffic() throws Exception {
+        FakeWindow window = new FakeWindow();
+        java.util.List<ExplorerCoordinator.BrowserExchange> recorded = new java.util.ArrayList<>();
+        try (ExplorerCoordinator coordinator = running(window, new FakeProvider(), recorded)) {
+            window.emit("https://app.example.test/site.webmanifest.json", java.util.Map.of());
+            window.emit("https://app.example.test/api/public", java.util.Map.of("Authorization", " "));
+            assertTrue(recorded.isEmpty(), "Account exploration must not create anon Evidence");
+            window.emit("https://app.example.test/api/me");
+            assertEquals(1, recorded.size());
+            assertEquals("usera", recorded.getFirst().accountId());
+
+            coordinator.openBrowserLogin("usera", "USER A", "USER", "https://app.example.test/");
+            window.emit("https://app.example.test/login");
+            assertEquals(1, recorded.size(), "Re-login traffic must wait for explicit login completion");
+            coordinator.completeBrowserLogin("usera");
+            window.emit("https://app.example.test/api/after-login");
+            assertEquals(2, recorded.size());
         }
     }
 
