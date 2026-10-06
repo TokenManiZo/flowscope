@@ -72,6 +72,7 @@ import io.flowscope.explorer.CodexAppServerProvider;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerTransport;
+import io.flowscope.explorer.ExplorerBrowserProxy;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
@@ -105,9 +106,8 @@ import java.time.Instant;
  * FlowScope Burp 확장 진입점 (Montoya). 프록시 트래픽을 포트별 소스로 수집하고
  * Burp 제어판에서 localhost Web 분석 작업면을 연다 (F-01/F-08/F-20).
  *
- * 소스 구분(F-01): 예약 리스너 포트 → 소스. 기본 8080=사람, 8081=스캐너.
- * Montoya 는 리스너를 코드로 생성하지 못하므로(D-023 리스크) 포트는 Burp Proxy 설정에서
- * 사용자가 구성해야 한다. 활성 HUMAN run은 첫 범위 내 미매핑 리스너에도 결박한다.
+ * 소스 구분(F-01): 예약 리스너 포트 → 소스. 기본 8080=사람, 8081=스캐너, 8082=LLM.
+ * 스캐너/LLM 리스너는 Burp 프로젝트 설정으로 생성한다. HUMAN은 계정별 리스너를 사용한다.
  */
 public final class FlowScopeExtension implements BurpExtension {
 
@@ -321,6 +321,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private HumanProxyListeners proxyListeners;
     /** ZAP용 스캐너 리스너를 열지 못했을 때 화면에 보여 줄 안내. 정상이면 빈 문자열. */
     private volatile String scannerListenerWarning = "";
+    private ExplorerBrowserProxy explorerBrowserProxy;
     private HumanBrowserSessions humanBrowsers;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
@@ -426,6 +427,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput);
         explorer.browserRecorder(this::recordBrowserExchange);
+        PORT_SOURCE.entrySet().stream().filter(entry -> entry.getValue().source() == Source.LLM)
+                .map(Map.Entry::getKey).filter(port -> port > 0 && port <= 65535).sorted().findFirst()
+                .ifPresent(port -> {
+                    explorerBrowserProxy = new ExplorerBrowserProxy(port);
+                    explorer.browserProxy(explorerBrowserProxy);
+                });
         try {
             startWebUi();
         } catch (Exception e) {
@@ -458,6 +465,8 @@ public final class FlowScopeExtension implements BurpExtension {
         registerAccountSessionCaptureMenu();
         api.extension().registerUnloadingHandler(this::shutdown);
         ensureScannerProxyListener();
+        try { ensureExplorerProxyListener(); }
+        catch (IOException | RuntimeException error) { api.logging().logToError("FlowScope: LLM 프록시 설정 실패", error); }
         startZapIntegration();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
@@ -587,6 +596,17 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
+            String originalUserAgent = explorerOriginalUserAgent(request);
+            if (originalUserAgent != null) {
+                // Preserve the direct login browser's redirects and CDN/subresource loads.
+                // Explorer actions and CDP Evidence still use their existing exact-scope gates.
+                // Burp history retains the real exchange; CDP alone retains account/run Evidence.
+                // Do not replace browser credentials with the unrelated HUMAN Session Broker.
+                var notes = request.annotations().notes();
+                var annotations = request.annotations().withNotes((notes == null || notes.isBlank() ? "" : notes + "\n")
+                        + ExplorerBrowserProxy.HISTORY_NOTE);
+                return ProxyRequestReceivedAction.doNotIntercept(request.withUpdatedHeader("User-Agent", originalUserAgent), annotations);
+            }
             String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
             int observedPort = listenerPort(request.listenerInterface());
             RunContextRegistry.Context managed = humanBrowsers.context(observedPort);
@@ -643,6 +663,10 @@ public final class FlowScopeExtension implements BurpExtension {
         @Override
         public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest request) {
             int port = listenerPort(request.listenerInterface());
+            if (explorerBrowserProxy != null && port == explorerBrowserProxy.port()
+                    && isExplorerBrowserHistory(request.annotations().notes())) {
+                return ProxyRequestToBeSentAction.continueWith(request);
+            }
             var observation = proxyObservations.get(request.messageId());
             if (observation != null && observation.source() == Source.HUMAN
                     && observation.detail() == SourceDetail.BROWSER && observation.context() != null
@@ -729,6 +753,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyHandler implements ProxyResponseHandler {
         @Override
         public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse response) {
+            if (isExplorerBrowserHistory(response.annotations().notes())) return ProxyResponseReceivedAction.doNotIntercept(response);
             try {
                 InFlightRequestTracker.Observation observation = proxyObservations.remove(response.messageId());
                 if (observation == null) {
@@ -1268,6 +1293,20 @@ public final class FlowScopeExtension implements BurpExtension {
                 .map(Map.Entry::getKey).sorted().findFirst().orElse(8081);
     }
 
+    private void ensureExplorerProxyListener() throws IOException {
+        if (explorerBrowserProxy == null) throw new IOException("LLM 프록시 포트 매핑이 없습니다. flowscope.ports에 LLM 포트를 설정하세요.");
+        proxyListeners.ensure(explorerBrowserProxy.port());
+    }
+
+    private String explorerOriginalUserAgent(InterceptedRequest request) {
+        return explorerBrowserProxy != null && listenerPort(request.listenerInterface()) == explorerBrowserProxy.port()
+                ? explorerBrowserProxy.originalUserAgent(request.headerValue("User-Agent")) : null;
+    }
+
+    private static boolean isExplorerBrowserHistory(String notes) {
+        return notes != null && notes.lines().anyMatch(ExplorerBrowserProxy.HISTORY_NOTE::equals);
+    }
+
     private static RunPhase phaseOf(SourceDetail detail) {
         return switch (detail) {
             case ZAP_AUTHENTICATION -> RunPhase.SESSION_SETUP;
@@ -1292,6 +1331,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 List<RequestRecord> incoming = new ArrayList<>(history.size());
                 int withoutResponse = 0;
                 for (ProxyHttpRequestResponse item : history) {
+                    // Includes login traffic and exchanges already recorded with CDP account/run attribution.
+                    if (isExplorerBrowserHistory(item.annotations().notes())) continue;
                     if (!item.hasResponse() || item.response() == null) {
                         withoutResponse++;
                         continue;
@@ -2161,6 +2202,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 validateRuntimeAccount(account.id(), account.label(),
                         login.getScheme() + "://" + login.getAuthority(), account.role().name());
                 try {
+                    ensureExplorerProxyListener();
                     return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), url);
                 } catch (java.io.IOException error) {
                     throw new IllegalStateException(error.getMessage());
@@ -3322,8 +3364,8 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /**
-     * Stores what the driven login window did. The window reaches no Burp listener, so nothing else would record it;
-     * this is the only path from CDP observation to Evidence, and it asserts the lane the same way the gateway does.
+     * Stores what the driven login window did. Burp keeps Proxy history while CDP alone supplies its account/run
+     * Evidence; the tagged proxy path deliberately skips generic capture.
      */
     private void recordBrowserExchange(ExplorerCoordinator.BrowserExchange exchange) {
         if (shuttingDown.get()) return;

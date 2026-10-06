@@ -121,7 +121,7 @@ export const controlExplorerRun = (action: "cancel" | "clear" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
-/** Opens a FlowScope-launched login window (no proxy) for a registered account; the operator logs in there. */
+/** Opens a FlowScope login window through the dedicated LLM proxy; the operator logs in there. */
 export const openExplorerBrowserLogin = (id: string, url: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-open", id, url })
 /** Adopts the login window's session once the operator says the login is done. */
