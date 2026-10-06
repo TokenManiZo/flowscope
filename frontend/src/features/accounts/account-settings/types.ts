@@ -49,7 +49,7 @@ export interface BurpRequestCandidate {
   markMatched: boolean;
   eligible: boolean;
   reason: string;
-  /** 서버가 저장한 마스킹 요청·응답 전문. */
+  /** 서버가 저장한 요청·응답 전문. */
   request?: string;
   response?: string;
 }

@@ -87,7 +87,7 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         method = method == null || method.isBlank() ? "UNKNOWN" : method;
         concretePaths = concretePaths == null ? List.of() : concretePaths.stream()
                 .filter(value -> value != null && !value.isBlank())
-                .map(RouteCandidate::safeConcretePath).distinct().toList();
+                .distinct().toList();
         provenance = provenance == null ? List.of() : List.copyOf(new LinkedHashSet<>(provenance));
         declaredParameters = declaredParameters == null
                 ? List.of() : List.copyOf(new LinkedHashSet<>(declaredParameters));
@@ -127,12 +127,6 @@ public record RouteCandidate(String service, String method, String pathTemplate,
         return provenance.stream().map(Provenance::evidenceId).distinct().toList();
     }
 
-    private static String safeConcretePath(String value) {
-        String masked = Masking.maskSecrets(value);
-        if (value.equals(masked)) return value;
-        int query = value.indexOf('?');
-        return query >= 0 ? value.substring(0, query) : masked;
-    }
 
     public Set<Source> discoveredSources() {
         return provenance.stream().map(Provenance::source)

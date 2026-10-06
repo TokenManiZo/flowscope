@@ -39,18 +39,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 final class SurfaceParameterProfileTest {
     @Test
-    void 비밀_이름_생략만_있는_요청은_완전해서_다른_좌표의_부재를_증언한다() {
+    void password만_있는_요청도_완전해서_다른_좌표의_부재를_증언한다() {
         RequestRecord withSort = json(Source.HUMAN, "USER A", "{\"password\":\"a\",\"sort\":\"asc\"}");
         RequestRecord withoutSort = json(Source.HUMAN, "USER A", "{\"password\":\"b\"}");
         SurfaceAnalysis analysis = analyze(withSort, withoutSort);
 
         ParameterFact sort = fact(analysis, "GET", "/api/orders", ParameterLocation.JSON_BODY, "/sort");
         assertEquals(1, sort.profile().absentObservedContextCount(),
-                "SENSITIVE_PARAMETER_OMITTED는 파싱 실패가 아니므로 password만 있는 요청도 sort 부재의 증인이다(D-160)");
+                "password만 있는 요청도 끝까지 읽었으므로 sort 부재의 증인이다(D-160)");
         assertTrue(endpoint(analysis, "GET", "/api/orders").parameters().stream()
-                .noneMatch(p -> p.canonicalPath().equals("/password")), "비밀 좌표는 여전히 만들지 않는다");
-        assertTrue(analysis.parameterDiagnostics().stream().anyMatch(d -> d.reasonCode().equals("SENSITIVE_PARAMETER_OMITTED")),
-                "생략 사실은 진단으로 계속 남는다");
+                .anyMatch(p -> p.canonicalPath().equals("/password")), "password도 다른 입력과 똑같이 좌표를 만든다");
     }
 
     private static final AtomicInteger IDS = new AtomicInteger();

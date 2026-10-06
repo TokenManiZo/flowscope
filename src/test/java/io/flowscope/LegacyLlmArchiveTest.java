@@ -33,10 +33,9 @@ final class LegacyLlmArchiveTest {
     @Test
     void oldVerdictForCurrentFindingSurvivesBothFormatsWithoutOverridingCurrentRules() throws Exception {
         SampleProject.Data sample = SampleProject.create();
-        // Store accepts only canonically masked payloads, as the capture path supplies.
         for (RequestRecord record : sample.records()) {
-            record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText), "", 1024 * 1024);
-            record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText), "", 1024 * 1024);
+            record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
+            record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
         }
         Pipeline.Result result = Pipeline.run(sample.records(), sample.config());
         assertFalse(result.analysis.findings().isEmpty());

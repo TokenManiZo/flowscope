@@ -109,29 +109,29 @@ public final class HarParser {
         RequestRecord record = new RequestRecord(Source.SCANNER, service(uri), method, path, status,
                 BurpXmlParser.fingerprint(requestText));
         record.hasResponse = hasResponse;
-        String maskedRequest = Masking.maskHeaders(requestText);
-        String maskedResponse = hasResponse ? Masking.maskHeaders(responseText) : null;
-        record.requestPayload = StoredPayload.capture(maskedRequest, requestContentType, MAX_PAYLOAD_BYTES);
+        String storedRequest = requestText;
+        String storedResponse = hasResponse ? responseText : null;
+        record.requestPayload = StoredPayload.capture(storedRequest, requestContentType, MAX_PAYLOAD_BYTES);
         if (hasResponse && responseBody.binary() != null) {
             byte[] originalHead = responseHead.getBytes(StandardCharsets.UTF_8);
-            byte[] maskedHead = Masking.maskHeaders(responseHead).getBytes(StandardCharsets.UTF_8);
-            byte[] digestInput = new byte[maskedHead.length + responseBody.binary().length];
-            System.arraycopy(maskedHead, 0, digestInput, 0, maskedHead.length);
-            System.arraycopy(responseBody.binary(), 0, digestInput, maskedHead.length, responseBody.binary().length);
+            byte[] responseHeadBytes = responseHead.getBytes(StandardCharsets.UTF_8);
+            byte[] digestInput = new byte[responseHeadBytes.length + responseBody.binary().length];
+            System.arraycopy(responseHeadBytes, 0, digestInput, 0, responseHeadBytes.length);
+            System.arraycopy(responseBody.binary(), 0, digestInput, responseHeadBytes.length, responseBody.binary().length);
             record.responsePayload = StoredPayload.metadataOnly(digestInput,
                     originalHead.length + responseBody.binary().length,
                     StoredPayload.Retention.BINARY_METADATA_ONLY);
         } else {
-            record.responsePayload = StoredPayload.capture(maskedResponse, responseContentType, MAX_PAYLOAD_BYTES);
+            record.responsePayload = StoredPayload.capture(storedResponse, responseContentType, MAX_PAYLOAD_BYTES);
         }
-        record.query = Masking.truncate(Masking.maskSecrets(query), BurpXmlParser.MAX_BODY);
-        record.reqBody = Masking.truncate(Masking.maskBody(requestBody, requestContentType), BurpXmlParser.MAX_BODY);
-        record.reqText = Masking.truncate(maskedRequest, BurpXmlParser.MAX_BODY);
+        record.query = TextLimits.truncate(query, BurpXmlParser.MAX_BODY);
+        record.reqBody = TextLimits.truncate(requestBody, BurpXmlParser.MAX_BODY);
+        record.reqText = TextLimits.truncate(storedRequest, BurpXmlParser.MAX_BODY);
         record.body = hasResponse && responseBody.text() != null
-                ? Masking.truncate(Masking.maskBody(responseBody.text(), responseContentType), BurpXmlParser.MAX_BODY)
+                ? TextLimits.truncate(responseBody.text(), BurpXmlParser.MAX_BODY)
                 : null;
-        record.respText = hasResponse ? Masking.truncate(maskedResponse, BurpXmlParser.MAX_BODY) : null;
-        record.location = Masking.truncate(Masking.maskSecrets(header(responseHeaders, "Location")),
+        record.respText = hasResponse ? TextLimits.truncate(storedResponse, BurpXmlParser.MAX_BODY) : null;
+        record.location = TextLimits.truncate(header(responseHeaders, "Location"),
                 BurpXmlParser.MAX_BODY);
         record.requestContentType = requestContentType;
         record.responseContentType = responseContentType;

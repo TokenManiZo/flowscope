@@ -257,7 +257,7 @@ describe("EvidencePage", () => {
     expect(Object.values(sessionStorage)).not.toContain(rawSentinel)
   })
 
-  it("opens the page containing the selected record and places masked payloads before policy", async () => {
+  it("opens the page containing the selected record and places payloads before policy", async () => {
     // Keep all 205 stored records for pagination, but fold repeated rows to avoid rendering 205 controls.
     const events = Array.from({ length: 205 }, (_, index) => event({ eventId: `e-${index}`, clusterId: index < 200 ? "repeated" : `c-${index}`, repeatCount: 1 }))
     const record = { eventId: "e-204", query: "", requestBody: "", request: "GET /orders/1 HTTP/1.1", responseBody: "", response: "HTTP/1.1 200", location: "", requestPayload: null, responsePayload: null, trafficClass: "API", trafficDisposition: "INCLUDE", classificationReasons: [] }
@@ -265,7 +265,7 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
     await userEvent.click((await screen.findByText("e-204")).closest("tr")!)
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/evidence?operation=GET+%2Forders%2F%7Bid%7D&offset=200&limit=200", expect.any(Object)))
-    const request = await screen.findByRole("textbox", { name: "마스킹된 요청 원문" })
+    const request = await screen.findByRole("textbox", { name: "요청 원문" })
     const policy = screen.getByText("정책 편집 · 펼치기/접기")
     expect(request.compareDocumentPosition(policy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(policy.closest("details")).not.toHaveAttribute("open")

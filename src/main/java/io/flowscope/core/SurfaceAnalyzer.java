@@ -905,8 +905,7 @@ public final class SurfaceAnalyzer {
          */
         private MutableParameter parameter(ParameterLocation location, String canonicalPath, String displayName,
                                            boolean resolved) {
-            // 인증·비밀 이름의 좌표는 관측(엔진)과 마찬가지로 선언에서도 만들지 않는다(PR#11 sink 규칙).
-            if (canonicalPath == null || canonicalPath.isBlank() || Masking.isSensitiveParameterPath(canonicalPath)) {
+            if (canonicalPath == null || canonicalPath.isBlank()) {
                 return MutableParameter.IGNORED;
             }
             String key = location + ":" + (resolved ? "" : "?") + canonicalPath;
@@ -1148,8 +1147,6 @@ public final class SurfaceAnalyzer {
             shapes.add(observedShape);
             valueTypes.add(valueType);
             int byteLength = engineObs.value() == null ? 0 : engineObs.value().byteLength();
-            boolean masked = engineObs.value() != null && engineObs.value().maskedPreview() != null
-                    && engineObs.value().maskedPreview().contains("***MASKED***");
             boolean newlyTruncated = false;
             // 엔진 digest는 원문 스칼라 기준(PR#11 권한 연결의 exact scalar 매칭 계약)이라 "1"과 1이 같다.
             // distinct 계수는 실제 타입을 키에 포함해 타입 차이를 보존한다.
@@ -1161,7 +1158,7 @@ public final class SurfaceAnalyzer {
             }
             observations.add(new ParameterObservation(engineObs.evidenceId(), engineObs.source(), engineObs.runId(),
                     engineObs.identity(), status, observedShape, engineObs.role(), engineObs.phase(),
-                    presence, valueType, byteLength, masked, engineObs.contextSignature(),
+                    presence, valueType, byteLength, engineObs.contextSignature(),
                     SurfaceAnalysis.Confidence.valueOf(engineObs.confidence().name())));
             return newlyTruncated;
         }

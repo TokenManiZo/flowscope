@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class StoredPayloadTest {
     @Test
-    void 마스킹된_텍스트를_압축해_원문으로_복원한다() {
+    void 텍스트를_압축해_원문으로_복원한다() {
         String value = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n"
                 + "{\"items\":[" + "{\"id\":1},".repeat(2_000) + "]}";
 
@@ -81,7 +81,7 @@ class StoredPayloadTest {
 
     @Test
     void 제한미리보기_digest는_실제크기를_포함한다() {
-        byte[] preview = "same masked prefix".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] preview = "same stored prefix".getBytes(java.nio.charset.StandardCharsets.UTF_8);
         StoredPayload first = StoredPayload.previewMetadataOnly(
                 preview, 2_000_000, StoredPayload.Retention.OVER_LIMIT_METADATA_ONLY);
         StoredPayload second = StoredPayload.previewMetadataOnly(

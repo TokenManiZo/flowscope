@@ -125,10 +125,10 @@ public final class BurpXmlParser {
                 rec.hasResponse = respEl != null && respText != null && !respText.isBlank();
                 String requestContentType = headerValue(CONTENT_TYPE, reqText);
                 String responseContentType = headerValue(CONTENT_TYPE, respText);
-                String maskedRequest = Masking.maskHeaders(reqText);
-                String maskedResponse = rec.hasResponse ? Masking.maskHeaders(respText) : null;
-                rec.requestPayload = StoredPayload.capture(maskedRequest, requestContentType, MAX_PAYLOAD_BYTES);
-                rec.responsePayload = StoredPayload.capture(maskedResponse, responseContentType, MAX_PAYLOAD_BYTES);
+                String storedRequest = reqText;
+                String storedResponse = rec.hasResponse ? respText : null;
+                rec.requestPayload = StoredPayload.capture(storedRequest, requestContentType, MAX_PAYLOAD_BYTES);
+                rec.responsePayload = StoredPayload.capture(storedResponse, responseContentType, MAX_PAYLOAD_BYTES);
                 if (rec.requestPayload != null && rec.requestPayload.retained()
                         && !retainedPayloadDigests.contains(rec.requestPayload.digest())) {
                     if (retainedPayloadBytes + rec.requestPayload.compressedBytes() > MAX_COMPRESSED_PAYLOAD_BYTES) {
@@ -149,15 +149,13 @@ public final class BurpXmlParser {
                         retainedPayloadDigests.add(rec.responsePayload.digest());
                     }
                 }
-                rec.body = rec.hasResponse ? Masking.truncate(Masking.maskBody(responseBody(respText),
-                        responseContentType), MAX_BODY) : null;
-                rec.respText = rec.hasResponse ? Masking.truncate(maskedResponse, MAX_BODY) : null;
-                rec.location = Masking.truncate(Masking.maskSecrets(headerValue(LOCATION, respText)), MAX_BODY);
-                // 명세가 입력으로 요구하는 것들 (F-06 쿼리·본문 / F-18·22 원요청) — 저장 전 마스킹(F-05)
-                rec.query = Masking.truncate(Masking.maskSecrets(query), MAX_BODY);
-                rec.reqBody = Masking.truncate(Masking.maskBody(requestBody(reqText),
-                        requestContentType), MAX_BODY);
-                rec.reqText = Masking.truncate(maskedRequest, MAX_BODY);
+                rec.body = rec.hasResponse ? TextLimits.truncate(responseBody(respText), MAX_BODY) : null;
+                rec.respText = rec.hasResponse ? TextLimits.truncate(storedResponse, MAX_BODY) : null;
+                rec.location = TextLimits.truncate(headerValue(LOCATION, respText), MAX_BODY);
+                // 명세가 입력으로 요구하는 것들 (F-06 쿼리·본문 / F-18·22 원요청)
+                rec.query = TextLimits.truncate(query, MAX_BODY);
+                rec.reqBody = TextLimits.truncate(requestBody(reqText), MAX_BODY);
+                rec.reqText = TextLimits.truncate(storedRequest, MAX_BODY);
                 rec.requestContentType = requestContentType;
                 rec.responseContentType = responseContentType;
                 rec.secFetchDest = headerValue(SEC_FETCH_DEST, reqText);

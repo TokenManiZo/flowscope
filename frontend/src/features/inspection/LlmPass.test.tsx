@@ -42,6 +42,9 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
   await user.click(await screen.findByRole("button", { name: /^탐색할 계정/ }))
   expect(await screen.findByRole("checkbox", { name: "USER A" })).toBeDisabled()
   expect(screen.getByRole("button", { name: "USER A 브라우저 로그인" })).toBeEnabled()
+  expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
+  expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeDisabled()
+  await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
   // 계정 등록 패널은 계정·세션 화면으로 옮겼다.
   expect(screen.queryByLabelText("표시 이름")).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: "메모리에 계정 등록" })).not.toBeInTheDocument()
@@ -258,11 +261,17 @@ it("opens a login window for a registered account and adopts its session on [로
   await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
   expect(posts[0]).toContain("action=browser-open")
   expect(posts[0]).toContain("id=user-a")
+  expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
+  expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeDisabled()
   await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
   expect(posts[1]).toContain("action=browser-complete")
 
   expect(await screen.findByText("세션 있음")).toBeVisible()
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "USER A" })).toBeEnabled())
+  expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
+  expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeDisabled()
+  await user.click(screen.getByRole("checkbox", { name: "USER A" }))
+  await waitFor(() => expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeEnabled())
 })
 
 it("shows the browser budget as a ceiling and keeps the stop switch visible while a window is driven", async () => {

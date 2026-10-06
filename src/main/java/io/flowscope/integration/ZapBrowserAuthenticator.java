@@ -152,7 +152,7 @@ final class ZapBrowserAuthenticator {
     private static final Pattern REUSABLE_MATERIAL =
             Pattern.compile("(?im)^(?:Authorization|Cookie):\\s*\\S");
 
-    /** 관측된 인증 요청이 재사용 가능한 인증값(Authorization/Cookie)을 실어 나르는지(마스킹돼도 헤더명은 남는다). */
+    /** 관측된 인증 요청이 재사용 가능한 인증값(Authorization/Cookie)을 실어 나르는지. */
     private static boolean carriesReusableMaterial(RequestRecord record) {
         String request = record.requestTextForEvidence();
         return request != null && REUSABLE_MATERIAL.matcher(request).find();

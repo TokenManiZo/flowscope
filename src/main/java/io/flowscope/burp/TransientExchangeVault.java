@@ -105,6 +105,12 @@ final class TransientExchangeVault {
         retainedBytes += entry.retainedBytes();
     }
 
+    /** 원문을 꺼내지 않고 요청 원문이 남아 있는지만 본다. 스냅샷마다 모든 기록에 대해 부르므로 복사하지 않는다. */
+    synchronized boolean requestRetained(RequestRecord record) {
+        Entry entry = record == null ? null : entries.get(record.runtimeId());
+        return entry != null && entry.request != null;
+    }
+
     synchronized Optional<Exchange> get(RequestRecord record) {
         Entry entry = record == null ? null : entries.get(record.runtimeId());
         return entry == null ? Optional.empty() : Optional.of(entry.view());

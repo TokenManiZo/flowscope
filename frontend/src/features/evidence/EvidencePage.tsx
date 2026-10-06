@@ -144,7 +144,7 @@ export function EvidencePage() {
 
   const page = evidence.data
   const records = selectedEvent && <section aria-label="작업 관측 기록 페이지" className="grid min-w-0 gap-3 border-t pt-4">
-    <h2 className="text-sm font-semibold">요청 · 응답 <span className="ml-1 text-xs font-normal text-muted-foreground">마스킹됨{page ? ` · 같은 API ${page.total}건` : ""}</span></h2>
+    <h2 className="text-sm font-semibold">요청 · 응답 <span className="ml-1 text-xs font-normal text-muted-foreground">{page ? `같은 API ${page.total}건` : ""}</span></h2>
     {!selectedEvent.op && <p className="text-xs text-muted-foreground">선택 기록의 API 좌표가 없습니다.</p>}
     {selectedEvent.op && evidence.isLoading && <p className="text-xs text-muted-foreground">불러오는 중…</p>}
     {evidence.isError && <div className="flex items-start justify-between gap-2"><p role="alert" className="min-w-0 break-words text-xs text-destructive">{evidence.error.message}</p><Button variant="outline" size="sm" disabled={evidence.isFetching} onClick={() => void evidence.refetch()}>다시 시도</Button></div>}

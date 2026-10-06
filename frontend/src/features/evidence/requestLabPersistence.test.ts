@@ -89,10 +89,10 @@ describe("Request Lab durable editing queue", () => {
 
   it("restores sequence, names and latest response and clears all live text on disposal", async () => {
     const { raw, queue } = setup()
-    expect(raw.restoreRequests([{ id: 4, name: "saved", request: "MASKED", credentialMode: "ACCOUNT", result: { response: "last", status: 200, durationMs: 8 }, dirty: true }], 5, 4)).toBe(true)
-    expect(raw.request).toBe("MASKED")
+    expect(raw.restoreRequests([{ id: 4, name: "saved", request: "saved", credentialMode: "ACCOUNT", result: { response: "last", status: 200, durationMs: 8 }, dirty: true }], 5, 4)).toBe(true)
+    expect(raw.request).toBe("saved")
     expect(raw.response).toBe("last")
-    expect(raw.requests[0]).toMatchObject({ restored: true, dirty: true })
+    expect(raw.requests[0]).toMatchObject({ accountId: "", dirty: true })
     expect(raw.addRequest("new", "ANONYMOUS")?.id).toBe(5)
     queue.dispose()
     raw.clear()

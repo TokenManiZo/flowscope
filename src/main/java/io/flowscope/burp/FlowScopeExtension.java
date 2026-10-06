@@ -34,7 +34,7 @@ import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.VerificationOutcome;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RecordMerge;
 import io.flowscope.core.RequestRecord;
@@ -72,6 +72,7 @@ import io.flowscope.explorer.CodexAppServerProvider;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerTransport;
+import io.flowscope.explorer.ExplorerBrowserProxy;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
@@ -105,9 +106,8 @@ import java.time.Instant;
  * FlowScope Burp 확장 진입점 (Montoya). 프록시 트래픽을 포트별 소스로 수집하고
  * Burp 제어판에서 localhost Web 분석 작업면을 연다 (F-01/F-08/F-20).
  *
- * 소스 구분(F-01): 예약 리스너 포트 → 소스. 기본 8080=사람, 8081=스캐너.
- * Montoya 는 리스너를 코드로 생성하지 못하므로(D-023 리스크) 포트는 Burp Proxy 설정에서
- * 사용자가 구성해야 한다. 활성 HUMAN run은 첫 범위 내 미매핑 리스너에도 결박한다.
+ * 소스 구분(F-01): 예약 리스너 포트 → 소스. 기본 8080=사람, 8081=스캐너, 8082=LLM.
+ * 스캐너/LLM 리스너는 Burp 프로젝트 설정으로 생성한다. HUMAN은 계정별 리스너를 사용한다.
  */
 public final class FlowScopeExtension implements BurpExtension {
 
@@ -285,7 +285,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     /** 저장 본문 상한 — 메모리 폭증 방지. */
     private static final int MAX_BODY = 8192;
-    /** 마스킹된 텍스트 원문 압축 보존 상한. 초과·바이너리는 크기와 해시만 보존한다. */
+    /** 텍스트 원문 압축 보존 상한. 초과·바이너리는 크기와 해시만 보존한다. */
     private static final int MAX_PAYLOAD_BYTES = Integer.getInteger(
             "flowscope.payload.maxBytes", 1024 * 1024);
     /** 상한 초과 메시지는 분석/UI에 필요한 앞부분만 복사한다. */
@@ -321,6 +321,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private HumanProxyListeners proxyListeners;
     /** ZAP용 스캐너 리스너를 열지 못했을 때 화면에 보여 줄 안내. 정상이면 빈 문자열. */
     private volatile String scannerListenerWarning = "";
+    private ExplorerBrowserProxy explorerBrowserProxy;
     private HumanBrowserSessions humanBrowsers;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private final SessionBroker sessionBroker = new SessionBroker();
@@ -426,6 +427,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput);
         explorer.browserRecorder(this::recordBrowserExchange);
+        PORT_SOURCE.entrySet().stream().filter(entry -> entry.getValue().source() == Source.LLM)
+                .map(Map.Entry::getKey).filter(port -> port > 0 && port <= 65535).sorted().findFirst()
+                .ifPresent(port -> {
+                    explorerBrowserProxy = new ExplorerBrowserProxy(port);
+                    explorer.browserProxy(explorerBrowserProxy);
+                });
         try {
             startWebUi();
         } catch (Exception e) {
@@ -458,6 +465,8 @@ public final class FlowScopeExtension implements BurpExtension {
         registerAccountSessionCaptureMenu();
         api.extension().registerUnloadingHandler(this::shutdown);
         ensureScannerProxyListener();
+        try { ensureExplorerProxyListener(); }
+        catch (IOException | RuntimeException error) { api.logging().logToError("FlowScope: LLM 프록시 설정 실패", error); }
         startZapIntegration();
         api.logging().logToOutput("FlowScope loaded. 포트 매핑: " + PORT_SOURCE
                 + " (미매핑 포트는 '미상'으로 수집). 변경: "
@@ -587,6 +596,17 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
+            String originalUserAgent = explorerOriginalUserAgent(request);
+            if (originalUserAgent != null) {
+                // Preserve the direct login browser's redirects and CDN/subresource loads.
+                // Explorer actions and CDP Evidence still use their existing exact-scope gates.
+                // Burp history retains the real exchange; CDP alone retains account/run Evidence.
+                // Do not replace browser credentials with the unrelated HUMAN Session Broker.
+                var notes = request.annotations().notes();
+                var annotations = request.annotations().withNotes((notes == null || notes.isBlank() ? "" : notes + "\n")
+                        + ExplorerBrowserProxy.HISTORY_NOTE);
+                return ProxyRequestReceivedAction.doNotIntercept(request.withUpdatedHeader("User-Agent", originalUserAgent), annotations);
+            }
             String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
             int observedPort = listenerPort(request.listenerInterface());
             RunContextRegistry.Context managed = humanBrowsers.context(observedPort);
@@ -612,28 +632,21 @@ public final class FlowScopeExtension implements BurpExtension {
             if (profile.source() == Source.HUMAN && humanRun != null && captureGeneration < 0) {
                 rememberObservation(proxyObservations, request.messageId(), humanRun, null,
                         true, "프록시", profile, observedPort, captureGeneration);
-                return managed != null ? ProxyRequestReceivedAction.doNotIntercept(request)
-                        : ProxyRequestReceivedAction.continueWith(request);
+                return ProxyRequestReceivedAction.continueWith(request);
             }
             try {
                 RunContextRegistry.Context context = profile.source() == Source.HUMAN ? humanRun : runContexts.current(profile.source());
                 // Operator choice is authoritative: between 시작 and 종료 every credentialed browser request belongs to
                 // the selected account, even if an older binding said otherwise. Requests without credentials stay anonymous.
                 // The handle is resolved before profile selection so the bound Burp listener (e.g. 8888) also counts (#30).
-                String captureHandle = profile.source() == Source.HUMAN && hasCredentials(request) ? loginCaptureHandle : null;
+                String captureHandle = profile.source() == Source.HUMAN ? loginCaptureHandle : null;
                 String requestCaptureAccountId = captureHandle == null ? null
                         : sessionBroker.accountForHandle(captureHandle).orElse(null);
                 boolean captureSuppressed = managed != null && captureHandle == null;
                 rememberObservation(proxyObservations, request.messageId(), context, requestCaptureAccountId,
                         captureSuppressed, "프록시", profile, observedPort, captureGeneration);
-                if (captureHandle != null) {
-                    sessionBroker.observeRequest(captureHandle, URI.create(request.url()), headersOf(request.headers()),
-                            java.time.Instant.now());
-                    sessionBroker.noteRecordedRequest(captureHandle, request.method() + " " + request.pathWithoutQuery());
-                }
                 HttpRequest prepared = prepareSession(request, profile, context);
-                return managed != null ? ProxyRequestReceivedAction.doNotIntercept(prepared)
-                        : ProxyRequestReceivedAction.continueWith(prepared);
+                return ProxyRequestReceivedAction.continueWith(prepared);
             } catch (RuntimeException error) {
                 api.logging().logToOutput("FlowScope 세션 주입 차단: " + error.getMessage());
                 return ProxyRequestReceivedAction.drop();
@@ -643,17 +656,50 @@ public final class FlowScopeExtension implements BurpExtension {
         @Override
         public ProxyRequestToBeSentAction handleRequestToBeSent(InterceptedRequest request) {
             int port = listenerPort(request.listenerInterface());
+            if (explorerBrowserProxy != null && port == explorerBrowserProxy.port()
+                    && isExplorerBrowserHistory(request.annotations().notes())) {
+                return ProxyRequestToBeSentAction.continueWith(request);
+            }
             var observation = proxyObservations.get(request.messageId());
+            var managed = humanBrowsers.context(port);
+            // A closed account window may leave its run active while analysis finishes.
+            if (observation != null && observation.managedHuman()
+                    && (managed == null || !managed.runId().equals(observation.context().runId()))) {
+                proxyObservations.remove(request.messageId());
+                return ProxyRequestToBeSentAction.drop();
+            }
             if (observation != null && observation.source() == Source.HUMAN
                     && observation.detail() == SourceDetail.BROWSER && observation.context() != null
                     && runContexts.current(Source.HUMAN, observation.context().runId()) == null) {
                 return ProxyRequestToBeSentAction.drop();
             }
             if (humanBrowsers.ownsPort(port) && humanBrowsers.context(port) == null) return ProxyRequestToBeSentAction.drop();
-            return allowed(request, humanBrowsers.ownsPort(port)
-                    ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER) : profileOf(request.listenerInterface()))
-                    ? ProxyRequestToBeSentAction.continueWith(request)
-                    : ProxyRequestToBeSentAction.drop();
+            if (!allowed(request, humanBrowsers.ownsPort(port)
+                    ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER) : profileOf(request.listenerInterface()))) {
+                return ProxyRequestToBeSentAction.drop();
+            }
+            // Learn only the final Forward request, never credentials from a held or dropped request.
+            if (observation != null && observation.source() == Source.HUMAN && !staleObservation(observation)) {
+                try {
+                    synchronized (sessionBroker) {
+                        String accountId = hasCredentials(request) ? observation.humanCaptureAccountId() : null;
+                        var session = accountId == null ? null : sessionBroker.viewForAccount(accountId)
+                                .filter(SessionBroker.SessionView::capturing)
+                                .filter(view -> view.service().equals(serviceOf(request))).orElse(null);
+                        if (session != null) {
+                            sessionBroker.observeRequest(session.handle(), URI.create(request.url()), headersOf(request.headers()), Instant.now());
+                            sessionBroker.noteRecordedRequest(session.handle(), request.method() + " " + request.pathWithoutQuery());
+                        }
+                        proxyObservations.forwarded(request.messageId(), session == null ? null : accountId,
+                                observation.managedHuman() && session == null);
+                    }
+                } catch (RuntimeException error) {
+                    api.logging().logToError("FlowScope: Forward 요청의 세션 캡처 실패", error);
+                    proxyObservations.remove(request.messageId());
+                    return ProxyRequestToBeSentAction.drop();
+                }
+            }
+            return ProxyRequestToBeSentAction.continueWith(request);
         }
 
         private boolean allowed(InterceptedRequest request, PortProfile profile) {
@@ -729,6 +775,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyHandler implements ProxyResponseHandler {
         @Override
         public ProxyResponseReceivedAction handleResponseReceived(InterceptedResponse response) {
+            if (isExplorerBrowserHistory(response.annotations().notes())) return ProxyResponseReceivedAction.doNotIntercept(response);
             try {
                 InFlightRequestTracker.Observation observation = proxyObservations.remove(response.messageId());
                 if (observation == null) {
@@ -983,24 +1030,22 @@ public final class FlowScopeExtension implements BurpExtension {
             catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
-        // 저장 전 반드시 마스킹 (F-05 원문 토큰 저장 금지, F-22 인증정보 가림).
-        String maskedRequest = capturedRequest.maskedText();
-        String maskedResponse = capturedResponse.maskedText();
+        String capturedRequestText = capturedRequest.text();
+        String capturedResponseText = capturedResponse.text();
         rec.requestPayload = internPayload(capturedRequest.payload());
         rec.responsePayload = internPayload(capturedResponse.payload());
-        rec.query = Masking.truncate(Masking.maskBody(emptyToNull(req.query()),
-                "application/x-www-form-urlencoded"), MAX_BODY);
-        rec.reqBody = Masking.truncate(Masking.maskBody(requestBody, req.headerValue("Content-Type")), MAX_BODY);
-        rec.reqText = Masking.truncate(maskedRequest, MAX_BODY);
+        rec.query = TextLimits.truncate(emptyToNull(req.query()), MAX_BODY);
+        rec.reqBody = TextLimits.truncate(requestBody, MAX_BODY);
+        rec.reqText = TextLimits.truncate(capturedRequestText, MAX_BODY);
         rec.requestContentType = emptyToNull(req.headerValue("Content-Type"));
         rec.responseContentType = emptyToNull(responseContentType);
         rec.secFetchDest = emptyToNull(req.headerValue("Sec-Fetch-Dest"));
         rec.secFetchMode = emptyToNull(req.headerValue("Sec-Fetch-Mode"));
         rec.accessControlRequestMethod = emptyToNull(req.headerValue("Access-Control-Request-Method"));
         rec.timestamp = timestamp;
-        rec.body = Masking.truncate(Masking.maskBody(responseBody, responseContentType), MAX_BODY);
-        rec.respText = Masking.truncate(maskedResponse, MAX_BODY);
-        rec.location = Masking.truncate(Masking.maskSecrets(location), MAX_BODY);
+        rec.body = TextLimits.truncate(responseBody, MAX_BODY);
+        rec.respText = TextLimits.truncate(capturedResponseText, MAX_BODY);
+        rec.location = TextLimits.truncate(location, MAX_BODY);
         // 이 메서드는 응답 수신 콜백에서만 호출된다. 204/빈 본문도 실제 응답이다.
         rec.hasResponse = true;
         return rec;
@@ -1152,7 +1197,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 humanCaptureSuppressed, datasetEpoch.get(), now,
                 profile == null ? Source.UNKNOWN : profile.source(),
                 profile == null ? SourceDetail.UNKNOWN : profile.detail(), listenerPort,
-                generation)) {
+                generation, profile != null && profile.source() == Source.HUMAN && humanBrowsers != null
+                        && context != null && humanBrowsers.contains(context.runId()))) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
@@ -1268,6 +1314,20 @@ public final class FlowScopeExtension implements BurpExtension {
                 .map(Map.Entry::getKey).sorted().findFirst().orElse(8081);
     }
 
+    private void ensureExplorerProxyListener() throws IOException {
+        if (explorerBrowserProxy == null) throw new IOException("LLM 프록시 포트 매핑이 없습니다. flowscope.ports에 LLM 포트를 설정하세요.");
+        proxyListeners.ensure(explorerBrowserProxy.port());
+    }
+
+    private String explorerOriginalUserAgent(InterceptedRequest request) {
+        return explorerBrowserProxy != null && listenerPort(request.listenerInterface()) == explorerBrowserProxy.port()
+                ? explorerBrowserProxy.originalUserAgent(request.headerValue("User-Agent")) : null;
+    }
+
+    private static boolean isExplorerBrowserHistory(String notes) {
+        return notes != null && notes.lines().anyMatch(ExplorerBrowserProxy.HISTORY_NOTE::equals);
+    }
+
     private static RunPhase phaseOf(SourceDetail detail) {
         return switch (detail) {
             case ZAP_AUTHENTICATION -> RunPhase.SESSION_SETUP;
@@ -1292,6 +1352,8 @@ public final class FlowScopeExtension implements BurpExtension {
                 List<RequestRecord> incoming = new ArrayList<>(history.size());
                 int withoutResponse = 0;
                 for (ProxyHttpRequestResponse item : history) {
+                    // Includes login traffic and exchanges already recorded with CDP account/run attribution.
+                    if (isExplorerBrowserHistory(item.annotations().notes())) continue;
                     if (!item.hasResponse() || item.response() == null) {
                         withoutResponse++;
                         continue;
@@ -1899,7 +1961,7 @@ public final class FlowScopeExtension implements BurpExtension {
         String message = error == null || error.getMessage() == null
                 ? "로컬 프로젝트 DB 저장에 실패했습니다."
                 : error.getMessage();
-        databaseSaveError = Masking.truncate(Masking.maskSecrets(message), 512);
+        databaseSaveError = TextLimits.truncate(message, 512);
     }
 
     private ProjectWorkspace.Status currentProjectStatus() {
@@ -2161,6 +2223,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 validateRuntimeAccount(account.id(), account.label(),
                         login.getScheme() + "://" + login.getAuthority(), account.role().name());
                 try {
+                    ensureExplorerProxyListener();
                     return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), url);
                 } catch (java.io.IOException error) {
                     throw new IllegalStateException(error.getMessage());
@@ -2251,26 +2314,31 @@ public final class FlowScopeExtension implements BurpExtension {
                 openDraftInRepeater(record, prepareHumanRequest(record, request, credentialMode, accountId));
                 return record;
             }
+            @Override public boolean requestLabRawAvailable(RequestRecord record) {
+                // 메모리 원문이 없어도 프로젝트에 잘리지 않고 저장된 원문이 있으면 Request Lab으로 보낼 수 있다.
+                return rawExchanges.requestRetained(record)
+                        || record.requestPayload != null && record.requestPayload.retained();
+            }
             @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
                 RequestRecord record = evidenceRecord(evidenceId);
                 TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElse(null);
                 boolean rawRequest = raw != null && raw.requestRetained();
                 boolean rawResponse = raw != null && raw.responseRetained();
+                // 메모리 원문이 없으면(재시작·다시 열기·메모리 상한) 프로젝트에 잘리지 않고 저장된 원문을 쓴다.
+                boolean storedRequest = !rawRequest && record.requestPayload != null && record.requestPayload.retained();
+                boolean storedResponse = !rawResponse && record.responsePayload != null && record.responsePayload.retained();
                 HttpMessageTextCodec.Decoded decodedRequest = rawRequest ? decodeRequest(raw, record.requestContentType)
-                        : new HttpMessageTextCodec.Decoded(record.requestTextForEvidence(), false, null,
-                        "마스킹된 저장 전문입니다.");
+                        : new HttpMessageTextCodec.Decoded(record.requestTextForEvidence(), storedRequest, storedRequest ? "UTF-8" : null,
+                        storedRequest ? "저장된 원문입니다." : "요청이 저장 한도를 넘었거나 바이너리라 일부만 남아 있습니다.");
                 HttpMessageTextCodec.Decoded decodedResponse = rawResponse ? decodeResponse(raw, record.responseContentType)
-                        : new HttpMessageTextCodec.Decoded(record.responseTextForEvidence(), false, null,
-                        "마스킹된 저장 전문입니다.");
+                        : new HttpMessageTextCodec.Decoded(record.responseTextForEvidence(), storedResponse, storedResponse ? "UTF-8" : null,
+                        storedResponse ? "저장된 원문입니다." : "응답이 저장 한도를 넘었거나 바이너리라 일부만 남아 있습니다.");
                 String request = decodedRequest.text();
                 String response = decodedResponse.text();
-                String message = raw == null
-                        ? "이 Evidence의 메모리 원문이 없습니다(가져오기·메모리 상한/eviction 가능). 마스킹된 전문을 표시합니다."
-                        : !rawRequest
-                        ? "요청 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
-                        : !rawResponse
-                        ? "응답 원문이 메모리 상한을 초과해 보존되지 않았습니다. 마스킹된 전문을 표시합니다."
-                        : "원문은 현재 Burp 프로세스 메모리에서만 불러왔으며 저장·내보내기하지 않습니다.";
+                String message = rawRequest && rawResponse ? "원문은 현재 Burp 프로세스 메모리에서 불러왔습니다."
+                        : storedRequest ? "메모리 원문이 없어 프로젝트에 저장된 원문을 불러왔습니다."
+                        : rawRequest ? "응답 원문은 메모리 상한을 넘어 일부만 남아 있습니다."
+                        : "이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다.";
                 if (rawRequest && !decodedRequest.editable()) message += " " + decodedRequest.note();
                 var observedAccount = record.laneAccountId == null
                         ? analysisConfig.boundAccount(record.service, record.fp)
@@ -2284,7 +2352,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 String reusableSession = reusable.map(view -> view.accountLabel() + " · 사용 가능").orElse("없음");
                 String reusableAccountId = reusable.map(SessionBroker.SessionView::accountId).orElse("");
                 return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,
-                        request, response, rawRequest, rawResponse, decodedRequest.editable(),
+                        request, response, rawRequest || storedRequest, rawResponse || storedResponse, decodedRequest.editable(),
                         decodedRequest.charset(), decodedResponse.charset(), observedIdentity,
                         reusableSession, reusableAccountId, message,
                         observedAccount.map(io.flowscope.core.AccountProfile::id).orElse(""));
@@ -2297,15 +2365,18 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
                     String evidenceId, String requestText, FlowScopeWebServer.CredentialMode mode, String accountId) {
                 RequestRecord seed = evidenceRecord(evidenceId);
-                TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElse(null);
-                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL && (original == null
-                        || !original.requestRetained() || !decodeRequest(original, seed.requestContentType).editable())) {
-                    throw new IllegalStateException("편집 가능한 원문이 없습니다.");
+                String originalText = null;
+                if (mode == FlowScopeWebServer.CredentialMode.ORIGINAL) {
+                    TransientExchangeVault.Exchange original = rawExchanges.get(seed).orElse(null);
+                    HttpMessageTextCodec.Decoded decoded = original != null && original.requestRetained()
+                            ? decodeRequest(original, seed.requestContentType) : null;
+                    if (decoded != null && decoded.editable()) originalText = decoded.text();
+                    else if (seed.requestPayload != null && seed.requestPayload.retained()) originalText = seed.requestPayload.text();
+                    else throw new IllegalStateException("편집 가능한 원문이 없습니다.");
                 }
                 // Same URL/scope/session rules as send, without sending or recording an attempt.
                 HttpRequest prepared = prepareHumanRequest(seed,
-                        mode == FlowScopeWebServer.CredentialMode.ORIGINAL
-                                ? decodeRequest(original, seed.requestContentType).text() : requestText,
+                        mode == FlowScopeWebServer.CredentialMode.ORIGINAL ? originalText : requestText,
                         mode, accountId);
                 if (prepared.toByteArray().length() > RAW_REQUEST_LIMIT_BYTES) {
                     throw new IllegalArgumentException("인증 적용 요청이 너무 큽니다.");
@@ -2359,7 +2430,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /**
-     * 저장된 마스킹 Request를 자동 전송하지 않고 Repeater 초안으로만 연다.
+     * 저장된 Request를 자동 전송하지 않고 Repeater 초안으로만 연다.
      * 인증정보를 재삽입하고 전송하는 최종 행위는 사용자가 Burp에서 수행한다.
      */
     private RequestRecord evidenceRecord(String evidenceId) {
@@ -2631,7 +2702,7 @@ public final class FlowScopeExtension implements BurpExtension {
             return true;
         } catch (RuntimeException error) {
             api.logging().logToOutput("FlowScope ZAP 로그인 세션의 계정 슬롯 연결 생략: "
-                    + Masking.maskSecrets(error.getMessage() == null ? error.getClass().getSimpleName()
+                    + (error.getMessage() == null ? error.getClass().getSimpleName()
                     : error.getMessage()));
             return false;
         }
@@ -2835,7 +2906,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             int requestBytes = exchange.request().toByteArray().length();
             String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
-                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 요약만 보존했습니다.";
             return new FlowScopeWebServer.RequestLabResult(published.evidenceId, published.status, displayResponse,
                     durationMs, requestBytes, responseBytes);
         } catch (RuntimeException error) {
@@ -2853,7 +2924,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             throw new IllegalStateException(received ? "응답 수신 · Evidence 기록 실패. 결과를 확인한 후 재전송을 판단하세요."
                     : sent ? "응답 미확인 · " + outcome + ". 대상 처리 여부는 확인되지 않았습니다."
-                    : "전송 전 차단 · " + Masking.maskSecrets(error.getMessage()), error);
+                    : "전송 전 차단 · " + error.getMessage(), error);
         }
     }
 
@@ -3091,7 +3162,7 @@ public final class FlowScopeExtension implements BurpExtension {
         String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
                 ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
                 response.headerValue("Content-Type")).text()
-                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 마스킹 요약만 보존했습니다.";
+                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 요약만 보존했습니다.";
         FlowScopeWebServer.RequestLabResult result = new FlowScopeWebServer.RequestLabResult(
                 published.evidenceId, response.statusCode(), responseText, durationMs, requestBytes, responseBytes);
         List<String> setCookies = response.headers().stream()
@@ -3192,9 +3263,6 @@ public final class FlowScopeExtension implements BurpExtension {
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
                 request = request.withHeader(header.getKey(), header.getValue());
             }
-        }
-        if (request.toString().contains("***MASKED***") || request.toString().contains("[BODY REDACTED:")) {
-            throw new IllegalArgumentException("마스킹된 값이 남아 있습니다. 인증을 다시 선택하고 필요한 내용을 채워 주세요.");
         }
         if (!originalBytesUsed && request.hasHeader("Content-Length")) {
             String actualLength = String.valueOf(request.body().length());
@@ -3322,8 +3390,8 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     /**
-     * Stores what the driven login window did. The window reaches no Burp listener, so nothing else would record it;
-     * this is the only path from CDP observation to Evidence, and it asserts the lane the same way the gateway does.
+     * Stores what the driven login window did. Burp keeps Proxy history while CDP alone supplies its account/run
+     * Evidence; the tagged proxy path deliberately skips generic capture.
      */
     private void recordBrowserExchange(ExplorerCoordinator.BrowserExchange exchange) {
         if (shuttingDown.get()) return;
@@ -3351,7 +3419,7 @@ public final class FlowScopeExtension implements BurpExtension {
             scheduleRebuildForNewRecords();
         } catch (Exception error) {
             api.logging().logToError("FlowScope 브라우저 탐색 수집 실패: " + exchange.method() + " "
-                    + Masking.maskSecrets(exchange.url()), error);
+                    + exchange.url(), error);
         }
     }
 

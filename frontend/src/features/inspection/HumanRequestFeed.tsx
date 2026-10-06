@@ -73,7 +73,7 @@ function HumanRawDialog({ eventId, open, onOpenChange }: { eventId: string | nul
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
     <DialogContent className="max-h-[calc(100svh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-[70rem]" showCloseButton={false}>
-      <DialogHeader className="border-b p-5"><DialogTitle>원문 보기</DialogTitle><DialogDescription>서버가 반환한 마스킹 요청과 응답을 읽기 전용으로 표시합니다.</DialogDescription></DialogHeader>
+      <DialogHeader className="border-b p-5"><DialogTitle>원문 보기</DialogTitle><DialogDescription>서버가 반환한 요청과 응답을 읽기 전용으로 표시합니다.</DialogDescription></DialogHeader>
       <div className="min-h-0 overflow-y-auto p-5">
         {loading && <p className="text-sm text-muted-foreground">원문 불러오는 중…</p>}
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
@@ -93,7 +93,7 @@ function HumanRawDialog({ eventId, open, onOpenChange }: { eventId: string | nul
 
 const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_7rem_3.5rem_5rem] items-center gap-3"
 
-/** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 마스킹 원문을 연다. */
+/** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 원문을 연다. */
 export function HumanRequestFeed({ items, description, emptyHint, title = "기록된 요청", titleBadge, showCount = false, showAll = false, searchLabel = "HUMAN 작업 피드 검색", view, context, showSource = false }: { items: readonly SourceFeedItem[]; description?: string; emptyHint: string; title?: string; titleBadge?: string; showCount?: boolean; showAll?: boolean; searchLabel?: string; view?: RecordView; context?: string; showSource?: boolean }) {
   const columns = showSource ? "grid min-w-[920px] grid-cols-[3.5rem_4.5rem_minmax(12rem,1fr)_3rem_10rem_7rem_3.5rem_5rem] items-center gap-3" : FEED_COLUMNS
   const [source, setSource] = useState("전체")

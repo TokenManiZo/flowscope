@@ -14,7 +14,6 @@ final class ApiManagementTest {
         var r = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", path, status, "anon");
         r.hasResponse = true; r.responseContentType = "application/json"; r.body = "{}";
         r.reqText = "GET " + path + " HTTP/1.1\r\nAuthorization: Bearer SECRET\r\n\r\n";
-        r.reqText = Masking.maskHeaders(r.reqText);
         return r;
     }
     private static ApiManagement.Request change(String action, List<String> ops, List<String> ids, String color, List<String> expected) {
@@ -45,7 +44,7 @@ final class ApiManagementTest {
             var marks = ApiManagement.marks(Pipeline.runIsolated(loaded.records(), loaded.config()), loaded.config(), loaded.routeCandidates());
             assertEquals("purple", marks.get(op).color()); assertTrue(marks.get(op).registered());
             assertEquals(List.of(id), marks.get(op).evidenceIds());
-            assertFalse(loaded.records().getFirst().requestTextForEvidence().contains("SECRET"));
+            assertTrue(loaded.records().getFirst().requestTextForEvidence().contains("Bearer SECRET"), "저장·다시 열기 뒤에도 원문 그대로");
         }
         var removed = prepare(change("unregister", List.of(op), List.of(), "", null), records, registered.config(), List.of());
         assertFalse(ApiManagement.marks(result, removed.config(), List.of()).get(op).registered());

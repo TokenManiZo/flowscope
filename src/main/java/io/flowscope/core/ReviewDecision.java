@@ -28,7 +28,7 @@ public record ReviewDecision(String itemId, Status status, String note,
     public ReviewDecision {
         if (itemId == null || itemId.isBlank()) throw new IllegalArgumentException("review item id is required");
         if (status == null) throw new IllegalArgumentException("review status is required");
-        note = Masking.truncate(Masking.maskSecrets(note == null ? "" : note.trim()), 2_000);
+        note = TextLimits.truncate(note == null ? "" : note.trim(), 2_000);
         List<String> normalized = new ArrayList<>();
         if (evidenceIds != null) evidenceIds.stream().filter(id -> id != null && !id.isBlank())
                 .distinct().sorted().forEach(normalized::add);

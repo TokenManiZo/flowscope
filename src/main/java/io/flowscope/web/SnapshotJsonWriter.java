@@ -11,7 +11,6 @@ import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.DataFlowAnalyzer;
 import io.flowscope.core.Fingerprints;
 import io.flowscope.core.GraphObservationFact;
-import io.flowscope.core.Masking;
 import io.flowscope.core.ObservationCollapser;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
@@ -37,7 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Serializes the masked analysis state consumed by the bundled localhost UI. */
+/** Serializes the analysis state consumed by the bundled localhost UI. */
 public final class SnapshotJsonWriter {
     private final ObjectMapper json = new ObjectMapper();
     private long surfaceRevision = Long.MIN_VALUE;
@@ -86,6 +85,17 @@ public final class SnapshotJsonWriter {
                         List<SessionBroker.SessionView> managedSessions,
                         List<RouteCandidate> routeCandidates, long droppedRecords,
                         List<RunExecutionLedger.Summary> executionSummaries) throws JsonProcessingException {
+        return write(revision, datasetRevision, result, config, assessments, validations, managedSessions,
+                routeCandidates, droppedRecords, executionSummaries, record -> false);
+    }
+
+    /** {@code rawAvailable}: Request Lab이 편집·재전송할 원문(메모리 또는 저장본)이 있는 기록. 값 자체는 내보내지 않는다. */
+    public byte[] write(long revision, long datasetRevision, Pipeline.Result result, AnalysisConfig config,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates, long droppedRecords,
+                        List<RunExecutionLedger.Summary> executionSummaries,
+                        java.util.function.Predicate<RequestRecord> rawAvailable) throws JsonProcessingException {
         config = config.snapshotCopy();
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
@@ -96,7 +106,7 @@ public final class SnapshotJsonWriter {
                         && record.runId != null && record.runId.startsWith("demo-")));
         var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
-        root.set("events", events(result));
+        root.set("events", events(result, rawAvailable));
         root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
                 .map(GraphObservationFact::from).toList()));
@@ -159,11 +169,11 @@ public final class SnapshotJsonWriter {
         history.put("readOnly", true);
         history.set("assessments", json.valueToTree(assessments.stream().map(value -> Map.of(
                 "id", value.id(), "type", value.type(), "verdict", value.verdict(),
-                "title", Masking.maskSecrets(value.title()), "reason", Masking.maskSecrets(value.reason()),
+                "title", value.title(), "reason", value.reason(),
                 "evidenceIds", value.evidenceIds(), "createdAt", value.createdAt().toString())).toList()));
         history.set("validations", json.valueToTree(validations.stream().map(value -> Map.of(
                 "candidateId", value.candidateId(), "verdict", value.verdict().name(),
-                "reason", Masking.maskSecrets(value.reason()), "originalEvidenceIds", value.originalEvidenceIds(),
+                "reason", value.reason(), "originalEvidenceIds", value.originalEvidenceIds(),
                 "validationEvidenceIds", value.validationEvidenceIds(), "controlEvidenceIds", value.controlEvidenceIds(),
                 "runId", value.runId(), "decidedAt", value.decidedAt().toString())).toList()));
         root.set("accounts", accounts(config, result.records));
@@ -227,7 +237,7 @@ public final class SnapshotJsonWriter {
     }
 
 
-    private ArrayNode events(Pipeline.Result result) {
+    private ArrayNode events(Pipeline.Result result, java.util.function.Predicate<RequestRecord> rawAvailable) {
         Map<String, ObservationCollapser.Group> clusters = ObservationCollapser.byEvidence(result.records);
         Map<String, Verdict> verdicts = new LinkedHashMap<>();
         for (AuthorizationAnalysis.CoverageCell cell : result.analysis.cells()) {
@@ -249,6 +259,7 @@ public final class SnapshotJsonWriter {
             event.put("op", record.op);
             if (record.resource == null) event.putNull("resource"); else event.put("resource", record.resource);
             event.put("timestamp", record.timestamp);
+            if (rawAvailable.test(record)) event.put("rawAvailable", true);
             event.put("sourceDetail", record.sourceDetail.name());
             event.put("orchestrator", record.orchestrator.name());
             event.put("tool", record.tool.name());
@@ -349,13 +360,13 @@ public final class SnapshotJsonWriter {
         matching.stream().skip(offset).limit(limit).forEach(record -> {
             ObjectNode value = records.addObject();
             value.put("eventId", record.evidenceId);
-            value.put("query", masked(record.query));
+            value.put("query", orEmpty(record.query));
             parameterEvidence(value, record);
-            value.put("requestBody", masked(record.requestBodyForAnalysis()));
-            value.put("request", Masking.maskHeaders(masked(record.requestTextForEvidence())));
-            value.put("responseBody", masked(record.responseBodyForAnalysis()));
-            value.put("response", Masking.maskHeaders(masked(record.responseTextForEvidence())));
-            value.put("location", masked(record.location));
+            value.put("requestBody", orEmpty(record.requestBodyForAnalysis()));
+            value.put("request", orEmpty(record.requestTextForEvidence()));
+            value.put("responseBody", orEmpty(record.responseBodyForAnalysis()));
+            value.put("response", orEmpty(record.responseTextForEvidence()));
+            value.put("location", orEmpty(record.location));
             payloadMetadata(value, "requestPayload", record.requestPayload);
             payloadMetadata(value, "responsePayload", record.responsePayload);
             value.put("trafficClass", record.trafficClassification.trafficClass().name());
@@ -373,8 +384,8 @@ public final class SnapshotJsonWriter {
 
     /**
      * PR #11 evidence contract (D-145): per-record structured parameter metadata for the request diff.
-     * Derived from the same masked stored record the Surface uses; never values, preview, HTTP text or raw vault.
-     * Sensitive paths are dropped, the digest is a SHA-256 of a non-sensitive value only, and the count is bounded.
+     * Derived from the same stored record the Surface uses; never values, preview, HTTP text or raw vault.
+     * The digest is a SHA-256 of the value, and the count is bounded.
      */
     private void parameterEvidence(ObjectNode value, RequestRecord record) {
         ObjectNode context = value.putObject("parameterContext");
@@ -395,7 +406,6 @@ public final class SnapshotJsonWriter {
         if (!complete) context.put("completenessReason", retained ? "EXTRACTION_DIAGNOSTICS" : "REQUEST_NOT_RETAINED");
         ArrayNode observations = value.putArray("parameterObservations");
         extraction.observations().stream().limit(10_000).forEach(observation -> {
-            if (Masking.isSensitiveParameterPath(observation.key().canonicalPath())) return;
             ObjectNode item = observations.addObject();
             item.set("key", parameterKey(observation.key()));
             item.put("presence", observation.presence() == null ? "UNKNOWN" : observation.presence().name());
@@ -614,8 +624,8 @@ public final class SnapshotJsonWriter {
         return palette[Math.floorMod(id.hashCode(), palette.length)];
     }
 
-    private static String masked(String value) {
-        return value == null ? "" : Masking.maskSecrets(value);
+    private static String orEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private static String wire(Source source) { return source.name().toLowerCase(java.util.Locale.ROOT); }

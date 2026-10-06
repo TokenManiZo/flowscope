@@ -75,6 +75,16 @@ final class ChromiumLoginBrowserTest {
         catch (Exception error) { throw new AssertionError(error); }
     }
 
+    @Test
+    void proxyLaunchWaitsOnBlankPageAndRoutesLocalhostThroughConfiguredPort() {
+        var arguments = ChromiumLoginBrowser.arguments("/chrome", Path.of("/profile"),
+                java.net.URI.create("http://localhost/login"), new ExplorerBrowserProxy(9092));
+        assertTrue(arguments.contains("--proxy-server=http://127.0.0.1:9092"));
+        assertTrue(arguments.contains("--proxy-bypass-list=<-loopback>"));
+        assertFalse(arguments.contains("--no-proxy-server"));
+        assertEquals("about:blank", arguments.getLast());
+    }
+
     private static JsonNode willBeSent(String requestId, String url, String redirect) {
         return frame("{\"method\":\"Network.requestWillBeSent\",\"sessionId\":\"S\",\"params\":{"
                 + "\"requestId\":\"" + requestId + "\","

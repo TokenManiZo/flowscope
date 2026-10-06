@@ -20,6 +20,8 @@ import java.util.Set;
 final class HumanProxyListeners implements AutoCloseable {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String PATH = "proxy.request_listeners";
+    // HUMAN and fixed listeners have separate ownership, but edit the same Burp configuration array.
+    private static final Object CONFIG_LOCK = new Object();
     private boolean wrappedProjectOptions;
     private int nextPort = 18080;
     private final BurpSuite burp;
@@ -34,6 +36,10 @@ final class HumanProxyListeners implements AutoCloseable {
     synchronized int open() throws IOException { return open(-1); }
 
     synchronized int open(int preferredPort) throws IOException {
+        synchronized (CONFIG_LOCK) { return openLocked(preferredPort); }
+    }
+
+    private int openLocked(int preferredPort) throws IOException {
         for (int attempt = 0; attempt < 8; attempt++) {
             ArrayNode listeners = listeners();
             int port = attempt == 0 && preferredPort >= 18080 && portAvailable(preferredPort, listeners)
@@ -65,10 +71,17 @@ final class HumanProxyListeners implements AutoCloseable {
      * 없을 때만 Loopback only로 만들어 소유한다(close에서 이것만 지운다). 다른 프로그램이 포트를 쓰면 IOException.
      */
     synchronized Ensured ensure(int port) throws IOException {
+        synchronized (CONFIG_LOCK) { return ensureLocked(port); }
+    }
+
+    private Ensured ensureLocked(int port) throws IOException {
         ArrayNode listeners = listeners();
         JsonNode existing = find(listeners, port);
         if (existing != null) {
-            if (existing.path("running").asBoolean()) return Ensured.ALREADY_RUNNING;
+            if (existing.path("running").asBoolean()) {
+                if (!reachable(port)) throw new IOException("Burp 프록시 리스너 127.0.0.1:" + port + "에 연결할 수 없습니다.");
+                return Ensured.ALREADY_RUNNING;
+            }
             ((ObjectNode) existing).put("running", true);
             apply(listeners);
             JsonNode actual = find(listeners(), port);
@@ -124,6 +137,10 @@ final class HumanProxyListeners implements AutoCloseable {
     boolean owns(int port) { return owned.containsKey(port); }
 
     synchronized void remove(int port) throws IOException {
+        synchronized (CONFIG_LOCK) { removeLocked(port); }
+    }
+
+    private void removeLocked(int port) throws IOException {
         JsonNode entry = owned.get(port);
         if (entry == null) return;
         ArrayNode listeners = listeners();

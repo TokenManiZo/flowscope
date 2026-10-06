@@ -730,7 +730,7 @@ public final class AuthorizationMatrixAnalyzer {
         return out.isEmpty() ? List.of("BOLA") : List.copyOf(out);
     }
 
-    /** 정규화된 경로·쿼리·본문(마스킹 사본)에 직접 객체 참조 이름이 있는지만 본다. 값은 읽지 않는다. */
+    /** 정규화된 경로·쿼리·본문에 직접 객체 참조 이름이 있는지만 본다. 값은 읽지 않는다. */
     private static boolean hasDirectObjectReference(RequestRecord record) {
         if (record == null) return false;
         if (record.resourceReferences != null && !record.resourceReferences.isEmpty()) return true;
