@@ -380,6 +380,52 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void injectedAccountSendsItsHeadersOnEveryCrawlRequestAndRemovesTheRulesAfterwards() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            List<String> calls = new CopyOnWriteArrayList<>();
+            for (String action : List.of("addRule", "removeRule")) {
+                fixture.server.removeContext("/JSON/replacer/action/" + action + "/");
+                fixture.server.createContext("/JSON/replacer/action/" + action + "/", exchange -> {
+                    calls.add(action + " " + java.net.URLDecoder.decode(new String(exchange.getRequestBody().readAllBytes(),
+                            java.nio.charset.StandardCharsets.UTF_8), java.nio.charset.StandardCharsets.UTF_8));
+                    zapReply(exchange, "{\"Result\":\"OK\"}");
+                });
+            }
+            fixture.server.removeContext("/JSON/clientSpider/action/scan/");
+            fixture.server.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+                calls.add("client");
+                fixture.observe("/client");
+                zapReply(exchange, "{\"scan\":\"2\"}");
+            });
+            // Host와 스캐너 출처 헤더는 전송·격리에 쓰이므로 주입 값으로 덮어쓰면 안 된다.
+            fixture.addInjectedAccount("user-a", "", "Authorization: Bearer injected-token\nX-Api-Key: k1\n"
+                    + "Host: evil.example\nX-FlowScope-Scanner-Capability: forged");
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", terminal.path("status").asText(), terminal.toString());
+            List<String> injected = calls.stream()
+                    .filter(call -> call.startsWith("addRule ") && call.contains("description=flowscope-inject-")).toList();
+            assertEquals(2, injected.size(), calls.toString());
+            assertTrue(injected.stream().anyMatch(call -> call.contains("matchType=REQ_HEADER")
+                    && call.contains("matchString=Authorization&") && call.contains("replacement=Bearer injected-token&")), calls.toString());
+            assertTrue(injected.stream().anyMatch(call -> call.contains("matchString=X-Api-Key&")
+                    && call.contains("replacement=k1&")), calls.toString());
+            assertFalse(calls.stream().anyMatch(call -> call.contains("evil.example") || call.contains("forged")), calls.toString());
+            // 크롤 전에 설치하고, lane이 끝나면 하나도 남기지 않는다.
+            assertTrue(calls.indexOf(injected.get(0)) < calls.indexOf("client"), calls.toString());
+            for (String rule : injected) {
+                String description = rule.substring(rule.indexOf("description=") + "description=".length());
+                description = description.substring(0, description.indexOf('&'));
+                String expected = "removeRule description=" + description;
+                assertTrue(calls.contains(expected), expected + " in " + calls);
+            }
+        }
+    }
+
+    @Test
     void authenticatedCampaignDoesNotFallBackToAnonymousWhenSessionPromotionFails() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
