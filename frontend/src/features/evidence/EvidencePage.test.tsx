@@ -178,7 +178,7 @@ describe("EvidencePage", () => {
     expect(await screen.findByText("llm-hidden")).toBeVisible()
 
     await user.click(screen.getByRole("tab", { name: "전체 4" }))
-    await user.type(screen.getByRole("searchbox", { name: "경로·신원 검색" }), "zzz-no-match")
+    await user.type(screen.getByRole("searchbox", { name: "번호·경로·계정 검색" }), "zzz-no-match")
     expect(screen.queryByText("human-api")).not.toBeInTheDocument()
   })
 

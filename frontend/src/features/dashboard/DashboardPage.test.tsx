@@ -148,14 +148,11 @@ describe("dashboard shell", () => {
     expect(screen.queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
-      ["권한 매트릭스", "matrix", null],
-      ["API·입력 차이", "surface", "부가 기능"], ["교차 신원 검증", "verification", "부가 기능"], ["관측 기록", "evidence", "부가 기능"],
+      ["판정 매트릭스", "matrix", null],
+      ["API·입력 차이", "surface", null], ["관측 기록", "evidence", null],
     ] as const
 
-    for (const [label, route, group] of routes) {
-      if (group && screen.getByRole("button", { name: group }).getAttribute("aria-expanded") === "false") {
-        await user.click(screen.getByRole("button", { name: group }))
-      }
+    for (const [label, route] of routes) {
       const link = screen.getByRole("link", { name: label })
       expect(link).toHaveAttribute("href", `#${route}`)
       await user.click(link)

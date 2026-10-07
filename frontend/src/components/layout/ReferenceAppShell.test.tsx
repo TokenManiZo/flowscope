@@ -38,6 +38,7 @@ it("stays an icon rail on hover and expands only through the toggle button, push
   const user = userEvent.setup()
   render(<ReferenceAppShell route="surface"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
+  expect(within(nav).queryByRole("link", { name: "교차 신원 검증" })).not.toBeInTheDocument()
   const rail = nav.closest("[data-expanded]") as HTMLElement
   const graph = within(nav).getByRole("link", { name: "점검 Gap 그래프" })
 
@@ -46,7 +47,7 @@ it("stays an icon rail on hover and expands only through the toggle button, push
   expect(rail).not.toHaveClass("absolute")
   expect(within(graph).getByText("점검 Gap 그래프")).toHaveClass("sr-only")
   expect(graph).toHaveAttribute("title", "점검 Gap 그래프")
-  for (const name of ["API·입력 차이", "교차 신원 검증", "관측 기록"]) {
+  for (const name of ["API·입력 차이", "관측 기록"]) {
     const link = within(nav).getByRole("link", { name })
     expect(link.parentElement).not.toHaveClass("sr-only")
     expect(link).toHaveAttribute("title", name)
@@ -83,19 +84,13 @@ it("remembers the expanded sidebar and toggles it with Cmd/Ctrl+B outside text f
   localStorage.clear()
 })
 
-it("keeps core screens as direct links and groups the rest under 부가 기능", async () => {
+it("shows every inspection screen as a direct link without an extras group", () => {
   localStorage.setItem("flowscope.sidebar", "open")
-  const user = userEvent.setup()
   render(<ReferenceAppShell route="inspection"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
-
-  expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#matrix"])
-  expect(within(nav).queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
-  const extras = within(nav).getByRole("button", { name: "부가 기능" })
-  expect(extras).toHaveAttribute("aria-expanded", "false")
-  await user.click(extras)
-  expect(extras).toHaveAttribute("aria-expanded", "true")
-  expect(within(nav).getAllByRole("link").slice(4).map((link) => link.getAttribute("href"))).toEqual(["#surface", "#verification", "#evidence"])
+  expect(within(nav).queryByRole("link", { name: "교차 신원 검증" })).not.toBeInTheDocument()
+  expect(within(nav).getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#matrix", "#evidence", "#surface"])
+  expect(within(nav).queryByRole("button", { name: "부가 기능" })).not.toBeInTheDocument()
   localStorage.clear()
 })
 
@@ -103,6 +98,7 @@ it("exposes all extra routes in the collapsed rail even on a core screen", () =>
   localStorage.clear()
   render(<ReferenceAppShell route="inspection"><p>content</p></ReferenceAppShell>)
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
-  expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#matrix", "#surface", "#verification", "#evidence"])
+  expect(within(nav).queryByRole("link", { name: "교차 신원 검증" })).not.toBeInTheDocument()
+  expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(["#inspection", "#accounts", "#graph", "#matrix", "#evidence", "#surface"])
   expect(within(nav).queryByRole("button", { name: "부가 기능" })).not.toBeInTheDocument()
 })

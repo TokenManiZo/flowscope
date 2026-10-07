@@ -1,5 +1,6 @@
 import { identityLabel } from "@/lib/display/identityLabel"
 import type { ReactNode } from "react"
+import { ChevronRight } from "lucide-react"
 import type { Cell, Verdict } from "@/lib/api/types"
 import { stripOrigin } from "@/lib/display/operationLabel"
 import { matrixVerdictTone } from "@/features/matrix/MatrixVerdictCell"
@@ -17,7 +18,7 @@ function groupBy(cells: readonly Cell[], key: (cell: Cell) => string | null) {
 }
 const plain = (value: string) => stripOrigin(value) || value
 
-interface Summary { stats: readonly [string, number][]; sources?: HierarchyProjection["groups"][number]["sourceCounts"]; listTitle: string; list: readonly [string, string | Verdict][] }
+interface Summary { objectOwners?: boolean; stats: readonly [string, number][]; sources?: HierarchyProjection["groups"][number]["sourceCounts"]; listTitle: string; list: readonly [string, string | Verdict][] }
 
 /** 한 번 클릭한 노드의 요약. 객체는 접근한 신원과 소유자를, 나머지는 통계와 하위 목록을 보여 준다. */
 export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProjection): Summary | null {
@@ -60,8 +61,9 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     // 묶음 안 객체 목록과 소유자. 펼치지 않아도 어떤 객체가 묶였는지 확인할 수 있다.
     return {
       stats: [["객체", node.objectGroup.members.length], ["접근 신원", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
-      listTitle: "묶음 객체 · 소유자",
-      list: node.objectGroup.members.map(member => [stripOrigin(member) || member, identityLabel(node.objectGroup?.owners[member] ?? "소유자 미확정")] as [string, string]),
+      objectOwners: true,
+      listTitle: "객체 · 소유자",
+      list: node.objectGroup.members.map(member => [stripOrigin(member) || member, identityLabel(node.objectGroup?.owners[member] ?? "소유자 확인 필요")] as [string, string]),
     }
   }
   if (node.kind === "resource") {
@@ -89,14 +91,28 @@ const verdicts = new Set<string>(severity)
 
 /** children은 통계 상자 바로 아래에 둔다(예: 객체 소유자 지정). */
 export function GraphNodeSummary({ summary, hint, children }: { summary: Summary; hint?: string; children?: ReactNode }) {
+  const list = <ul className={summary.objectOwners ? "grid min-w-0 gap-2" : "grid"}>{summary.list.map(([label, value]) => {
+      if (summary.objectOwners) return <li key={label} className="min-w-0 rounded-md border border-border/70 bg-muted/20 p-3">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 break-all text-xs font-medium text-muted-foreground">{label.split(":")[0]}</span><span className="rounded-md bg-muted px-2 py-1 text-xs"><span className="text-muted-foreground">소유자 </span>{value === "소유자 확인 필요" ? "미확정" : value}</span></div>
+        <span className="block break-all font-mono text-xs leading-5 select-text" title={label}>{label}</span>
+      </li>
+      const tone = verdicts.has(value) ? matrixVerdictTone(value as Verdict) : null
+      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 flex-1 truncate font-mono text-sm" title={identityLabel(label)}>{identityLabel(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
+    })}</ul>
   return <section aria-label="노드 요약" className="mb-4 grid gap-3 border-b pb-4 text-sm">
     <dl className="grid grid-cols-3 gap-2">{summary.stats.map(([label, value]) => <div key={label} className="rounded-md border border-border/70 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-base font-semibold tabular-nums">{value}</dd></div>)}</dl>
     {children}
     {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />HUMAN {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />SCANNER {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
-    {summary.list.length > 0 && <div><h3 className="mb-1 text-sm font-semibold text-muted-foreground">{summary.listTitle}</h3><ul className="grid">{summary.list.map(([label, value]) => {
-      const tone = verdicts.has(value) ? matrixVerdictTone(value as Verdict) : null
-      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 break-all font-mono text-sm">{identityLabel(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
-    })}</ul></div>}
+    {summary.list.length > 0 && (summary.objectOwners
+      ? <details open className="group min-w-0">
+        <summary className="mb-2 flex cursor-pointer list-none items-center gap-2 rounded-md py-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+          <span>{summary.listTitle}</span><span className="text-xs font-normal tabular-nums">{summary.list.length}개</span>
+          <span className="ml-auto text-xs font-normal group-open:hidden">펼치기</span><span className="ml-auto hidden text-xs font-normal group-open:inline">접기</span>
+          <ChevronRight aria-hidden="true" className="size-4 shrink-0 transition-transform group-open:rotate-90" />
+        </summary>
+        {list}
+      </details>
+      : <div><h3 className="mb-1 text-sm font-semibold text-muted-foreground">{summary.listTitle}</h3>{list}</div>)}
     {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
   </section>
 }

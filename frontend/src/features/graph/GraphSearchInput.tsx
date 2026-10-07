@@ -56,7 +56,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
   }, [activeKey, expanded])
   const choose = (entry: GraphSearchEntry) => { if (!disabled && !searching) { onChoose(entry); setOpen(false); input.current?.focus() } }
   const blur = (target: EventTarget | null) => { if (!root.current?.contains(target as Node | null) && !popup.current?.contains(target as Node | null)) setOpen(false) }
-  const content = <div ref={root} className={fullscreen ? "absolute right-3 top-11 z-30 w-80" : "relative w-72 min-w-0 xl:w-80"}
+  const content = <div ref={root} className={fullscreen ? "absolute right-3 top-11 z-30 w-80" : "relative min-w-48 flex-1"}
     onBlur={event => blur(event.relatedTarget)}>
     <div className="relative">
       <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden="true" />

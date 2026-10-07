@@ -30,13 +30,21 @@ export const defaultEvidenceFilters = (): EvidenceFiltersState => ({
   expandRepeats: false,
 })
 
-export function visibleEvidence(events: readonly EventRecord[], filters: EvidenceFiltersState): readonly EventRecord[] {
+export interface EvidenceSearchContext {
+  ordinals?: Readonly<Record<string, number>>
+  accountLabels?: Readonly<Record<string, string>>
+}
+
+export function visibleEvidence(events: readonly EventRecord[], filters: EvidenceFiltersState, search: EvidenceSearchContext = {}): readonly EventRecord[] {
   const visible = events.filter((item) => {
     const sourceVisible = item.source === "unknown" || filters.sources[item.source]
     const dispositionVisible = filters.dispositions[item.trafficDisposition as keyof typeof filters.dispositions] === true
     const trafficVisible = !(item.trafficClass in trafficClassDefaults) || filters.trafficClasses[item.trafficClass] === true
     const query = filters.query?.trim().toLowerCase()
-    const queryVisible = !query || `${item.method} ${item.path} ${item.idn} ${identityLabel(item.idn)}`.toLowerCase().includes(query)
+    const number = query?.match(/^#?(\d+)$/)?.[1]
+    const queryVisible = !query || (number
+      ? search.ordinals?.[item.eventId] === Number(number)
+      : `${item.method} ${item.path} ${item.idn} ${identityLabel(item.idn)} ${search.accountLabels?.[item.laneAccountId || item.idn] ?? ""}`.toLowerCase().includes(query))
     return sourceVisible && dispositionVisible && trafficVisible && queryVisible
   })
   if (filters.expandRepeats) return visible
@@ -49,8 +57,8 @@ export function visibleEvidence(events: readonly EventRecord[], filters: Evidenc
   })
 }
 
-export function hiddenEvidenceCount(events: readonly EventRecord[], filters: EvidenceFiltersState): number {
-  return events.length - visibleEvidence(events, { ...filters, expandRepeats: true }).length
+export function hiddenEvidenceCount(events: readonly EventRecord[], filters: EvidenceFiltersState, search: EvidenceSearchContext = {}): number {
+  return events.length - visibleEvidence(events, { ...filters, expandRepeats: true }, search).length
 }
 
 export function boundedText(value: unknown, maximum = 160): string {

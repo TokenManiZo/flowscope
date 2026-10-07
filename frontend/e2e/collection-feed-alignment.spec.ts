@@ -11,6 +11,7 @@ const events = Array.from({ length: 60 }, (_, index) => ({
 test("keeps source, collection method and time headers aligned with scrollable rows", async ({ page, baseURL }, testInfo) => {
   await page.route("**/api/**", async route => {
     const path = new URL(route.request().url()).pathname
+    if (!path.startsWith("/api/")) { await route.continue(); return }
     const body = path === "/api/snapshot" ? { ...snapshotFixture, events }
       : path === "/api/scanner-run" ? { run: { status: "NOT_STARTED" }, accounts: [], scope: [] }
         : path === "/api/zap-status" ? { connected: false, state: "UNAVAILABLE" } : {}

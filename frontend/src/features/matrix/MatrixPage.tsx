@@ -1,3 +1,4 @@
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 
 import { EvidenceSheet, type StructuredEvidenceSelection } from "@/components/layout/EvidenceSheet"
@@ -7,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ParameterCoverageMatrix, validationCellState, validationStateLabel } from "@/features/parameter-map/ParameterCoverageMatrix"
 import { locationLabel } from "@/features/parameter-map/parameterNodeCard"
@@ -35,20 +36,23 @@ function BoundedOperation({ value }: { value: string }) {
 }
 
 /**
- * 판정 매트릭스(P/E/O, PR#12 이식)가 기본이다(D-144). PR#11의 파라미터 커버리지와 기존 권한 셀 표는 둘째·셋째 탭으로 그대로 남긴다(D-145).
+ * 판정 매트릭스가 기본이며 파라미터 커버리지와 기존 권한 표는 다른 보기에서 연다.
  */
 export function MatrixPage() {
-  // 그래프 화면처럼 보기 전환 탭을 각 보기의 상단 제어 줄에 둔다. 큰 제목은 화면 읽기용으로만 남긴다.
-  const viewSwitcher = <TabsList aria-label="매트릭스 보기" variant="line" className="h-9 shrink-0 p-0">
-    <TabsTrigger value="judgment" className="pl-0 pr-3">판정 매트릭스</TabsTrigger>
-    <TabsTrigger value="parameters" className="px-3">파라미터 커버리지</TabsTrigger>
-    <TabsTrigger value="legacy" className="px-3">기존 권한 매트릭스</TabsTrigger>
-  </TabsList>
-  return <Tabs defaultValue="judgment" className="h-full min-h-0 min-w-0 gap-0 bg-[var(--flowscope-canvas)]">
-    <TabsContent value="judgment" className="min-h-0 min-w-0 flex-1"><JudgmentMatrixView viewSwitcher={viewSwitcher} /></TabsContent>
-    <TabsContent value="parameters" className="min-h-0 min-w-0 overflow-auto"><ParameterMatrixView viewSwitcher={viewSwitcher} /></TabsContent>
-    <TabsContent value="legacy" className="min-h-0 min-w-0 flex-1"><LegacyMatrixView viewSwitcher={viewSwitcher} /></TabsContent>
-  </Tabs>
+  // 보조 표는 작은 보기 메뉴로 접근을 유지한다.
+  const [view, setView] = useState("judgment")
+  const [menuOpen, setMenuOpen] = useState(false)
+  const viewSwitcher = <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+    <PopoverTrigger asChild><Button type="button" variant="outline" size="sm">다른 보기</Button></PopoverTrigger>
+    <PopoverContent align="end" className="w-56 p-1" aria-label="매트릭스 보기">
+      {([["judgment", "판정 매트릭스"], ["parameters", "파라미터 커버리지"], ["legacy", "기존 권한 매트릭스"]] as const).map(([value, label]) => <Button key={value} type="button" variant={view === value ? "secondary" : "ghost"} className="justify-start" aria-pressed={view === value} onClick={() => { setView(value); setMenuOpen(false) }}>{label}</Button>)}
+    </PopoverContent>
+  </Popover>
+  return <div className="h-full min-h-0 min-w-0 bg-[var(--flowscope-canvas)]">
+    {view === "judgment" && <JudgmentMatrixView viewSwitcher={viewSwitcher} />}
+    {view === "parameters" && <div className="h-full min-h-0 overflow-auto"><ParameterMatrixView viewSwitcher={viewSwitcher} /></div>}
+    {view === "legacy" && <LegacyMatrixView viewSwitcher={viewSwitcher} />}
+  </div>
 }
 
 interface ParameterMatrixGroup { service: string; method: string; pathTemplate: string; location: string; canonicalPath: string; operation: string; cells: ProjectedValidationCell[] }
