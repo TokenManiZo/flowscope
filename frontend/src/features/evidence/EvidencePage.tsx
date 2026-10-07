@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { importXml } from "@/lib/api/endpoints"
-import type { EventRecord, PayloadRetentionMetadata } from "@/lib/api/types"
+import type { EventRecord } from "@/lib/api/types"
 import { queryKeys, useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutation } from "@/lib/query/hooks"
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { trafficClassLabel, trafficReasonLabel } from "@/lib/display/traffic"
@@ -43,9 +43,6 @@ function clockLabel(event: EventRecord): string {
 
 const evidencePageLimit = 200
 
-function Retention({ label, value }: { label: string; value: PayloadRetentionMetadata | null }) {
-  return <p className="break-all text-xs text-muted-foreground">{label}: {value ? `${value.retained ? "보존" : "미보존"} · ${value.retention} · ${value.bytes} bytes · SHA-256 ${value.digest}` : "보존 메타데이터 없음"}</p>
-}
 
 /** 검토 필요 트래픽의 결정. 트래픽 재정의는 서버에서 API(작업) 단위로 저장되므로 같은 API의 요청 모두에 적용된다. */
 function ReviewDecision({ event, disabled }: { event: EventRecord; disabled: boolean }) {
@@ -98,8 +95,9 @@ export function EvidencePage() {
     if (selected && !selectedEvent && !snapshot.isError) { setSelected(null); setInspectorOpen(false) }
   }, [selected, selectedEvent, snapshot.isError])
 
-  const rows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], filters), [snapshot.data?.events, filters])
-  const expandedRows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], { ...filters, expandRepeats: true }), [snapshot.data?.events, filters])
+  const searchContext = useMemo(() => ({ ordinals: snapshot.data?.evidenceOrdinals, accountLabels: Object.fromEntries((snapshot.data?.accounts ?? []).map(account => [account.id, account.label])) }), [snapshot.data?.evidenceOrdinals, snapshot.data?.accounts])
+  const rows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], filters, searchContext), [snapshot.data?.events, filters, searchContext])
+  const expandedRows = useMemo(() => visibleEvidence(snapshot.data?.events ?? [], { ...filters, expandRepeats: true }, searchContext), [snapshot.data?.events, filters, searchContext])
   const repeatIds = useMemo(() => repeatEvidenceIds(expandedRows), [expandedRows])
   const visibleIds = useMemo(() => new Set(expandedRows.map(event => event.eventId)), [expandedRows])
   const checkedIds = useMemo(() => new Set(checkedRecords), [checkedRecords])
@@ -108,7 +106,7 @@ export function EvidencePage() {
   const counts = useMemo(() => dispositionCounts(snapshot.data?.events ?? []), [snapshot.data?.events])
   // 탭(판정)으로 나뉜 것은 숨김이 아니다. 지금 탭 안에서 소스·분류·검색 필터로 가린 것만 센다.
   const tabEvents = (snapshot.data?.events ?? []).filter((event) => filters.dispositions[event.trafficDisposition as keyof typeof filters.dispositions])
-  const hidden = hiddenEvidenceCount(tabEvents, filters)
+  const hidden = hiddenEvidenceCount(tabEvents, filters, searchContext)
   // 탭 숫자는 요청 수다. 반복 요청을 한 줄로 묶으면 행 수가 줄어드니 그 차이를 함께 알린다.
   const folded = tabEvents.length - hidden - rows.length
   function selectTab(next: EvidenceTab) {
@@ -152,7 +150,7 @@ export function EvidencePage() {
     {page && page.records.length > 0 && <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">같은 API 관측 기록<select aria-label="같은 API 관측 기록" className="max-w-full rounded-md border bg-background px-2 py-1 text-foreground" value={selectedEvent.eventId} onChange={event => { const record = snapshot.data?.events.find(item => item.eventId === event.target.value); if (record) selectEvent(record) }}>{page.records.map(record => <option key={record.eventId} value={record.eventId} disabled={!snapshot.data?.events.some(item => item.eventId === record.eventId)}>{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals,record.eventId)}</option>)}</select></label>}
     {page?.records.filter(record => record.eventId === selectedEvent.eventId).map(record => <div key={`${datasetRevision}:${record.eventId}`} className="grid min-w-0 gap-2">
       <EvidenceHttpViewer request={record.request || record.requestBody} response={record.response || record.responseBody} />
-      <details className="border-t pt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">분류 · 보존 정보</summary><div className="mt-2 grid gap-2"><p className="break-words">{record.classificationReasons.map(trafficReasonLabel).join(" · ")}</p><Retention label="요청 보존" value={record.requestPayload} /><Retention label="응답 보존" value={record.responsePayload} /></div></details>
+
     </div>)}
     {page && page.records.length > 0 && !page.records.some(record => record.eventId === selectedEvent.eventId) && <p className="text-xs text-muted-foreground">선택 기록의 원문이 이 페이지에 없습니다. 관측 기록을 선택하거나 이전·다음 페이지를 확인하세요.</p>}
     {page && (page.offset > 0 || page.hasMore) && <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">총 {page.total}건 · {page.offset + 1}번째부터</span><Button variant="outline" size="sm" aria-label="이전 관측 기록 페이지" disabled={page.offset <= 0 || evidence.isFetching || snapshot.isError} onClick={() => setOffset(Math.max(0, page.offset - page.limit))}>이전</Button><Button variant="outline" size="sm" aria-label="다음 관측 기록 페이지" disabled={!page.hasMore || evidence.isFetching || snapshot.isError} onClick={() => setOffset(page.offset + page.limit)}>다음</Button></div>}

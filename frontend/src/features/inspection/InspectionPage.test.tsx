@@ -370,12 +370,11 @@ describe("unified inspection hub", () => {
     act(() => window.dispatchEvent(new Event(DATASET_REPLACING)))
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
-
-  it("shows the read-only scope strip instead of a scope step and a filter rail", async () => {
+  it("removes the duplicate scope strip and keeps the inspection tabs", async () => {
     renderInspection()
 
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
-    await waitFor(() => expect(screen.getByRole("group", { name: "점검 범위" })).toHaveTextContent(target))
+    expect(screen.queryByRole("group", { name: "점검 범위" })).not.toBeInTheDocument()
     expect(screen.queryByRole("tab", { name: /범위/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
@@ -607,7 +606,7 @@ describe("unified inspection hub", () => {
     expect(within(screen.getByRole("group", { name: "ZAP 실행 상태" })).getByText("9 / -")).toBeVisible()
   })
 
-  it.each([900, 600])("keeps the scope strip and step controls reachable without any side rail at %ipx", async (width) => {
+  it.each([900, 600])("keeps step controls reachable without any side rail at %ipx", async (width) => {
     setCompactViewport(width)
     const user = userEvent.setup()
     renderInspection()
@@ -615,7 +614,7 @@ describe("unified inspection hub", () => {
     await screen.findByRole("tablist", { name: "점검 진행 단계" })
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
-    expect(screen.getByRole("group", { name: "점검 범위" })).toBeVisible()
+    expect(screen.queryByRole("group", { name: "점검 범위" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
     expect(screen.queryByRole("button", { name: "HUMAN pass 시작" })).not.toBeInTheDocument()
   })

@@ -61,6 +61,7 @@ function normalizedOrigin(value: string): string {
   }
 }
 
+
 function displayOrigin(value: string): string {
   try { return new URL(value).origin } catch { return value }
 }
@@ -80,9 +81,9 @@ function CopyButton({ value }: { value: string }) {
 function CollectedRecords({ items, onOpenRecord, onFocusChange }: { items: readonly SourceFeedItem[]; onOpenRecord(eventId: string): void; onFocusChange(focused: boolean): void }) {
   const root = useRef<HTMLElement>(null)
   const view = useRecordView(root, onFocusChange)
-  return <section ref={root} onKeyDown={view.onKeyDown} className={view.focused ? "flex h-full min-h-0 flex-col" : "grid gap-3"} aria-label="수집 기록 영역">
-    {!view.focused && <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground">브라우저·ZAP·LLM의 최근 요청을 함께 확인합니다.</p><Button variant="ghost" onClick={() => { window.location.hash = "#accounts" }}>계정·세션 열기</Button></div>}
-    <HumanRequestFeed view={view} onOpenRecord={onOpenRecord} showSource title="수집 기록" context="전체 수집 기록" items={items} searchLabel="수집 기록 검색" emptyHint="아직 기록된 요청이 없습니다. 계정 브라우저를 열거나 ZAP·LLM을 실행하세요." />
+  return <section ref={root} onKeyDown={view.onKeyDown} className="flex h-full min-h-0 flex-col gap-3" aria-label="수집 기록 영역">
+
+    <HumanRequestFeed onOpenRecord={onOpenRecord} titleControl={!view.focused && <Button size="sm" variant="ghost" onClick={() => { window.location.hash = "#accounts" }}>계정·세션 열기</Button>} view={view} showSource title="수집 기록" context="전체 수집 기록" items={items} searchLabel="수집 기록 검색" emptyHint="아직 기록된 요청이 없습니다. 계정 브라우저를 열거나 ZAP·LLM을 실행하세요." />
   </section>
 }
 
@@ -181,10 +182,9 @@ export function InspectionPage() {
 
 
   return (
-    <ReferenceAnalysisWorkspace ariaLabel="점검 시작 작업 영역" context={null} inspector={null} contentOverflow={recordFocused ? "hidden" : "auto"}><section className={recordFocused ? "flex h-full min-h-0 flex-col p-3" : "space-y-4 p-3"} aria-label={recordFocused ? "점검 기록 크게 보기" : undefined} aria-labelledby={recordFocused ? undefined : "inspection-title"}>
-      <div hidden={recordFocused}>
+    <ReferenceAnalysisWorkspace ariaLabel="점검 시작 작업 영역" context={null} inspector={null} contentOverflow="hidden"><section className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3" aria-label={recordFocused ? "점검 기록 크게 보기" : undefined} aria-labelledby={recordFocused ? undefined : "inspection-title"}>
+      <div hidden={recordFocused} className="shrink-0">
         <h1 id="inspection-title" className="text-2xl font-semibold">점검 시작</h1>
-        <p role="group" className="mt-1 text-sm text-muted-foreground" aria-label="점검 범위">대상 <span className="font-mono text-foreground">{scope.length ? scope.map(displayOrigin).join(" · ") : "없음 · 프로젝트에서 새 진단을 만들 때 정합니다"}</span></p>
       </div>
 
       {queryError && (
@@ -196,21 +196,21 @@ export function InspectionPage() {
       {scannerMutation.isError && <Alert variant="destructive" aria-label={errorMessage(scannerMutation.error)}><AlertDescription>{errorMessage(scannerMutation.error)}</AlertDescription></Alert>}
       {scannerCancel.isError && <Alert variant="destructive" aria-label={errorMessage(scannerCancel.error)}><AlertDescription>{errorMessage(scannerCancel.error)}</AlertDescription></Alert>}
 
-      <Tabs className={recordFocused ? "h-full min-h-0 flex-1" : undefined} value={selectedStep} onValueChange={(value) => { setRecordFocused(false); setSelectedStep(value as InspectionStep) }}>
+      <Tabs className="min-h-0 flex-1" value={selectedStep} onValueChange={(value) => { setRecordFocused(false); setSelectedStep(value as InspectionStep) }}>
         <TabsList hidden={recordFocused} aria-label="점검 진행 단계" className={recordFocused ? "hidden" : "h-auto flex-wrap"}>
-          {inspectionSteps.map(({ step, label }) => <TabsTrigger key={step} value={step}>{label}</TabsTrigger>)}
+          {inspectionSteps.map(({ step, label }) => <TabsTrigger key={step} value={step} className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm">{label}</TabsTrigger>)}
         </TabsList>
 
-        <TabsContent value="records" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
+        <TabsContent value="records" className="min-h-0 flex-1">
           <CollectedRecords items={collectedFeed} onOpenRecord={openRecord} onFocusChange={setRecordFocused} />
         </TabsContent>
 
-        <TabsContent value="scanner" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
+        <TabsContent value="scanner" className="min-h-0 flex-1">
           <SourcePassLayout
             label="ZAP"
             onRecordFocusChange={setRecordFocused}
             title="ZAP 스캔"
-            description="Human이 놓친 API를 스캐너로 찾습니다. 선택한 계정마다 따로 스캔합니다."
+            description="선택한 계정으로 ZAP 스캔을 실행하고 요청·응답을 기록합니다."
             statusTiles={scannerStarted ? [
               { label: "상태", value: runStatusLabel(scanner.data?.run.status ?? "NOT_STARTED") },
               { label: "소요 시간", value: durationLabel(scanner.data?.run.elapsed_seconds), mono: true },
@@ -275,7 +275,7 @@ export function InspectionPage() {
           />
         </TabsContent>
 
-        <TabsContent value="llm" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
+        <TabsContent value="llm" className="min-h-0 flex-1">
           <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} />
         </TabsContent>
 

@@ -2,7 +2,7 @@ import { screen } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { VerificationPage } from "./VerificationPage"
-import { appRoutes, navigationGroups, primaryNavigationRoutes, routeFromHash, routeHash } from "@/app/routes"
+import { appRoutes, primaryNavigationRoutes, routeFromHash, canonicalHash } from "@/app/routes"
 import { createTestQueryClient, renderWithQueryClient } from "@/test/render"
 import { snapshotFixture } from "@/test/fixtures"
 
@@ -26,12 +26,11 @@ function renderVerification() {
 afterEach(() => vi.unstubAllGlobals())
 
 describe("cross-identity verification route", () => {
-  it("groups #verification under sidebar extras", () => {
-    expect(routeFromHash("#verification")).toBe("verification")
-    expect(routeHash("verification")).toBe("#verification")
+  it("removes the UI route and sends old verification links home", () => {
+    expect(routeFromHash("#verification")).toBe("home")
+    expect(canonicalHash("#verification")).toBe("#home")
     expect(primaryNavigationRoutes).not.toContain("verification")
-    expect(navigationGroups.find((group) => group.id === "extras")?.routes).toContain("verification")
-    expect(appRoutes.some((entry) => entry.route === "verification" && entry.label === "교차 신원 검증")).toBe(true)
+    expect(appRoutes.some((entry) => entry.label === "교차 신원 검증")).toBe(false)
   })
 
   it("renders the real live replay card with registered accounts", async () => {

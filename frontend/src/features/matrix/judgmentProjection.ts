@@ -14,6 +14,29 @@ export const JUDGMENT_ATTENTION: ReadonlySet<MatrixStatus> = new Set<MatrixStatu
 const RISK: ReadonlySet<MatrixStatus> = new Set<MatrixStatus>(["BFLA_REPRODUCED", "BFLA_CANDIDATE", "BFLA_TEST_RECOMMENDED", "BFLA_REVIEW_REQUIRED", "BOLA_REPRODUCED", "BOLA_IDOR_CANDIDATE", "BOLA_IDOR_TEST_RECOMMENDED", "BOLA_IDOR_REVIEW_REQUIRED"])
 const REVIEWABLE: ReadonlySet<MatrixStatus> = new Set<MatrixStatus>(["BFLA_CANDIDATE", "BFLA_REVIEW_REQUIRED", "BOLA_IDOR_CANDIDATE", "BOLA_IDOR_REVIEW_REQUIRED"])
 
+/** Display copy only: preserve server status, recommendations and review decisions. */
+export function judgmentStatusLabel(item: Pick<JudgmentItem, "status" | "statusLabel">): string {
+  const labels: Partial<Record<MatrixStatus, string>> = {
+    POLICY_ENFORCED: "차단 대상 · 차단 관측",
+    EXPECTED_ACCESS: "허용 대상 · 접근 관측",
+    OWNERSHIP_UNKNOWN: "소유자 확인 필요",
+    UNKNOWN_POLICY: "접근 정책 확인 필요",
+    BFLA_TEST_RECOMMENDED: "기능 접근 테스트 필요",
+    BOLA_IDOR_TEST_RECOMMENDED: "객체 접근 테스트 필요",
+  }
+  return labels[item.status] ?? item.statusLabel
+}
+
+export function judgmentStatusDescription(status: MatrixStatus): string | undefined {
+  switch (status) {
+    case "EXPECTED_ACCESS": return "접근을 허용하도록 설정된 계정에서 성공 응답이 관측됐습니다. 자기 소유 객체에 접근했다는 뜻으로 한정되지 않습니다."
+    case "POLICY_ENFORCED": return "접근을 차단하도록 설정된 계정에서 차단 응답이 관측됐습니다."
+    case "BFLA_TEST_RECOMMENDED": return "상위 역할 계정의 접근 기록은 있지만, 이 계정의 기능 접근 결과가 없어 비교 테스트가 필요합니다. 취약점 확정은 아닙니다."
+    case "BOLA_IDOR_TEST_RECOMMENDED": return "다른 계정의 객체 접근 기록은 있지만, 이 계정의 접근 결과가 없어 비교 테스트가 필요합니다. 취약점 확정은 아닙니다."
+    default: return undefined
+  }
+}
+
 export const expectedLabel: Record<MatrixExpected, string> = { ALLOW: "허용", DENY: "차단", UNKNOWN: "미정" }
 export const actualLabel: Record<MatrixActual, string> = { SUCCESS: "성공", DENIED: "차단", CONFLICT: "응답 갈림", AMBIGUOUS: "해석 불가", UNTESTED: "미실행" }
 
@@ -26,7 +49,7 @@ export function judgmentTone(status: MatrixStatus): JudgmentTone {
 }
 
 /** 판단할 것이 없는 흔한 상태는 칸에 짧은 회색 글자로만 둔다(전체 문구는 aria-label·툴팁·상세에 유지). */
-export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "정책 미정", COVERAGE_GAP: "공백", UNTESTED: "미검증" }
+export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 정책 확인 필요", COVERAGE_GAP: "공백", UNTESTED: "미검증" }
 
 export function reviewSuffix(status: ReviewStatus): string {
   return status === "CONFIRMED" ? " · 사용자 확정" : status === "DISMISSED" ? " · 정상/기각" : ""

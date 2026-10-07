@@ -79,10 +79,11 @@ it("removes only a leading HTTP origin from displayed operation labels", () => {
 it("defaults to the judgment matrix and keeps the legacy cell matrix behind its own tab", async () => {
   current = { ...matrixSnapshot(), authorizationMatrix: { summary: { policyConfirmed: 0, policyReview: 0, bflaCandidates: 0, bolaIdorCandidates: 0, coverageGaps: 0, invalidExperiments: 0, bflaTestRecommendations: 0, bolaIdorTestRecommendations: 0, manualReviewPending: 0, humanConfirmed: 0, humanDismissed: 0 }, identities: [], functions: [], objects: [], evidence: [], policyLegend: [], evidenceLegend: [], ownershipLegend: [] } }
   renderPage(<MatrixPage />)
-  expect(screen.getByRole("tab", { name: "판정 매트릭스" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.queryByRole("tab", { name: "판정 매트릭스" })).not.toBeInTheDocument()
   expect(screen.getByRole("heading", { name: "판정 매트릭스" })).toBeVisible()
   expect(screen.queryByRole("region", { name: "권한 매트릭스 표" })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("tab", { name: "기존 권한 매트릭스" }))
+  await userEvent.click(screen.getByRole("button", { name: "다른 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "기존 권한 매트릭스" }))
   expect(await screen.findByRole("region", { name: "권한 매트릭스 표" })).toBeVisible()
   expect(screen.getByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
 })
@@ -90,11 +91,13 @@ it("defaults to the judgment matrix and keeps the legacy cell matrix behind its 
 it("keeps parameter coverage and the legacy matrix behind their own tabs", async () => {
   current = parameterSnapshot()
   renderPage(<MatrixPage />)
-  expect(screen.getByRole("tab", { name: "판정 매트릭스" })).toHaveAttribute("aria-selected", "true")
-  await userEvent.click(screen.getByRole("tab", { name: "파라미터 커버리지" }))
+  expect(screen.queryByRole("tab", { name: "판정 매트릭스" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "다른 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "파라미터 커버리지" }))
   expect(await screen.findByRole("region", { name: "파라미터 커버리지 표" })).toBeVisible()
   expect(screen.getByRole("heading", { name: "파라미터 커버리지" })).toBeVisible()
-  await userEvent.click(screen.getByRole("tab", { name: "기존 권한 매트릭스" }))
+  await userEvent.click(screen.getByRole("button", { name: "다른 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "기존 권한 매트릭스" }))
   expect(await screen.findByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
 })
 
