@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event"
 import { expect, it, vi } from "vitest"
 
 import type { Cell, EventRecord } from "@/lib/api/types"
+import { EMPTY_HIGHLIGHT } from "./graphHighlight"
 import { ApiListTable } from "./ApiListTable"
 import { groupApiRows, pathShape, shortPath } from "./graphApiRows"
 import type { HierarchyNode } from "./graphHierarchy"
@@ -95,4 +96,22 @@ it("opens an object list under the row from the chip, marking only server-suspic
   expect(screen.getByRole("table", { name: "invoices 객체 목록" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "orders 객체 2개 접기" }))
   expect(screen.queryByRole("table", { name: "orders 객체 목록" })).not.toBeInTheDocument()
+})
+
+
+it("keeps the identity filter when opening Object rows and restores all rows when cleared", async () => {
+  const op = "GET /orders/{id}"
+  const events = [event("a", { op, idn: "alice", resource: "orders:1" }), event("b", { op, idn: "bob", resource: "orders:2" })]
+  const cells = events.map(item => ({ idn: item.idn, op, resource: item.resource, perSource: { human: "allow" }, evidenceIds: [item.eventId], reasons: {}, overall: "allow", conflict: false, missedSources: [] }) as Cell)
+  const props = { operations: [operation(op, ["a", "b"])], snapshot: { events, cells, owners: {} }, selectedId: null, onSelectApi: vi.fn(), onSelectObject: vi.fn() }
+  const { rerender } = render(<ApiListTable {...props} filters={{ ...EMPTY_HIGHLIGHT, identities: ["alice"] }} />)
+  await userEvent.click(screen.getByRole("button", { name: "orders 객체 1개 펼치기" }))
+  const table = screen.getByRole("table", { name: "orders 객체 목록" })
+  expect(within(table).getByText("alice")).toBeVisible()
+  expect(within(table).queryByText("bob")).not.toBeInTheDocument()
+  expect(within(table).queryByRole("row", { name: "orders:2" })).not.toBeInTheDocument()
+  await userEvent.click(within(table).getByRole("row", { name: "orders:1" }))
+  expect(props.onSelectObject).toHaveBeenCalledWith("orders:1", [cells[0]])
+  rerender(<ApiListTable {...props} filters={EMPTY_HIGHLIGHT} />)
+  expect(within(screen.getByRole("table", { name: "orders 객체 목록" })).getByText("bob")).toBeVisible()
 })

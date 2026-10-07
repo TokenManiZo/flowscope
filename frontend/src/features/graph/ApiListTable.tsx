@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import type { Cell, Snapshot } from "@/lib/api/types"
 import { apiRowStats, groupApiRows, objectRows, shortPath, type ApiRowStats } from "./graphApiRows"
-import { HIGHLIGHT_SOURCE_COLOR } from "./graphHighlight"
+import { EMPTY_HIGHLIGHT, highlightRecords, HIGHLIGHT_SOURCE_COLOR, type GraphHighlight } from "./graphHighlight"
 import type { HierarchyNode } from "./graphHierarchy"
 import { MethodBadge as Method, StatusBadge } from "./httpBadges"
 import { operationParts } from "./relationshipNodeCard"
@@ -59,7 +59,8 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
  * 그룹 화면의 API 목록 표. 메서드 + 경로 형식이 같은 API는 한 줄로 묶어 접어 두고, 펼치면 실제 경로가 들여 써져 나온다.
  * 줄을 누르면 화면을 옮기지 않고 그 API를 선택한다(상세는 오른쪽 패널). 객체 칩은 그 줄 아래에 객체 목록을 펼친다.
  */
-export function ApiListTable({ operations, snapshot, selectedId, revealNodeId, searchMatches, onRevealDismiss, onSelectApi, onSelectObject }: { operations: readonly HierarchyNode[]; snapshot: TableSnapshot; selectedId: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; onRevealDismiss?(): void; onSelectApi(node: HierarchyNode): void; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
+export function ApiListTable({ operations, snapshot: originalSnapshot, filters = EMPTY_HIGHLIGHT, selectedId, revealNodeId, searchMatches, onRevealDismiss, onSelectApi, onSelectObject }: { operations: readonly HierarchyNode[]; snapshot: TableSnapshot; filters?: GraphHighlight; selectedId: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; onRevealDismiss?(): void; onSelectApi(node: HierarchyNode): void; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
+  const snapshot = useMemo(() => highlightRecords(originalSnapshot, filters), [originalSnapshot, filters])
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState<readonly string[]>([])
   const [showAll, setShowAll] = useState<readonly string[]>([])

@@ -3,6 +3,7 @@ import { graphAccountLabel } from "./graphAccounts"
 import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { Button } from "@/components/ui/button"
 import type { Snapshot } from "@/lib/api/types"
+import type { GraphHighlight } from "./graphHighlight"
 import { ApiListTable } from "./ApiListTable"
 import { RouteCandidateDetail } from "./RouteCandidateDetail"
 import { graphCellSelection, type GraphProjection, type GraphSelection } from "./graphProjection"
@@ -22,7 +23,7 @@ function CompactNodeCard({ badge, title, detail, footer, meta = [] }: { badge: s
   </span>
 }
 
-export function ResponsiveGraphList({ projection, snapshot, selectedId = null, revealNodeId, searchMatches, highlight, onRevealDismiss, onSelect, onNavigate }: { projection: GraphProjection | HierarchyProjection; snapshot?: Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix"> & Partial<Pick<Snapshot, "accounts">>; selectedId?: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; highlight?: ReadonlyMap<string, string> | null; onRevealDismiss?(): void; onSelect(selection: GraphSelection, elementId?: string): void; onNavigate?(node: HierarchyNode): void }) {
+export function ResponsiveGraphList({ projection, snapshot, selectedId = null, revealNodeId, searchMatches, highlight, filters, onRevealDismiss, onSelect, onNavigate }: { projection: GraphProjection | HierarchyProjection; snapshot?: Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix"> & Partial<Pick<Snapshot, "accounts">>; selectedId?: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; highlight?: ReadonlyMap<string, string> | null; filters?: GraphHighlight; onRevealDismiss?(): void; onSelect(selection: GraphSelection, elementId?: string): void; onNavigate?(node: HierarchyNode): void }) {
   const hierarchy = "kind" in projection ? projection : null
   const matchedSiteNodes = hierarchy?.kind === "site" && highlight ? new Set(hierarchy.edges.filter(edge => highlight.has(edge.id)).flatMap(edge => [edge.sourceId, edge.targetId])) : null
   const items = hierarchy?.kind === "operation" ? hierarchy.listItems.filter(item => !item.selection.resource || hierarchy.resources.some(resource => resource.selection.resource === item.selection.resource)) : projection.listItems
@@ -31,7 +32,7 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, r
   return <section className="grid gap-2" aria-label="공격면 API 목록">
     {summary && <Button data-graph-node-id={summary.id} variant="outline" className={`h-auto justify-start whitespace-normal p-3 text-left ${matchedSiteNodes && !matchedSiteNodes.has(summary.id) ? "opacity-30" : ""}`} onClick={() => onSelect(summary.selection, summary.id)}><CompactNodeCard badge={relationshipNodeCard(summary, projection).badge} title={summary.label} detail="검색으로 선택한 노드" footer="" /></Button>}
     {/* 그룹 화면의 API는 표로 보여준다(경로 형식 묶음). 줄을 누르면 화면을 옮기지 않고 선택만 한다. 요청 기록이 없으면 카드로 둔다. */}
-    {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} snapshot={snapshot} selectedId={selectedId} revealNodeId={revealNodeId} searchMatches={searchMatches} onRevealDismiss={onRevealDismiss} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
+    {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} snapshot={snapshot} filters={filters} selectedId={selectedId} revealNodeId={revealNodeId} searchMatches={searchMatches} onRevealDismiss={onRevealDismiss} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
     {hierarchy?.kind === "group" && snapshot && (items as HierarchyNode[]).filter(item => item.kind === "observed-operation" || item.kind === "support-operation").map(item => {
       const card = relationshipNodeCard(item, projection)
       const op = item.selection.operation ?? ""

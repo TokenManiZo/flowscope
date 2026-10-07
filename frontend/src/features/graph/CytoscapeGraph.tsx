@@ -10,6 +10,7 @@ import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPr
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import { graphOpenAction, type HierarchyNode, type HierarchyProjection } from "./graphHierarchy"
+import { highlightPositions } from "./graphFilterLayout"
 import { deriveGraphFocus } from "./graphFocus"
 import { graphSearchViewport } from "./graphSearch"
 import { relationshipNodeCard, relationshipRouteCandidateCard } from "./relationshipNodeCard"
@@ -253,6 +254,30 @@ export function positionInLanes(core: Core, height: number, savedPositions: Grap
   positionObjectMembers(core, height, onlyLane)
 }
 
+/** 현재 필터 표시 상태를 두 영역으로 배치한다. 필터 해제 때 되돌리지 않는다. */
+export function positionHighlightedInLanes(core: Core, laneCount: number): boolean {
+  const nodes = core.nodes().toArray()
+  const positions = highlightPositions(nodes.map(node => ({
+    id: node.id(), lane: laneIndexForKind(String(node.data("kind")), laneCount),
+    ...node.position(), matched: node.data("hl") === "yes",
+  })), laneCount)
+  if (!positions) return false
+  let moved = false
+  const apply = () => {
+    for (const node of nodes) {
+      const point = positions[node.id()], current = node.position()
+      if (current.x === point.x && current.y === point.y) continue
+      const locked = node.locked?.() ?? false
+      if (locked) node.unlock()
+      node.position(point)
+      if (locked) node.lock()
+      moved = true
+    }
+  }
+  if (typeof core.batch === "function") core.batch(apply); else apply()
+  return moved
+}
+
 /** 새 멤버를 묶음 노드(와 이미 놓인 멤버) 바로 아래에 쌓고, 그 아래에 있던 같은 레인 노드를 그만큼 밀어 내린다. */
 function insertGroupMembers(column: readonly cytoscape.NodeSingular[], fresh: readonly cytoscape.NodeSingular[]) {
   const freshIds = new Set(fresh.map(node => node.id()))
@@ -354,7 +379,7 @@ export function readGroupBands(core: Core): GroupBand[] {
   try {
     const nodes = core.nodes().toArray()
     for (const group of nodes.filter(node => node.data("groupState") === "open")) {
-      const members = nodes.filter(node => node.data("memberOf") === group.id())
+      const members = nodes.filter(node => node.data("memberOf") === group.id() && (group.data("hl") !== "yes" || node.data("hl") === "yes"))
       const boxes = [group, ...members].map(node => node.renderedBoundingBox())
       bands.push({
         id: group.id(), label: String(group.data("groupKey") ?? ""), count: members.length,
@@ -394,6 +419,10 @@ function applyHighlight(core: Core, projection: GraphProjection | HierarchyProje
     const { source, target } = edgeEndpoints(edge)
     litNodes.add(source); litNodes.add(target)
   }
+  core.nodes().forEach(node => {
+    const groupId = String(node.data("memberOf") ?? "")
+    if (groupId && litNodes.has(node.id())) litNodes.add(groupId)
+  })
   const apply = () => core.elements().forEach((element: cytoscape.SingularElementReturnValue) => {
     const id = element.id(), edge = element.isEdge()
     const color = edge ? highlight?.get(id) : undefined
@@ -674,14 +703,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: 'edge[focused = "yes"]', style: { width: 3, opacity: 1 } },
           { selector: 'edge[focused = "no"]', style: { opacity: 0.15 } },
           { selector: 'node[focused = "no"]', style: { opacity: 0.35 } },
-          { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
-          { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
           { selector: 'node[objectFocus = "no"]', style: { opacity: 0.45, "z-index-compare": "manual", "z-index": 0 } },
           { selector: 'edge[objectFocus = "no"]', style: { opacity: 0.22, "z-index-compare": "manual", "z-index": 0 } },
           { selector: 'node[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 20 } },
           { selector: 'edge[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 10 } },
           // 검색 결과는 펼침 밖에서도 읽을 수 있게 한다. 관련 카드의 앞뒤 순서는 유지한다.
           { selector: 'node[searchMatch = "yes"]', style: { opacity: 1 } },
+          // 체크 조건 불일치는 Object 집중·검색 강조보다 우선한다.
+          { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
+          { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
         ] as unknown as cytoscape.StylesheetJson,
       })
     } catch {
@@ -880,6 +910,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     hasProjectionRef.current = true
     const relayout = appliedLayoutRef.current !== layoutVersion
     appliedLayoutRef.current = layoutVersion
+    // 필터 중 테마·snapshot 갱신에서도 이미 펼친 Object의 자리부터 유지한다.
+    const objectPositions = !relayout && highlightRef.current
+      ? new Map(core.nodes().toArray().filter(node => node.data("temporaryObjectPosition") === "yes").map(node => [node.id(), { ...node.position() }]))
+      : new Map<string, { x: number; y: number }>()
     core.elements().remove()
     cardsRef.current = new Map()
     // 정렬은 위치만 바꾼다. 크기·viewport는 명시적 초기화 때만 비운다.
@@ -891,6 +925,11 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     applyHighlight(core, projection, highlightRef.current, cardsRef.current, theme, statusColorsRef.current, splitSourcesRef.current)
     setCornerCursor(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : { ...saved?.positions, ...live.positions }, laneCount)
+    core.nodes().forEach(node => {
+      const point = objectPositions.get(node.id())
+      if (point) node.position(point)
+    })
+    if (highlightRef.current) positionHighlightedInLanes(core, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
     })
@@ -913,8 +952,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const core = coreRef.current
     if (!core) return
     applyHighlight(core, projectionRef.current, highlight, cardsRef.current, theme, statusColors, splitSources)
+    if (highlight && positionHighlightedInLanes(core, laneCount)) publishLayoutRef.current?.()
     setMinimap(readMinimap(core)); setBands(readGroupBands(core))
-  }, [highlight, splitSources, statusColors, theme])
+  }, [highlight, laneCount, projection, splitSources, statusColors, theme])
 
   // 검색 외곽선은 카드·위험 테두리와 분리한다. 입력마다 projection을 다시 만들지 않는다.
   useEffect(() => {
@@ -958,6 +998,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     if (laneLayout.version === 0) return
     core.nodes().forEach((node) => { if (node.locked?.()) node.unlock() })
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, null, laneCount, laneLayout.lane)
+    if (highlightRef.current) positionHighlightedInLanes(core, laneCount)
     if (locked) core.nodes().forEach((node) => { node.lock() })
     publishLayoutRef.current?.()
   }, [laneCount, laneLayout, locked, theme])

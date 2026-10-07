@@ -18,7 +18,7 @@ const events = [event("order-a", "human", "alice", 200, cells[0].op), event("ord
 
 // 실제 그래프 렌더러와 합성 API 응답만 사용하며, 대상 서버에는 요청하지 않는다.
 for (const theme of ["dark", "light"] as const) {
-  test(`Site Overview dims only unmatched nodes without recoloring or moving them (${theme})`, async ({ page }, testInfo) => {
+  test(`Site Overview ranks matched nodes above dimmed nodes without recoloring them (${theme})`, async ({ page }, testInfo) => {
     const errors: string[] = []
     page.on("pageerror", error => errors.push(error.message))
     await page.setViewportSize({ width: 1920, height: 1080 })
@@ -57,8 +57,14 @@ for (const theme of ["dark", "light"] as const) {
     const expectMatches = async (matched: string[] | null) => {
       await expect.poll(async () => (await readGraph()).nodes.map(node => [node.id, node.opacity])).toEqual(baseline.nodes.map(node => [node.id, matched === null || matched.includes(node.id) ? 1 : 0.3]))
       const current = await readGraph()
-      expect(current.nodes.map(({ opacity: _, ...node }) => node)).toEqual(baseline.nodes.map(({ opacity: _, ...node }) => node))
+      expect(current.nodes.map(({ opacity: _, position: _position, ...node }) => node)).toEqual(baseline.nodes.map(({ opacity: _, position: _position, ...node }) => node))
       expect(current.edges.map(({ opacity: _, ...edge }) => edge)).toEqual(baseline.edges.map(({ opacity: _, ...edge }) => edge))
+      expect(current.nodes.filter(node => node.id.startsWith("target:")).map(node => [node.id, node.position])).toEqual(baseline.nodes.filter(node => node.id.startsWith("target:")).map(node => [node.id, node.position]))
+      expect(current.nodes.filter(node => !node.id.startsWith("target:")).map(node => JSON.stringify(node.position)).sort()).toEqual(baseline.nodes.filter(node => !node.id.startsWith("target:")).map(node => JSON.stringify(node.position)).sort())
+      if (matched?.length) {
+        const lit = current.nodes.filter(node => !node.id.startsWith("target:") && matched.includes(node.id)), dim = current.nodes.filter(node => !node.id.startsWith("target:") && !matched.includes(node.id))
+        if (dim.length) expect(Math.max(...lit.map(node => node.position.y))).toBeLessThan(Math.min(...dim.map(node => node.position.y)))
+      }
       for (const edge of current.edges) expect(edge.opacity).toBe(matched === null || matched.includes(edge.target) ? 0.9 : 0.12)
     }
     const rail = page.getByRole("complementary", { name: "분석 필터" })
@@ -99,7 +105,7 @@ for (const theme of ["dark", "light"] as const) {
     await expect.poll(async () => (await readGraph()).edges.map(edge => [edge.color, edge.opacity])).toEqual(groupBaseline.edges.map(edge => edge.sourceType === "scanner" ? ["rgb(248,113,113)", 1] : [edge.color, 0.12]))
     expect((await readGraph()).nodes.find(node => node.id.startsWith("operation:"))?.image).not.toBe(groupBaseline.nodes.find(node => node.id.startsWith("operation:"))?.image)
     for (const checkbox of [human, scanner, serverError]) await checkbox.click()
-    await expect.poll(readGraph).toEqual(groupBaseline)
+    await expect.poll(async () => (await readGraph()).edges).toEqual(groupBaseline.edges)
     expect(errors).toEqual([])
   })
 }
