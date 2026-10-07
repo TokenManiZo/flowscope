@@ -28,6 +28,8 @@ export interface EventRecord {
   idn: string
   /** Registered collection lane; independent of observed identity and role. */
   laneAccountId?: string | null
+  /** User-selected card for graph display; independent of observed identity. */
+  collectionAccountId?: string | null
   role: string
   source: Source
   op: string

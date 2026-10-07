@@ -88,14 +88,14 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
 const verdicts = new Set<string>(severity)
 
 /** children은 통계 상자 바로 아래에 둔다(예: 객체 소유자 지정). */
-export function GraphNodeSummary({ summary, hint, children }: { summary: Summary; hint?: string; children?: ReactNode }) {
+export function GraphNodeSummary({ summary, hint, children, labelIdentity = identityLabel }: { summary: Summary; hint?: string; children?: ReactNode; labelIdentity?: (identity: string) => string }) {
   return <section aria-label="노드 요약" className="mb-4 grid gap-3 border-b pb-4 text-sm">
     <dl className="grid grid-cols-3 gap-2">{summary.stats.map(([label, value]) => <div key={label} className="rounded-md border border-border/70 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-base font-semibold tabular-nums">{value}</dd></div>)}</dl>
     {children}
     {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />HUMAN {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />SCANNER {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
     {summary.list.length > 0 && <div><h3 className="mb-1 text-sm font-semibold text-muted-foreground">{summary.listTitle}</h3><ul className="grid">{summary.list.map(([label, value]) => {
       const tone = verdicts.has(value) ? matrixVerdictTone(value as Verdict) : null
-      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 break-all font-mono text-sm">{identityLabel(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
+      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 break-all font-mono text-sm">{labelIdentity(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
     })}</ul></div>}
     {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
   </section>

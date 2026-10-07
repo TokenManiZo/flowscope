@@ -408,7 +408,14 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.datasetRevision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
-                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable));
+                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable, record -> {
+                            if (record.collectionAccountId != null) return record.collectionAccountId;
+                            // Legacy records may still belong to an explicitly selected active run.
+                            RunContextRegistry.Context context = state.contexts() == null ? null
+                                    : state.contexts().current(record.source, record.runId);
+                            return context == null ? record.laneAccountId
+                                    : context.accountId() == null ? "anon" : context.accountId();
+                        }));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {
