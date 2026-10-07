@@ -1,9 +1,9 @@
-import type { EventRecord, Snapshot, Source } from "@/lib/api/types"
+import type { Cell, EventRecord, Snapshot, Source } from "@/lib/api/types"
 import { operationGroup, type graphContents, type HierarchyProjection } from "./graphHierarchy"
 
 /**
  * 그래프 강조 필터. 같은 축 안에서는 하나라도 맞으면(OR), 축끼리는 모두 맞아야(AND) 강조한다.
- * 비어 있는 축은 조건이 없다는 뜻이다. 데이터를 숨기지 않고 표시만 바꾸므로 노드 배치는 그대로다.
+ * 비어 있는 축은 조건이 없다는 뜻이다. 데이터를 숨기지 않고 일치 노드와 연결을 강조한다. 캔버스는 일치 노드를 상단에 배치한다.
  */
 export interface GraphHighlight {
   sources: readonly Source[]
@@ -41,7 +41,7 @@ export function highlightRecords<T extends Pick<Snapshot, "events" | "cells">>(s
   const index = highlight.statuses.length ? indexEventsByEvidence(events) : null
   const cells = snapshot.cells.filter(cell => {
     if (highlight.identities.length && !highlight.identities.includes(cell.idn)) return false
-    const sources = (Object.keys(cell.perSource) as Source[]).filter(source => !highlight.sources.length || highlight.sources.includes(source))
+    const sources = (Object.keys(cell.perSource) as Source[]).filter(source => cell.perSource[source] !== undefined && (!highlight.sources.length || highlight.sources.includes(source)))
     return sources.length > 0 && (!index || cell.evidenceIds.some(id =>
       (index.get(id) ?? []).some(event => event.idn === cell.idn && sources.includes(event.source))))
   })
@@ -51,7 +51,7 @@ export function highlightRecords<T extends Pick<Snapshot, "events" | "cells">>(s
 interface HighlightEdge {
   id: string
   source: Source | null
-  selection: { identity: string | null; evidenceIds: readonly string[] }
+  selection: { identity: string | null; evidenceIds: readonly string[]; cells?: readonly Pick<Cell, "idn" | "perSource">[] }
 }
 
 /** Evidence ID(대표 ID와 묶인 ID 모두)로 이벤트를 찾는 색인. */
@@ -70,11 +70,12 @@ export function indexEventsByEvidence(events: readonly EventRecord[]): ReadonlyM
  * 엣지에 속한 요청의 응답 코드별 개수. 엣지의 Evidence ID는 셀 전체 기준이라 다른 출처·신원의 요청도 섞여 있으므로,
  * 엣지의 출처와 신원으로 한 번 더 거른다.
  */
-export function edgeStatusCounts(edge: HighlightEdge, index: ReadonlyMap<string, readonly EventRecord[]>): Map<number, number> {
+export function edgeStatusCounts(edge: HighlightEdge, index: ReadonlyMap<string, readonly EventRecord[]>, identities: readonly string[] = []): Map<number, number> {
   const events = new Set<EventRecord>()
   for (const id of edge.selection.evidenceIds) for (const event of index.get(id) ?? []) {
     if (edge.source && event.source !== edge.source) continue
     if (edge.selection.identity && event.idn !== edge.selection.identity) continue
+    if (identities.length && !identities.includes(event.idn)) continue
     events.add(event)
   }
   const counts = new Map<number, number>()
@@ -88,16 +89,21 @@ export function edgeStatusCounts(edge: HighlightEdge, index: ReadonlyMap<string,
  */
 export function projectHighlight(edges: readonly HighlightEdge[], events: readonly EventRecord[], highlight: GraphHighlight): ReadonlyMap<string, string> | null {
   if (!highlightActive(highlight)) return null
-  const index = highlight.statuses.length ? indexEventsByEvidence(events) : null
+  const evidenceIndex = highlight.statuses.length || highlight.identities.length ? indexEventsByEvidence(events) : null
   const matched = new Map<string, string>()
   for (const edge of edges) {
     if (!edge.source) continue
     if (highlight.sources.length && !highlight.sources.includes(edge.source)) continue
-    if (highlight.identities.length && !(edge.selection.identity && highlight.identities.includes(edge.selection.identity))) continue
-    if (index) {
+    if (highlight.identities.length) {
+      const matches = edge.selection.identity ? highlight.identities.includes(edge.selection.identity)
+        : edge.selection.cells?.some(cell => highlight.identities.includes(cell.idn) && cell.perSource[edge.source!] !== undefined)
+          || edge.selection.evidenceIds.some(id => (evidenceIndex?.get(id) ?? []).some(event => event.source === edge.source && highlight.identities.includes(event.idn)))
+      if (!matches) continue
+    }
+    if (highlight.statuses.length && evidenceIndex) {
       let best: number | null = null
       let bestCount = 0
-      for (const [status, count] of edgeStatusCounts(edge, index)) {
+      for (const [status, count] of edgeStatusCounts(edge, evidenceIndex, highlight.identities)) {
         if (highlight.statuses.includes(status) && count > bestCount) { best = status; bestCount = count }
       }
       if (best === null) continue

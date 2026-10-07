@@ -1,6 +1,6 @@
 import cytoscape from "cytoscape"
 import { expect, it } from "vitest"
-import { positionInLanes, readPreferences } from "./CytoscapeGraph"
+import { positionInLanes, positionHighlightedInLanes, readPreferences } from "./CytoscapeGraph"
 
 it("restores intentionally overlapping coordinates and places only new nodes below them", () => {
   const core = cytoscape({ headless: true, elements: [
@@ -90,5 +90,23 @@ it("opens members above a group near the bottom without moving its viewport or a
     expect(core.getElementById("m").position()).toEqual({ x: 900, y: 470 })
     expect(core.zoom()).toBe(1)
     expect(core.pan()).toEqual({ x: 0, y: 0 })
+  } finally { core.destroy() }
+})
+
+
+it("reorders locked nodes without changing lock state and does not restore on filter clear", () => {
+  const core = cytoscape({ headless: true, elements: [
+    { data: { id: "a", kind: "operation", height: 200, hl: "yes" }, position: { x: 540, y: 3000 } },
+    { data: { id: "b", kind: "operation", height: 80, hl: "no" }, position: { x: 540, y: 100 } },
+  ] })
+  try {
+    core.nodes().lock()
+    expect(positionHighlightedInLanes(core, 3)).toBe(true)
+    expect(core.nodes().toArray().every(node => node.locked())).toBe(true)
+    expect(core.$id("a").position().y + 100).toBeLessThan(core.$id("b").position().y - 40)
+    const positions = readPreferences(core).positions
+    core.nodes().data("hl", "none")
+    expect(positionHighlightedInLanes(core, 3)).toBe(false)
+    expect(readPreferences(core).positions).toEqual(positions)
   } finally { core.destroy() }
 })

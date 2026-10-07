@@ -103,3 +103,12 @@ it("scopes Object records with all axes on the same event, retaining cell-only i
   expect(match.cells).toEqual([cells[0]])
   expect(match.events.map(item => item.eventId)).toEqual(["scanner"])
 })
+
+
+it("highlights a shared Object bundle using its member identity without mixing another identity's status", () => {
+  const shared = edge("shared", "human", null, ["e1", "e2", "e3"])
+  expect(projectHighlight([shared], events, { ...EMPTY_HIGHLIGHT, identities: ["user-1"] })?.has("shared")).toBe(true)
+  expect(projectHighlight([shared], events, { ...EMPTY_HIGHLIGHT, identities: ["user-1"], statuses: [403] })?.size).toBe(0)
+  const retainedCell = { ...shared, selection: { ...shared.selection, evidenceIds: [], cells: [{ idn: "user-1", perSource: { human: "allow" as const } }] } }
+  expect(projectHighlight([retainedCell], [], { ...EMPTY_HIGHLIGHT, identities: ["user-1"] })?.has("shared")).toBe(true)
+})
