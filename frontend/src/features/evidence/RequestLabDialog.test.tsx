@@ -579,6 +579,11 @@ describe("RequestLabDialog", () => {
     // 원문이 없어 보낼 수 없는 이유와, 다시 보내려면 무엇을 해야 하는지 알려 준다.
     expect(status).toHaveTextContent("일부만 남아 있어 편집·재전송할 수 없습니다")
     expect(status).toHaveTextContent("이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요")
+    // 돌아갈 편집본이 없으니 눌러도 아무 일이 없는 버튼을 두지 않는다.
+    expect(screen.getByRole("button", { name: "편집으로 돌아가기" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "편집으로 돌아가기" })).toHaveAttribute("title", "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다.")
+    expect(screen.getByRole("note")).toHaveTextContent("처음 수집한 원문입니다. 읽기 전용입니다.")
+    expect(screen.getByRole("note")).not.toHaveTextContent("편집으로 돌아가면")
   })
 
   it("leaves an absent server owner unset instead of proposing the observed requester as owner", () => {

@@ -105,6 +105,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const editable = !!entry
   const credentialsRequired = !!entry && (mode === "ORIGINAL" || (mode === "ACCOUNT" && !selectedAccountValid))
   const busy = sending || applyingCredentials || deleting || closing
+  /** 편집할 수 없는 기록(원문이 일부만 남음)에 편집본도 없으면 원문 보기에서 돌아갈 곳이 없다. */
+  const originalOnly = view === "original" && !!draft && !draft.requestEditable && raw.current.requests.length === 0
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
   const settingClass = "h-[36px] rounded-md border border-input bg-background px-2.5 text-[14px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
 
@@ -605,7 +607,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           <div role="search" aria-label="요청·응답 검색" className="flex min-w-[200px] max-w-[440px] flex-1 items-center gap-1">
             <div className="relative min-w-0 flex-1">
               <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input ref={searchRef} type="search" aria-label="요청·응답에서 찾기" placeholder="요청·응답에서 찾기" title="Enter 다음 · Shift+Enter 이전 · Esc 지우기" value={search} disabled={!draft} className="h-[36px] pl-8 pr-16 text-[14px] [&::-webkit-search-cancel-button]:appearance-none" onChange={event => changeSearch(event.target.value)} onKeyDown={event => {
+              <Input ref={searchRef} type="search" aria-label="요청·응답에서 찾기" placeholder="요청·응답에서 찾기" title="Enter 다음 · Shift+Enter 이전 · Esc 지우기" value={search} disabled={!draft} className={`h-[36px] pl-8 text-[14px] [&::-webkit-search-cancel-button]:appearance-none ${search ? "pr-16" : "pr-3"}`} onChange={event => changeSearch(event.target.value)} onKeyDown={event => {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); moveSearch(event.shiftKey ? -1 : 1) }
               }} />
               <span aria-live="polite" aria-label="검색 결과" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground">{search ? matchCount ? `${activeMatch + 1} / ${matchCount}${matchLimited ? "+" : ""}` : "없음" : ""}</span>
@@ -621,7 +623,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
               if (target) void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), target)
                 : value === "RAW" ? changeCredentials("RAW", "", target) : changeCredentials("ANONYMOUS", "", target))
             }}>
-              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={mode === "ACCOUNT" && !selectedAccountValid ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
+              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-placeholder:text-foreground data-[size=default]:h-[36px]"><SelectValue placeholder={mode === "ACCOUNT" && !selectedAccountValid ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
                 <SelectItem value="ANONYMOUS">비로그인</SelectItem>
                 <SelectItem value="RAW">직접 입력</SelectItem>
@@ -629,7 +631,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
                 {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
               </SelectContent>
             </Select></div>
-            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={toggleOriginal}>{view === "original" ? "편집으로 돌아가기" : "원문 보기"}</Button>
+            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy || originalOnly} title={originalOnly ? "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다." : undefined} onClick={toggleOriginal}>{view === "original" ? "편집으로 돌아가기" : "원문 보기"}</Button>
             <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
@@ -656,7 +658,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다.</p>}
+          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{originalOnly ? "처음 수집한 원문입니다. 읽기 전용입니다." : "처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다."}</p>}
           {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 신원(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
           {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "전송할 계정 또는 비로그인을 선택해 주세요."}</p>}
           {/* 전송 인증 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
