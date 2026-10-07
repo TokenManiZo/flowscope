@@ -55,12 +55,25 @@ export function createAccountSettingsAdapter(): AccountSettingsAdapter {
         return load(accountId);
       }
       const account = await load(accountId);
+      const authMode = input.authMode ?? "FORM";
+      if (authMode === "INJECT") {
+        if (!input.cookie?.trim() && !input.headers?.trim()) {
+          throw new Error("주입할 쿠키나 인증 헤더를 하나 이상 입력하세요.");
+        }
+        await saveZapAccount({
+          id: accountId, label: account.label, role: account.role, service: account.target,
+          authMode: "INJECT", loginUrl: "", username: "", password: "",
+          cookie: input.cookie ?? "", headers: input.headers ?? "", verifyUrl: input.verifyUrl ?? "",
+        });
+        return load(accountId);
+      }
       if (!input.password) throw new Error("ZAP 자격증명을 저장하려면 비밀번호를 다시 입력하세요.");
       await saveZapAccount({
         id: accountId,
         label: account.label,
         role: account.role,
         service: account.target,
+        authMode: "FORM",
         loginUrl: input.loginUrl,
         username: input.loginId,
         password: input.password,

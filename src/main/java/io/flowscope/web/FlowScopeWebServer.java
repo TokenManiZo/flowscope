@@ -1261,6 +1261,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         zapNode.put("loginId", credentials == null ? "" : credentials.username());
         zapNode.put("password", credentials == null ? "" : credentials.password());
         zapNode.put("hasPassword", zap != null && zap.hasPassword());
+        // 로그인 방식(FORM 폼 로그인 / INJECT 인증값 주입). 쿠키·헤더 값은 되돌려 보내지 않고 보유 여부만 알린다.
+        zapNode.put("authMode", zap == null ? "FORM" : zap.authMode().name());
+        zapNode.put("hasCookie", zap != null && zap.hasCookie());
+        zapNode.put("hasHeaders", zap != null && zap.hasHeaders());
+        // 검증 URL은 비밀값이 아니라 로그인 URL처럼 그대로 보여 준다(설정 화면 재입력 방지).
+        zapNode.put("verifyUrl", zap == null ? "" : zap.verifyUrl());
         // ZAP 연결 문구는 로그인 결과가 아니다. 연결이 실제로 끊겼을 때만 보여 주고, 로그인 상태와 따로 표시한다.
         JsonNode zapConnection = state.zapStatus();
         boolean zapConnected = zapConnection.path("connected").asBoolean(false);
@@ -1494,12 +1500,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (!action.equals("save")) {
                 throw new IllegalArgumentException("action은 save, refresh-session 또는 delete여야 합니다.");
             }
+            // 주입 모드는 로그인 URL·ID·비밀번호가 없으므로 모두 선택값으로 받는다. 모드별 필수 검증은 ZapAccountVault가 한다.
             ZapAccountVault.View saved = state.saveZapAccount(new ZapAccountVault.Input(
                     form.getOrDefault("id", ""), required(form, "label"),
                     form.getOrDefault("role", "UNKNOWN"), required(form, "service"),
-                    required(form, "loginUrl"), requiredRaw(form, "username"), requiredRaw(form, "password"),
+                    form.getOrDefault("loginUrl", ""), form.getOrDefault("username", ""),
+                    form.getOrDefault("password", ""),
+                    form.getOrDefault("cookie", ""), form.getOrDefault("headers", ""),
+                    form.getOrDefault("authMode", "FORM"),
                     form.getOrDefault("loggedInIndicator", ""),
-                    form.getOrDefault("loggedOutIndicator", "")));
+                    form.getOrDefault("loggedOutIndicator", ""),
+                    form.getOrDefault("verifyUrl", "")));
             ObjectNode body = json.createObjectNode().put("success", true)
                     .put("message", "ZAP 로그인 계정을 현재 프로세스 메모리에 등록했습니다.");
             body.set("account", json.valueToTree(saved));
