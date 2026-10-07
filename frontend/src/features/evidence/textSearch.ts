@@ -60,3 +60,9 @@ export const searchMarkClass: Record<SearchMark, string> = {
   match: "rounded-[2px] bg-amber-300/45 dark:bg-amber-400/35",
   active: "rounded-[2px] bg-orange-400/85 dark:bg-orange-500/75",
 }
+
+/** 검색이 아니라 고쳐야 할 곳(예전 마스킹 표시)을 가리킬 때. 테두리는 box-shadow라 글자 위치를 바꾸지 않는다. */
+export const warningMarkClass: Record<SearchMark, string> = {
+  match: "rounded-[2px] bg-red-500/20 ring-1 ring-red-500/60",
+  active: "rounded-[2px] bg-red-500/45 ring-1 ring-red-500",
+}

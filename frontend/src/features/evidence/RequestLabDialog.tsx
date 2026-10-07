@@ -18,6 +18,7 @@ import type { RequestLabCredentialMode } from "./RequestLabMetadata"
 import { applyRequestLabCredentials } from "./requestLabCredentials"
 import { RequestLabPersistence, type RequestLabSaveStatus } from "./requestLabPersistence"
 import { findMatches, MAX_SEARCH_MATCHES, type TextRange } from "./textSearch"
+import { findLegacyMasks } from "./legacyMasks"
 
 interface Props {
   open: boolean
@@ -85,6 +86,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   /** 검색어를 바꾸거나 이전·다음으로 옮길 때만 올린다. 요청을 고쳐 쓰는 동안에는 스크롤을 건드리지 않는다. */
   const [searchReveal, setSearchReveal] = useState(0)
   const searchRef = useRef<HTMLInputElement>(null)
+  /** 예전 마스킹 표시 중 '다음 위치'로 고른 순번(-1이면 아직 고르지 않음). */
+  const [legacyActive, setLegacyActive] = useState(-1)
   const searchCache = useRef<Record<"request" | "response", { text: string; query: string; ranges: TextRange[] } | null>>({ request: null, response: null })
 
   // 점검 중인 실행은 사이드바 상태 표시가 계속 받아 온다. 여기서는 새로 요청하지 않고 같은 값을 읽기만 한다.
@@ -563,6 +566,18 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     if (activeMatch < 0) return -1
     return pane === "request" ? (activeMatch < matches.request.length ? activeMatch : -1) : activeMatch - matches.request.length
   }
+  // 마스킹을 없애기 전 버전이 저장한 표시는 보낼 때 글자 그대로 나간다. 보낼 편집본에서만 세고, 전송은 막지 않는다.
+  const legacySkipsCredentials = mode === "ACCOUNT" || mode === "ANONYMOUS"
+  const legacyMasks = useMemo(() => entry && view !== "original" ? findLegacyMasks(displayedRequest, legacySkipsCredentials) : [],
+    [entry, view, displayedRequest, legacySkipsCredentials])
+  const legacyActiveIndex = legacyMasks.length ? Math.min(legacyActive, legacyMasks.length - 1) : -1
+  function showNextLegacyMask() {
+    if (!legacyMasks.length) return
+    // 검색 중이면 검색 표시가 가리므로 검색어를 비우고 보여 준다.
+    if (search) setSearch("")
+    setLegacyActive((legacyActiveIndex + 1) % legacyMasks.length)
+    setSearchReveal(current => current + 1)
+  }
   function changeSearch(value: string) {
     setSearch(value)
     setSearchActive(0)
@@ -582,6 +597,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     const selected = entry?.result
     const text = request ? displayedRequest : displayedResponse
     const boundary = /\r?\n\r?\n/.exec(text)
+    const legacyShown = request && !search && !showJson && legacyMasks.length > 0
     const body = boundary ? text.slice(boundary.index + boundary[0].length) : text
     const canFormat = body.length <= 262_144 && (/^\s*[\[{]/.test(body) || (boundary && /^content-type:\s*[^\r\n]*(?:application\/json|\+json)\b/im.test(text.slice(0, boundary.index)))) && !formatted?.message
     return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border bg-muted/20" aria-label={request ? "Request 원문 패널" : "Response 원문 패널"} hidden={panelFocus !== "both" && panelFocus !== pane}>
@@ -589,7 +605,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         {!request && <span className="truncate text-xs text-muted-foreground">{view === "original" ? "관측 원문" : selected ? `${selected.status ? `HTTP ${selected.status}` : "응답 없음"} · ${selected.durationMs}ms${entry?.dirty ? " · 이전 응답" : ""}` : "미전송"}</span>}
         <div role="group" aria-label={`${title} 보기`} className="ml-auto flex shrink-0 gap-1"><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!showJson} onClick={() => setJsonView(current => ({ ...current, [pane]: false }))}>Raw</Button><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!!showJson} disabled={!canFormat} title={formatted?.message || undefined} onClick={() => chooseJson(pane)}>JSON 정돈</Button></div></header>
       {!request && selected?.failure && <p role="alert" className="shrink-0 border-b px-3 py-2 text-xs text-destructive">{selected.failure}{!selected.status && " · 대상 처리 여부 미확인"}</p>}
-      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} marks={showJson ? undefined : matches[pane]} activeMark={activeMarkIn(pane)} revealKey={searchReveal} /></div>
+      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} marks={showJson ? undefined : legacyShown ? legacyMasks : matches[pane]} activeMark={legacyShown ? legacyActiveIndex : activeMarkIn(pane)} markStyle={legacyShown ? "warning" : "search"} revealKey={searchReveal} /></div>
       <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} marks={showJson ? matches[pane] : undefined} activeMark={activeMarkIn(pane)} revealKey={searchReveal} />
     </section>
   }
@@ -667,6 +683,10 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {draft && <>{!draft.rawRequestRetained
             ? <p role="status" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다. 이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요.</p>
             : !draft.rawResponseRetained && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">응답 원문은 일부만 남아 있습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
+          {legacyMasks.length > 0 && <div role="status" aria-label="이전 버전에서 가려진 값" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-200">
+            <p className="min-w-0 flex-1">이전 버전에서 가려진 채 저장된 값이 {legacyMasks.length}곳 남아 있습니다. 빨간 테두리로 표시한 곳은 글자 그대로 전송되니 실제 값으로 바꿔 보내세요.{legacySkipsCredentials ? " 전송 인증이 바꾸는 인증 헤더(Authorization·Cookie·CSRF)는 세지 않았습니다." : ""}</p>
+            <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={showNextLegacyMask}>{legacyActiveIndex < 0 ? "위치 보기" : `다음 위치 ${legacyActiveIndex + 1} / ${legacyMasks.length}`}</Button>
+          </div>}
         </div>
         {draft && <>
           <div ref={editorsRef} role="group" aria-label="Request Lab 요청 및 응답" className="grid min-h-0 min-w-0 flex-1 overflow-hidden" style={{ "--request-lab-split": `${split}%`, gridTemplateColumns: panelFocus === "both" ? "minmax(0,var(--request-lab-split)) 10px minmax(0,1fr)" : "minmax(0,1fr)" } as CSSProperties}>

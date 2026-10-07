@@ -1302,3 +1302,39 @@ describe("RequestLabDialog search", () => {
     expect(request).toHaveValue(secret)
   })
 })
+
+describe("RequestLabDialog legacy masks", () => {
+  const masked = "POST /login HTTP/1.1\nHost: api.example.test\nAuthorization: ***MASKED***\nCookie: session=***\n\n{\"password\":\"***MASKED***\"}"
+
+  it("warns about values masked by older versions, points to them, and still allows sending", async () => {
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => {
+      if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json(requestLabDraft("event-7", masked)))
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
+      return Promise.resolve(json({ success: true }))
+    })
+    vi.stubGlobal("fetch", fetch)
+    const user = userEvent.setup()
+    // 점검 중이 아니면 인증을 고르기 전 편집본이 원문 그대로 열린다.
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />, clientInspecting(inspecting()))
+    const warning = await screen.findByRole("status", { name: "이전 버전에서 가려진 값" })
+    expect(warning).toHaveTextContent("3곳")
+    expect(document.querySelectorAll('mark[data-mark-style="warning"]')).toHaveLength(3)
+
+    // 비로그인은 인증 헤더를 바꾸므로 본문 비밀번호 하나만 남는다. 전송은 막지 않는다.
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(screen.getByRole("status", { name: "이전 버전에서 가려진 값" })).toHaveTextContent("1곳"))
+    expect(screen.getByRole("status", { name: "이전 버전에서 가려진 값" })).toHaveTextContent("인증 헤더(Authorization·Cookie·CSRF)는 세지 않았습니다")
+    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "위치 보기" }))
+    expect(screen.getByLabelText("Request 원문 패널").querySelector("[data-search-active]")).toHaveTextContent("***MASKED***")
+    expect(screen.getByRole("button", { name: "다음 위치 1 / 1" })).toBeVisible()
+
+    // 검색 중에는 검색 표시가 우선하고, 값을 채우면 경고가 사라진다.
+    await user.type(screen.getByRole("searchbox", { name: "요청·응답에서 찾기" }), "login")
+    expect(document.querySelectorAll('mark[data-mark-style="warning"]')).toHaveLength(0)
+    await user.clear(screen.getByRole("searchbox", { name: "요청·응답에서 찾기" }))
+    const request = screen.getByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement
+    fireEvent.change(request, { target: { value: request.value.replace("***MASKED***", "real-password") } })
+    await waitFor(() => expect(screen.queryByRole("status", { name: "이전 버전에서 가려진 값" })).not.toBeInTheDocument())
+  })
+})
