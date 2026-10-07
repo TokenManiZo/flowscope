@@ -3,7 +3,7 @@ import { ApiActions, DeleteTrafficButton } from "@/features/api-management/ApiAc
 import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { HttpStatusBadge, MethodBadge, SourceMarks } from "@/components/TrafficBadges"
 import { useEffect, useMemo, useState } from "react"
-import { ChartNoAxesColumn, ChevronRight, Filter, CircleAlert } from "lucide-react"
+import { ChartNoAxesColumn, ChevronRight, Download, Filter, CircleAlert } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
@@ -21,6 +21,7 @@ import type { SurfaceDeltaState, SurfaceEndpoint, SurfaceParameter, SurfaceSourc
 import { openEvidenceSelection, takePageSelection } from "@/features/evidence/evidenceNavigation"
 import { EvidenceHttpViewer } from "@/features/evidence/EvidenceHttpViewer"
 import { SurfaceParameterComparison, hasInputDifference, parameterComparison } from "./SurfaceParameterComparison"
+import { buildUrlList, downloadText } from "./surfaceUrlExport"
 import { Input } from "@/components/ui/input"
 import { useEvidenceQuery, useSnapshotQuery } from "@/lib/query/hooks"
 
@@ -139,6 +140,16 @@ export function SurfacePage() {
   )
   const matchesCategory = (endpoint: SurfaceEndpoint, value: string) => value === "ALL" || (value === "DIFFERENT" ? hasInputDifference(endpoint.parameters) : value === "UNOBSERVED" ? endpoint.observations.length === 0 : endpoint.declarations.length === 0 && endpoint.observations.length > 0)
   const rows = endpoints.filter(endpoint => (filter === "ALL" || endpoint.deltaState === filter) && matchesCategory(endpoint, category) && (method === "ALL" || endpoint.key.method === method) && `${endpoint.key.method} ${endpoint.key.pathTemplate}`.toLowerCase().includes(search.toLowerCase()))
+  // 체크한 API가 있으면 그것만, 없으면 지금 보이는 목록 전부를 URL 목록으로 내보낸다(ZAP·LLM 씨앗이나 외부 도구용).
+  const exportRows = checkedApis.length ? rows.filter(endpoint => checkedApis.includes(operation(endpoint))) : rows
+  function exportUrls() {
+    const text = buildUrlList(exportRows)
+    if (!text) return
+    const now = new Date()
+    const pad = (value: number) => String(value).padStart(2, "0")
+    const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+    downloadText(`flowscope-urls-${stamp}.txt`, text)
+  }
   const selected = rows.find((endpoint) => endpointId(endpoint) === selectedId) ?? null
   const selectedEvent = selected && selectedEvidenceId && selected.observations.some((item) => item.evidenceId === selectedEvidenceId)
     ? snapshot.data?.events.find((event) => event.eventId === selectedEvidenceId) ?? null
@@ -219,6 +230,7 @@ export function SurfacePage() {
       <select aria-label="API 메서드" value={method} onChange={event => setMethod(event.target.value)} className="h-8 rounded-md border bg-background px-2 text-xs"><option value="ALL">전체 메서드</option>{[...new Set(endpoints.map(endpoint => endpoint.key.method))].sort().map(value => <option value={value} key={value}>{value}</option>)}</select>
       <Button size="sm" variant="outline" onClick={() => { setSearch(""); setMethod("ALL"); setCategory("ALL"); setFilter("ALL"); setEnabledSources(new Set(["HUMAN", "SCANNER", "LLM"])) }}>초기화</Button>
       <span className="ml-auto text-xs text-muted-foreground">전체 {endpoints.length} · 입력 {endpoints.reduce((sum, endpoint) => sum + endpoint.parameters.length, 0)}</span>
+      <Button type="button" variant="outline" size="sm" className="h-8 text-xs" disabled={exportRows.length === 0} title={checkedApis.length ? "선택한 API의 URL을 txt로 내려받습니다." : "지금 보이는 목록의 URL을 txt로 내려받습니다. ZAP·LLM 씨앗이나 외부 도구에 쓰세요."} aria-label={`URL 내보내기 ${exportRows.length}개`} onClick={exportUrls}><Download className="size-3.5" />URL 내보내기 <span className="tabular-nums">{exportRows.length}</span></Button>
       <Popover><PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" className="h-8 text-xs"><ChartNoAxesColumn className="size-3.5" />집계</Button></PopoverTrigger><PopoverContent align="end" className="w-72 p-4" aria-label="API 집계">
         <h3 className="text-sm font-semibold">현재 필터 집계</h3><dl className="grid gap-2 text-xs">
         <div className="flex justify-between"><dt>전체 항목</dt><dd>{endpoints.length}</dd></div>
