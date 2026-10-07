@@ -95,7 +95,7 @@ it("opens members above a group near the bottom without moving its viewport or a
 
 
 it("reorders locked nodes without changing lock state and does not restore on filter clear", () => {
-  const core = cytoscape({ headless: true, elements: [
+  const core = cytoscape({ headless: true, layout: { name: "preset" }, elements: [
     { data: { id: "a", kind: "operation", height: 200, hl: "yes" }, position: { x: 540, y: 3000 } },
     { data: { id: "b", kind: "operation", height: 80, hl: "no" }, position: { x: 540, y: 100 } },
   ] })
@@ -103,7 +103,8 @@ it("reorders locked nodes without changing lock state and does not restore on fi
     core.nodes().lock()
     expect(positionHighlightedInLanes(core, 3)).toBe(true)
     expect(core.nodes().toArray().every(node => node.locked())).toBe(true)
-    expect(core.$id("a").position().y + 100).toBeLessThan(core.$id("b").position().y - 40)
+    expect(core.$id("a").position()).toEqual({ x: 540, y: 100 })
+    expect(core.$id("b").position()).toEqual({ x: 540, y: 3000 })
     const positions = readPreferences(core).positions
     core.nodes().data("hl", "none")
     expect(positionHighlightedInLanes(core, 3)).toBe(false)

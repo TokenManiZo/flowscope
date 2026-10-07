@@ -24,7 +24,6 @@ interface Props {
   statusesByNode?: ReadonlyMap<string, readonly number[]>
   /** 강조 필터에 맞는 엣지 id → 색. null이면 필터가 없어 모두 평소 무채색이다. */
   highlight?: ReadonlyMap<string, string> | null
-  highlightKey?: string
   /** 필터로 고른 응답 코드 → 색. API 카드의 해당 뱃지만 칠한다. */
   statusColors?: ReadonlyMap<number, string>
   /** 출처를 두 개 이상 골랐을 때 그 순서. 강조된 엣지를 출처마다 나란히 벌려 그린다(하나 이하면 겹쳐서 한 줄). */
@@ -260,8 +259,7 @@ export function positionHighlightedInLanes(core: Core, laneCount: number): boole
   const nodes = core.nodes().toArray()
   const positions = highlightPositions(nodes.map(node => ({
     id: node.id(), lane: laneIndexForKind(String(node.data("kind")), laneCount),
-    ...node.position(), height: nodeModelHeight(node), matched: node.data("hl") === "yes",
-    memberOf: String(node.data("memberOf") ?? ""),
+    ...node.position(), matched: node.data("hl") === "yes",
   })), laneCount)
   if (!positions) return false
   let moved = false
@@ -520,7 +518,7 @@ function applyEdgeRoutes(core: Core, laneCount: number) {
 const noStatusColors: ReadonlyMap<number, string> = new Map()
 const noSplitSources: readonly string[] = []
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, highlightKey, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, apiMarks, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, apiMarks, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -572,7 +570,6 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const preferencesRef = useRef(preferences)
   const appliedLayoutRef = useRef(layoutVersion)
   const hasProjectionRef = useRef(false)
-  const appliedHighlightKeyRef = useRef<string | undefined>(undefined)
   const appliedFitRef = useRef(fitVersion)
   const appliedLaneLayoutRef = useRef(laneLayout.version)
   const laneBoundsRef = useRef<ReadonlyArray<LaneBounds | null>>([])
@@ -913,6 +910,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     hasProjectionRef.current = true
     const relayout = appliedLayoutRef.current !== layoutVersion
     appliedLayoutRef.current = layoutVersion
+    // 필터 중 테마·snapshot 갱신에서도 이미 펼친 Object의 자리부터 유지한다.
+    const objectPositions = !relayout && highlightRef.current
+      ? new Map(core.nodes().toArray().filter(node => node.data("temporaryObjectPosition") === "yes").map(node => [node.id(), { ...node.position() }]))
+      : new Map<string, { x: number; y: number }>()
     core.elements().remove()
     cardsRef.current = new Map()
     // 정렬은 위치만 바꾼다. 크기·viewport는 명시적 초기화 때만 비운다.
@@ -924,6 +925,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     applyHighlight(core, projection, highlightRef.current, cardsRef.current, theme, statusColorsRef.current, splitSourcesRef.current)
     setCornerCursor(null)
     positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : { ...saved?.positions, ...live.positions }, laneCount)
+    core.nodes().forEach(node => {
+      const point = objectPositions.get(node.id())
+      if (point) node.position(point)
+    })
     if (highlightRef.current) positionHighlightedInLanes(core, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
@@ -947,19 +952,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const core = coreRef.current
     if (!core) return
     applyHighlight(core, projectionRef.current, highlight, cardsRef.current, theme, statusColors, splitSources)
-    const changed = appliedHighlightKeyRef.current !== highlightKey
-    appliedHighlightKeyRef.current = highlightKey
-    if (highlight) {
-      const moved = positionHighlightedInLanes(core, laneCount)
-      const matched = core.nodes().toArray().filter(node => node.data("hl") === "yes")
-      if (changed && matched.length) {
-        const top = Math.min(...matched.map(node => node.position().y - nodeModelHeight(node) / 2))
-        core.pan({ ...core.pan(), y: 52 - top * core.zoom() })
-      }
-      if (moved || changed && matched.length) publishLayoutRef.current?.()
-    }
+    if (highlight && positionHighlightedInLanes(core, laneCount)) publishLayoutRef.current?.()
     setMinimap(readMinimap(core)); setBands(readGroupBands(core))
-  }, [highlight, highlightKey, laneCount, projection, splitSources, statusColors, theme])
+  }, [highlight, laneCount, projection, splitSources, statusColors, theme])
 
   // 검색 외곽선은 카드·위험 테두리와 분리한다. 입력마다 projection을 다시 만들지 않는다.
   useEffect(() => {

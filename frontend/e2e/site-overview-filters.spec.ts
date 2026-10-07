@@ -59,8 +59,10 @@ for (const theme of ["dark", "light"] as const) {
       const current = await readGraph()
       expect(current.nodes.map(({ opacity: _, position: _position, ...node }) => node)).toEqual(baseline.nodes.map(({ opacity: _, position: _position, ...node }) => node))
       expect(current.edges.map(({ opacity: _, ...edge }) => edge)).toEqual(baseline.edges.map(({ opacity: _, ...edge }) => edge))
+      expect(current.nodes.filter(node => node.id.startsWith("target:")).map(node => [node.id, node.position])).toEqual(baseline.nodes.filter(node => node.id.startsWith("target:")).map(node => [node.id, node.position]))
+      expect(current.nodes.filter(node => !node.id.startsWith("target:")).map(node => JSON.stringify(node.position)).sort()).toEqual(baseline.nodes.filter(node => !node.id.startsWith("target:")).map(node => JSON.stringify(node.position)).sort())
       if (matched?.length) {
-        const lit = current.nodes.filter(node => matched.includes(node.id)), dim = current.nodes.filter(node => !matched.includes(node.id))
+        const lit = current.nodes.filter(node => !node.id.startsWith("target:") && matched.includes(node.id)), dim = current.nodes.filter(node => !node.id.startsWith("target:") && !matched.includes(node.id))
         if (dim.length) expect(Math.max(...lit.map(node => node.position.y))).toBeLessThan(Math.min(...dim.map(node => node.position.y)))
       }
       for (const edge of current.edges) expect(edge.opacity).toBe(matched === null || matched.includes(edge.target) ? 0.9 : 0.12)
