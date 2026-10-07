@@ -674,14 +674,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: 'edge[focused = "yes"]', style: { width: 3, opacity: 1 } },
           { selector: 'edge[focused = "no"]', style: { opacity: 0.15 } },
           { selector: 'node[focused = "no"]', style: { opacity: 0.35 } },
-          { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
-          { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
           { selector: 'node[objectFocus = "no"]', style: { opacity: 0.45, "z-index-compare": "manual", "z-index": 0 } },
           { selector: 'edge[objectFocus = "no"]', style: { opacity: 0.22, "z-index-compare": "manual", "z-index": 0 } },
           { selector: 'node[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 20 } },
           { selector: 'edge[objectFocus = "yes"]', style: { opacity: 1, "z-index-compare": "manual", "z-index": 10 } },
           // 검색 결과는 펼침 밖에서도 읽을 수 있게 한다. 관련 카드의 앞뒤 순서는 유지한다.
           { selector: 'node[searchMatch = "yes"]', style: { opacity: 1 } },
+          // 체크 조건 불일치는 Object 집중·검색 강조보다 우선한다.
+          { selector: 'edge[hl = "no"]', style: { opacity: 0.12 } },
+          { selector: 'node[hl = "no"]', style: { opacity: 0.3 } },
         ] as unknown as cytoscape.StylesheetJson,
       })
     } catch {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import type { EventRecord, Source } from "@/lib/api/types"
-import { EMPTY_HIGHLIGHT, HIGHLIGHT_IDENTITY_COLOR, HIGHLIGHT_SOURCE_COLOR, STATUS_CLASS_COLOR, edgeStatusCounts, indexEventsByEvidence, nodeStatusCodes, projectHighlight, statusClass, statusGroups, statusHighlightColors } from "./graphHighlight"
+import type { Cell, EventRecord, Source } from "@/lib/api/types"
+import { EMPTY_HIGHLIGHT, HIGHLIGHT_IDENTITY_COLOR, HIGHLIGHT_SOURCE_COLOR, STATUS_CLASS_COLOR, edgeStatusCounts, highlightRecords, indexEventsByEvidence, nodeStatusCodes, projectHighlight, statusClass, statusGroups, statusHighlightColors } from "./graphHighlight"
 
 function event(eventId: string, source: Source, idn: string, status: number, clusterEvidenceIds?: string[]): EventRecord {
   return { eventId, source, idn, status, clusterEvidenceIds } as unknown as EventRecord
@@ -88,4 +88,18 @@ describe("graph highlight", () => {
     expect(groups.find((group) => group.cls === "4xx")).toEqual({ cls: "4xx", codes: [{ status: 401, count: 1 }, { status: 403, count: 1 }], total: 2 })
     expect(statusClass(302)).toBe("3xx")
   })
+})
+
+
+it("scopes Object records with all axes on the same event, retaining cell-only identities", () => {
+  const cells = ["user-1", "user-2"].map(idn => ({ idn, perSource: { human: "allow", scanner: "deny" }, evidenceIds: ["human", "scanner"] }) as unknown as Cell)
+  const snapshot = { cells, events: [event("human", "human", "user-1", 200), event("scanner", "scanner", "user-1", 403)] }
+  expect(highlightRecords(snapshot, EMPTY_HIGHLIGHT)).toBe(snapshot)
+  expect(highlightRecords(snapshot, { ...EMPTY_HIGHLIGHT, identities: ["user-2"] }).cells).toEqual([cells[1]])
+  const mismatch = highlightRecords(snapshot, { identities: ["user-1"], sources: ["human"], statuses: [403] })
+  expect(mismatch.events).toEqual([])
+  expect(mismatch.cells).toEqual([])
+  const match = highlightRecords(snapshot, { identities: ["user-1"], sources: ["scanner"], statuses: [403] })
+  expect(match.cells).toEqual([cells[0]])
+  expect(match.events.map(item => item.eventId)).toEqual(["scanner"])
 })

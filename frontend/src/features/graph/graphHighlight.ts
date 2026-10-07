@@ -1,4 +1,4 @@
-import type { EventRecord, Source } from "@/lib/api/types"
+import type { EventRecord, Snapshot, Source } from "@/lib/api/types"
 import { operationGroup, type graphContents, type HierarchyProjection } from "./graphHierarchy"
 
 /**
@@ -29,6 +29,23 @@ export const HIGHLIGHT_IDENTITY_COLOR = "#34d39a"
 
 export function highlightActive(highlight: GraphHighlight): boolean {
   return highlight.sources.length > 0 || highlight.identities.length > 0 || highlight.statuses.length > 0
+}
+
+/** Object 목록과 선택 상세는 캔버스 체크 조건 안의 기록만 사용한다. 서버 판정·소유자는 그대로 둔다. */
+export function highlightRecords<T extends Pick<Snapshot, "events" | "cells">>(snapshot: T, highlight: GraphHighlight): T {
+  if (!highlightActive(highlight)) return snapshot
+  const events = snapshot.events.filter(event =>
+    (!highlight.identities.length || highlight.identities.includes(event.idn))
+    && (!highlight.sources.length || highlight.sources.includes(event.source))
+    && (!highlight.statuses.length || highlight.statuses.includes(event.status)))
+  const index = highlight.statuses.length ? indexEventsByEvidence(events) : null
+  const cells = snapshot.cells.filter(cell => {
+    if (highlight.identities.length && !highlight.identities.includes(cell.idn)) return false
+    const sources = (Object.keys(cell.perSource) as Source[]).filter(source => !highlight.sources.length || highlight.sources.includes(source))
+    return sources.length > 0 && (!index || cell.evidenceIds.some(id =>
+      (index.get(id) ?? []).some(event => event.idn === cell.idn && sources.includes(event.source))))
+  })
+  return { ...snapshot, events, cells }
 }
 
 interface HighlightEdge {
