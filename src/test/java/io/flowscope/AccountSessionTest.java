@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class AccountSessionTest {
     @Test
-    void registeredAccountBindsRotatedSessionsWithoutCrossingServices() {
+    void selectedAccountKeepsRotatedCredentialsAcrossObservedServices() {
         AnalysisConfig config = new AnalysisConfig();
         AccountProfile userA = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
         config.upsertAccount(userA)
@@ -19,11 +19,14 @@ final class AccountSessionTest {
         RequestRecord first = record("https://api.test:443", "sess:first", "/orders/1");
         RequestRecord rotated = record("https://api.test:443", "sess:rotated", "/orders/2");
         RequestRecord otherService = record("https://other.test:443", "sess:first", "/orders/3");
+        first.collectionAccountId = "acct-a";
+        rotated.collectionAccountId = "acct-a";
+        otherService.collectionAccountId = "acct-a";
         Pipeline.Result result = Pipeline.run(List.of(first, rotated, otherService), config);
 
         assertEquals("acct-a", first.idn);
         assertEquals("acct-a", rotated.idn);
-        assertNotEquals("acct-a", otherService.idn);
+        assertEquals("acct-a", otherService.idn);
         assertEquals(AccessRole.USER, config.identityRole("acct-a"));
         assertEquals("USER A", result.graph.node("I:acct-a").label);
     }
@@ -121,28 +124,29 @@ final class AccountSessionTest {
     }
 
     @Test
-    void 연결해제_뒤_같은_레코드를_재분석해도_옛계정이_남지_않는다() {
+    void 인증지문_연결해제는_선택세션을_바꾸지_않는다() {
         AnalysisConfig config = new AnalysisConfig().upsertAccount(
                 new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER));
         config.bindSession("https://api.test:443", "sess:first", "acct-a");
         RequestRecord record = record("https://api.test:443", "sess:first", "/orders/1");
+        record.collectionAccountId = "acct-a";
         assertEquals("acct-a", Pipeline.run(List.of(record), config).records.getFirst().idn);
 
         config.unbindSession("https://api.test", "sess:first");
 
-        assertNotEquals("acct-a", Pipeline.run(List.of(record), config).records.getFirst().idn);
+        assertEquals("acct-a", Pipeline.run(List.of(record), config).records.getFirst().idn);
     }
 
     @Test
-    void 지문추출실패는_실제비인증과_분리한다() {
+    void 선택계정이_없으면_지문추출실패도_비로그인이다() {
         RequestRecord unresolved = record("https://api.test:443", "", "/orders/1");
         RequestRecord anonymous = record("https://api.test:443", "anon", "/orders/2");
 
         Pipeline.Result result = Pipeline.run(List.of(unresolved, anonymous));
 
-        assertEquals(AuthState.UNRESOLVED, result.records.get(0).authState);
-        assertTrue(result.records.get(0).idn.startsWith("unresolved-"));
-        assertEquals(AccessRole.UNKNOWN, result.records.get(0).role);
+        assertEquals(AuthState.ANONYMOUS, result.records.get(0).authState);
+        assertEquals("anon", result.records.get(0).idn);
+        assertEquals(AccessRole.ANONYMOUS, result.records.get(0).role);
         assertEquals(AuthState.ANONYMOUS, result.records.get(1).authState);
         assertEquals("anon", result.records.get(1).idn);
     }

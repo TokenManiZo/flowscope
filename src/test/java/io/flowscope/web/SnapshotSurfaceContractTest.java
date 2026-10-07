@@ -213,6 +213,7 @@ final class SnapshotSurfaceContractTest {
         RequestRecord validation = request("validation", "{\"orderId\":101}");
         validation.phase = RunPhase.VALIDATION;
         records.add(validation);
+        records.forEach(record -> record.collectionAccountId = "alice");
         Pipeline.Result result = Pipeline.run(records, config);
         JsonNode surface = json.readTree(new SnapshotJsonWriter().write(7, result, config, List.of(), List.of())).path("surface");
         assertEquals(40, parameter(surface, "JSON_BODY", "/orderId").path("profile").path("observationCount").asInt(),
@@ -325,6 +326,7 @@ final class SnapshotSurfaceContractTest {
 
     private static RequestRecord request(String evidence, String body) {
         RequestRecord r = new RequestRecord(Source.HUMAN, "https://app.test:443", "PATCH", "/api/orders/101", 200, "A");
+        r.collectionAccountId = "user-a";
         r.evidenceId = evidence;
         r.reqBody = body;
         r.requestContentType = "application/json";

@@ -97,7 +97,7 @@ public final class SnapshotJsonWriter {
                         List<RunExecutionLedger.Summary> executionSummaries,
                         java.util.function.Predicate<RequestRecord> rawAvailable) throws JsonProcessingException {
         return write(revision, datasetRevision, result, config, assessments, validations, managedSessions,
-                routeCandidates, droppedRecords, executionSummaries, rawAvailable, record -> record.collectionAccountId);
+                routeCandidates, droppedRecords, executionSummaries, rawAvailable, RequestRecord::selectedIdentity);
     }
 
     public byte[] write(long revision, long datasetRevision, Pipeline.Result result, AnalysisConfig config,

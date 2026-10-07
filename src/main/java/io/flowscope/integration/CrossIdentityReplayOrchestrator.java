@@ -79,6 +79,7 @@ public final class CrossIdentityReplayOrchestrator {
             record.executionTrust = ExecutionTrust.CONTROLLED;
             record.runId = runId;
             record.laneAccountId = targetIdentity;
+            record.collectionAccountId = targetIdentity;
             record.replayBasisIdentity = basisIdentity;
             record.replayBasisEvidenceId = basisEvidenceId;
             if (record.timestamp == 0) record.timestamp = replayedAt.toEpochMilli();

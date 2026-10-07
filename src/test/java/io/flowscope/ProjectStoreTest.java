@@ -21,7 +21,7 @@ final class ProjectStoreTest {
     @TempDir Path temp;
 
     @Test
-    void collectionCardSurvivesAnalysisAndReopenWithoutChangingObservedAuthentication() throws Exception {
+    void collectionCardSurvivesAnalysisAndReopenWithoutChangingCredentials() throws Exception {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://shop.test:443",
                 "GET", "/api/items", 200, Fingerprints.of(null, "tracking=present"));
         record.hasResponse = true;
@@ -32,8 +32,8 @@ final class ProjectStoreTest {
         Pipeline.Result before = Pipeline.run(List.of(record));
         RequestRecord observed = before.records.getFirst();
         assertEquals("anon", observed.collectionAccountId);
-        assertTrue(observed.idn.startsWith("unresolved-"));
-        assertEquals(AuthState.UNRESOLVED, observed.authState);
+        assertEquals("anon", observed.idn);
+        assertEquals(AuthState.ANONYMOUS, observed.authState);
         assertNull(observed.laneAccountId);
         Path file = temp.resolve("collection-card.flowscope.json");
         ProjectStore store = new ProjectStore();

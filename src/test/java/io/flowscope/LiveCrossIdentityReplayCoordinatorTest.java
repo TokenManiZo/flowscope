@@ -145,7 +145,8 @@ final class LiveCrossIdentityReplayCoordinatorTest {
         });
         coordinator.startAutomaticAnonymousGet(true);
 
-        RequestRecord anonymous = eligible("GET", "ev-anon", Fingerprints.ANONYMOUS);
+        RequestRecord anonymous = eligible("GET", "ev-anon", "ck:tracker");
+        anonymous.collectionAccountId = "anon";
 
         assertFalse(coordinator.offer(anonymous, TARGET, true, "anonymous-request"));
         assertEquals(0, dispatched.get());
@@ -172,10 +173,11 @@ final class LiveCrossIdentityReplayCoordinatorTest {
         assertFalse(coordinator.offer(eligible("GET", "ev-imported"), TARGET, false));
         RequestRecord unknownBasis = eligible("GET", "ev-unknown");
         unknownBasis.laneAccountId = null;
-        assertFalse(coordinator.offer(unknownBasis, TARGET, true));
+        unknownBasis.collectionAccountId = "anon";
+        assertTrue(coordinator.offer(unknownBasis, TARGET, true));
 
-        assertEquals(0, dispatched.get());
-        assertEquals(0, coordinator.snapshot().queued());
+        assertEquals(1, dispatched.get());
+        assertEquals(1, coordinator.snapshot().queued());
     }
 
     @Test
@@ -334,6 +336,7 @@ final class LiveCrossIdentityReplayCoordinatorTest {
                 method, "/api/orders/19", 200, fingerprint);
         record.hasResponse = true;
         record.executionTrust = ExecutionTrust.OBSERVED;
+        record.collectionAccountId = fingerprint.equals(Fingerprints.ANONYMOUS) ? "anon" : "user-a";
         record.laneAccountId = "user-a";
         record.evidenceId = evidenceId;
         record.op = method + " /api/orders/{id}";

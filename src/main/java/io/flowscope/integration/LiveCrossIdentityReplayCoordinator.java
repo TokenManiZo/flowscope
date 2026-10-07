@@ -335,7 +335,7 @@ public final class LiveCrossIdentityReplayCoordinator {
             RequestRecord record, URI target, String anonymousRequestKey) {
         LinkedHashSet<String> identities = new LinkedHashSet<>(targetAccountIds);
         if (includeAnonymous) identities.add(CrossIdentityReplayOrchestrator.ANONYMOUS_IDENTITY);
-        identities.remove(record.laneAccountId);
+        identities.remove(record.selectedIdentity());
         List<CrossIdentityReplayOrchestrator.Recommendation> values = new ArrayList<>();
         for (String identity : identities) {
             String key = automaticAnonymousGet
@@ -343,7 +343,7 @@ public final class LiveCrossIdentityReplayCoordinator {
                     : record.evidenceId + "\0" + identity;
             if (!deduplicated.add(key)) continue;
             values.add(new CrossIdentityReplayOrchestrator.Recommendation(record.op, identity,
-                    record.laneAccountId, record.evidenceId, target, record.runtimeId()));
+                    record.selectedIdentity(), record.evidenceId, target, record.runtimeId()));
         }
         return values;
     }
@@ -391,8 +391,7 @@ public final class LiveCrossIdentityReplayCoordinator {
         }
         if (!record.hasResponse || record.evidenceId == null || record.evidenceId.isBlank()
                 || record.op == null || record.op.isBlank()
-                || record.method == null || record.method.isBlank()
-                || record.laneAccountId == null || record.laneAccountId.isBlank()) {
+                || record.method == null || record.method.isBlank()) {
             return "INCOMPLETE_BASIS_EVIDENCE";
         }
         if (!rawRequestRetained) return "RAW_REQUEST_NOT_AVAILABLE";
@@ -407,7 +406,7 @@ public final class LiveCrossIdentityReplayCoordinator {
         if (automaticAnonymousGet && !record.method.equalsIgnoreCase("GET")) {
             return "AUTOMATIC_ANONYMOUS_GET_ONLY";
         }
-        if (automaticAnonymousGet && Fingerprints.ANONYMOUS.equals(record.fp)) {
+        if (automaticAnonymousGet && Fingerprints.ANONYMOUS.equals(record.selectedIdentity())) {
             return "ALREADY_ANONYMOUS_BASIS";
         }
         if (automaticAnonymousGet && (anonymousRequestKey == null || anonymousRequestKey.isBlank())) {

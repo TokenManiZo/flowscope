@@ -615,7 +615,6 @@ public final class ProjectStore {
         r.executionTrust = enumValue(ExecutionTrust.class, optional(value, "execution_trust", "UNKNOWN"));
         int listenerPort = value.path("proxy_listener_port").asInt(-1);
         r.proxyListenerPort = listenerPort > 0 && listenerPort <= 65535 ? listenerPort : -1;
-        r.authState = enumValue(AuthState.class, optional(value, "auth_state", "UNRESOLVED"));
         List<String> reasons = new ArrayList<>();
         JsonNode reasonNodes = value.path("classification_reasons");
         if (reasonNodes.isArray()) reasonNodes.forEach(reason -> reasons.add(reason.asText()));
@@ -628,6 +627,8 @@ public final class ProjectStore {
         r.runId = optional(value, "run_id", "project-import");
         r.laneAccountId = nullable(value, "lane_account_id");
         r.collectionAccountId = nullable(value, "collection_account_id");
+        r.authState = Fingerprints.ANONYMOUS.equals(r.selectedIdentity())
+                ? AuthState.ANONYMOUS : AuthState.ACCOUNT_BOUND;
         r.supportingPageUrl = nullable(value, "supporting_page_url");
         r.replayBasisIdentity = nullable(value, "replay_basis_identity");
         r.replayBasisEvidenceId = nullable(value, "replay_basis_evidence_id");
