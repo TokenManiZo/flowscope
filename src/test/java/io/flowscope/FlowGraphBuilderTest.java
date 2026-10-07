@@ -27,6 +27,8 @@ class FlowGraphBuilderTest {
         List<RequestRecord> all = new ArrayList<>();
         all.addAll(BurpXmlParser.parse(load("/sample/human.xml"), Source.HUMAN));
         all.addAll(BurpXmlParser.parse(load("/sample/scanner.xml"), Source.SCANNER));
+        all.forEach(record -> record.collectionAccountId = record.source == Source.SCANNER ? "user-c"
+                : record.path.contains("admin") ? "user-b" : "user-a");
         Normalizer.normalizeAll(all);
         return FlowGraphBuilder.build(all);
     }

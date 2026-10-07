@@ -19,20 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Explorer 신원 귀속 통합 회귀.
- *
- * <p>고정하는 경로: LLM 계정 선택·인증 준비({@link ExplorerAccountVault}) → 실제 {@link ExplorerHttpGateway}가
- * vault 토큰을 주입해 transport에 넘기는 요청 → 지문 → {@code bindSession} → {@link Pipeline#run} 계정 신원 →
- * {@link ProjectStore} 저장·재열기 뒤 재유도.
- *
- * <p>정직한 경계: FlowScopeExtension의 실제 transport 본문(recordFrom 호출부와 forcedAccountId→fp→bindSession)은
- * Montoya api·records·ledger에 묶인 private 구현이라 여기서 실행하지 않고, 그 본문이 만드는 레코드 필드와
- * bindSession 계약을 그대로 재현한다. 지문은 {@link Fingerprints#of}를 쓰는데, LLM lane에서
- * {@code captureFingerprint(LLM, null, …)}가 이 함수로 환원됨은 {@code io.flowscope.burp.ExplorerFingerprintTest}가
- * 고정한다. 이 테스트가 통과해도 실제 Burp 완주는 별도 운영 gate다. LLM lane은 D-130에 따라 laneAccountId만으로는
- * 귀속되지 않고 지문 binding으로만 귀속되므로 그 경계도 음성 대조로 고정한다.
- */
+/** Selected Explorer account survives credential binding changes and project reopen. */
 final class ExplorerIdentityAttributionTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String SERVICE = "https://app.example.test:443";
@@ -40,7 +27,7 @@ final class ExplorerIdentityAttributionTest {
     @TempDir Path temp;
 
     @Test
-    void selectedExplorerAccountBindsThroughFingerprintAndSurvivesProjectReopen() throws Exception {
+    void selectedExplorerAccountSurvivesWithoutFingerprintBindingAndProjectReopen() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerAccountVault.View account = vault.register("llm-a", "A", "USER");
         vault.adoptSession(account.id(), java.net.URI.create("https://app.example.test/"), List.of(),
@@ -75,12 +62,12 @@ final class ExplorerIdentityAttributionTest {
         assertEquals(account.id(), live.records.getFirst().idn);
         assertEquals(AuthState.ACCOUNT_BOUND, live.records.getFirst().authState);
 
-        // 3) 음성 대조(D-130): laneAccountId만 있고 binding이 없으면 LLM lane은 계정 신원을 얻지 못한다.
+        // 3) 선택한 계정은 자격 지문 binding이 없어도 유지된다.
         AnalysisConfig unbound = new AnalysisConfig()
                 .upsertAccount(new AccountProfile(account.id(), "A", SERVICE, AccessRole.USER));
         Pipeline.Result withoutBinding = Pipeline.run(List.of(explorerRecord(fp, account.id())), unbound);
-        assertNotEquals(account.id(), withoutBinding.records.getFirst().idn);
-        assertNotEquals(AuthState.ACCOUNT_BOUND, withoutBinding.records.getFirst().authState);
+        assertEquals(account.id(), withoutBinding.records.getFirst().idn);
+        assertEquals(AuthState.ACCOUNT_BOUND, withoutBinding.records.getFirst().authState);
 
         // 4) 프로젝트 재열기: 저장 → 로드 → Pipeline 재실행에서도 같은 계정으로 다시 귀속된다.
         Path file = temp.resolve("explorer.flowscope.json");
@@ -106,6 +93,7 @@ final class ExplorerIdentityAttributionTest {
         record.executionTrust = ExecutionTrust.CONTROLLED;
         record.runId = "run-1";
         record.laneAccountId = accountId;
+        record.collectionAccountId = accountId;
         record.hasResponse = true;
         record.responseContentType = "application/json";
         record.body = "{\"ok\":true}";

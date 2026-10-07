@@ -1003,6 +1003,8 @@ public final class FlowScopeExtension implements BurpExtension {
         rec.runId = runId == null
                 ? "live-" + profile.source().name().toLowerCase(Locale.ROOT) : runId;
         if (observation != null) rec.proxyListenerPort = observation.listenerPort();
+        rec.collectionAccountId = forcedAccountId != null ? forcedAccountId
+                : !applyRunContext || humanCaptureAccountId == null ? "anon" : humanCaptureAccountId;
         if (context != null) {
             rec.sourceDetail = effectiveDetail(profile.source(), profile.detail(), context);
             rec.orchestrator = context.orchestrator();
@@ -2341,11 +2343,10 @@ public final class FlowScopeExtension implements BurpExtension {
                         : rawRequest ? "응답 원문은 메모리 상한을 넘어 일부만 남아 있습니다."
                         : "이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다.";
                 if (rawRequest && !decodedRequest.editable()) message += " " + decodedRequest.note();
-                var observedAccount = record.laneAccountId == null
-                        ? analysisConfig.boundAccount(record.service, record.fp)
-                        : analysisConfig.account(record.laneAccountId);
+                var observedAccount = analysisConfig.account(record.selectedIdentity());
                 String observedIdentity = observedAccount.map(io.flowscope.core.AccountProfile::label)
-                        .orElse(record.idn == null ? "미확정" : record.idn);
+                        .orElse(Fingerprints.ANONYMOUS.equals(record.selectedIdentity())
+                                ? "비로그인" : record.selectedIdentity());
                 // 요청 헤더를 만드는 SessionBroker.headers()와 같은 기준: ACTIVE이거나, 그 계정으로 점검 중이고 인증된 응답을 이미 받은 세션.
                 var reusable = observedAccount
                         .flatMap(account -> sessionBroker.viewForAccount(account.id()))
@@ -3521,6 +3522,7 @@ public final class FlowScopeExtension implements BurpExtension {
      */
     void recordRequestLabResponse(RequestRecord record, String accountId, long epoch, Runnable retainExchange) {
         record.laneAccountId = emptyToNull(accountId);
+        record.collectionAccountId = record.laneAccountId == null ? "anon" : record.laneAccountId;
         appendRequestLabRecord(record, epoch, retainExchange);
     }
 

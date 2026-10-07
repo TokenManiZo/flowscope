@@ -115,6 +115,7 @@ class FlowScopeRequestLabCredentialsTest {
             broker.registerAssertedSession(user, Map.of("Authorization", "Bearer user-1"), Instant.now());
             // 값을 바꿔 보낸 요청이 401을 받아도 점검 중인 세션은 그대로 쓸 수 있어야 한다.
             var denied = new RequestRecord(Source.HUMAN, service, "GET", "/orders/7", 401, "sub:user-1");
+            denied.collectionAccountId = "anon";
             denied.hasResponse = true;
             denied.phase = RunPhase.VALIDATION;
             extension.recordRequestLabResponse(denied, "user-1", 0, () -> {});
@@ -122,6 +123,7 @@ class FlowScopeRequestLabCredentialsTest {
             assertEquals(SessionBroker.Status.ACTIVE, broker.views().get(0).status());
             assertTrue(config.boundAccount(service, "sub:user-1").isEmpty());
             assertEquals("user-1", extension.analyzedRecord(denied).idn);
+            assertEquals("user-1", denied.collectionAccountId);
         } finally {
             ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
         }

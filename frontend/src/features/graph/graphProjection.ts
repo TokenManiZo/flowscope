@@ -30,8 +30,8 @@ export interface GraphCellSelection extends GraphSelection {
   cells: readonly Cell[]
 }
 
-export function graphCellKey(cell: Pick<Cell, "idn" | "op" | "resource"> & { observedIdentity?: string }): string {
-  return JSON.stringify([cell.observedIdentity ?? cell.idn, cell.op, cell.resource ?? null])
+export function graphCellKey(cell: Pick<Cell, "idn" | "op" | "resource">): string {
+  return JSON.stringify([cell.idn, cell.op, cell.resource ?? null])
 }
 
 export function graphCellSelection(cells: readonly Cell[], source: Source | null = null): GraphCellSelection {

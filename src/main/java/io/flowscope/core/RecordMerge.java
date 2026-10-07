@@ -34,11 +34,11 @@ public final class RecordMerge {
     }
 
     private record Key(Source source, SourceDetail detail, String service, String method,
-                       String path, int status, String fingerprint, String laneAccountId, String supportingPageUrl,
+                       String path, int status, String fingerprint, String laneAccountId, String collectionIdentity, String supportingPageUrl,
                        String runId, String request, String response) {
         static Key of(RequestRecord record) {
             return new Key(record.source, record.sourceDetail, record.service, record.method,
-                    record.path, record.status, record.fp, record.laneAccountId, record.supportingPageUrl, record.runId,
+                    record.path, record.status, record.fp, record.laneAccountId, record.selectedIdentity(), record.supportingPageUrl, record.runId,
                     payloadKey(record.requestPayload, record.reqText),
                     payloadKey(record.responsePayload, record.respText));
         }

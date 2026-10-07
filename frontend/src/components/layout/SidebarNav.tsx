@@ -43,7 +43,7 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
         </button>}
       </div>
 
-      <nav aria-label="FlowScope 전역 탐색" className="grid min-h-0 flex-1 content-start gap-0.5 overflow-x-hidden overflow-y-auto px-2 py-3">
+      <nav aria-label="FlowScope 전역 탐색" className="grid min-h-0 flex-1 content-start gap-1.5 overflow-x-hidden overflow-y-auto px-2 py-3 text-[clamp(1rem,1vw,1.125rem)]">
         {primaryNavigationRoutes.map((itemRoute) => (
           <NavLink key={itemRoute} route={itemRoute} active={route === itemRoute} collapsed={collapsed} onNavigate={onNavigate} />
         ))}
@@ -103,11 +103,12 @@ function NavLink({ route, active, collapsed, onNavigate }: { route: AppRoute; ac
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "flex h-9 items-center gap-3 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+        "flex min-h-[2.75em] items-center rounded-md py-[0.5em] text-[1em] text-muted-foreground hover:bg-muted hover:text-foreground",
+        collapsed ? "justify-center px-0" : "gap-[0.75em] px-[0.65em]",
         active && "bg-emerald-400/10 font-medium text-emerald-600 dark:text-emerald-300",
       )}
     >
-      {Icon && <Icon className="size-4 shrink-0" aria-hidden="true" />}
+      {Icon && <Icon className="size-[1.25em] shrink-0" aria-hidden="true" />}
       <span className={collapsed ? "sr-only" : "truncate"}>{routeLabel(route)}</span>
     </a>
   )

@@ -28,9 +28,9 @@ public final class RequestRecord {
     public String runId = "default";
     /** Burp Proxy listener port observed at request time; -1 for non-proxy and legacy records. */
     public int proxyListenerPort = -1;
-    /** 시스템 실행기가 확정한 lane 계정. 일반 관측·미해결 신원에는 null이다. */
+    /** 시스템 실행기가 확정한 lane 계정. 비로그인 실행에는 null일 수 있다. */
     public String laneAccountId;
-    /** User-selected collection card ID, including anon; display only, never authentication evidence. */
+    /** Request-time selected session ID, including anon. Independent of credential fingerprints. */
     public String collectionAccountId;
     /** Cross-origin static resource's in-scope document URL; never makes the asset an API observation. */
     public String supportingPageUrl;
@@ -42,7 +42,7 @@ public final class RequestRecord {
     public String originEvidenceId;
     public long durationMillis;
     public String contentDigest;  // 응답·출처까지 포함한 관측 내용 SHA-256. 변경 감지용
-    public AuthState authState = AuthState.UNRESOLVED;
+    public AuthState authState = AuthState.ANONYMOUS;
     public TrafficClassification trafficClassification = TrafficClassification.unresolved("NOT_CLASSIFIED");
 
     // 비밀이 아닌 HTTP 문맥 메타데이터. 문자열 전문을 재파싱하지 않고 분류 근거로 쓴다.
@@ -75,7 +75,7 @@ public final class RequestRecord {
     public List<ResourceReference> resourceReferences = List.of();
     public PathTemplateStatus pathTemplateStatus = PathTemplateStatus.LITERAL;
     public List<String> pathTemplateReasons = List.of();
-    public String idn;            // 예: "user-a", "anon"(비인증), "unresolved-*"(지문 추출 실패)
+    public String idn;            // 선택한 계정 ID 또는 "anon"(비로그인)
     public AccessRole role = AccessRole.UNKNOWN; // 사용자 지정값. 자동 권한 추정 금지(D-018)
 
     public RequestRecord(Source source, String service, String method, String path, int status, String fp) {
@@ -91,6 +91,13 @@ public final class RequestRecord {
         this.status = status;
         this.fp = (fp == null || fp.isBlank()) ? Fingerprints.UNRESOLVED : fp;
         this.runtimeId = runtimeId;
+    }
+
+    /** Legacy records retain lane metadata; records without a selected account are anonymous. */
+    public String selectedIdentity() {
+        if (collectionAccountId != null && !collectionAccountId.isBlank()) return collectionAccountId;
+        if (laneAccountId != null && !laneAccountId.isBlank()) return laneAccountId;
+        return Fingerprints.ANONYMOUS;
     }
 
     /** 분석기는 수집 레코드를 직접 변형하지 않고 이 얕은 불변값 복사본에 산출물을 기록한다. */

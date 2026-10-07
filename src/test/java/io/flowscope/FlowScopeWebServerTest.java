@@ -66,7 +66,8 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
-    @Test void snapshotUsesExplicitRunCardWithoutChangingCookieIdentity() throws Exception {
+    @Test void snapshotUsesStoredSessionAndNeverCurrentRunToChangeHistoricalIdentity() throws Exception {
+        state.record.collectionAccountId = "anon";
         state.record.runId = "selected-run";
         state.record.phase = RunPhase.EXPLORATION;
         state.rebuild();
@@ -75,12 +76,12 @@ final class FlowScopeWebServerTest {
         start();
         var event = json(get("/api/snapshot", token, origin())).path("events").get(0);
         assertEquals("anon", event.path("collectionAccountId").asText());
-        assertTrue(event.path("idn").asText().startsWith("unresolved-"));
+        assertEquals("anon", event.path("idn").asText());
         assertTrue(event.path("fp").asText().startsWith("sess:"));
-        assertNull(state.record.collectionAccountId, "snapshot fallback must not mutate stored evidence");
+        assertEquals("anon", state.record.collectionAccountId);
         state.contexts.abort(Source.HUMAN, "selected-run");
         var historical = json(get("/api/snapshot", token, origin())).path("events").get(0);
-        assertFalse(historical.has("collectionAccountId"), "no card inference without a matching run");
+        assertEquals("anon", historical.path("collectionAccountId").asText());
     }
 
     @Test void apiDeletionPreviewUsesTheAuthenticatedLocalPostBoundary() throws Exception {
@@ -1043,6 +1044,7 @@ final class FlowScopeWebServerTest {
             RequestRecord record = new RequestRecord(Source.HUMAN, state.record.service,
                     "GET", "/account/" + i, 200, fingerprints.get(i));
             record.hasResponse = true;
+            record.collectionAccountId = account.id();
             record.timestamp = i + 1L;
             state.records.add(record);
             state.config.bindSession(record.service, record.fp, account.id());
@@ -1143,6 +1145,8 @@ final class FlowScopeWebServerTest {
                 + "&fingerprint=" + encode(state.record.fp) + "&account=" + encode(accountId), token));
         assertTrue(bound.path("success").asBoolean());
         assertEquals(accountId, state.config.boundAccount(state.record.service, state.record.fp).orElseThrow().id());
+        state.record.collectionAccountId = accountId;
+        state.rebuild();
         JsonNode accountSnapshot = json(get("/api/snapshot", token, origin()));
         assertEquals(accountId, accountSnapshot.at("/sessions/0/accountId").asText());
         assertEquals("COOKIE", accountSnapshot.at("/sessions/0/artifactKind").asText());
@@ -1223,6 +1227,7 @@ final class FlowScopeWebServerTest {
         assertNotNull(ownFunction);
         RequestRecord manual = new RequestRecord(Source.HUMAN, state.record.service, state.record.method,
                 state.record.path, 200, state.record.fp);
+        manual.collectionAccountId = accountId;
         manual.phase = io.flowscope.core.RunPhase.VALIDATION;
         manual.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
         manual.originEvidenceId = state.record.evidenceId;

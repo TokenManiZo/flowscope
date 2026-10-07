@@ -383,6 +383,7 @@ final class AuthorizationBenchmark {
     private static RequestRecord record(Source source, String identity, String method, String path,
                                         int status, String body, int sequence) {
         RequestRecord record = new RequestRecord(source, SERVICE, method, path, status, fingerprint(identity));
+        record.collectionAccountId = identity;
         record.body = body;
         record.respText = "HTTP/1.1 " + status + " Test\r\nContent-Type: application/json\r\n\r\n" + body;
         record.responseContentType = "application/json";

@@ -408,14 +408,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.datasetRevision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
-                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable, record -> {
-                            if (record.collectionAccountId != null) return record.collectionAccountId;
-                            // Legacy records may still belong to an explicitly selected active run.
-                            RunContextRegistry.Context context = state.contexts() == null ? null
-                                    : state.contexts().current(record.source, record.runId);
-                            return context == null ? record.laneAccountId
-                                    : context.accountId() == null ? "anon" : context.accountId();
-                        }));
+                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable, RequestRecord::selectedIdentity));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -1720,10 +1713,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 RequestRecord target = state.snapshot().records.stream().filter(record -> resource.equals(record.resource)
                                 || record.resourceReferences.stream().anyMatch(reference -> resource.equals(reference.resource())))
                         .findFirst().orElseThrow(() -> new IllegalArgumentException("관측된 리소스를 선택하세요."));
-                boolean sameService = state.config().account(identity).map(account -> account.service().equals(target.service))
-                        .orElseGet(() -> state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
-                                && target.service.equals(record.service) && record.authState != io.flowscope.core.AuthState.UNRESOLVED
-                                && record.authState != io.flowscope.core.AuthState.ANONYMOUS));
+                boolean sameService = state.config().account(identity)
+                        .map(account -> account.service().equals(target.service)).orElse(false)
+                        || state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
+                                && target.service.equals(record.service)
+                                && record.authState == io.flowscope.core.AuthState.ACCOUNT_BOUND);
                 if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정·신원을 선택하세요.");
             }
             state.config().withResourceOwner(resource, identity);

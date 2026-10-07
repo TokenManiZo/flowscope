@@ -195,7 +195,7 @@ public final class AuthorizationAnalyzer {
         Map<String, Set<String>> result = new LinkedHashMap<>();
         for (RequestRecord create : records) {
             if (!"POST".equalsIgnoreCase(create.method) || !isSuccessful(create) || create.idn == null
-                    || Fingerprints.ANONYMOUS.equals(create.fp) || Fingerprints.UNRESOLVED.equals(create.fp)) continue;
+                    || Fingerprints.ANONYMOUS.equals(create.idn)) continue;
             Normalizer.Normalized normalized = Normalizer.normalize(create.method, create.path);
             String opPath = normalized.op.substring(normalized.op.indexOf(' ') + 1);
             String collection = opPath.substring(opPath.lastIndexOf('/') + 1);
