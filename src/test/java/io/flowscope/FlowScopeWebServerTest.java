@@ -405,6 +405,37 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void savesAnInjectedZapAccountWithoutLoginUrlAndKeepsCookieHeaderMemoryOnly() throws Exception {
+        start();
+        String accountId = json(post("/api/account-save",
+                "label=USER+B&role=User&target=" + encode(state.record.service), token)).path("id").asText();
+
+        HttpResponse<String> saved = post("/api/zap-accounts",
+                "action=save&id=" + encode(accountId) + "&label=USER+B&role=USER&authMode=INJECT&service="
+                        + encode(state.record.service)
+                        + "&cookie=" + encode("SESSION=inject-abc; csrf=z9")
+                        + "&headers=" + encode("Authorization: Bearer inject-token-xyz")
+                        + "&verifyUrl=" + encode(state.record.service + "/api/me"), token);
+
+        assertEquals(200, saved.statusCode(), saved.body());
+        // 저장 응답·스캐너 메타데이터에 주입 비밀값이 새어 나오면 안 된다.
+        assertFalse(saved.body().contains("inject-abc"));
+        assertFalse(saved.body().contains("inject-token-xyz"));
+        assertEquals("SESSION=inject-abc; csrf=z9", state.lastZapAccountInput.cookie());
+        assertEquals("Authorization: Bearer inject-token-xyz", state.lastZapAccountInput.headers());
+
+        JsonNode settings = json(get("/api/account-settings?account=" + encode(accountId), token, origin()));
+        assertEquals("INJECT", settings.at("/zap/authMode").asText());
+        assertTrue(settings.at("/zap/hasCookie").asBoolean());
+        assertTrue(settings.at("/zap/hasHeaders").asBoolean());
+        assertEquals(state.record.service + "/api/me", settings.at("/zap/verifyUrl").asText());
+        assertEquals("", settings.at("/zap/loginUrl").asText());
+        assertFalse(settings.at("/zap/hasPassword").asBoolean());
+        assertFalse(settings.toString().contains("inject-abc"));
+        assertFalse(settings.toString().contains("inject-token-xyz"));
+    }
+
+    @Test
     void accountSettingsShowTheSavedZapLoginIdAndPasswordOnlyToTheSettingsPanel() throws Exception {
         start();
         String accountId = json(post("/api/account-save",
