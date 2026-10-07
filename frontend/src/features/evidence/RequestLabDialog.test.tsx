@@ -1238,3 +1238,62 @@ describe("RequestLabDialog", () => {
   })
 
 })
+
+describe("RequestLabDialog search", () => {
+  const searchBox = () => screen.getByRole("searchbox", { name: "요청·응답에서 찾기" })
+  const activeMarkIn = (pane: string) => screen.getByLabelText(pane).querySelector("[data-search-active]")
+
+  it("finds text across the request and response, steps through matches, and marks the current one", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft()
+    // 관측 원문 — 요청: api.example.test·REQUEST-LAB-SECRET, 응답: observed-response.
+    await user.click(screen.getByRole("button", { name: "원문 보기" }))
+    await user.type(searchBox(), "es")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("1 / 3")
+    expect(document.querySelectorAll("mark")).toHaveLength(3)
+    expect(activeMarkIn("Request 원문 패널")).toHaveTextContent("es")
+    await user.keyboard("{Enter}")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("2 / 3")
+    expect(activeMarkIn("Request 원문 패널")).toHaveTextContent("ES")
+    await user.click(screen.getByRole("button", { name: "다음 검색 결과" }))
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("3 / 3")
+    expect(activeMarkIn("Request 원문 패널")).toBeNull()
+    expect(activeMarkIn("Response 원문 패널")).toHaveTextContent("es")
+    await user.click(screen.getByRole("button", { name: "다음 검색 결과" }))
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("1 / 3")
+    await user.type(searchBox(), "{Shift>}{Enter}{/Shift}")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("3 / 3")
+
+    // 한쪽만 크게 볼 때는 보이는 패널에서만 찾는다.
+    await user.click(screen.getByRole("button", { name: "요청 확대" }))
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("2 / 2")
+    await user.clear(searchBox())
+    await user.type(searchBox(), "observed")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("없음")
+    expect(screen.getByRole("button", { name: "다음 검색 결과" })).toBeDisabled()
+    expect(document.querySelectorAll("mark")).toHaveLength(0)
+  })
+
+  it("clears the search with Escape without closing, and Ctrl+F jumps to the search box", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={onOpenChange} event={event} sessions={[activeSession]} />)
+    const request = await openDraft()
+    await user.click(request)
+    await user.keyboard("{Control>}f{/Control}")
+    expect(searchBox()).toHaveFocus()
+    await user.keyboard("secret")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("1 / 1")
+    await user.keyboard("{Escape}")
+    expect(searchBox()).toHaveValue("")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("")
+    expect(screen.getByRole("dialog", { name: "Request Lab" })).toBeVisible()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    // 편집 중인 요청에서 찾은 글도 그대로 남고, 검색이 요청 값을 바꾸지 않는다.
+    await user.type(searchBox(), "orders")
+    expect(request).toHaveValue(secret)
+  })
+})

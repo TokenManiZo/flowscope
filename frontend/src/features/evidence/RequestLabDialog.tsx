@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Maximize2, Minimize2, Send, X } from "lucide-react"
+import { ChevronDown, ChevronUp, Maximize2, Minimize2, Search, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getHumanRun, getRequestLabDraft, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
 import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
@@ -16,6 +17,7 @@ import { JsonTextPanel, RawTextPanel } from "./RawTextPanel"
 import type { RequestLabCredentialMode } from "./RequestLabMetadata"
 import { applyRequestLabCredentials } from "./requestLabCredentials"
 import { RequestLabPersistence, type RequestLabSaveStatus } from "./requestLabPersistence"
+import { findMatches, MAX_SEARCH_MATCHES, type TextRange } from "./textSearch"
 
 interface Props {
   open: boolean
@@ -77,6 +79,13 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const editorsRef = useRef<HTMLDivElement>(null)
   const splitRef = useRef(50)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
+  const [search, setSearch] = useState("")
+  /** 요청·응답을 이어 센 검색 위치 중 지금 고른 순번. */
+  const [searchActive, setSearchActive] = useState(0)
+  /** 검색어를 바꾸거나 이전·다음으로 옮길 때만 올린다. 요청을 고쳐 쓰는 동안에는 스크롤을 건드리지 않는다. */
+  const [searchReveal, setSearchReveal] = useState(0)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const searchCache = useRef<Record<"request" | "response", { text: string; query: string; ranges: TextRange[] } | null>>({ request: null, response: null })
 
   // 점검 중인 실행은 사이드바 상태 표시가 계속 받아 온다. 여기서는 새로 요청하지 않고 같은 값을 읽기만 한다.
   const inspection = useQuery({ queryKey: queryKeys.humanRun, queryFn: ({ signal }) => getHumanRun(signal), enabled: false }).data
@@ -263,6 +272,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     context.current.submission = null
   }
   const release = () => {
+    searchCache.current = { request: null, response: null }
     persistence.current?.dispose()
     persistence.current = null
     setSaveStatus(null)
@@ -531,6 +541,37 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     setJsonView(current => ({ ...current, [pane]: !formatted.message }))
     setVersion(current => current + 1)
   }
+  /** 패널에 지금 보이는 글(JSON 정돈이면 정돈한 글)에서 찾는다. 같은 글·같은 검색어면 다시 찾지 않는다. */
+  function searchMatches(pane: "request" | "response") {
+    const formatted = jsonView[pane] ? jsonFor(pane) : undefined
+    const text = formatted && !formatted.message ? formatted.text : pane === "request" ? displayedRequest : displayedResponse
+    const cached = searchCache.current[pane]
+    if (cached && cached.query === search && cached.text === text) return cached.ranges
+    const ranges = findMatches(text, search)
+    searchCache.current[pane] = { text, query: search, ranges }
+    return ranges
+  }
+  // 확대해서 한쪽만 보일 때는 보이는 패널에서만 찾는다.
+  const searchedPanes = { request: !!draft && panelFocus !== "response", response: !!draft && panelFocus !== "request" }
+  const matches = { request: searchedPanes.request ? searchMatches("request") : [], response: searchedPanes.response ? searchMatches("response") : [] }
+  const matchCount = matches.request.length + matches.response.length
+  const activeMatch = matchCount ? Math.min(searchActive, matchCount - 1) : -1
+  const matchLimited = matches.request.length >= MAX_SEARCH_MATCHES || matches.response.length >= MAX_SEARCH_MATCHES
+  function activeMarkIn(pane: "request" | "response") {
+    if (activeMatch < 0) return -1
+    return pane === "request" ? (activeMatch < matches.request.length ? activeMatch : -1) : activeMatch - matches.request.length
+  }
+  function changeSearch(value: string) {
+    setSearch(value)
+    setSearchActive(0)
+    setSearchReveal(current => current + 1)
+  }
+  function moveSearch(step: 1 | -1) {
+    if (!matchCount) return
+    setSearchActive((activeMatch + step + matchCount) % matchCount)
+    setSearchReveal(current => current + 1)
+  }
+
   function panel(pane: "request" | "response") {
     if (jsonView[pane]) jsonFor(pane)
     const formatted = raw.current.jsonViews[pane]
@@ -546,17 +587,32 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         {!request && <span className="truncate text-xs text-muted-foreground">{view === "original" ? "관측 원문" : selected ? `${selected.status ? `HTTP ${selected.status}` : "응답 없음"} · ${selected.durationMs}ms${entry?.dirty ? " · 이전 응답" : ""}` : "미전송"}</span>}
         <div role="group" aria-label={`${title} 보기`} className="ml-auto flex shrink-0 gap-1"><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!showJson} onClick={() => setJsonView(current => ({ ...current, [pane]: false }))}>Raw</Button><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!!showJson} disabled={!canFormat} title={formatted?.message || undefined} onClick={() => chooseJson(pane)}>JSON 정돈</Button></div></header>
       {!request && selected?.failure && <p role="alert" className="shrink-0 border-b px-3 py-2 text-xs text-destructive">{selected.failure}{!selected.status && " · 대상 처리 여부 미확인"}</p>}
-      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} /></div>
-      <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} />
+      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} marks={showJson ? undefined : matches[pane]} activeMark={activeMarkIn(pane)} revealKey={searchReveal} /></div>
+      <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} marks={showJson ? matches[pane] : undefined} activeMark={activeMarkIn(pane)} revealKey={searchReveal} />
     </section>
   }
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
     <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => {
+      // 검색 칸에서 누른 Esc는 검색어만 지운다.
+      if (search && event.target === searchRef.current && !event.defaultPrevented) { event.preventDefault(); changeSearch(""); return }
       if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) }
+    }} onKeyDown={event => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") { event.preventDefault(); searchRef.current?.focus(); searchRef.current?.select() }
     }}>
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
+          <div role="search" aria-label="요청·응답 검색" className="flex min-w-[200px] max-w-[440px] flex-1 items-center gap-1">
+            <div className="relative min-w-0 flex-1">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input ref={searchRef} type="search" aria-label="요청·응답에서 찾기" placeholder="요청·응답에서 찾기" title="Enter 다음 · Shift+Enter 이전 · Esc 지우기" value={search} disabled={!draft} className="h-[36px] pl-8 pr-16 text-[14px] [&::-webkit-search-cancel-button]:appearance-none" onChange={event => changeSearch(event.target.value)} onKeyDown={event => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); moveSearch(event.shiftKey ? -1 : 1) }
+              }} />
+              <span aria-live="polite" aria-label="검색 결과" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground">{search ? matchCount ? `${activeMatch + 1} / ${matchCount}${matchLimited ? "+" : ""}` : "없음" : ""}</span>
+            </div>
+            <Button type="button" variant="ghost" size="icon" className="size-[32px] shrink-0" aria-label="이전 검색 결과" title="이전 (Shift+Enter)" disabled={!matchCount} onClick={() => moveSearch(-1)}><ChevronUp aria-hidden="true" /></Button>
+            <Button type="button" variant="ghost" size="icon" className="size-[32px] shrink-0" aria-label="다음 검색 결과" title="다음 (Enter)" disabled={!matchCount} onClick={() => moveSearch(1)}><ChevronDown aria-hidden="true" /></Button>
+          </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
             <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!entry || editRejected || suspended || busy} onValueChange={value => {
               if (!entry) return
