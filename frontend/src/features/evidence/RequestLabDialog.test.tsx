@@ -579,6 +579,11 @@ describe("RequestLabDialog", () => {
     // 원문이 없어 보낼 수 없는 이유와, 다시 보내려면 무엇을 해야 하는지 알려 준다.
     expect(status).toHaveTextContent("일부만 남아 있어 편집·재전송할 수 없습니다")
     expect(status).toHaveTextContent("이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요")
+    // 돌아갈 편집본이 없으니 눌러도 아무 일이 없는 버튼을 두지 않는다.
+    expect(screen.getByRole("button", { name: "편집으로 돌아가기" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "편집으로 돌아가기" })).toHaveAttribute("title", "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다.")
+    expect(screen.getByRole("note")).toHaveTextContent("처음 수집한 원문입니다. 읽기 전용입니다.")
+    expect(screen.getByRole("note")).not.toHaveTextContent("편집으로 돌아가면")
   })
 
   it("leaves an absent server owner unset instead of proposing the observed requester as owner", () => {
@@ -1237,4 +1242,99 @@ describe("RequestLabDialog", () => {
     expect(owner.request).toBe("")
   })
 
+})
+
+describe("RequestLabDialog search", () => {
+  const searchBox = () => screen.getByRole("searchbox", { name: "요청·응답에서 찾기" })
+  const activeMarkIn = (pane: string) => screen.getByLabelText(pane).querySelector("[data-search-active]")
+
+  it("finds text across the request and response, steps through matches, and marks the current one", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
+    await openDraft()
+    // 관측 원문 — 요청: api.example.test·REQUEST-LAB-SECRET, 응답: observed-response.
+    await user.click(screen.getByRole("button", { name: "원문 보기" }))
+    await user.type(searchBox(), "es")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("1 / 3")
+    expect(document.querySelectorAll("mark")).toHaveLength(3)
+    expect(activeMarkIn("Request 원문 패널")).toHaveTextContent("es")
+    await user.keyboard("{Enter}")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("2 / 3")
+    expect(activeMarkIn("Request 원문 패널")).toHaveTextContent("ES")
+    await user.click(screen.getByRole("button", { name: "다음 검색 결과" }))
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("3 / 3")
+    expect(activeMarkIn("Request 원문 패널")).toBeNull()
+    expect(activeMarkIn("Response 원문 패널")).toHaveTextContent("es")
+    await user.click(screen.getByRole("button", { name: "다음 검색 결과" }))
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("1 / 3")
+    await user.type(searchBox(), "{Shift>}{Enter}{/Shift}")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("3 / 3")
+
+    // 한쪽만 크게 볼 때는 보이는 패널에서만 찾는다.
+    await user.click(screen.getByRole("button", { name: "요청 확대" }))
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("2 / 2")
+    await user.clear(searchBox())
+    await user.type(searchBox(), "observed")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("없음")
+    expect(screen.getByRole("button", { name: "다음 검색 결과" })).toBeDisabled()
+    expect(document.querySelectorAll("mark")).toHaveLength(0)
+  })
+
+  it("clears the search with Escape without closing, and Ctrl+F jumps to the search box", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    const onOpenChange = vi.fn()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={onOpenChange} event={event} sessions={[activeSession]} />)
+    const request = await openDraft()
+    await user.click(request)
+    await user.keyboard("{Control>}f{/Control}")
+    expect(searchBox()).toHaveFocus()
+    await user.keyboard("secret")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("1 / 1")
+    await user.keyboard("{Escape}")
+    expect(searchBox()).toHaveValue("")
+    expect(screen.getByLabelText("검색 결과")).toHaveTextContent("")
+    expect(screen.getByRole("dialog", { name: "Request Lab" })).toBeVisible()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    // 편집 중인 요청에서 찾은 글도 그대로 남고, 검색이 요청 값을 바꾸지 않는다.
+    await user.type(searchBox(), "orders")
+    expect(request).toHaveValue(secret)
+  })
+})
+
+describe("RequestLabDialog legacy masks", () => {
+  const masked = "POST /login HTTP/1.1\nHost: api.example.test\nAuthorization: ***MASKED***\nCookie: session=***\n\n{\"password\":\"***MASKED***\"}"
+
+  it("warns about values masked by older versions, points to them, and still allows sending", async () => {
+    const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => {
+      if (String(input) === "/api/request-lab?eventId=event-7") return Promise.resolve(json(requestLabDraft("event-7", masked)))
+      if (String(input) === "/api/request-lab/credentials") return Promise.resolve(json({ headers: [] }))
+      return Promise.resolve(json({ success: true }))
+    })
+    vi.stubGlobal("fetch", fetch)
+    const user = userEvent.setup()
+    // 점검 중이 아니면 인증을 고르기 전 편집본이 원문 그대로 열린다.
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />, clientInspecting(inspecting()))
+    const warning = await screen.findByRole("status", { name: "이전 버전에서 가려진 값" })
+    expect(warning).toHaveTextContent("3곳")
+    expect(document.querySelectorAll('mark[data-mark-style="warning"]')).toHaveLength(3)
+
+    // 비로그인은 인증 헤더를 바꾸므로 본문 비밀번호 하나만 남는다. 전송은 막지 않는다.
+    await chooseAuthentication(user, "ANONYMOUS")
+    await waitFor(() => expect(screen.getByRole("status", { name: "이전 버전에서 가려진 값" })).toHaveTextContent("1곳"))
+    expect(screen.getByRole("status", { name: "이전 버전에서 가려진 값" })).toHaveTextContent("인증 헤더(Authorization·Cookie·CSRF)는 세지 않았습니다")
+    await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
+    await user.click(screen.getByRole("button", { name: "위치 보기" }))
+    expect(screen.getByLabelText("Request 원문 패널").querySelector("[data-search-active]")).toHaveTextContent("***MASKED***")
+    expect(screen.getByRole("button", { name: "다음 위치 1 / 1" })).toBeVisible()
+
+    // 검색 중에는 검색 표시가 우선하고, 값을 채우면 경고가 사라진다.
+    await user.type(screen.getByRole("searchbox", { name: "요청·응답에서 찾기" }), "login")
+    expect(document.querySelectorAll('mark[data-mark-style="warning"]')).toHaveLength(0)
+    await user.clear(screen.getByRole("searchbox", { name: "요청·응답에서 찾기" }))
+    const request = screen.getByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement
+    fireEvent.change(request, { target: { value: request.value.replace("***MASKED***", "real-password") } })
+    await waitFor(() => expect(screen.queryByRole("status", { name: "이전 버전에서 가려진 값" })).not.toBeInTheDocument())
+  })
 })

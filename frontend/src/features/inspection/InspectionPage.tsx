@@ -14,6 +14,7 @@ import { LlmPass } from "./LlmPass"
 import { durationLabel, runStatusLabel, scannerStageLabel } from "@/lib/display/runStatus"
 import { SourcePassLayout, type SourceFeedItem } from "./SourcePassLayout"
 import { AccountSettingsSheet } from "@/features/accounts/account-settings/AccountSettingsSheet"
+import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { createAccountSettingsAdapter } from "@/features/accounts/account-settings/accountSettingsAdapter"
 import { HumanRequestFeed } from "./HumanRequestFeed"
 import { AccountLaneTable } from "./AccountLaneTable"
@@ -76,12 +77,12 @@ function CopyButton({ value }: { value: string }) {
   </button>
 }
 
-function CollectedRecords({ items, onFocusChange }: { items: readonly SourceFeedItem[]; onFocusChange(focused: boolean): void }) {
+function CollectedRecords({ items, onOpenRecord, onFocusChange }: { items: readonly SourceFeedItem[]; onOpenRecord(eventId: string): void; onFocusChange(focused: boolean): void }) {
   const root = useRef<HTMLElement>(null)
   const view = useRecordView(root, onFocusChange)
   return <section ref={root} onKeyDown={view.onKeyDown} className={view.focused ? "flex h-full min-h-0 flex-col" : "grid gap-3"} aria-label="수집 기록 영역">
     {!view.focused && <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-muted-foreground">브라우저·ZAP·LLM의 최근 요청을 함께 확인합니다.</p><Button variant="ghost" onClick={() => { window.location.hash = "#accounts" }}>계정·세션 열기</Button></div>}
-    <HumanRequestFeed view={view} showSource title="수집 기록" context="전체 수집 기록" items={items} searchLabel="수집 기록 검색" emptyHint="아직 기록된 요청이 없습니다. 계정 브라우저를 열거나 ZAP·LLM을 실행하세요." />
+    <HumanRequestFeed view={view} onOpenRecord={onOpenRecord} showSource title="수집 기록" context="전체 수집 기록" items={items} searchLabel="수집 기록 검색" emptyHint="아직 기록된 요청이 없습니다. 계정 브라우저를 열거나 ZAP·LLM을 실행하세요." />
   </section>
 }
 
@@ -111,6 +112,17 @@ export function InspectionPage() {
   }, [scope, target])
 
   const events = snapshot.data?.events ?? []
+  const datasetRevision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
+  // 그래프·판정 매트릭스와 같은 기준이다. 데이터셋이 바뀌거나 기록 좌표가 바뀌면 열린 Request Lab을 닫는다.
+  const labContextOf = (event: EventRecord) => JSON.stringify([datasetRevision, event.eventId, event.op, event.resource, event.idn, event.source, event.fp])
+  const [lab, setLab] = useState<{ eventId: string; context: string } | null>(null)
+  const labCandidate = lab ? events.find((event) => event.eventId === lab.eventId) : undefined
+  const labEvent = lab && labCandidate && labContextOf(labCandidate) === lab.context ? labCandidate : null
+  useEffect(() => { if (lab && !labEvent) setLab(null) }, [lab, labEvent])
+  const openRecord = (eventId: string) => {
+    const event = events.find((item) => item.eventId === eventId)
+    if (event) setLab({ eventId, context: labContextOf(event) })
+  }
   const targetAccounts = useMemo(() => (snapshot.data?.accounts ?? []).filter((account) =>
     normalizedOrigin(account.target) === normalizedOrigin(target)), [snapshot.data?.accounts, target])
   const scannerAccountIds = (scanner.data?.accounts ?? []).filter((account) =>
@@ -190,7 +202,7 @@ export function InspectionPage() {
         </TabsList>
 
         <TabsContent value="records" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
-          <CollectedRecords items={collectedFeed} onFocusChange={setRecordFocused} />
+          <CollectedRecords items={collectedFeed} onOpenRecord={openRecord} onFocusChange={setRecordFocused} />
         </TabsContent>
 
         <TabsContent value="scanner" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
@@ -259,12 +271,12 @@ export function InspectionPage() {
             feedTitle="ZAP 요청 기록"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
             emptyHint="아직 기록된 ZAP 요청이 없습니다."
-            feedContent={(view) => <HumanRequestFeed view={view} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} onOpenRecord={openRecord} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
           />
         </TabsContent>
 
         <TabsContent value="llm" className={recordFocused ? "mt-0 min-h-0" : "mt-2"}>
-          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0} target={target} accounts={targetAccounts} />
+          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} />
         </TabsContent>
 
         <TabsContent value="review" className="mt-2">
@@ -285,6 +297,7 @@ export function InspectionPage() {
         onSaved={() => { void snapshot.refetch(); void scanner.refetch() }}
         onDeleted={() => { setSettings(null); void snapshot.refetch(); void scanner.refetch() }}
       />
+      {lab && labEvent && snapshot.data && <RequestLabDialog key={lab.context} open onOpenChange={(open) => { if (!open) setLab(null) }} event={labEvent} accounts={snapshot.data.accounts} sessions={snapshot.data.managedSessions} verifications={snapshot.data.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.data.revision} suspended={snapshot.isError} />}
     </section></ReferenceAnalysisWorkspace>
   )
 }
