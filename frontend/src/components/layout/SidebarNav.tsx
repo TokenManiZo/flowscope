@@ -43,7 +43,7 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
         </button>}
       </div>
 
-      <nav aria-label="FlowScope 전역 탐색" className={cn("grid min-h-0 flex-1 content-start gap-0.5 overflow-x-hidden overflow-y-auto px-2 py-3", !collapsed && "text-[clamp(0.875rem,1vw,1.125rem)]")}>
+      <nav aria-label="FlowScope 전역 탐색" className="grid min-h-0 flex-1 content-start gap-1.5 overflow-x-hidden overflow-y-auto px-2 py-3 text-[clamp(1rem,1vw,1.125rem)]">
         {primaryNavigationRoutes.map((itemRoute) => (
           <NavLink key={itemRoute} route={itemRoute} active={route === itemRoute} collapsed={collapsed} onNavigate={onNavigate} />
         ))}
@@ -103,12 +103,12 @@ function NavLink({ route, active, collapsed, onNavigate }: { route: AppRoute; ac
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "flex items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground",
-        collapsed ? "h-9 gap-3 px-2.5 text-sm" : "min-h-[2.5em] gap-[0.75em] px-[0.7em] py-[0.5em] text-[1em]",
+        "flex min-h-[2.75em] items-center rounded-md py-[0.5em] text-[1em] text-muted-foreground hover:bg-muted hover:text-foreground",
+        collapsed ? "justify-center px-0" : "gap-[0.75em] px-[0.65em]",
         active && "bg-emerald-400/10 font-medium text-emerald-600 dark:text-emerald-300",
       )}
     >
-      {Icon && <Icon className={cn("shrink-0", collapsed ? "size-4" : "size-[1.15em]")} aria-hidden="true" />}
+      {Icon && <Icon className="size-[1.25em] shrink-0" aria-hidden="true" />}
       <span className={collapsed ? "sr-only" : "truncate"}>{routeLabel(route)}</span>
     </a>
   )

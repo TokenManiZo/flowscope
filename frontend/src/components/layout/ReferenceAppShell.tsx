@@ -52,7 +52,7 @@ export function ReferenceAppShell({ route, children }: ReferenceAppShellProps) {
 
   return (
     <div className="flex h-svh min-h-svh min-w-0 overflow-x-hidden bg-background text-foreground">
-      <aside data-expanded={expanded} className={`hidden shrink-0 overflow-hidden border-e border-border bg-card transition-[width] duration-150 lg:block ${expanded ? "w-[18vw] min-w-60" : "w-14"}`}>
+      <aside data-expanded={expanded} className={`hidden shrink-0 overflow-hidden border-e border-border bg-card transition-[width] duration-150 lg:block ${expanded ? "w-60" : "w-14"}`}>
         <SidebarNav route={route} theme={theme} onToggleTheme={toggleTheme} collapsed={!expanded} onToggleSidebar={() => setExpanded((value) => !value)} />
       </aside>
 

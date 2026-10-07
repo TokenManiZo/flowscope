@@ -59,7 +59,7 @@ it("stays an icon rail on hover and expands only through the toggle button, push
 
   await user.click(screen.getByRole("button", { name: "사이드바 펼치기" }))
   expect(rail).toHaveAttribute("data-expanded", "true")
-  expect(rail).toHaveClass("w-[18vw]", "min-w-60")
+  expect(rail).toHaveClass("w-60")
   expect(within(graph).getByText("점검 Gap 그래프")).not.toHaveClass("sr-only")
   expect(within(nav).getByRole("link", { name: "API·입력 차이" })).toHaveAttribute("aria-current", "page")
   expect(localStorage.getItem("flowscope.sidebar")).toBe("open")
