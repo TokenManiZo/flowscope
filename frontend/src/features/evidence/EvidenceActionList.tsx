@@ -19,10 +19,11 @@ export const SOURCE_MARK: Record<Source, { Icon: typeof UserRound; label: string
 const SOURCE_ORDER: readonly Source[] = ["human", "scanner", "llm", "unknown"]
 
 /** 신원마다 카드 하나, 카드 안은 출처마다 한 줄. 신원은 최근 요청 순, 출처는 H·S·L 순, 줄 안 요청은 최신순이다. */
-function groupByIdentity(events: readonly EventRecord[], identities: Iterable<string>) {
+function groupByIdentity(events: readonly EventRecord[], identities: Iterable<string>, identityOf: (event: EventRecord) => string) {
   const byIdentity = new Map<string, Map<Source, EventRecord[]>>()
   for (const event of [...events].sort((left, right) => right.timestamp - left.timestamp)) {
-    const sources = byIdentity.get(event.idn) ?? byIdentity.set(event.idn, new Map()).get(event.idn)!
+    const identity = identityOf(event)
+    const sources = byIdentity.get(identity) ?? byIdentity.set(identity, new Map()).get(identity)!
     sources.set(event.source, [...(sources.get(event.source) ?? []), event])
   }
   // 판정은 있지만 요청 기록이 남지 않은 신원도 카드로 보여 준다.
@@ -41,13 +42,15 @@ interface Props {
   onOpenRequestLab?(): void
   /** 신원별 서버 판정(선택한 API의 셀 중 가장 급한 판정). 있으면 카드 제목 옆에 보여 준다. */
   identityVerdicts?: ReadonlyMap<string, Verdict>
+  identityOf?: (event: EventRecord) => string
+  labelIdentity?: (identity: string) => string
 }
 
 /**
  * 선택 항목에 연결된 실제 관측 기록. 신원마다 카드 하나로 묶고 카드 안에 출처별 한 줄을 둔다. 줄의 보내기 버튼은 그 출처의 가장 최근
  * 요청을 Request Lab으로 열고, 요청이 여럿이면 펼쳐서 요청마다 열 수 있다. 재전송은 Request Lab에서만 한다(Burp Repeater로 보내지 않는다).
  */
-export function EvidenceActionList({ events, snapshot, disabled = false, onOpenRequestLab, identityVerdicts }: Props) {
+export function EvidenceActionList({ events, snapshot, disabled = false, onOpenRequestLab, identityVerdicts, identityOf = event => event.idn, labelIdentity = identityLabel }: Props) {
   const [labContext, setLabContext] = useState<string | null>(null)
   const [openGroups, setOpenGroups] = useState<readonly string[]>([])
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision ?? 0
@@ -59,7 +62,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
   const openLab = (event: EventRecord) => { onOpenRequestLab?.(); setLabContext(contextOf(event)) }
 
   if (!sorted.length && !identityVerdicts?.size) return <p className="text-sm text-muted-foreground">연결된 관측 기록이 없습니다.</p>
-  const cards = groupByIdentity(sorted, identityVerdicts?.keys() ?? [])
+  const cards = groupByIdentity(sorted, identityVerdicts?.keys() ?? [], identityOf)
   const ordinal = (event: EventRecord) => evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)
   const pathOf = (event: EventRecord) => stripOrigin(event.path) || event.path
   const toggle = (key: string) => setOpenGroups(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
@@ -67,16 +70,16 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
     <h3 className="text-lg font-semibold">관측 기록</h3>
     <ul className="grid gap-4">{cards.map(card => {
       const verdict = identityVerdicts?.get(card.idn), tone = verdict ? matrixVerdictTone(verdict) : null
-      return <li key={card.idn} aria-label={`${identityLabel(card.idn)} 관측 기록 ${card.count}건`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+      return <li key={card.idn} aria-label={`${labelIdentity(card.idn)} 관측 기록 ${card.count}건`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
         <div className="flex min-w-0 items-center gap-2 px-4 py-3">
-          <span className="truncate text-lg font-semibold">{identityLabel(card.idn)}</span>
+          <span className="truncate text-lg font-semibold">{labelIdentity(card.idn)}</span>
           {tone && <span className={`ms-auto shrink-0 rounded px-2 py-0.5 text-[13px] font-medium ${tone.className}`}>{tone.label}</span>}
         </div>
         {!card.rows.length && <p className="border-t border-border/70 px-4 py-2.5 text-[13px] text-muted-foreground">연결된 요청 기록이 없습니다.</p>}
         {card.rows.map(row => {
           const latest = row.events[0], mark = SOURCE_MARK[row.source] ?? SOURCE_MARK.unknown, open = openGroups.includes(row.key)
           const methods = [...new Set(row.events.map(event => event.method))], codes = [...new Set(row.events.map(event => event.status))].sort((left, right) => left - right)
-          return <div key={row.key} role="group" aria-label={`${identityLabel(card.idn)} · ${mark.label} ${row.events.length}건`} className="grid gap-2 border-t border-border/70 px-4 py-2.5">
+          return <div key={row.key} role="group" aria-label={`${labelIdentity(card.idn)} · ${mark.label} ${row.events.length}건`} className="grid gap-2 border-t border-border/70 px-4 py-2.5">
             <div className="flex min-w-0 items-center gap-2">
               <span role="img" aria-label={mark.label} title={mark.label} className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full border ${mark.className}`}><mark.Icon className="size-4" aria-hidden="true" /></span>
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">{methods.map(method => <MethodBadge key={method} method={method} />)}{codes.map(code => <StatusBadge key={code} code={code} />)}</span>
@@ -87,7 +90,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
                 <Button type="button" size="icon-sm" variant="outline" aria-label="Request Lab에서 보내기" title="Request Lab에서 보내기" disabled={disabled} onClick={() => openLab(latest)}><Send className="size-4" /></Button>
               </span>
             </div>
-            {open && <ul aria-label={`${identityLabel(card.idn)} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
+            {open && <ul aria-label={`${labelIdentity(card.idn)} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
               <span className="font-mono text-xs text-muted-foreground">{ordinal(event)}</span>
               <StatusBadge code={event.status} />
               <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>

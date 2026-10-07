@@ -66,6 +66,23 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void snapshotUsesExplicitRunCardWithoutChangingCookieIdentity() throws Exception {
+        state.record.runId = "selected-run";
+        state.record.phase = RunPhase.EXPLORATION;
+        state.rebuild();
+        state.contexts.activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "selected-run", null));
+        start();
+        var event = json(get("/api/snapshot", token, origin())).path("events").get(0);
+        assertEquals("anon", event.path("collectionAccountId").asText());
+        assertTrue(event.path("idn").asText().startsWith("unresolved-"));
+        assertTrue(event.path("fp").asText().startsWith("sess:"));
+        assertNull(state.record.collectionAccountId, "snapshot fallback must not mutate stored evidence");
+        state.contexts.abort(Source.HUMAN, "selected-run");
+        var historical = json(get("/api/snapshot", token, origin())).path("events").get(0);
+        assertFalse(historical.has("collectionAccountId"), "no card inference without a matching run");
+    }
+
     @Test void apiDeletionPreviewUsesTheAuthenticatedLocalPostBoundary() throws Exception {
         start();
         var change = new io.flowscope.core.ApiManagement.Request("preview-delete", state.datasetRevision(), state.revision(), List.of(io.flowscope.core.ApiManagement.operation(state.record)), List.of(), "", null);

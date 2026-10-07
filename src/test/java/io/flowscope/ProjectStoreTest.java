@@ -21,6 +21,37 @@ final class ProjectStoreTest {
     @TempDir Path temp;
 
     @Test
+    void collectionCardSurvivesAnalysisAndReopenWithoutChangingObservedAuthentication() throws Exception {
+        RequestRecord record = new RequestRecord(Source.HUMAN, "https://shop.test:443",
+                "GET", "/api/items", 200, Fingerprints.of(null, "tracking=present"));
+        record.hasResponse = true;
+        record.phase = RunPhase.EXPLORATION;
+        record.responseContentType = "application/json";
+        record.body = "{}";
+        record.collectionAccountId = "anon";
+        Pipeline.Result before = Pipeline.run(List.of(record));
+        RequestRecord observed = before.records.getFirst();
+        assertEquals("anon", observed.collectionAccountId);
+        assertTrue(observed.idn.startsWith("unresolved-"));
+        assertEquals(AuthState.UNRESOLVED, observed.authState);
+        assertNull(observed.laneAccountId);
+        Path file = temp.resolve("collection-card.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(record), new AnalysisConfig(), List.of());
+        RequestRecord loaded = store.load(file).records().getFirst();
+        assertEquals("anon", loaded.collectionAccountId);
+        Pipeline.Result after = Pipeline.run(List.of(loaded));
+        assertEquals(observed.idn, after.records.getFirst().idn);
+        assertEquals(observed.fp, after.records.getFirst().fp);
+        assertEquals(observed.evidenceId, after.records.getFirst().evidenceId);
+        assertEquals(observed.trafficClassification, after.records.getFirst().trafficClassification);
+        var snapshot = new ObjectMapper().readTree(new io.flowscope.web.SnapshotJsonWriter()
+                .write(1, after, new AnalysisConfig(), List.of(), List.of()));
+        assertEquals("anon", snapshot.path("events").get(0).path("collectionAccountId").asText());
+        assertEquals(observed.idn, snapshot.path("events").get(0).path("idn").asText());
+    }
+
+    @Test
     void historicalClaudeToolRemainsReadableWithoutReenablingItsExecutor() throws Exception {
         RequestRecord old = new RequestRecord(Source.LLM, "https://api.test:443",
                 "GET", "/archive", 200, "legacy");
