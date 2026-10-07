@@ -25,26 +25,6 @@ class ParameterExtractorTest {
         assertNotEquals(at(first,"PATH:/segments/3").value().digest(), at(itemChanged,"PATH:/segments/3").value().digest());
     }
 
-    @Test void sensitive_omissions_are_counted_per_supported_location_without_names_values_or_digests() {
-        var requests = List.of(
-                normalized("/password/101", null, null, null),
-                normalized("/orders", "password=private&token=private", null, null),
-                normalized("/orders", null, "application/x-www-form-urlencoded", "password=private&token=private"),
-                normalized("/orders", null, "application/json", "{\"password\":{\"nested\":\"private\"},\"safe\":true}"),
-                normalized("/graphql", null, "application/json", "{\"variables\":{\"password\":\"private\"}}"),
-                normalized("/orders", null, "multipart/form-data; boundary=b", "--b\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\nprivate\r\n--b--\r\n"),
-                normalized("/orders", null, "application/xml", "<root><password>private</password></root>"),
-                normalized("/orders", null, "application/xml", "<password>private</password>"));
-        var expected = List.of(1, 2, 2, 1, 1, 1, 1, 1);
-        for (int i = 0; i < requests.size(); i++) {
-            var extracted = ParameterExtractor.extract(requests.get(i));
-            assertEquals(expected.get(i), extracted.diagnostics().stream()
-                    .filter(d -> d.reasonCode().equals("SENSITIVE_PARAMETER_OMITTED")).mapToInt(ParameterDiagnostic::droppedCount).sum(), "location " + i);
-            assertFalse(extracted.observations().toString().contains("private"));
-            assertFalse(extracted.diagnostics().toString().contains("private"));
-        }
-    }
-
     @Test void extracts_path_query_and_named_json_containers_with_evidence_metadata() {
         RequestRecord r = normalized("/api/orders/101", "sort=DESC&tag=a&tag=b", "application/json",
                 "{\"filter\":{\"keyword\":\"phone\"},\"items\":[{\"product_id\":7}]}");
@@ -61,8 +41,8 @@ class ParameterExtractorTest {
 
     @Test void decodes_query_names_values_and_preserves_empty_values_and_pointer_escaping() {
         var result = ParameterExtractor.extract(normalized("/orders", "q=hello+world&empty=&flag&a%2Fb=%ED%95%9C&%74oken=hidden", null, null));
-        assertKeys(result, "QUERY:/q", "QUERY:/empty", "QUERY:/flag", "QUERY:/a~1b");
-        assertEquals("hello world", at(result, "QUERY:/q").value().maskedPreview());
+        assertKeys(result, "QUERY:/q", "QUERY:/empty", "QUERY:/flag", "QUERY:/a~1b", "QUERY:/token");
+        assertEquals("hello world", at(result, "QUERY:/q").value().preview());
         assertEquals(0, at(result, "QUERY:/empty").value().byteLength());
         assertEquals(3, at(result, "QUERY:/a~1b").value().byteLength());
     }
@@ -70,8 +50,8 @@ class ParameterExtractorTest {
     @Test void extracts_urlencoded_form_values_independently_from_query() {
         var result = ParameterExtractor.extract(normalized("/orders", "q=x", "application/x-www-form-urlencoded",
                 "q=a%2Bb&empty=&password=hidden"));
-        assertKeys(result, "QUERY:/q", "FORM:/q", "FORM:/empty");
-        assertEquals("a+b", at(result, "FORM:/q").value().maskedPreview());
+        assertKeys(result, "QUERY:/q", "FORM:/q", "FORM:/empty", "FORM:/password");
+        assertEquals("a+b", at(result, "FORM:/q").value().preview());
     }
 
     @Test void preserves_explicit_null_empty_containers_and_scalar_array_shapes() {
@@ -82,14 +62,14 @@ class ParameterExtractorTest {
         assertEquals(Shape.NULL, at(result, "JSON_BODY:/nil").shape());
         assertEquals(Shape.SCALAR, at(result, "JSON_BODY:/list/*").shape());
         assertEquals(ValueType.INTEGER, at(result, "JSON_BODY:/list/*").value().type());
-        assertEquals("[1,2]", at(result, "JSON_BODY:/list/*").value().maskedPreview());
+        assertEquals("[1,2]", at(result, "JSON_BODY:/list/*").value().preview());
         assertNull(at(result, "JSON_BODY:/object").value());
     }
 
     @Test void graphql_variables_have_their_own_location_without_query_document_values() {
         var result = ParameterExtractor.extract(normalized("/graphql", null, "application/json",
                 "{\"operationName\":\"Lookup\",\"query\":\"query Lookup { x }\",\"variables\":{\"filter\":{\"id\":7},\"token\":\"hidden\"}}"));
-        assertKeys(result, "GRAPHQL_VARIABLE:/filter", "GRAPHQL_VARIABLE:/filter/id");
+        assertKeys(result, "GRAPHQL_VARIABLE:/filter", "GRAPHQL_VARIABLE:/filter/id", "GRAPHQL_VARIABLE:/token");
     }
 
     @Test void json_textual_and_numeric_values_keep_actual_types_and_distinct_digests() {
@@ -108,15 +88,15 @@ class ParameterExtractorTest {
                 + "--x\r\nContent-Disposition: form-data; name=\"upload\"; filename=\"a.txt\"\r\nContent-Type: text/plain\r\n\r\nFILE-CONTENT\r\n"
                 + "--x\r\nContent-Disposition: form-data; name=\"token\"\r\n\r\nhidden\r\n--x--\r\n";
         var result = ParameterExtractor.extract(normalized("/orders", null, "multipart/form-data; boundary=\"x\"", body));
-        assertKeys(result, "MULTIPART_FIELD:/title");
-        assertEquals("hello", result.observations().getFirst().value().maskedPreview());
+        assertKeys(result, "MULTIPART_FIELD:/title", "MULTIPART_FIELD:/token");
+        assertEquals("hello", at(result, "MULTIPART_FIELD:/title").value().preview());
         assertFalse(result.toString().contains("FILE-CONTENT"));
     }
 
-    @Test void xml_extracts_namespace_aware_elements_and_attributes_without_sensitive_descendants() {
+    @Test void xml_extracts_namespace_aware_elements_and_attributes() {
         var result = ParameterExtractor.extract(normalized("/orders", null, "application/xml",
                 "<root xmlns:n=\"urn:items\" id=\"1\"><n:item enabled=\"true\"><name>a</name></n:item><password><nested>hidden</nested></password></root>"));
-        assertKeys(result, "XML_PATH:/@id", "XML_PATH:/{urn:items}item", "XML_PATH:/{urn:items}item/@enabled", "XML_PATH:/{urn:items}item/name");
+        assertKeys(result, "XML_PATH:/@id", "XML_PATH:/{urn:items}item", "XML_PATH:/{urn:items}item/@enabled", "XML_PATH:/{urn:items}item/name", "XML_PATH:/password", "XML_PATH:/password/nested");
         assertEquals(Shape.OBJECT, at(result, "XML_PATH:/{urn:items}item").shape());
     }
 
@@ -189,31 +169,19 @@ class ParameterExtractorTest {
         assertTrue(result.observations().size() <= 1);
     }
 
-    @Test void scalar_summary_uses_utf8_sha256_and_masked_bounded_preview() {
+    @Test void scalar_summary_uses_utf8_sha256_and_bounded_preview() {
         var result = ParameterExtractor.extract(normalized("/orders", "x=abc&long=" + "a".repeat(80) + "&note=token%3Dhidden", null, null));
         var summary = at(result, "QUERY:/x").value();
         assertEquals(3, summary.byteLength());
         assertEquals("sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", summary.digest());
-        assertEquals("abc", summary.maskedPreview());
-        assertEquals(64, at(result, "QUERY:/long").value().maskedPreview().length());
-        assertEquals("token=***MASKED***", at(result, "QUERY:/note").value().maskedPreview());
-    }
-
-    @Test void full_scalar_and_nested_encoded_secret_expressions_never_produce_a_digest() {
-        for (String suffix : List.of("token=late-private-value", "token%3Dlate-private-value", "token%253Dlate-private-value")) {
-            String value = "a".repeat(80) + " " + suffix;
-            var result = ParameterExtractor.extract(normalized("/orders", "note=" + java.net.URLEncoder.encode(value,
-                    java.nio.charset.StandardCharsets.UTF_8), null, null));
-            var summary = result.observations().getFirst().value();
-            assertNull(summary.digest());
-            assertTrue(summary.maskedPreview().length() <= 64);
-            assertFalse(result.toString().contains("late-private-value"));
-        }
+        assertEquals("abc", summary.preview());
+        assertEquals(64, at(result, "QUERY:/long").value().preview().length());
+        assertEquals("token=hidden", at(result, "QUERY:/note").value().preview());
     }
 
     @Test void repeated_values_use_ordered_sequence_summary_and_mixed_types_are_unknown() {
         var result = ParameterExtractor.extract(normalized("/orders", "x=a&x=b", "application/json", "{\"list\":[1,\"two\"]}"));
-        assertEquals("[\"a\",\"b\"]", at(result, "QUERY:/x").value().maskedPreview());
+        assertEquals("[\"a\",\"b\"]", at(result, "QUERY:/x").value().preview());
         assertEquals(9, at(result, "QUERY:/x").value().byteLength());
         assertEquals(ValueType.UNKNOWN, at(result, "JSON_BODY:/list/*").value().type());
         assertNotEquals(at(result, "QUERY:/x").value().digest(), at(ParameterExtractor.extract(normalized("/orders", "x=b&x=a", null, null)), "QUERY:/x").value().digest());
@@ -261,41 +229,12 @@ class ParameterExtractorTest {
         assertNotEquals(context, ParameterExtractor.extract(otherRole).observations().getFirst().contextSignature());
     }
 
-    @Test void sensitive_paths_and_descendants_never_emit_names_values_or_digests() {
-        var result = ParameterExtractor.extract(normalized("/orders", "token=hidden&keyword=x", "application/json",
-                "{\"password\":\"hidden\",\"Authorization\":\"hidden\",\"session\":{\"nested\":7},\"safe\":1}"));
-        assertKeys(result, "QUERY:/keyword", "JSON_BODY:/safe");
-        assertEquals(List.of(new ParameterDiagnostic("https://example.test:443 POST /orders", "SENSITIVE_PARAMETER_OMITTED", 4)), result.diagnostics());
-        assertFalse(result.toString().contains("hidden"));
-        assertFalse(result.toString().toLowerCase().contains("password"));
-    }
-
     @Test void extraction_results_defensively_copy_input_lists() {
         var diagnostics = new ArrayList<ParameterDiagnostic>();
         var result = new ParameterExtraction(List.of(), diagnostics);
         diagnostics.add(new ParameterDiagnostic("POST /orders", "INVALID_JSON", 1));
         assertTrue(result.diagnostics().isEmpty());
         assertThrows(UnsupportedOperationException.class, () -> result.diagnostics().add(diagnostics.getFirst()));
-    }
-
-    @Test void repeated_scalar_previews_mask_embedded_secret_labels_inside_json_strings() {
-        var result = ParameterExtractor.extract(normalized("/orders", "note=token%3DHIDDEN-REPEATED&note=safe", null, null));
-        assertFalse(result.toString().contains("HIDDEN-REPEATED"));
-        assertTrue(result.observations().getFirst().value().maskedPreview().contains("***MASKED***"));
-    }
-
-    @Test void masking_expansion_at_preview_boundary_never_exceeds_sixty_four_characters() {
-        var result = ParameterExtractor.extract(normalized("/orders", "note=" + "a".repeat(55) + "+token%3DHIDDEN-BOUNDARY", null, null));
-        String preview = result.observations().getFirst().value().maskedPreview();
-        assertTrue(preview.length() <= 64);
-        assertTrue(ParameterExtractor.isSafeMaskedPreview(preview), "truncation must not leave an unsafe partial marker");
-        assertFalse(result.toString().contains("HIDDEN-BOUNDARY"));
-    }
-
-    @Test void sensitive_xml_document_root_excludes_its_descendant_values() {
-        var result = ParameterExtractor.extract(normalized("/orders", null, "application/xml", "<password><nested>HIDDEN-ROOT</nested></password>"));
-        assertTrue(result.observations().isEmpty());
-        assertFalse(result.toString().contains("HIDDEN-ROOT"));
     }
 
     @Test void multipart_binary_parts_without_filename_are_not_text_fields() {
@@ -324,18 +263,12 @@ class ParameterExtractorTest {
         assertEquals(new ParameterDiagnostic(record.op, "COORDINATE_LIMIT", 502 - first.observations().size()), first.diagnostics().getFirst());
     }
 
-    @Test void encoded_sensitive_query_name_with_invalid_suffix_is_never_retained() {
-        var result = ParameterExtractor.extract(normalized("/orders", "token%ZZ=x&safe=ok", null, null));
-        assertKeys(result, "QUERY:/safe");
-        assertEquals("INVALID_ENCODING", result.diagnostics().getFirst().reasonCode());
-    }
-
     @Test void observed_named_path_template_is_used_and_path_plus_is_not_form_decoded() {
         var record = normalized("/orders/abc+xyz", null, null, null);
         record.op = record.service + " POST /orders/{orderId}";
         var result = ParameterExtractor.extract(record);
         assertKeys(result, "PATH:/segments/1");
-        assertEquals("abc+xyz", result.observations().getFirst().value().maskedPreview());
+        assertEquals("abc+xyz", result.observations().getFirst().value().preview());
     }
 
     @Test void oversized_operation_is_rejected_without_echoing_or_hashing_its_metadata() {
@@ -367,18 +300,6 @@ class ParameterExtractorTest {
     private static int coordinateCost(ParameterExtraction result) {
         return result.observations().stream().mapToInt(o -> o.key().service().length() + o.key().method().length()
                 + o.key().operation().length() + o.key().location().name().length() + o.key().canonicalPath().length()).sum();
-    }
-
-    @Test void acronym_prefixed_sensitive_query_and_json_paths_are_omitted_entirely() {
-        var result = ParameterExtractor.extract(normalized("/orders", "CSRFToken=ACRONYM-VALUE-SENTINEL&APIToken=ACRONYM-VALUE-SENTINEL", "application/json",
-                "{\"APIKey\":\"ACRONYM-VALUE-SENTINEL\",\"HTTPAuthorization\":\"ACRONYM-VALUE-SENTINEL\",\"safe\":1}"));
-        assertEquals(1, result.observations().size());
-        assertEquals("JSON_BODY:/safe", key(result.observations().getFirst()));
-        assertFalse(result.toString().contains("ACRONYM-VALUE-SENTINEL"));
-        assertFalse(result.toString().contains("CSRFToken"));
-        assertFalse(result.toString().contains("APIToken"));
-        assertFalse(result.toString().contains("APIKey"));
-        assertFalse(result.toString().contains("HTTPAuthorization"));
     }
 
     @Test void multipart_folded_filename_parameters_never_produce_file_observations() {

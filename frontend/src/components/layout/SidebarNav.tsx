@@ -1,7 +1,7 @@
-import { ChevronDown, FolderCog, Moon, PanelLeft, ScanSearch, Sun } from "lucide-react"
-import { useEffect, useState } from "react"
+import { FolderCog, Moon, PanelLeft, ScanSearch, Sun } from "lucide-react"
+import { useState } from "react"
 
-import { appRoutes, navigationGroups, primaryNavigationRoutes, routeHash, routeLabel, type AppRoute, type NavigationGroupId } from "@/app/routes"
+import { appRoutes, primaryNavigationRoutes, routeHash, routeLabel, type AppRoute } from "@/app/routes"
 import { cn } from "@/lib/utils"
 import type { Theme } from "@/hooks/useTheme"
 import { useProjectsQuery } from "@/lib/query/hooks"
@@ -19,21 +19,8 @@ interface SidebarNavProps {
   onToggleSidebar?: () => void
 }
 
-/** 왼쪽 사이드바 탐색. 펼친 상태에서는 부가 기능을 묶고, 접힌 상태에서는 각 아이콘 링크를 바로 표시한다. */
+/** 모든 점검 화면을 같은 수준의 직접 링크로 표시한다. */
 export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed = false, onToggleSidebar }: SidebarNavProps) {
-  const activeGroupId = navigationGroups.find((group) => (group.routes as readonly AppRoute[]).includes(route))?.id
-  const [openGroups, setOpenGroups] = useState<readonly NavigationGroupId[]>(() =>
-    activeGroupId ? [activeGroupId] : [],
-  )
-
-  useEffect(() => {
-    if (!activeGroupId) return
-    setOpenGroups((previous) => (previous.includes(activeGroupId) ? previous : [...previous, activeGroupId]))
-  }, [activeGroupId])
-
-  const toggleGroup = (id: NavigationGroupId) => {
-    setOpenGroups((previous) => (previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]))
-  }
   const label = collapsed ? "sr-only" : "truncate"
 
   return (
@@ -56,36 +43,12 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
         </button>}
       </div>
 
-      <nav aria-label="FlowScope 전역 탐색" className="grid min-h-0 flex-1 content-start gap-0.5 overflow-x-hidden overflow-y-auto px-2 py-3">
+      <nav aria-label="FlowScope 전역 탐색" className="grid min-h-0 flex-1 content-start gap-1.5 overflow-x-hidden overflow-y-auto px-2 py-3 text-[clamp(1rem,1vw,1.125rem)]">
         {primaryNavigationRoutes.map((itemRoute) => (
           <NavLink key={itemRoute} route={itemRoute} active={route === itemRoute} collapsed={collapsed} onNavigate={onNavigate} />
         ))}
 
-        {navigationGroups.map((group) => {
-          const expanded = openGroups.includes(group.id)
-          const Icon = group.icon
-          return (
-            <div key={group.id} className="mt-2 border-t border-border pt-2">
-              {!collapsed && <button
-                type="button"
-                aria-expanded={expanded}
-                onClick={() => toggleGroup(group.id)}
-                className="flex h-9 w-full items-center gap-3 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <Icon className="size-4 shrink-0" aria-hidden="true" />
-                <span className={cn(label, "flex-1 text-left")}>{group.label}</span>
-                <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
-              </button>}
-              {(collapsed || expanded) && (
-                <div className={collapsed ? "grid gap-0.5" : "ms-4 grid gap-0.5 border-s border-border ps-2"}>
-                  {group.routes.map((itemRoute) => (
-                    <NavLink key={itemRoute} route={itemRoute} active={route === itemRoute} collapsed={collapsed} onNavigate={onNavigate} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
+
       </nav>
 
       <SidebarProject collapsed={collapsed} onNavigate={onNavigate} />
@@ -140,11 +103,12 @@ function NavLink({ route, active, collapsed, onNavigate }: { route: AppRoute; ac
       aria-current={active ? "page" : undefined}
       onClick={onNavigate}
       className={cn(
-        "flex h-9 items-center gap-3 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+        "flex min-h-[2.75em] items-center rounded-md py-[0.5em] text-[1em] text-muted-foreground hover:bg-muted hover:text-foreground",
+        collapsed ? "justify-center px-0" : "gap-[0.75em] px-[0.65em]",
         active && "bg-emerald-400/10 font-medium text-emerald-600 dark:text-emerald-300",
       )}
     >
-      {Icon && <Icon className="size-4 shrink-0" aria-hidden="true" />}
+      {Icon && <Icon className="size-[1.25em] shrink-0" aria-hidden="true" />}
       <span className={collapsed ? "sr-only" : "truncate"}>{routeLabel(route)}</span>
     </a>
   )

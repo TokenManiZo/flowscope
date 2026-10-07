@@ -1,3 +1,4 @@
+import { collectionIdentity, graphAccountLabel } from "./graphAccounts"
 import { ApiActions } from "@/features/api-management/ApiActions"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
@@ -51,15 +52,14 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const unjudgedCount = events.filter(item => ![item.eventId, ...(item.clusterEvidenceIds ?? [])].some(id => judgedIds.has(id))).length
   const title = structural && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : "선택한 그래프 항목"
   const apiOp = selection.routeCandidate ? `${selection.routeCandidate.service} ${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : selection.operation && (!node || ["operation", "observed-operation"].includes(node.kind)) ? selection.operation : null
-  const subtitle = [selection.identity, selection.resource ? stripOrigin(selection.resource) || selection.resource : null].filter(Boolean).join(" · ")
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
-    <InspectorPanel title="선택 작업" actions={apiOp && <ApiActions snapshot={snapshot} operation={apiOp} disabled={suspended} />} description={<><span className="block break-all font-mono text-foreground">{title}</span>{subtitle && <span className="block break-all">{subtitle}</span>}</>} tabs={null}>
+    <InspectorPanel title="선택 작업" actions={apiOp && <ApiActions snapshot={snapshot} operation={apiOp} disabled={suspended} />} description={<div className="mt-2 grid gap-2"><span className="block break-all rounded-md border border-border/70 bg-background px-3 py-2 font-mono text-sm leading-relaxed text-foreground">{title}</span>{selection.identity && <span className="flex items-center gap-2 text-xs"><span className="text-muted-foreground">계정</span><span className="rounded border border-border/70 bg-background px-2 py-1 font-medium text-foreground">{graphAccountLabel(snapshot, selection.identity)}</span></span>}{selection.resource && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">객체 식별자</summary><span className="mt-1 block select-all break-all font-mono text-foreground">{stripOrigin(selection.resource) || selection.resource}</span></details>}</div>} tabs={null}>
       {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
-      {structural && projection ? <GraphScopeSummary scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
-        : summary && <GraphNodeSummary summary={merged ? { ...summary, list: [] } : summary} />}
+      {structural && projection ? <GraphScopeSummary labelIdentity={identity => graphAccountLabel(snapshot, identity)} scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
+        : summary && <GraphNodeSummary labelIdentity={identity => graphAccountLabel(snapshot, identity)} summary={merged ? { ...summary, list: [] } : summary} />}
       {!structural && !selection.routeCandidate && unjudgedCount > 0 && <p className="mb-4 text-xs text-muted-foreground">인가 판정에 포함되지 않은 관측 기록 {unjudgedCount}건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>}
       {node?.kind === "resend-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">Request Lab·Repeater로 값을 바꿔 다시 보낸 요청입니다. 판정과 Gap에 쓰지 않습니다.</p>}
       {node?.kind === "observed-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했습니다. 이 노드는 API 존재나 접근 허용·취약점 판정이 아닙니다.</p>}
@@ -68,13 +68,13 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
         <p className="text-xs text-muted-foreground">원본 요청에 연결된 응답입니다. 상태 코드만으로 취약점을 판정하지 않습니다.</p>
         <ul className="mt-2 grid gap-1">{manual.map(item => <li key={item.eventId} className="font-mono text-xs">{snapshot.evidenceOrdinals?.[item.eventId] ? `#${snapshot.evidenceOrdinals[item.eventId]} · ` : ""}HTTP {item.status}</li>)}</ul>
       </section>}
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} />}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
     </InspectorPanel>
   </div>
 }
 
 /** 아무것도 선택하지 않았을 때의 상세 패널: 지금 보고 있는 범위(사이트·API 그룹·API)의 요약. 패널을 닫지 않아 캔버스가 다시 그려지지 않는다. */
-export function GraphViewOverview({ projection, owners, actions = {} }: { projection: HierarchyProjection; owners?: Readonly<Record<string, string>>; actions?: ScopeActions }) {
+export function GraphViewOverview({ projection, owners, actions = {}, labelIdentity }: { projection: HierarchyProjection; owners?: Readonly<Record<string, string>>; actions?: ScopeActions; labelIdentity?: (identity: string) => string }) {
   const context = projection.kind === "site"
     ? projection.nodes.find(node => node.kind === "target")
     : projection.kind === "group"
@@ -84,8 +84,8 @@ export function GraphViewOverview({ projection, owners, actions = {} }: { projec
   const title = !context ? "현재 보기" : context.kind === "operation" && context.selection.operation ? stripOrigin(context.selection.operation) || context.selection.operation : context.label
   return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="현재 보기" description={<span className="block break-all font-mono text-foreground">{title}</span>} tabs={null}>
-      {projection.kind === "operation" ? summary ? <GraphNodeSummary summary={summary} /> : null
-        : <GraphScopeSummary scope={projection.kind === "site" ? "site" : "group"} groups={projection.kind === "site" ? projection.groups : projection.groups.filter(group => group.id === projection.navigation.groupId)} owners={owners} {...actions} onOpenGroup={undefined} />}
+      {projection.kind === "operation" ? summary ? <GraphNodeSummary labelIdentity={labelIdentity} summary={summary} /> : null
+        : <GraphScopeSummary labelIdentity={labelIdentity} scope={projection.kind === "site" ? "site" : "group"} groups={projection.kind === "site" ? projection.groups : projection.groups.filter(group => group.id === projection.navigation.groupId)} owners={owners} {...actions} onOpenGroup={undefined} />}
       <p className="p-4 text-xs text-muted-foreground">노드를 누르면 그 노드의 정보가 여기에 나옵니다. 빈 곳을 누르면 이 요약으로 돌아옵니다.</p>
     </InspectorPanel>
   </div>

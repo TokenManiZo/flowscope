@@ -300,10 +300,12 @@ class AuthorizationAnalyzerTest {
     void jwt_subject_소유자별칭은_서비스경계를_넘지_않는다() {
         RequestRecord serviceA = new RequestRecord(Source.HUMAN, "https://a.test:443",
                 "GET", "/orders/1", 200, "jwt:issuer:sub:42");
+        serviceA.collectionAccountId = "user-a";
         serviceA.body = "{\"ownerId\":\"42\"}";
         serviceA.hasResponse = true;
         RequestRecord serviceB = new RequestRecord(Source.HUMAN, "https://b.test:443",
                 "GET", "/orders/1", 200, "jwt:issuer:sub:42");
+        serviceB.collectionAccountId = "user-b";
         serviceB.body = "{\"ownerId\":\"42\"}";
         serviceB.hasResponse = true;
 
@@ -336,10 +338,12 @@ class AuthorizationAnalyzerTest {
     void 중첩된_user_객체의_명시적_식별값으로_소유자를_연결한다() {
         RequestRecord owner = new RequestRecord(Source.HUMAN, "https://t:443",
                 "GET", "/api/orders/7", 200, "jwt:local:sub:owner@example.test");
+        owner.collectionAccountId = "user-a";
         owner.body = "{\"order\":{\"id\":7,\"user\":{\"email\":\"owner@example.test\"}}}";
         owner.hasResponse = true;
         RequestRecord attacker = new RequestRecord(Source.LLM, "https://t:443",
                 "GET", "/api/orders/7", 200, "jwt:local:sub:attacker@example.test");
+        attacker.collectionAccountId = "user-b";
         attacker.body = owner.body;
         attacker.hasResponse = true;
 
@@ -415,6 +419,13 @@ class AuthorizationAnalyzerTest {
 
     private static RequestRecord rec(Source source, String fp, String method, String path, int status, String body) {
         RequestRecord r = new RequestRecord(source, "https://t:443", method, path, status, fp);
+        r.collectionAccountId = switch (fp) {
+            case "A" -> "user-a";
+            case "B" -> "user-b";
+            case "C" -> "user-c";
+            case "anon" -> "anon";
+            default -> "user-a";
+        };
         r.body = body;
         r.hasResponse = true;
         r.sourceDetail = switch (source) {

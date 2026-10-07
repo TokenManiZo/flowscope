@@ -37,7 +37,7 @@
 }
 ```
 
-64KiB보다 큰 응답에는 `artifact_id`, `artifact_bytes`, `artifact_sha256`, `artifact_complete`가 있다. `body_truncated=true`는 inline 본문만 잘렸다는 뜻이며, `artifact_complete=true`이면 artifact 도구가 마스킹된 전체 응답을 보존했다. `artifact_complete=false`이면 원 응답 수집 경계에서 이미 잘린 것이므로 누락 범위를 `unresolved`에 남긴다.
+64KiB보다 큰 응답에는 `artifact_id`, `artifact_bytes`, `artifact_sha256`, `artifact_complete`가 있다. `body_truncated=true`는 inline 본문만 잘렸다는 뜻이며, `artifact_complete=true`이면 artifact 도구가 전체 응답을 보존했다. `artifact_complete=false`이면 원 응답 수집 경계에서 이미 잘린 것이므로 누락 범위를 `unresolved`에 남긴다.
 
 `flowscope_browser` 입력:
 
@@ -45,7 +45,7 @@
 {"account":"<handle>","action":"navigate|click|type|back|snapshot","url":"<navigate용 exact scope URL, 없으면 \"\">","ref":"<click·type용 element ref, 없으면 \"\">","text":"<type용 텍스트, 없으면 \"\">"}
 ```
 
-응답은 창의 현재 `url`, `title`, 클릭·입력 가능한 `elements`(각 `ref`·`role`·`name`), 마스킹된 `text`다. 창이 보낸 요청·응답은 FlowScope가 자동으로 Evidence에 기록하므로 따로 저장하지 않는다.
+응답은 창의 현재 `url`, `title`, 클릭·입력 가능한 `elements`(각 `ref`·`role`·`name`), 화면 `text`다. 창이 보낸 요청·응답은 FlowScope가 자동으로 Evidence에 기록하므로 따로 저장하지 않는다.
 
 Artifact 도구:
 

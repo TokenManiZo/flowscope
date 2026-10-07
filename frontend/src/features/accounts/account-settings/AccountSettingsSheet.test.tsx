@@ -161,8 +161,23 @@ it("saves edited ZAP credentials and verifies them from one button without press
   await user.click(screen.getByRole("button", { name: "저장하고 로그인 검증" }));
 
   await waitFor(() => expect(api.verifyZapLogin).toHaveBeenCalledWith("account-a"));
-  expect(api.saveZapLogin).toHaveBeenCalledWith("account-a", { enabled: true, loginUrl: "https://app.example.test/login", loginId: "zap-user@example.test", password: "fixed-secret" });
+  expect(api.saveZapLogin).toHaveBeenCalledWith("account-a", { enabled: true, authMode: "FORM", loginUrl: "https://app.example.test/login", loginId: "zap-user@example.test", password: "fixed-secret" });
   expect(vi.mocked(api.saveZapLogin).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(api.verifyZapLogin).mock.invocationCallOrder[0]);
+});
+
+it("saves an injected ZAP account with a cookie instead of a login form", async () => {
+  const api = adapter();
+  const user = userEvent.setup();
+  render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} zapRuntimeAvailable initialTab="zap" />);
+
+  await user.click(await screen.findByRole("button", { name: "인증값 주입" }));
+  // 주입 모드에서는 폼 로그인 검증 버튼이 없다.
+  expect(screen.queryByRole("button", { name: /로그인 검증/ })).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText(/쿠키/), "SESSION=inject-abc");
+  await user.click(screen.getByRole("button", { name: "저장" }));
+
+  await waitFor(() => expect(api.saveZapLogin).toHaveBeenCalledWith("account-a",
+    expect.objectContaining({ enabled: true, authMode: "INJECT", cookie: "SESSION=inject-abc" })));
 });
 
 it("needs a login URL, ID, and password before verifying, and verifies unchanged values without saving", async () => {

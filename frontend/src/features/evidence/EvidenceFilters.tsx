@@ -38,7 +38,7 @@ export function EvidenceFilters({ value, onChange }: Props) {
         <ChipCheckbox key={source} label={sourceLabels[source]} checked={value.sources[source]}
           onCheckedChange={(checked) => onChange({ ...value, sources: { ...value.sources, [source]: checked } })} />
       ))}
-      <Input type="search" aria-label="경로·신원 검색" placeholder="경로·신원 검색" value={value.query ?? ""} className="h-8 w-56 text-sm"
+      <Input type="search" aria-label="번호·경로·계정 검색" placeholder="번호·경로·계정 검색" value={value.query ?? ""} className="h-8 w-full sm:w-64 text-sm"
         onChange={(event) => onChange({ ...value, query: event.target.value })} />
       <Popover>
         <PopoverTrigger asChild><Button type="button" variant="outline" size="sm" className="h-8 gap-1">분류 {shown}/{classes.length}<ChevronDown className="size-3.5" /></Button></PopoverTrigger>

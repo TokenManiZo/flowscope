@@ -15,8 +15,8 @@ public record LegacyAssessment(String id, String type, String verdict, String ti
         if (!Set.of("LIKELY", "INCONCLUSIVE", "REJECTED").contains(verdict)) {
             throw new IllegalArgumentException("invalid assessment verdict");
         }
-        title = boundedLegacyAssessmentText(Masking.maskSecrets(title), "assessment title", 256);
-        reason = boundedLegacyAssessmentText(Masking.maskSecrets(reason), "assessment reason", 4_096);
+        title = boundedLegacyAssessmentText(title, "assessment title", 256);
+        reason = boundedLegacyAssessmentText(reason, "assessment reason", 4_096);
         if (evidenceIds == null || evidenceIds.isEmpty() || evidenceIds.size() > 200) {
             throw new IllegalArgumentException("assessment evidence_ids must contain 1 to 200 values");
         }

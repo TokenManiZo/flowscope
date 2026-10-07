@@ -117,7 +117,7 @@ final class SnapshotSurfaceContractTest {
         assertEquals(40, gap.path("evidenceCount").asInt());
         assertEquals(PREVIEW, gap.path("evidenceIds").size());
         assertFalse(surface.toString().contains("ordinary-scalar-sentinel"));
-        assertFalse(surface.toString().contains("maskedPreview"));
+        assertFalse(surface.toString().contains("preview"));
         Collections.reverse(records);
         JsonNode reversed = snapshot(new SnapshotJsonWriter(), 7, Pipeline.run(records), List.of()).path("surface");
         assertOrderIndependent(surface, reversed);
@@ -213,6 +213,7 @@ final class SnapshotSurfaceContractTest {
         RequestRecord validation = request("validation", "{\"orderId\":101}");
         validation.phase = RunPhase.VALIDATION;
         records.add(validation);
+        records.forEach(record -> record.collectionAccountId = "alice");
         Pipeline.Result result = Pipeline.run(records, config);
         JsonNode surface = json.readTree(new SnapshotJsonWriter().write(7, result, config, List.of(), List.of())).path("surface");
         assertEquals(40, parameter(surface, "JSON_BODY", "/orderId").path("profile").path("observationCount").asInt(),
@@ -237,21 +238,16 @@ final class SnapshotSurfaceContractTest {
     }
 
     @Test
-    void 민감_파라미터_생략_진단은_횟수만_게시하고_비밀_내용은_어디에도_없다() throws Exception {
+    void password_파라미터도_좌표로_게시하고_값은_표면에_넣지_않는다() throws Exception {
         RequestRecord a = request("ev-secret-a", "{\"safe\":true,\"password\":\"password-value\"}");
         RequestRecord b = request("ev-secret-b", a.reqBody);
         JsonNode surface = snapshot(new SnapshotJsonWriter(), 7, Pipeline.run(List.of(a, b)), List.of()).path("surface");
-        int dropped = 0;
-        for (JsonNode diagnostic : surface.path("parameterDiagnostics")) {
-            assertEquals("SENSITIVE_PARAMETER_OMITTED", diagnostic.path("reasonCode").asText());
-            dropped += diagnostic.path("droppedCount").asInt();
-        }
-        assertEquals(2, dropped);
+        assertEquals(0, surface.path("parameterDiagnostics").size());
         assertNotNull(parameter(surface, "JSON_BODY", "/safe"));
+        assertNotNull(parameter(surface, "JSON_BODY", "/password"));
         String serialized = surface.toString();
-        assertFalse(serialized.contains("password"));
-        assertFalse(serialized.contains("password-value"));
-        assertFalse(serialized.contains("maskedPreview"));
+        assertFalse(serialized.contains("password-value"), "표면 요약은 값이 아니라 좌표만 담는다");
+        assertFalse(serialized.contains("preview"));
     }
 
     @Test
@@ -330,6 +326,7 @@ final class SnapshotSurfaceContractTest {
 
     private static RequestRecord request(String evidence, String body) {
         RequestRecord r = new RequestRecord(Source.HUMAN, "https://app.test:443", "PATCH", "/api/orders/101", 200, "A");
+        r.collectionAccountId = "user-a";
         r.evidenceId = evidence;
         r.reqBody = body;
         r.requestContentType = "application/json";

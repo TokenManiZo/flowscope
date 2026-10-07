@@ -34,12 +34,12 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 ### 데이터 처리
 
 - 명시적 HUMAN 로그인 캡처의 raw Authorization/Cookie/CSRF와 Explorer 브라우저 로그인으로 받은 쿠키·인증 헤더는 각각의 메모리 전용 vault에만 존재합니다. Explorer는 비밀번호를 받지 않습니다. ZAP 계정의 ID·비밀번호도 FlowScope에서는 메모리 vault에만 두지만, 로그인 구성 시 로컬 ZAP API의 `POST` body로 전달되며 ZAP 2.17은 Context를 임시 session DB에 기록합니다. 따라서 인증 lane은 FlowScope Docker의 1GiB tmpfs ZAP home과 tmpfs `/tmp`에서만 허용하고 container 종료 시 폐기합니다. Web snapshot·프로젝트·Evidence·FlowScope 로그에는 저장하지 않습니다. Java·HTTP library와 ZAP이 만드는 일시적 메모리 사본까지 물리적으로 지우는 hardware vault는 아닙니다.
-- Authorization, Cookie, Set-Cookie, password, token, secret, API key는 Evidence 저장 전에 마스킹합니다.
-- FlowScope는 허가된 테스트 환경 전용입니다. 계정 등록과 로그인에는 **테스트 계정만** 사용하고 실제·운영 자격증명은 쓰지 마십시오. 마스킹은 위의 잘 알려진 인증 헤더·필드에만 적용되며, 캡처 트래픽은 로컬 프로젝트 파일에 남고 LLM Explorer로 전달될 수 있습니다. 저장된 기록 하나가 일관되게 마스킹되지 않더라도 프로젝트 저장 전체가 실패하지 않으며, 그 기록은 다시 마스킹하거나 metadata-only로 저장합니다.
+- 요청·응답은 가리지 않고 원문 그대로 저장합니다. Authorization, Cookie, Set-Cookie, password, token, secret, API key도 그대로 Evidence·프로젝트 파일·JSON 내보내기·화면에 남고, LLM 탐색을 쓰면 Codex로 전달됩니다.
+- FlowScope는 허가된 테스트 환경 전용입니다. 계정 등록과 로그인에는 **테스트 계정만** 사용하고 실제·운영 자격증명은 쓰지 마십시오. 캡처 트래픽은 인증값까지 로컬 프로젝트 파일에 원문으로 남고 LLM Explorer로 전달될 수 있습니다.
 - 인증 grouping은 subject 또는 짧은 단방향 fingerprint를 사용하며 raw opaque token은 보존하지 않습니다. Cookie 존재만으로 로그인 사용자를 확정하지 않습니다. 연결되지 않은 fingerprint는 감사·binding 후보로 남지만 broker exact match 또는 명시적 account binding 전에는 서비스별 `UNRESOLVED` graph identity 하나로 표시합니다.
 - 트래픽 분류는 저장 Evidence를 삭제하지 않습니다. operation별 `include/exclude/auto` override도 응답 없음, unknown source, 비탐색 validation 트래픽을 discovery coverage로 만들 수 없습니다. 반복 관측은 화면에서만 접고 모든 Evidence ID·count·first/last timestamp를 유지합니다.
-- body와 message preview는 필드별 8,192자입니다. 마스킹된 일반 textual 전문은 기본 1MiB, 발견용 HTML/JavaScript/JSON/XML 응답은 기본 4MiB, digest 중복 제거 후 압축 총량은 48MiB까지 보존하며, 실시간 수집은 20,000건에서 멈춥니다.
-- SQLite 프로젝트와 JSON 내보내기는 마스킹되지만 application data가 남을 수 있습니다. POSIX에서는 owner read/write로 기록하며 engagement 데이터 정책에 따라 보호하십시오.
+- body와 message preview는 필드별 8,192자입니다. 일반 textual 전문은 기본 1MiB, 발견용 HTML/JavaScript/JSON/XML 응답은 기본 4MiB, digest 중복 제거 후 압축 총량은 48MiB까지 보존하며, 실시간 수집은 20,000건에서 멈춥니다.
+- SQLite 프로젝트와 JSON 내보내기에는 인증값을 포함한 원문과 application data가 남습니다. POSIX에서는 owner read/write로 기록하며 engagement 데이터 정책에 따라 비밀 자료로 보호하십시오.
 - SQLite 자동 저장과 JSON 내보내기는 임시 파일을 거쳐 저장하고 지원되는 경우 atomic replace를 사용합니다. SQLite는 현재 메모리 분석 상태의 내구성 snapshot이며 20,000건 live 상한을 없애는 서버용 event store는 아닙니다.
 
 ### 정직한 한계
@@ -51,9 +51,9 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 - `ACTIVE` 세션은 검증 강도를 함께 가집니다. **운영자 확인**(운영자가 확인한 Burp 교환을 계정으로 가져옴), **규칙 확인**(저장된 검증 규칙의 URL과 성공 표식이 응답에서 모두 일치), **약검증**(성공 표식 없이 2xx~4xx만으로 ACTIVE가 된 하위호환), **미검증**(비-ACTIVE). "FlowScope 계정 세션으로 사용" 시 로그인 성공을 나타내는 **응답 표식**(예: 사용자명, `"id":"..."`)을 선택적으로 입력할 수 있으며, 자격값(쿠키·토큰·비밀번호)은 거부됩니다. 표식을 입력하면 이후 자동 캡처가 그 검증 endpoint에서 표식을 확인해 **규칙 확인**으로 승격할 수 있고, 비우면 그 세션은 **운영자 확인**이 되지만 자동 승격 규칙은 만들지 않습니다. **능동 교차 신원 재전송은 운영자 확인·규칙 확인 세션만** 사용하며(프론트·백엔드 모두 강제), **약검증** 세션은 Request Lab에는 하위호환으로 쓰이지만 재전송에는 쓰이지 않습니다.
 - 안정 신호가 없는 opaque 회전 token은 자동 상관할 수 없습니다. 운영자가 확인된 fingerprint를 등록 계정에 명시적으로 연결할 수 있습니다.
 - Fetch Metadata와 MIME은 없거나 잘못될 수 있고 business API가 document·asset·telemetry와 비슷할 수 있습니다. 분류기는 여러 고신뢰 신호가 합치할 때만 제외하고 애매한 요청을 메인 그래프 밖 `REVIEW`로 보존하며 이유와 reversible override를 제공합니다. `REVIEW`를 확인하지 않으면 실제 API가 메인 비교에서 빠질 수 있으므로 트래픽 노이즈를 완벽하게 분류한다고 주장하지 않습니다.
-- 미요청 route는 보존된 마스킹 textual 응답(일반 기본 1MiB, 발견용 MIME 기본 4MiB; 전문 미보존 시 8,192자 preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개까지 추출합니다. JavaScript AST가 정적으로 확인한 문자열·template·단순 결합은 처리하지만 임의 wrapper 의미, 런타임 계산, 클라이언트 실행으로만 생기는 경로, 받지 않은 lazy chunk와 대상 밖 문서는 추측하지 않으므로 후보 목록도 전체 공격면이 아닙니다. 후보 우선순위는 공개된 범주형 근거이며 확률이나 취약성 점수가 아닙니다.
+- 미요청 route는 보존된 textual 응답(일반 기본 1MiB, 발견용 MIME 기본 4MiB; 전문 미보존 시 8,192자 preview)과 응답 없는 Burp Site Map 항목에서 최대 20,000개까지 추출합니다. JavaScript AST가 정적으로 확인한 문자열·template·단순 결합은 처리하지만 임의 wrapper 의미, 런타임 계산, 클라이언트 실행으로만 생기는 경로, 받지 않은 lazy chunk와 대상 밖 문서는 추측하지 않으므로 후보 목록도 전체 공격면이 아닙니다. 후보 우선순위는 공개된 범주형 근거이며 확률이나 취약성 점수가 아닙니다.
 - 데이터 흐름은 제한된 exact-value matching이며 완전한 semantic taint analysis가 아닙니다.
-- Burp Repeater로 보내기는 메모리 원문 또는 마스킹 전문을 미전송 초안으로 엽니다. Web 요청 실험실의 명시적 전송은 HUMAN `VALIDATION` Evidence로 보존하며 탐색 완료나 자동 LLM verdict를 만들지 않습니다.
+- Burp Repeater로 보내기는 메모리 원문 또는 저장된 원문을 미전송 초안으로 엽니다. Web 요청 실험실의 명시적 전송은 HUMAN `VALIDATION` Evidence로 보존하며 탐색 완료나 자동 LLM verdict를 만들지 않습니다.
 - 기존 agent workspace·MCP·Judge 실행기는 제거된 상태입니다. 새 Explorer는 Codex app-server dynamic tool과 Java exact-scope gateway를 사용하며, 브라우저는 사용자가 직접 로그인한 FlowScope Chromium 창 하나만 조작합니다. 현재 MCP 연결은 지원하지 않습니다.
 - source별 active run context와 정확한 run ID의 완료·취소 경계를 유지합니다. LLM run은 같은 run의 신뢰 가능한 응답 Evidence ID가 없으면 완료되지 않습니다.
 - Explorer는 정적·응답 기반 frontier를 넓게 따라가지만 runtime에서만 로드되는 lazy chunk, CAPTCHA/MFA/WebAuthn, 서버 전용 endpoint와 임의 JavaScript wrapper를 완전 발견하지 못할 수 있습니다. POST의 업무 의미도 범용 블랙박스에서 완전히 판별할 수 없으므로 조회·검색 요청으로 제한하고 승인된 테스트 환경에서만 사용합니다.

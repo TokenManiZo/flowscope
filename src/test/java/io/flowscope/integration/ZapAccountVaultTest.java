@@ -121,4 +121,84 @@ final class ZapAccountVaultTest {
                 "", "A", "USER", "https://app.example.test", "https://app.example.test/login",
                 "a", "pw", "[", "")));
     }
+
+    @Test
+    void storesInjectedCookieAndHeadersWithoutFormCredentials() {
+        ZapAccountVault vault = new ZapAccountVault();
+        ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input(
+                "", "주입 계정", "USER", "https://app.example.test", "",
+                "", "", "SESSION=abc123; csrf=z9", "Authorization: Bearer token-xyz",
+                "INJECT", "Welcome", "", ""));
+
+        assertEquals(ZapAccountVault.AuthMode.INJECT, saved.authMode());
+        assertTrue(saved.hasCookie());
+        assertTrue(saved.hasHeaders());
+        assertFalse(saved.hasPassword());
+        assertEquals("", saved.loginUrl());
+        assertFalse(saved.toString().contains("token-xyz"));
+        assertFalse(saved.toString().contains("abc123"));
+
+        AtomicReference<char[]> cookieCopy = new AtomicReference<>();
+        vault.withSecret(saved.id(), secret -> {
+            cookieCopy.set(secret.cookie());
+            assertNull(secret.loginUrl());
+            assertEquals("SESSION=abc123; csrf=z9", new String(secret.cookie()));
+            assertEquals("Authorization: Bearer token-xyz", new String(secret.headers()));
+            assertEquals(0, secret.username().length);
+            return null;
+        });
+        // 주입값 복사본도 사용 후 지운다.
+        assertArrayEquals(new char["SESSION=abc123; csrf=z9".length()], cookieCopy.get());
+    }
+
+    @Test
+    void injectModeAcceptsCookieOnlyOrHeaderOnlyButNotNeither() {
+        ZapAccountVault vault = new ZapAccountVault();
+        assertTrue(vault.save(new ZapAccountVault.Input("", "쿠키만", "USER", "https://app.example.test",
+                "", "", "", "SESSION=only", "", "INJECT", "", "", "")).hasCookie());
+        assertTrue(vault.save(new ZapAccountVault.Input("", "헤더만", "USER", "https://app.example.test",
+                "", "", "", "", "Authorization: Bearer t", "INJECT", "", "", "")).hasHeaders());
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "빈값", "USER", "https://app.example.test",
+                "", "", "", "", "", "INJECT", "", "", "")));
+    }
+
+    @Test
+    void injectModeRejectsMalformedCookieHeaderAndSmuggling() {
+        ZapAccountVault vault = new ZapAccountVault();
+        // 쿠키에 줄바꿈(헤더 스머글링) 금지
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "줄바꿈", "USER", "https://app.example.test",
+                "", "", "", "SESSION=a\r\nInjected: 1", "", "INJECT", "", "", "")));
+        // name=value 형식이 아닌 쿠키
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "형식", "USER", "https://app.example.test",
+                "", "", "", "justavalue", "", "INJECT", "", "", "")));
+        // 값 없는 헤더
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "헤더형식", "USER", "https://app.example.test",
+                "", "", "", "", "Authorization:", "INJECT", "", "", "")));
+    }
+
+    @Test
+    void storesSameOriginVerifyUrlAndRejectsCrossOrigin() {
+        ZapAccountVault vault = new ZapAccountVault();
+        ZapAccountVault.View saved = vault.save(new ZapAccountVault.Input("", "검증URL", "USER",
+                "https://app.example.test", "", "", "", "SESSION=a", "", "INJECT", "", "",
+                "https://app.example.test/api/me"));
+        assertEquals("https://app.example.test/api/me", saved.verifyUrl());
+        vault.withSecret(saved.id(), secret -> { assertEquals("https://app.example.test/api/me", secret.verifyUrl().toString()); return null; });
+        // 다른 호스트의 검증 URL은 거부한다(범위 밖 전송 방지).
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input("", "교차", "USER",
+                "https://app.example.test", "", "", "", "SESSION=a", "", "INJECT", "", "",
+                "https://evil.example.test/api/me")));
+    }
+
+    @Test
+    void rejectsUnknownAuthMode() {
+        ZapAccountVault vault = new ZapAccountVault();
+        assertThrows(IllegalArgumentException.class, () -> vault.save(new ZapAccountVault.Input(
+                "", "A", "USER", "https://app.example.test", "", "", "",
+                "SESSION=a", "", "WEIRD", "", "", "")));
+    }
 }

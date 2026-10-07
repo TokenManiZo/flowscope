@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Maximize2, Minimize2, Send, X } from "lucide-react"
+import { ChevronDown, ChevronUp, Maximize2, Minimize2, Search, Send, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { getHumanRun, getRequestLabDraft, previewRequestLabCredentials, sendRequestLab } from "@/lib/api/endpoints"
 import type { Account, EventRecord, ManagedSession, ManualVerification, RequestLabDraft } from "@/lib/api/types"
@@ -16,6 +17,8 @@ import { JsonTextPanel, RawTextPanel } from "./RawTextPanel"
 import type { RequestLabCredentialMode } from "./RequestLabMetadata"
 import { applyRequestLabCredentials } from "./requestLabCredentials"
 import { RequestLabPersistence, type RequestLabSaveStatus } from "./requestLabPersistence"
+import { findMatches, MAX_SEARCH_MATCHES, type TextRange } from "./textSearch"
+import { findLegacyMasks } from "./legacyMasks"
 
 interface Props {
   open: boolean
@@ -77,6 +80,15 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const editorsRef = useRef<HTMLDivElement>(null)
   const splitRef = useRef(50)
   const draftRef = useRef<Omit<RequestLabDraft, "request" | "response" | "workspace"> | null>(null)
+  const [search, setSearch] = useState("")
+  /** 요청·응답을 이어 센 검색 위치 중 지금 고른 순번. */
+  const [searchActive, setSearchActive] = useState(0)
+  /** 검색어를 바꾸거나 이전·다음으로 옮길 때만 올린다. 요청을 고쳐 쓰는 동안에는 스크롤을 건드리지 않는다. */
+  const [searchReveal, setSearchReveal] = useState(0)
+  const searchRef = useRef<HTMLInputElement>(null)
+  /** 예전 마스킹 표시 중 '다음 위치'로 고른 순번(-1이면 아직 고르지 않음). */
+  const [legacyActive, setLegacyActive] = useState(-1)
+  const searchCache = useRef<Record<"request" | "response", { text: string; query: string; ranges: TextRange[] } | null>>({ request: null, response: null })
 
   // 점검 중인 실행은 사이드바 상태 표시가 계속 받아 온다. 여기서는 새로 요청하지 않고 같은 값을 읽기만 한다.
   const inspection = useQuery({ queryKey: queryKeys.humanRun, queryFn: ({ signal }) => getHumanRun(signal), enabled: false }).data
@@ -94,8 +106,10 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const displayedRequest = raw.current.request
   const displayedResponse = raw.current.response
   const editable = !!entry
-  const credentialsRequired = !!entry && (mode === "ORIGINAL" || (entry.restored && mode !== "ANONYMOUS") || (mode === "ACCOUNT" && !selectedAccountValid) || /\*\*\*MASKED\*\*\*|\[BODY REDACTED:/.test(displayedRequest))
+  const credentialsRequired = !!entry && (mode === "ORIGINAL" || (mode === "ACCOUNT" && !selectedAccountValid))
   const busy = sending || applyingCredentials || deleting || closing
+  /** 편집할 수 없는 기록(원문이 일부만 남음)에 편집본도 없으면 원문 보기에서 돌아갈 곳이 없다. */
+  const originalOnly = view === "original" && !!draft && !draft.requestEditable && raw.current.requests.length === 0
   const selectedButtonClass = "aria-pressed:border-primary/50 aria-pressed:bg-primary/10 aria-pressed:text-primary"
   const settingClass = "h-[36px] rounded-md border border-input bg-background px-2.5 text-[14px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
 
@@ -200,11 +214,10 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     return `수정된 요청 ${Math.max(0, ...used) + 1}`
   }
   /** 새 편집본(작성 중)을 만들어 고른다. 만들 수 없으면 이유를 알리고 null. */
-  function createDraft(request: string, credentialMode: RequestLabEntry["credentialMode"], accountId: string, restored?: boolean) {
+  function createDraft(request: string, credentialMode: RequestLabEntry["credentialMode"], accountId: string) {
     const next = raw.current.addRequest(request, credentialMode, accountId)
     if (!next) { setError(`요청은 최대 ${REQUEST_LAB_MAX_REQUESTS}개까지 쌓입니다. 오래된 요청을 삭제한 뒤 다시 시도해 주세요.`); return null }
     next.name = "작성 중"
-    next.restored = restored
     persistence.current?.changed(next, ["name", "request", "credentialMode", "result", "dirty"])
     changeView(next.id)
     return next
@@ -230,7 +243,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   }
   /** 보낸 탭은 기록으로 남긴다. 고치거나 다시 보내면 같은 인증으로 새 탭을 만들어 이어 간다. */
   function forkFrom(source: RequestLabEntry, request = source.request) {
-    const next = createDraft(request, source.credentialMode, source.accountId, source.restored)
+    const next = createDraft(request, source.credentialMode, source.accountId)
     if (next && request !== source.request) next.dirty = true
     return next
   }
@@ -264,6 +277,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     context.current.submission = null
   }
   const release = () => {
+    searchCache.current = { request: null, response: null }
     persistence.current?.dispose()
     persistence.current = null
     setSaveStatus(null)
@@ -404,7 +418,6 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     if (nextMode === "RAW") {
       targetEntry.credentialMode = "RAW"
       targetEntry.accountId = ""
-      targetEntry.restored = false
       persistence.current?.changed(targetEntry, ["credentialMode", "dirty"])
       setError("")
       setVersion(value => value + 1)
@@ -427,7 +440,6 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         if (!raw.current.canSend(next) || !raw.current.editRequest(targetEntry, next)) throw new Error("인증을 적용하면 요청이 너무 커집니다. 내용을 줄여 주세요.")
         targetEntry.credentialMode = nextMode
         targetEntry.accountId = nextMode === "ACCOUNT" ? nextAccountId : ""
-        targetEntry.restored = false
         persistence.current?.changed(targetEntry, ["request", "credentialMode", "dirty"])
         setJsonView(current => ({ ...current, request: false }))
         setVersion(value => value + 1)
@@ -534,6 +546,49 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     setJsonView(current => ({ ...current, [pane]: !formatted.message }))
     setVersion(current => current + 1)
   }
+  /** 패널에 지금 보이는 글(JSON 정돈이면 정돈한 글)에서 찾는다. 같은 글·같은 검색어면 다시 찾지 않는다. */
+  function searchMatches(pane: "request" | "response") {
+    const formatted = jsonView[pane] ? jsonFor(pane) : undefined
+    const text = formatted && !formatted.message ? formatted.text : pane === "request" ? displayedRequest : displayedResponse
+    const cached = searchCache.current[pane]
+    if (cached && cached.query === search && cached.text === text) return cached.ranges
+    const ranges = findMatches(text, search)
+    searchCache.current[pane] = { text, query: search, ranges }
+    return ranges
+  }
+  // 확대해서 한쪽만 보일 때는 보이는 패널에서만 찾는다.
+  const searchedPanes = { request: !!draft && panelFocus !== "response", response: !!draft && panelFocus !== "request" }
+  const matches = { request: searchedPanes.request ? searchMatches("request") : [], response: searchedPanes.response ? searchMatches("response") : [] }
+  const matchCount = matches.request.length + matches.response.length
+  const activeMatch = matchCount ? Math.min(searchActive, matchCount - 1) : -1
+  const matchLimited = matches.request.length >= MAX_SEARCH_MATCHES || matches.response.length >= MAX_SEARCH_MATCHES
+  function activeMarkIn(pane: "request" | "response") {
+    if (activeMatch < 0) return -1
+    return pane === "request" ? (activeMatch < matches.request.length ? activeMatch : -1) : activeMatch - matches.request.length
+  }
+  // 마스킹을 없애기 전 버전이 저장한 표시는 보낼 때 글자 그대로 나간다. 보낼 편집본에서만 세고, 전송은 막지 않는다.
+  const legacySkipsCredentials = mode === "ACCOUNT" || mode === "ANONYMOUS"
+  const legacyMasks = useMemo(() => entry && view !== "original" ? findLegacyMasks(displayedRequest, legacySkipsCredentials) : [],
+    [entry, view, displayedRequest, legacySkipsCredentials])
+  const legacyActiveIndex = legacyMasks.length ? Math.min(legacyActive, legacyMasks.length - 1) : -1
+  function showNextLegacyMask() {
+    if (!legacyMasks.length) return
+    // 검색 중이면 검색 표시가 가리므로 검색어를 비우고 보여 준다.
+    if (search) setSearch("")
+    setLegacyActive((legacyActiveIndex + 1) % legacyMasks.length)
+    setSearchReveal(current => current + 1)
+  }
+  function changeSearch(value: string) {
+    setSearch(value)
+    setSearchActive(0)
+    setSearchReveal(current => current + 1)
+  }
+  function moveSearch(step: 1 | -1) {
+    if (!matchCount) return
+    setSearchActive((activeMatch + step + matchCount) % matchCount)
+    setSearchReveal(current => current + 1)
+  }
+
   function panel(pane: "request" | "response") {
     if (jsonView[pane]) jsonFor(pane)
     const formatted = raw.current.jsonViews[pane]
@@ -542,6 +597,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     const selected = entry?.result
     const text = request ? displayedRequest : displayedResponse
     const boundary = /\r?\n\r?\n/.exec(text)
+    const legacyShown = request && !search && !showJson && legacyMasks.length > 0
     const body = boundary ? text.slice(boundary.index + boundary[0].length) : text
     const canFormat = body.length <= 262_144 && (/^\s*[\[{]/.test(body) || (boundary && /^content-type:\s*[^\r\n]*(?:application\/json|\+json)\b/im.test(text.slice(0, boundary.index)))) && !formatted?.message
     return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border bg-muted/20" aria-label={request ? "Request 원문 패널" : "Response 원문 패널"} hidden={panelFocus !== "both" && panelFocus !== pane}>
@@ -549,17 +605,32 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         {!request && <span className="truncate text-xs text-muted-foreground">{view === "original" ? "관측 원문" : selected ? `${selected.status ? `HTTP ${selected.status}` : "응답 없음"} · ${selected.durationMs}ms${entry?.dirty ? " · 이전 응답" : ""}` : "미전송"}</span>}
         <div role="group" aria-label={`${title} 보기`} className="ml-auto flex shrink-0 gap-1"><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!showJson} onClick={() => setJsonView(current => ({ ...current, [pane]: false }))}>Raw</Button><Button type="button" variant="outline" size="sm" className={`h-[32px] text-[13px] ${selectedButtonClass}`} aria-pressed={!!showJson} disabled={!canFormat} title={formatted?.message || undefined} onClick={() => chooseJson(pane)}>JSON 정돈</Button></div></header>
       {!request && selected?.failure && <p role="alert" className="shrink-0 border-b px-3 py-2 text-xs text-destructive">{selected.failure}{!selected.status && " · 대상 처리 여부 미확인"}</p>}
-      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} /></div>
-      <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} />
+      <div className="min-h-0 flex-1 overflow-hidden" hidden={!!showJson}><RawTextPanel id={`request-lab-${pane}`} label={`Request Lab ${title} 원문`} inputRef={request ? requestRef : responseRef} value={request ? displayedRequest : displayedResponse} fontSize={fontSize} fill readOnly={!request || !editable} disabled={request && (suspended || !draft?.requestEditable || busy)} onChange={request ? editRequest : undefined} marks={showJson ? undefined : legacyShown ? legacyMasks : matches[pane]} activeMark={legacyShown ? legacyActiveIndex : activeMarkIn(pane)} markStyle={legacyShown ? "warning" : "search"} revealKey={searchReveal} /></div>
+      <JsonTextPanel text={showJson ? formatted?.text ?? "" : ""} label={`Request Lab ${title} JSON 정돈`} hidden={!showJson} fontSize={fontSize} marks={showJson ? matches[pane] : undefined} activeMark={activeMarkIn(pane)} revealKey={searchReveal} />
     </section>
   }
 
   return <Dialog open={open} onOpenChange={(next) => next ? onOpenChange(true) : close()}>
     <DialogContent ref={dialogRef} className="flex max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none" style={{ width: maximized ? "calc(100vw - 24px)" : "min(var(--request-lab-width,min(1680px,90vw)),calc(100vw - 32px))", height: maximized ? "calc(100svh - 24px)" : "min(var(--request-lab-height,min(820px,90svh)),calc(100svh - 32px))", ...(dialogSize ? { "--request-lab-width": `${dialogSize.width}px`, "--request-lab-height": `${dialogSize.height}px` } : {}) } as CSSProperties} showCloseButton={false} aria-describedby="request-lab-description" onEscapeKeyDown={event => {
+      // 검색 칸에서 누른 Esc는 검색어만 지운다.
+      if (search && event.target === searchRef.current && !event.defaultPrevented) { event.preventDefault(); changeSearch(""); return }
       if (maximized && !event.defaultPrevented) { event.preventDefault(); setMaximized(false) }
+    }} onKeyDown={event => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f") { event.preventDefault(); searchRef.current?.focus(); searchRef.current?.select() }
     }}>
       <DialogHeader className="shrink-0 border-b px-6 pb-3.5 pt-[18px]">
         <div className="flex items-center justify-between gap-6"><div className="shrink-0"><DialogTitle className="text-[22px] leading-tight">Request Lab</DialogTitle><DialogDescription id="request-lab-description" className="mt-1 text-[13px]">요청을 수정하고, 전송 결과를 다시 확인합니다.</DialogDescription></div>
+          <div role="search" aria-label="요청·응답 검색" className="flex min-w-[200px] max-w-[440px] flex-1 items-center gap-1">
+            <div className="relative min-w-0 flex-1">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input ref={searchRef} type="search" aria-label="요청·응답에서 찾기" placeholder="요청·응답에서 찾기" title="Enter 다음 · Shift+Enter 이전 · Esc 지우기" value={search} disabled={!draft} className={`h-[36px] pl-8 text-[14px] [&::-webkit-search-cancel-button]:appearance-none ${search ? "pr-16" : "pr-3"}`} onChange={event => changeSearch(event.target.value)} onKeyDown={event => {
+                if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); moveSearch(event.shiftKey ? -1 : 1) }
+              }} />
+              <span aria-live="polite" aria-label="검색 결과" className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs tabular-nums text-muted-foreground">{search ? matchCount ? `${activeMatch + 1} / ${matchCount}${matchLimited ? "+" : ""}` : "없음" : ""}</span>
+            </div>
+            <Button type="button" variant="ghost" size="icon" className="size-[32px] shrink-0" aria-label="이전 검색 결과" title="이전 (Shift+Enter)" disabled={!matchCount} onClick={() => moveSearch(-1)}><ChevronUp aria-hidden="true" /></Button>
+            <Button type="button" variant="ghost" size="icon" className="size-[32px] shrink-0" aria-label="다음 검색 결과" title="다음 (Enter)" disabled={!matchCount} onClick={() => moveSearch(1)}><ChevronDown aria-hidden="true" /></Button>
+          </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
             <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!entry || editRejected || suspended || busy} onValueChange={value => {
               if (!entry) return
@@ -568,7 +639,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
               if (target) void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), target)
                 : value === "RAW" ? changeCredentials("RAW", "", target) : changeCredentials("ANONYMOUS", "", target))
             }}>
-              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-[size=default]:h-[36px]"><SelectValue placeholder={entry?.restored || (mode === "ACCOUNT" && !selectedAccountValid) ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
+              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-placeholder:text-foreground data-[size=default]:h-[36px]"><SelectValue placeholder={mode === "ACCOUNT" && !selectedAccountValid ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
                 <SelectItem value="ANONYMOUS">비로그인</SelectItem>
                 <SelectItem value="RAW">직접 입력</SelectItem>
@@ -576,7 +647,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
                 {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
               </SelectContent>
             </Select></div>
-            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy} onClick={toggleOriginal}>{view === "original" ? "편집으로 돌아가기" : "원문 보기"}</Button>
+            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy || originalOnly} title={originalOnly ? "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다." : undefined} onClick={toggleOriginal}>{view === "original" ? "편집으로 돌아가기" : "원문 보기"}</Button>
             <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
@@ -603,13 +674,19 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다.</p>}
+          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{originalOnly ? "처음 수집한 원문입니다. 읽기 전용입니다." : "처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다."}</p>}
           {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 신원(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
-          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ORIGINAL" && !entry?.restored ? "전송할 계정 또는 비로그인을 선택해 주세요." : mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "저장본의 인증은 가려져 있습니다. 인증을 다시 선택하고 가려진 내용을 채워 주세요."}</p>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "전송할 계정 또는 비로그인을 선택해 주세요."}</p>}
           {/* 전송 인증 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
           {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 인증으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}
           {entry && view !== "original" && mode === "RAW" && <p className="px-3 py-1.5 text-xs text-muted-foreground">직접 입력: 요청에 쓴 인증 헤더를 바꾸지 않고 그대로 보냅니다.</p>}
-          {draft && <>{(!draft.rawRequestRetained || !draft.rawResponseRetained) && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">원문 일부가 보존되지 않았거나 마스킹됐습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
+          {draft && <>{!draft.rawRequestRetained
+            ? <p role="status" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다. 이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요.</p>
+            : !draft.rawResponseRetained && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">응답 원문은 일부만 남아 있습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
+          {legacyMasks.length > 0 && <div role="status" aria-label="이전 버전에서 가려진 값" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-200">
+            <p className="min-w-0 flex-1">이전 버전에서 가려진 채 저장된 값이 {legacyMasks.length}곳 남아 있습니다. 빨간 테두리로 표시한 곳은 글자 그대로 전송되니 실제 값으로 바꿔 보내세요.{legacySkipsCredentials ? " 전송 인증이 바꾸는 인증 헤더(Authorization·Cookie·CSRF)는 세지 않았습니다." : ""}</p>
+            <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={showNextLegacyMask}>{legacyActiveIndex < 0 ? "위치 보기" : `다음 위치 ${legacyActiveIndex + 1} / ${legacyMasks.length}`}</Button>
+          </div>}
         </div>
         {draft && <>
           <div ref={editorsRef} role="group" aria-label="Request Lab 요청 및 응답" className="grid min-h-0 min-w-0 flex-1 overflow-hidden" style={{ "--request-lab-split": `${split}%`, gridTemplateColumns: panelFocus === "both" ? "minmax(0,var(--request-lab-split)) 10px minmax(0,1fr)" : "minmax(0,1fr)" } as CSSProperties}>

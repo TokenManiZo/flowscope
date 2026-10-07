@@ -66,6 +66,24 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void snapshotUsesStoredSessionAndNeverCurrentRunToChangeHistoricalIdentity() throws Exception {
+        state.record.collectionAccountId = "anon";
+        state.record.runId = "selected-run";
+        state.record.phase = RunPhase.EXPLORATION;
+        state.rebuild();
+        state.contexts.activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "selected-run", null));
+        start();
+        var event = json(get("/api/snapshot", token, origin())).path("events").get(0);
+        assertEquals("anon", event.path("collectionAccountId").asText());
+        assertEquals("anon", event.path("idn").asText());
+        assertTrue(event.path("fp").asText().startsWith("sess:"));
+        assertEquals("anon", state.record.collectionAccountId);
+        state.contexts.abort(Source.HUMAN, "selected-run");
+        var historical = json(get("/api/snapshot", token, origin())).path("events").get(0);
+        assertEquals("anon", historical.path("collectionAccountId").asText());
+    }
+
     @Test void apiDeletionPreviewUsesTheAuthenticatedLocalPostBoundary() throws Exception {
         start();
         var change = new io.flowscope.core.ApiManagement.Request("preview-delete", state.datasetRevision(), state.revision(), List.of(io.flowscope.core.ApiManagement.operation(state.record)), List.of(), "", null);
@@ -79,7 +97,7 @@ final class FlowScopeWebServerTest {
         assertEquals(1, state.snapshot().records.size());
     }
 
-    @Test void requestLabWorkspacePersistsMaskedStateChecksRevisionsAndNeverSendsTraffic() throws Exception {
+    @Test void requestLabWorkspacePersistsStateChecksRevisionsAndNeverSendsTraffic() throws Exception {
         start();
         long dataset = state.datasetRevision();
         String evidence = state.record.evidenceId;
@@ -93,7 +111,7 @@ final class FlowScopeWebServerTest {
         assertFalse(json(saved).has("tab"));
         assertEquals(0, state.manualRequestCount.get());
         JsonNode draft = json(get("/api/request-lab?eventId=" + encode(evidence), token, null));
-        assertFalse(draft.path("workspace").toString().contains("TOP-SECRET"));
+        assertTrue(draft.path("workspace").toString().contains("TOP-SECRET"), "저장된 Request Lab 요청은 원문 그대로다");
         assertEquals("saved", draft.at("/workspace/tab/entries/1/name").asText());
         assertFalse(json(get("/api/request-lab?eventId=" + encode(evidence) + "&workspace=exclude", token, null)).has("workspace"));
         assertEquals(409, post("/api/request-lab/workspace", body, token).statusCode());
@@ -405,6 +423,37 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void savesAnInjectedZapAccountWithoutLoginUrlAndKeepsCookieHeaderMemoryOnly() throws Exception {
+        start();
+        String accountId = json(post("/api/account-save",
+                "label=USER+B&role=User&target=" + encode(state.record.service), token)).path("id").asText();
+
+        HttpResponse<String> saved = post("/api/zap-accounts",
+                "action=save&id=" + encode(accountId) + "&label=USER+B&role=USER&authMode=INJECT&service="
+                        + encode(state.record.service)
+                        + "&cookie=" + encode("SESSION=inject-abc; csrf=z9")
+                        + "&headers=" + encode("Authorization: Bearer inject-token-xyz")
+                        + "&verifyUrl=" + encode(state.record.service + "/api/me"), token);
+
+        assertEquals(200, saved.statusCode(), saved.body());
+        // 저장 응답·스캐너 메타데이터에 주입 비밀값이 새어 나오면 안 된다.
+        assertFalse(saved.body().contains("inject-abc"));
+        assertFalse(saved.body().contains("inject-token-xyz"));
+        assertEquals("SESSION=inject-abc; csrf=z9", state.lastZapAccountInput.cookie());
+        assertEquals("Authorization: Bearer inject-token-xyz", state.lastZapAccountInput.headers());
+
+        JsonNode settings = json(get("/api/account-settings?account=" + encode(accountId), token, origin()));
+        assertEquals("INJECT", settings.at("/zap/authMode").asText());
+        assertTrue(settings.at("/zap/hasCookie").asBoolean());
+        assertTrue(settings.at("/zap/hasHeaders").asBoolean());
+        assertEquals(state.record.service + "/api/me", settings.at("/zap/verifyUrl").asText());
+        assertEquals("", settings.at("/zap/loginUrl").asText());
+        assertFalse(settings.at("/zap/hasPassword").asBoolean());
+        assertFalse(settings.toString().contains("inject-abc"));
+        assertFalse(settings.toString().contains("inject-token-xyz"));
+    }
+
+    @Test
     void accountSettingsShowTheSavedZapLoginIdAndPasswordOnlyToTheSettingsPanel() throws Exception {
         start();
         String accountId = json(post("/api/account-save",
@@ -457,8 +506,6 @@ final class FlowScopeWebServerTest {
         assertEquals("2026-08-24T00:00:00Z",
                 snapshot.at("/legacyLlm/assessments/0/createdAt").asText());
         assertEquals("CONFIRMED", snapshot.at("/legacyLlm/validations/0/verdict").asText());
-        assertFalse(response.body().contains("ARCHIVESECRET"));
-        assertFalse(response.body().contains("VERDICTSECRET"));
         assertFalse(snapshot.path("scenarios").toString().contains("old-1"));
         assertEquals(400, post("/api/review", "itemId=old-1&status=CONFIRMED&note=change", token).statusCode());
     }
@@ -544,13 +591,13 @@ final class FlowScopeWebServerTest {
                 har, "application/json", token).statusCode());
     }
 
-    /** PR #11 evidence contract: derived parameter metadata rides on /api/evidence without values or sensitive paths. */
+    /** PR #11 evidence contract: derived parameter metadata rides on /api/evidence without values. */
     @Test
-    void evidenceExposesDerivedParameterMetadataWithoutValuesOrSensitivePaths() throws Exception {
+    void evidenceExposesDerivedParameterMetadataWithoutValues() throws Exception {
         RequestRecord search = new RequestRecord(Source.HUMAN, state.record.service,
                 "GET", "/v1/search", 200, "sess:abcdef123456");
         search.query = "status=open&password=hunter2";
-        search.reqText = "GET /v1/search?status=open&password=***MASKED*** HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
+        search.reqText = "GET /v1/search?status=open&password=hunter2 HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
         search.respText = "HTTP/1.1 200 OK\r\n\r\n{}";
         search.requestPayload = StoredPayload.capture(search.reqText, "", 1024 * 1024);
         search.responsePayload = StoredPayload.capture(search.respText, "", 1024 * 1024);
@@ -572,8 +619,12 @@ final class FlowScopeWebServerTest {
         assertEquals("HUMAN", record.at("/parameterContext/source").asText());
         assertEquals("RETAINED", record.at("/parameterContext/retention").asText());
         assertEquals(200, record.at("/parameterContext/status").asInt());
-        JsonNode observations = record.path("parameterObservations");
-        assertEquals(1, observations.size(), observations.toString());
+        JsonNode all = record.path("parameterObservations");
+        // 이름에 password가 들어간 파라미터도 다른 입력과 똑같이 좌표를 만든다(값은 넣지 않는다).
+        assertEquals(2, all.size(), all.toString());
+        assertTrue(all.toString().contains("\"/password\""));
+        com.fasterxml.jackson.databind.node.ArrayNode observations = JSON.createArrayNode();
+        all.forEach(item -> { if (item.at("/key/canonicalPath").asText().equals("/status")) observations.add(item); });
         assertEquals("QUERY", observations.at("/0/key/location").asText());
         assertEquals("/status", observations.at("/0/key/canonicalPath").asText());
         assertTrue(observations.at("/0/key/stableKey").asText().startsWith("pk:v1:"));
@@ -582,9 +633,8 @@ final class FlowScopeWebServerTest {
         assertEquals(4, observations.at("/0/byteLength").asInt());
         assertTrue(observations.at("/0/digest").asText().matches("[0-9a-f]{64}"), observations.toString());
         assertTrue(observations.at("/0/contextSignature").asText().startsWith("ctx:v1:sha256:"));
-        assertFalse(response.body().contains("hunter2"));
-        assertFalse(response.body().contains("maskedPreview"));
-        assertFalse(response.body().contains("\"/password\""));
+        assertFalse(record.path("parameterObservations").toString().contains("hunter2"), "좌표 메타데이터에는 값을 넣지 않는다");
+        assertFalse(response.body().contains("preview"));
     }
 
     @Test
@@ -994,6 +1044,7 @@ final class FlowScopeWebServerTest {
             RequestRecord record = new RequestRecord(Source.HUMAN, state.record.service,
                     "GET", "/account/" + i, 200, fingerprints.get(i));
             record.hasResponse = true;
+            record.collectionAccountId = account.id();
             record.timestamp = i + 1L;
             state.records.add(record);
             state.config.bindSession(record.service, record.fp, account.id());
@@ -1094,6 +1145,8 @@ final class FlowScopeWebServerTest {
                 + "&fingerprint=" + encode(state.record.fp) + "&account=" + encode(accountId), token));
         assertTrue(bound.path("success").asBoolean());
         assertEquals(accountId, state.config.boundAccount(state.record.service, state.record.fp).orElseThrow().id());
+        state.record.collectionAccountId = accountId;
+        state.rebuild();
         JsonNode accountSnapshot = json(get("/api/snapshot", token, origin()));
         assertEquals(accountId, accountSnapshot.at("/sessions/0/accountId").asText());
         assertEquals("COOKIE", accountSnapshot.at("/sessions/0/artifactKind").asText());
@@ -1174,6 +1227,7 @@ final class FlowScopeWebServerTest {
         assertNotNull(ownFunction);
         RequestRecord manual = new RequestRecord(Source.HUMAN, state.record.service, state.record.method,
                 state.record.path, 200, state.record.fp);
+        manual.collectionAccountId = accountId;
         manual.phase = io.flowscope.core.RunPhase.VALIDATION;
         manual.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
         manual.originEvidenceId = state.record.evidenceId;
@@ -1432,7 +1486,7 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void snapshotIsLightweightAndObjectlessEvidenceLoadsMaskedOnDemand() throws Exception {
+    void snapshotIsLightweightAndObjectlessEvidenceLoadsOnDemand() throws Exception {
         RequestRecord health = new RequestRecord(Source.HUMAN, state.record.service,
                 "GET", "/health", 200, "sess:health");
         health.reqText = "GET /health HTTP/1.1\r\nHost: api.example.test\r\nCookie: session=raw-secret";
@@ -1456,9 +1510,10 @@ final class FlowScopeWebServerTest {
         JsonNode evidence = json(get("/api/evidence?operation=" + encode(event.path("op").asText()), token, origin()));
         assertEquals(1, evidence.path("total").asInt());
         assertFalse(evidence.path("hasMore").asBoolean());
-        assertTrue(evidence.at("/records/0/request").asText().contains("session=***"));
-        assertTrue(evidence.at("/records/0/response").asText().contains("session=***"));
-        assertFalse(evidence.toString().contains("body-secret"));
+        // 근거 원문은 가리지 않고 그대로 내려준다.
+        assertTrue(evidence.at("/records/0/request").asText().contains("session=raw-secret"));
+        assertTrue(evidence.at("/records/0/response").asText().contains("session=response-secret"));
+        assertTrue(evidence.toString().contains("body-secret"));
     }
 
     @Test
@@ -1492,6 +1547,18 @@ final class FlowScopeWebServerTest {
         JsonNode clustered = java.util.stream.StreamSupport.stream(snapshot.path("events").spliterator(), false)
                 .filter(value -> value.path("repeatCount").asInt() == 206).findFirst().orElseThrow();
         assertFalse(clustered.has("clusterEvidenceIds"));
+    }
+
+    @Test
+    void marksOnlyEventsWhoseRequestLabRawIsStillInMemory() throws Exception {
+        start();
+        // 원문이 없으면 표시하지 않는다(화면은 없는 값을 false로 본다). 원문 값 자체는 스냅샷에 넣지 않는다.
+        JsonNode without = json(get("/api/snapshot", token, origin()));
+        assertFalse(without.at("/events/0").has("rawAvailable"));
+        state.rawAvailable = true;
+        state.rebuild();
+        JsonNode with = json(get("/api/snapshot", token, origin()));
+        assertTrue(with.at("/events/0/rawAvailable").asBoolean());
     }
 
     private void start() throws Exception {
@@ -1632,6 +1699,7 @@ final class FlowScopeWebServerTest {
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
+        private volatile boolean rawAvailable;
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
         private volatile int credentialPreviewCount;
         private volatile boolean rejectCredentialPreview;
@@ -1672,7 +1740,7 @@ final class FlowScopeWebServerTest {
         TestState() {
             record = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
                     "GET", "/v1/orders/7", 200, "sess:abcdef123456");
-            record.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: [masked]";
+            record.reqText = "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: sid=abc123";
             record.respText = "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}";
             record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
             record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
@@ -1733,7 +1801,7 @@ final class FlowScopeWebServerTest {
         @Override public List<FlowScopeWebServer.AccountRequestCandidate> accountRequestCandidates(String accountId) {
             return List.of(new FlowScopeWebServer.AccountRequestCandidate(record.evidenceId, 200, "GET",
                     "/v1/orders/7", "application/json", true, false, true, true, "연결 가능",
-                    "GET /v1/orders/7 HTTP/1.1\r\nCookie: ***MASKED***", "HTTP/1.1 200 OK"));
+                    "GET /v1/orders/7 HTTP/1.1\r\nCookie: sid=abc123", "HTTP/1.1 200 OK"));
         }
         @Override public void linkAccountRequestCandidate(String accountId, String evidenceId) {
             linkedCandidateId = evidenceId;
@@ -1855,6 +1923,7 @@ final class FlowScopeWebServerTest {
             repeaterAccountId = accountId;
             return value;
         }
+        @Override public boolean requestLabRawAvailable(RequestRecord record) { return rawAvailable; }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
             RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId))
                     .findFirst().orElseThrow();

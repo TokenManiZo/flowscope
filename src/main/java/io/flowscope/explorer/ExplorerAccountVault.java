@@ -1,6 +1,6 @@
 package io.flowscope.explorer;
 
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 
 import java.net.CookieManager;
 import java.net.CookiePolicy;
@@ -136,7 +136,7 @@ public final class ExplorerAccountVault implements AutoCloseable {
 
     private static void setStatus(Entry entry, AuthStatus status, String message) {
         entry.status = status == null ? AuthStatus.FAILED : status;
-        entry.message = Masking.truncate(Masking.maskSecrets(message == null ? "" : message), 500);
+        entry.message = TextLimits.truncate(message == null ? "" : message, 500);
         entry.updatedAt = Instant.now();
     }
 

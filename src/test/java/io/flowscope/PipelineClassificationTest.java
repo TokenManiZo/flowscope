@@ -48,23 +48,24 @@ class PipelineClassificationTest {
     }
 
     @Test
-    void 일반_cookie_회전은_신원을_늘리지_않고_미확정으로_표시한다() {
+    void 비로그인_cookie_회전은_비로그인_신원을_유지한다() {
         List<RequestRecord> records = new ArrayList<>();
         for (int i = 0; i < 1_000; i++) records.add(api(Source.HUMAN, "/api/ping", "ck:" + i));
 
         Pipeline.Result result = Pipeline.run(records);
 
         assertEquals(1, result.records.stream().map(record -> record.idn).distinct().count());
-        assertTrue(result.records.stream().allMatch(record -> record.authState == AuthState.UNRESOLVED));
+        assertTrue(result.records.stream().allMatch(record -> record.authState == AuthState.ANONYMOUS));
     }
 
     @Test
-    void 명시적으로_연결한_cookie만_계정신원이_된다() {
+    void 명시적으로_선택한_계정이_인증지문보다_우선한다() {
         RequestRecord record = api(Source.HUMAN, "/api/me", "ck:abc");
         AnalysisConfig config = new AnalysisConfig();
         config.upsertAccount(new AccountProfile("acct-a", "USER A", "https://t:443", AccessRole.USER));
         config.bindSession("https://t:443", "ck:abc", "acct-a");
 
+        record.collectionAccountId = "acct-a";
         Pipeline.Result result = Pipeline.run(List.of(record), config);
 
         assertEquals("acct-a", result.records.getFirst().idn);

@@ -523,6 +523,7 @@ final class SurfaceAuthorizationLinkTest {
 
     private static RequestRecord pipelineRecord(Source source, String fp, String method, String path, int status, String body) {
         RequestRecord r = new RequestRecord(source, "https://app.test:443", method, path, status, fp);
+        r.collectionAccountId = fp.equals("anon") ? "anon" : (fp.equals("B") || fp.equals("other-fp")) ? "user-b" : fp.equals("C") ? "user-c" : "user-a";
         r.reqBody = body;
         r.requestContentType = "application/json";
         r.hasResponse = true;
@@ -572,6 +573,7 @@ final class SurfaceAuthorizationLinkTest {
     private static RequestRecord record(Source source, String fp, String method, int status, String requestBody) {
         RequestRecord r = new RequestRecord(source, "https://example.test:443", method, "/api/orders/101", status, fp);
         r.evidenceId = "ev-parameter-auth-" + IDS.incrementAndGet();
+        r.collectionAccountId = fp.equals("anon") ? "anon" : (fp.equals("B") || fp.equals("other-fp")) ? "user-b" : fp.equals("C") ? "user-c" : "user-a";
         r.reqBody = requestBody;
         r.requestContentType = "application/json";
         r.hasResponse = true;

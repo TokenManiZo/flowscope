@@ -65,7 +65,7 @@ it("opens API details on every click, including the same row after collapsing th
 })
 
 it("shows server-provided endpoint and parameter deltas without inventing coverage percentages", async () => {
-  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "ONE_SOURCE_OBSERVED", parameters: [{ location: "JSON_BODY", fieldPath: "/product_id", displayName: "product_id", requirement: "UNKNOWN", observedShapes: ["INTEGER"], observedSources: ["HUMAN"], observationEvidenceIds: ["ev-human"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200, shape: "INTEGER", valueType: "INTEGER", presence: "PRESENT", byteLength: 3, masked: false }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", canonicalPath: "/product_id", observedValueTypes: ["INTEGER"], distinctValueCount: 1, coordinateResolved: true, distinctValueTruncated: false }] }] } }
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "ONE_SOURCE_OBSERVED", parameters: [{ location: "JSON_BODY", fieldPath: "/product_id", displayName: "product_id", requirement: "UNKNOWN", observedShapes: ["INTEGER"], observedSources: ["HUMAN"], observationEvidenceIds: ["ev-human"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200, shape: "INTEGER", valueType: "INTEGER", presence: "PRESENT", byteLength: 3 }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", canonicalPath: "/product_id", observedValueTypes: ["INTEGER"], distinctValueCount: 1, coordinateResolved: true, distinctValueTruncated: false }] }] } }
 
   render(<AppProviders><SurfacePage /></AppProviders>)
 
@@ -78,7 +78,7 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   await userEvent.click(screen.getByText("기록 연결 정보"))
   expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("ev-human")
   await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
-  await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ }))
+  await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · 비로그인 · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
 })
@@ -228,4 +228,24 @@ it("opens existing observations when inputs are empty and makes linked ordinals 
   await user.click(screen.getByText("기록 연결 정보"))
   await user.click(screen.getByRole("button", { name: "연결 관측 기록 #703 보기" }))
   expect(openEvidenceSelection).toHaveBeenLastCalledWith("ev-703", surfaceEvent.op, snapshotFixture.datasetRevision ?? snapshotFixture.identityRevision ?? 0)
+})
+
+
+it("preserves a registered account named anon instead of calling it 비로그인", async () => {
+  const accountId = "registered-user"
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = {
+    ...snapshotFixture,
+    accounts: [{ id: accountId, label: "anon", role: "User", target: "https://api.example.test:443", color: "", authArtifactCount: 0 }],
+    events: [{ ...surfaceEvent, idn: accountId }],
+    surface: { extractions: [], probes: [], endpoints: [{
+      key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" },
+      observedSources: ["HUMAN"], observations: [{ evidenceId: surfaceEvent.eventId, source: "HUMAN", runId: "human-1", identity: accountId, status: 200 }],
+      declarations: [], parameters: [], deltaState: "ONE_SOURCE_OBSERVED",
+    }] },
+  }
+  render(<AppProviders><SurfacePage /></AppProviders>)
+  await userEvent.click(screen.getByRole("button", { name: /API 상세$/ }))
+  await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
+  expect(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ })).toBeVisible()
+  expect(screen.queryByRole("button", { name: /관측 기록 상세.*비로그인/ })).not.toBeInTheDocument()
 })

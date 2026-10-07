@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { useEffect, useState } from "react"
 import { AlertTriangle, CircleCheck } from "lucide-react"
 
@@ -32,7 +33,7 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
   const current = publicRead ? PUBLIC : currentOwner
   const accounts = snapshot.accounts.filter(account => account.target === service)
   // 관측 신원이 소유자로 추정됐는데 등록 계정이 아니면 목록에 그대로 보여 준다.
-  const options = [...accounts.map(account => ({ value: account.id, label: account.label })), ...(currentOwner && !accounts.some(account => account.id === currentOwner) ? [{ value: currentOwner, label: currentOwner }] : [])]
+  const options = [...accounts.map(account => ({ value: account.id, label: account.label })), ...(currentOwner && !accounts.some(account => account.id === currentOwner) ? [{ value: currentOwner, label: identityLabel(currentOwner) }] : [])]
   const labelOf = (value: string) => value === PUBLIC ? "Public" : options.find(option => option.value === value)?.label ?? value
   const [picked, setPicked] = useState(current)
   const [done, setDone] = useState<{ message: string; undo: Saved; saved: Saved } | null>(null)

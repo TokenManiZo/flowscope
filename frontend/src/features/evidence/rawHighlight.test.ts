@@ -6,11 +6,11 @@ const kinds = (line: ReturnType<typeof highlightRaw>[number]) => line.map(token 
 
 describe("highlightRaw", () => {
   it("colours header keys and the status line in CRLF messages without changing the text", () => {
-    const raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCookie: sid=***\r\n\r\n{\"id\":24}"
+    const raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCookie: sid=abc123\r\n\r\n{\"id\":24}"
     const lines = highlightRaw(raw)
     expect(kinds(lines[0])).toEqual([["plain", "HTTP/1.1"], ["plain", " "], ["status", "200"], ["status", " OK"], ["plain", "\r"]])
     expect(kinds(lines[1])).toEqual([["key", "Content-Type"], ["plain", ": "], ["value", "application/json"], ["plain", "\r"]])
-    expect(kinds(lines[2])).toEqual([["key", "Cookie"], ["plain", ": "], ["value", "sid="], ["mask", "***"], ["plain", "\r"]])
+    expect(kinds(lines[2])).toEqual([["key", "Cookie"], ["plain", ": "], ["value", "sid=abc123"], ["plain", "\r"]])
     expect(lines.map(line => line.map(token => token.text).join("")).join("\n")).toBe(raw)
   })
 

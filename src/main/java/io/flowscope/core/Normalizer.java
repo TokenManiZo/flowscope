@@ -154,25 +154,9 @@ public final class Normalizer {
         return new Normalized(op, resource);
     }
 
-    /** 서로 다른 fp 를 최초 관측 순서대로 user-a, user-b ... 로 라벨링(결정적).
-     *  비인증과 지문 추출 실패는 user-X 가 아니라 각각 별도 신원으로 분류한다(F-05). */
+    /** 신원은 선택한 수집 세션으로 결정하며 인증 지문으로 추정하지 않는다. */
     public static void assignIdentities(List<RequestRecord> records) {
-        Map<String, String> labels = new LinkedHashMap<>();
-        for (RequestRecord r : records) {
-            if (Fingerprints.ANONYMOUS.equals(r.fp) || Fingerprints.UNRESOLVED.equals(r.fp)) continue;
-            String identityKey = r.service + "\u0000" + r.fp;
-            labels.computeIfAbsent(identityKey, k -> "user-" + labelFor(labels.size()));
-        }
-        for (RequestRecord r : records) {
-            if (Fingerprints.ANONYMOUS.equals(r.fp)) r.idn = Fingerprints.ANONYMOUS;
-            else if (Fingerprints.UNRESOLVED.equals(r.fp)) {
-                r.idn = "unresolved-" + Fingerprints.hash(r.service);
-            } else r.idn = labels.get(r.service + "\u0000" + r.fp);
-        }
-    }
-
-    private static String labelFor(int i) {
-        return i < 26 ? String.valueOf((char) ('a' + i)) : String.valueOf(i);
+        for (RequestRecord record : records) record.idn = record.selectedIdentity();
     }
 
     /** 레코드 리스트 전체에 op/resource/idn 을 채운다.

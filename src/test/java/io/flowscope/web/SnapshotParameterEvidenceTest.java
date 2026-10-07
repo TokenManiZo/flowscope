@@ -64,12 +64,12 @@ final class SnapshotParameterEvidenceTest {
     }
 
     @Test
-    void container_and_sensitive_summaries_never_invent_bytes_or_value_digests() throws Exception {
+    void container_summaries_never_invent_bytes_or_value_digests() throws Exception {
         Pipeline.Result result = Pipeline.run(List.of(request("application/json",
-                "{\"object\":{},\"note\":\"token=***MASKED***\"}")));
+                "{\"object\":{},\"note\":\"token=hidden\"}")));
         JsonNode evidence = evidence(new SnapshotJsonWriter(), result);
         boolean containerFound = false;
-        boolean sensitiveFound = false;
+        boolean noteFound = false;
         for (JsonNode observation : evidence.path("parameterObservations")) {
             if ("/object".equals(observation.at("/key/canonicalPath").asText())) {
                 containerFound = true;
@@ -78,13 +78,14 @@ final class SnapshotParameterEvidenceTest {
                 assertTrue(observation.path("digest").isNull());
             }
             if ("/note".equals(observation.at("/key/canonicalPath").asText())) {
-                sensitiveFound = true;
-                assertTrue(observation.path("digest").isNull());
+                noteFound = true;
+                // 값에 token=이 들어 있어도 다른 값과 똑같이 digest를 만든다.
+                assertFalse(observation.path("digest").isNull());
             }
         }
         assertTrue(containerFound);
-        assertTrue(sensitiveFound);
-        assertFalse(evidence.path("parameterObservations").toString().contains("maskedPreview"));
+        assertTrue(noteFound);
+        assertFalse(evidence.path("parameterObservations").toString().contains("preview"));
     }
 
     private JsonNode evidence(SnapshotJsonWriter writer, Pipeline.Result result) throws Exception {

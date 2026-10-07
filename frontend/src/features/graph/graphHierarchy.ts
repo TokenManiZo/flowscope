@@ -1,3 +1,4 @@
+import { graphAccountLabel } from "./graphAccounts"
 import { operationShapeKey } from "./graphPathShape"
 import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
 import { manualResendDetails } from "./resendGraph"
@@ -276,7 +277,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // in selection; only show a verdict when all selected cells already agree.
     const first = selection.cells[0]?.overall
     const verdict = first && selection.cells.every(cell => cell.overall === first) ? first : "unknown"
-    const node: HierarchyNode = { id, kind, label: key, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : key, verdict, verdictText: verdictStyles[verdict].text, verdictColor: verdictStyles[verdict].color, selection, ...extra }
+    const node: HierarchyNode = { id, kind, label: kind === "identity" ? graphAccountLabel(snapshot, key) : key, wrappedLabel: kind === "operation" ? wrapOperationLabel(key) : kind === "identity" ? graphAccountLabel(snapshot, key) : key, verdict, verdictText: verdictStyles[verdict].text, verdictColor: verdictStyles[verdict].color, selection, ...extra }
     nodes.push(node)
     return node
   }

@@ -63,11 +63,11 @@ final class HarParserTest {
         assertEquals("https://api.example.test:8443", record.service);
         assertEquals("POST", record.method);
         assertEquals("/orders/101", record.path);
-        assertEquals("view=full&token=***MASKED***", record.query);
-        assertTrue(record.reqBody.contains("***MASKED***"));
-        assertFalse(record.reqText.contains("raw-access-token"));
-        assertFalse(record.reqText.contains("raw-cookie"));
-        assertFalse(record.reqText.contains("raw-password"));
+        // HAR의 쿼리·본문·인증 헤더는 원문 그대로 가져온다.
+        assertEquals("view=full&token=raw-query-secret", record.query);
+        assertTrue(record.reqText.contains("raw-access-token"));
+        assertTrue(record.reqText.contains("raw-cookie"));
+        assertTrue(record.reqText.contains("raw-password"));
         assertTrue(record.fp.startsWith("tok:"));
         assertEquals(200, record.status);
         assertTrue(record.hasResponse);

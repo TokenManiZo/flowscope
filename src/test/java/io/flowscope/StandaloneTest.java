@@ -68,7 +68,7 @@ final class StandaloneTest {
     }
 
     @Test
-    void exposesAnExactSampleEvidenceAsAMaskedReadOnlyDraftWithoutReusableSession() throws Exception {
+    void exposesAnExactSampleEvidenceAsAReadOnlyDraftWithoutReusableSession() throws Exception {
         FlowScopeWebServer.State state = newDemoState();
         RequestRecord sample = state.snapshot().records.getFirst();
 
@@ -78,14 +78,14 @@ final class StandaloneTest {
         assertEquals(sample.service, draft.service());
         assertEquals(sample.requestTextForEvidence(), draft.request());
         assertEquals(sample.responseTextForEvidence(), draft.response());
-        assertTrue(draft.request().contains("Authorization: ***MASKED***"));
+        assertTrue(draft.request().contains("Authorization: Bearer "));
         assertFalse(draft.rawRequestRetained());
         assertFalse(draft.rawResponseRetained());
         assertFalse(draft.requestEditable());
         assertEquals("UTF-8", draft.requestCharset());
         assertEquals("UTF-8", draft.responseCharset());
         assertEquals("없음", draft.reusableSession());
-        assertEquals("Standalone 데모에서는 마스킹된 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.",
+        assertEquals("Standalone 데모에서는 읽기 전용 초안만 제공하며 Request Lab 전송을 사용할 수 없습니다.",
                 draft.message());
     }
 

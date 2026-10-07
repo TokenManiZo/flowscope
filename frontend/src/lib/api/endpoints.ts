@@ -108,7 +108,7 @@ export const startScannerRun = (target: string, accounts: string, anonymous: boo
     ...(definitions.trim() ? { definitions } : {}),
   }, [202])
 export const cancelScannerRun = () => postForm<ScannerRunMutationResult>("/api/scanner-run", { action: "cancel" })
-export const saveZapAccount = (values: { id: string; label: string; role: string; service: string; loginUrl: string; username: string; password: string }) =>
+export const saveZapAccount = (values: { id: string; label: string; role: string; service: string; loginUrl: string; username: string; password: string; authMode?: string; cookie?: string; headers?: string; verifyUrl?: string }) =>
   postForm<{ success: true; message: string; account: ZapAccount }>("/api/zap-accounts", { action: "save", ...values })
 export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-accounts", { action: "delete", id })
 /** 크롤 없이 ZAP 인증만 실행해 이 계정의 세션을 확보(refresh-session → startAuthenticationOnly). 202로 시작을 알린다. */
@@ -121,7 +121,7 @@ export const controlExplorerRun = (action: "cancel" | "clear" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
-/** Opens a FlowScope-launched login window (no proxy) for a registered account; the operator logs in there. */
+/** Opens a FlowScope login window through the dedicated LLM proxy; the operator logs in there. */
 export const openExplorerBrowserLogin = (id: string, url: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-open", id, url })
 /** Adopts the login window's session once the operator says the login is done. */

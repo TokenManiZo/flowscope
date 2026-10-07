@@ -1,7 +1,6 @@
 package io.flowscope.burp;
 
 import burp.api.montoya.core.ByteArray;
-import io.flowscope.core.Masking;
 import io.flowscope.core.StoredPayload;
 
 import java.nio.charset.StandardCharsets;
@@ -9,7 +8,7 @@ import java.util.Arrays;
 
 /** Builds the analysis preview without materializing an unbounded Montoya message. */
 final class BoundedHttpCapture {
-    record Result(HttpMessageTextCodec.Decoded decoded, String maskedText,
+    record Result(HttpMessageTextCodec.Decoded decoded, String text,
                   StoredPayload payload, int originalBytes, boolean complete) {}
 
     /** route discovery가 읽는 media type. 이 값들만 분석·보존 상한을 넓힌다. */
@@ -73,10 +72,10 @@ final class BoundedHttpCapture {
                                    int retainedPayloadLimit, int originalBytes, boolean complete) {
         HttpMessageTextCodec.Decoded decoded = HttpMessageTextCodec.decode(
                 bounded, Math.min(bodyOffset, bounded.length), contentType);
-        String masked = Masking.maskHeaders(decoded.text());
+        String text = decoded.text();
         StoredPayload payload;
         if (complete && decoded.editable()) {
-            payload = StoredPayload.capture(masked, contentType, retainedPayloadLimit);
+            payload = StoredPayload.capture(text, contentType, retainedPayloadLimit);
         } else if (complete && HttpMessageTextCodec.isBinary(contentType)) {
             payload = StoredPayload.metadataOnly(bounded, originalBytes,
                     StoredPayload.Retention.BINARY_METADATA_ONLY);
@@ -85,9 +84,9 @@ final class BoundedHttpCapture {
                     ? StoredPayload.Retention.BINARY_METADATA_ONLY
                     : StoredPayload.Retention.OVER_LIMIT_METADATA_ONLY;
             payload = StoredPayload.previewMetadataOnly(
-                    masked == null ? new byte[0] : masked.getBytes(StandardCharsets.UTF_8),
+                    text == null ? new byte[0] : text.getBytes(StandardCharsets.UTF_8),
                     originalBytes, reason);
         }
-        return new Result(decoded, masked, payload, originalBytes, complete);
+        return new Result(decoded, text, payload, originalBytes, complete);
     }
 }

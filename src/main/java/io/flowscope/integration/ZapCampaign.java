@@ -343,6 +343,10 @@ public final class ZapCampaign implements AutoCloseable {
         ZapBrowserAuthenticator.Identity identity = null;
         try {
             state.scannerDirectAuthentication(runId, true);
+            if (state.zapAccounts().view(lane.accountId()).authMode() == ZapAccountVault.AuthMode.INJECT) {
+                runInjectedVerification(runId, target, lane);
+                return;
+            }
             replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                     "AUTHENTICATION", 0, 0, 0, 0, false, false, -1, "", ""));
             replaceZapAuthentication(0, new ZapAuthenticationResult(
@@ -602,6 +606,179 @@ public final class ZapCampaign implements AutoCloseable {
         }
     }
 
+    private record InjectedProbe(boolean loggedIn, String message) {}
+
+    /**
+     * 주입 인증값 검증: 격리 세션·Context를 세우고 주입값을 적용한 뒤, 주입 쿠키/헤더를 실어 대상에 한 번 요청해
+     * 응답을 로그인 지표·상태로 판정한다. 폼 로그인 검증(runAuthenticationOnlySafely)의 주입 버전이다.
+     */
+    private void runInjectedVerification(String runId, String target, ZapLane lane) {
+        String contextName = "flowscope-session-" + runId;
+        boolean contextCreated = false;
+        try {
+            replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
+                    "AUTHENTICATION", 0, 0, 0, 0, false, false, -1, "", ""));
+            replaceZapAuthentication(0, new ZapAuthenticationResult(
+                    "AUTHENTICATING", "injected", "주입 인증값 검증 중"));
+            state.contexts().transition(Source.SCANNER, runId, SourceDetail.ZAP_AUTHENTICATION, lane.accountId());
+            state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.AUTHENTICATING, "주입 인증값 검증 중");
+
+            requireZapOk(state.zap().newTemporarySession(), "create an isolated session");
+            JsonNode context = parseZap(state.zap().newContext(contextName));
+            contextCreated = true;
+            String contextId = context.path("contextId").asText();
+            if (contextId.isBlank()) throw new IllegalStateException("ZAP did not create an isolated target context");
+            requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+                    "include the exact target subtree in context");
+            requireZapOk(state.zap().setContextInScope(contextName), "mark the target context in scope");
+
+            String finalContextId = contextId;
+            InjectedProbe probe = state.zapAccounts().withSecret(lane.accountId(), secret -> {
+                applyInjectedSession(finalContextId, target, secret);
+                return probeInjectedSession(target, secret);
+            });
+            if (!probe.loggedIn()) throw new IllegalStateException(probe.message());
+            state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP, probe.message());
+            replaceZapAuthentication(0, new ZapAuthenticationResult("VERIFIED_BY_ZAP", "injected", probe.message()));
+            RuntimeException cleanup = cleanupZapIdentity(null, contextName, contextCreated);
+            contextCreated = false;
+            if (cleanup != null) throw new ZapIsolationException(cleanup.getMessage());
+            replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "COMPLETED",
+                    "SESSION_READY", 0, 0, 0, 0, true, true, 0, "", ""));
+            deferZapResult(new ZapBaselineRun(runId, target, "COMPLETED", "SESSION_READY",
+                    "", "", 0, 0, 0, ""));
+        } catch (Throwable error) {
+            RuntimeException cleanup = cleanupZapIdentity(null, contextName, contextCreated);
+            String detail = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            if (cleanup != null) detail = appendWarning(detail, "cleanup: " + cleanup.getMessage());
+            state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.FAILED, detail);
+            replaceZapAuthentication(0, new ZapAuthenticationResult("FAILED", "injected", detail));
+            replaceZapLane(0, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "FAILED", "FAILED",
+                    0, 0, 0, 0, false, false, -1, "", detail));
+            deferZapResult(new ZapBaselineRun(runId, target, "FAILED", "FAILED", "", "", 0, 0, 0, detail));
+        }
+    }
+
+    /**
+     * 주입 쿠키/헤더를 실어 "검증 URL"(로그인해야 열리는 대상 주소)에 한 번 요청하고, 응답 상태로 로그인 여부를 판정한다.
+     * 검증 URL이 없으면 대상 루트로 보내되, 공개 페이지일 수 있어 확정하지 않고 상태만 알린다.
+     */
+    private InjectedProbe probeInjectedSession(String target, ZapAccountVault.Secret secret) {
+        boolean hasVerifyUrl = secret.verifyUrl() != null;
+        String probeUrl = hasVerifyUrl ? secret.verifyUrl().toString() : target;
+        java.net.URI uri = java.net.URI.create(probeUrl);
+        StringBuilder raw = new StringBuilder("GET ").append(probeUrl).append(" HTTP/1.1\r\nHost: ")
+                .append(uri.getAuthority()).append("\r\n");
+        String cookie = new String(secret.cookie());
+        if (!cookie.isBlank()) raw.append("Cookie: ").append(cookie.replace("\r", " ").replace("\n", " ")).append("\r\n");
+        for (String line : new String(secret.headers()).split("\n")) {
+            String header = line.strip();
+            if (!header.isEmpty()) raw.append(header).append("\r\n");
+        }
+        raw.append("Connection: close\r\n\r\n");
+        JsonNode entry = parseZap(state.zap().sendRequest(raw.toString(), false)).path("sendRequest").path(0);
+        String responseHeader = entry.path("responseHeader").asText("");
+        String responseBody = entry.path("responseBody").asText("");
+        int status = parseStatusCode(responseHeader);
+        RequestRecord probe = new RequestRecord(Source.SCANNER,
+                uri.getScheme() + "://" + uri.getAuthority(), "GET",
+                uri.getRawPath() == null || uri.getRawPath().isBlank() ? "/" : uri.getRawPath(), status, "injected");
+        probe.hasResponse = true;
+        probe.body = responseBody;
+        probe.location = headerValue(responseHeader, "Location");
+        boolean denied = ResponseEvidence.denied(probe);
+        boolean successful = ResponseEvidence.successful(probe);
+        // SPA 화면 주소를 넣으면 로그인 여부와 무관하게 index.html(200)이 오기 쉽다. HTML이면 로그인됨으로 확정하지 않는다.
+        String contentType = headerValue(responseHeader, "Content-Type");
+        String bodyStart = responseBody.stripLeading().toLowerCase(java.util.Locale.ROOT);
+        boolean looksHtml = (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).contains("text/html"))
+                || bodyStart.startsWith("<!doctype") || bodyStart.startsWith("<html");
+        if (denied) {
+            return new InjectedProbe(false, "로그인되지 않았습니다 · 검증 URL이 인증을 거부했습니다 (HTTP " + status + ")");
+        }
+        if (status == 404) {
+            return new InjectedProbe(false, "검증 URL을 찾을 수 없습니다 (HTTP 404) · 화면 주소(/dashboard 등)가 아니라 "
+                    + "로그인해야 열리는 API 주소인지 확인하세요(개발자도구 Network 탭의 요청 URL).");
+        }
+        if (status >= 500) {
+            return new InjectedProbe(false, "대상 서버 오류 (HTTP " + status + ")");
+        }
+        if (successful && looksHtml) {
+            return new InjectedProbe(false, "HTML 페이지 응답 (HTTP " + status + ") · SPA 화면 주소일 수 있습니다. "
+                    + "로그인해야 열리는 API 주소(JSON 응답)를 넣으면 정확히 확인합니다.");
+        }
+        if (!hasVerifyUrl) {
+            // 검증 URL이 없으면 공개 페이지일 수 있어 확정하지 않는다. 사용자가 검증 URL을 넣으면 확실해진다.
+            return new InjectedProbe(successful, "검증 URL 미설정 · 대상 루트 HTTP " + status
+                    + " · 로그인해야 열리는 검증 URL(API 주소)을 넣으면 정확히 확인합니다.");
+        }
+        return successful
+                ? new InjectedProbe(true, "주입 인증값으로 로그인 확인 · 검증 URL 열림 (HTTP " + status + ")")
+                : new InjectedProbe(false, "로그인으로 보기 어렵습니다 · 검증 URL 응답 HTTP " + status);
+    }
+
+    private static int parseStatusCode(String responseHeader) {
+        if (responseHeader == null) return 0;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^HTTP/\\d(?:\\.\\d)?\\s+(\\d{3})")
+                .matcher(responseHeader);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : 0;
+    }
+
+    private static String headerValue(String responseHeader, String name) {
+        if (responseHeader == null) return null;
+        for (String line : responseHeader.split("\r\n|\n")) {
+            int colon = line.indexOf(':');
+            if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase(name)) {
+                return line.substring(colon + 1).trim();
+            }
+        }
+        return null;
+    }
+
+    /** ZAP httpSessions의 site 식별자(host:port). 스킴·경로 없이 authority만 쓴다. */
+    private static String zapSite(String target) {
+        java.net.URI uri = java.net.URI.create(target);
+        int port = uri.getPort() >= 0 ? uri.getPort()
+                : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+        return uri.getHost() + ":" + port;
+    }
+
+    /**
+     * 주입 인증: 폼 로그인 없이 사용자가 넣은 값으로 세션을 구성한다. 헤더가 있으면 헤더 기반 세션관리로,
+     * 없고 쿠키만 있으면 쿠키 기반 세션관리로 설정한다. 쿠키는 ZAP 세션 쿠키잔(httpSessions)에 심어
+     * 크롤 요청에 실리고 Set-Cookie 회전을 따라가게 한다. (실제 인증·갱신 효과는 실 타깃 검증 대상.)
+     */
+    private void applyInjectedSession(String contextId, String target, ZapAccountVault.Secret secret) {
+        String cookie = new String(secret.cookie());
+        String headers = new String(secret.headers());
+        boolean hasCookie = !cookie.isBlank();
+        boolean hasHeaders = !headers.isBlank();
+        if (hasHeaders) {
+            requireZapOk(state.zap().setHeaderBasedSessionManagement(contextId, headers), "헤더 기반 세션관리 설정");
+        } else if (hasCookie) {
+            requireZapOk(state.zap().setCookieBasedSessionManagement(contextId), "쿠키 기반 세션관리 설정");
+        }
+        if (hasCookie) {
+            String site = zapSite(target);
+            String session = "flowscope-injected";
+            List<String[]> pairs = new ArrayList<>();
+            for (String raw : cookie.split(";")) {
+                String pair = raw.trim();
+                if (pair.isEmpty()) continue;
+                int eq = pair.indexOf('=');
+                pairs.add(new String[] {pair.substring(0, eq).trim(), pair.substring(eq + 1).trim()});
+            }
+            for (String[] pair : pairs) {
+                requireZapOk(state.zap().addSessionToken(site, pair[0]), "세션 토큰 등록");
+            }
+            requireZapOk(state.zap().createHttpSession(site, session), "주입 세션 생성");
+            for (String[] pair : pairs) {
+                requireZapOk(state.zap().setSessionTokenValue(site, session, pair[0], pair[1]), "세션 토큰 값 설정");
+            }
+            requireZapOk(state.zap().setActiveHttpSession(site, session), "주입 세션 활성화");
+        }
+    }
+
     private void runZapLane(String runId, String target, ZapLane lane, int index,
                             List<ZapDefinition> definitions, ArrayNode collectedAlerts) {
         String warning = "";
@@ -684,44 +861,65 @@ public final class ZapCampaign implements AutoCloseable {
                 }
             }
             if (directAuthentication) {
+                ZapAccountVault.AuthMode authMode = state.zapAccounts().view(lane.accountId()).authMode();
+                boolean inject = authMode == ZapAccountVault.AuthMode.INJECT;
                 state.contexts().transition(Source.SCANNER, runId,
                         SourceDetail.ZAP_AUTHENTICATION, lane.accountId());
                 replaceZapAuthentication(index, new ZapAuthenticationResult(
-                        "AUTHENTICATING", ZapClient.CLIENT_BROWSER, "ZAP 브라우저 로그인 실행 중"));
+                        "AUTHENTICATING", inject ? "injected" : ZapClient.CLIENT_BROWSER,
+                        inject ? "주입 인증값 적용 중" : "ZAP 브라우저 로그인 실행 중"));
                 replaceZapLane(index, new ZapLaneResult(lane.accountId(), lane.accountLabel(), "RUNNING",
                         "AUTHENTICATION", 0, 0, definitionImports, 0,
                         false, false, -1, warning, ""));
                 updateZapBaseline(runId, "RUNNING", "AUTHENTICATION", "", warning, "");
-                recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "INFO",
-                        "ZAP Browser Based Authentication · Chrome Headless 시작");
                 state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.AUTHENTICATING,
-                        "ZAP 브라우저 로그인 실행 중");
+                        inject ? "주입 인증값 적용 중" : "ZAP 브라우저 로그인 실행 중");
                 String finalContextId = contextId;
-                ScheduledFuture<?> authenticationHeartbeat = startZapWorkerHeartbeat(runId, index,
-                        "AUTHENTICATION", "ZAP 브라우저 로그인 · 인증 결과 대기");
-                try {
-                    identity = state.zapAccounts().withSecret(lane.accountId(), secret ->
-                            new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows,
-                                    () -> state.authenticationEvidence(runId, lane.accountId())).authenticate(
-                                    runId, target, index, finalContextId, contextName, secret));
-                    recordZapHeartbeat(runId, index, "ZAP 브라우저 로그인 · 인증 성공 응답 수신");
-                } finally {
-                    authenticationHeartbeat.cancel(false);
+                if (inject) {
+                    // 폼 로그인 없이 사용자가 넣은 쿠키/헤더로 세션을 구성한다. ZAP user를 만들지 않으므로 identity는 null로 둔다.
+                    recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "INFO",
+                            "주입 인증값으로 ZAP 세션 구성");
+                    state.zapAccounts().withSecret(lane.accountId(), secret -> {
+                        applyInjectedSession(finalContextId, target, secret);
+                        return null;
+                    });
+                    ensureScannerCapabilityIntact(runId);
+                    state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
+                            "주입 인증값으로 세션을 구성했습니다(로그인 검증 아님).");
+                    authenticationVerified = true;
+                    replaceZapAuthentication(index, new ZapAuthenticationResult(
+                            "VERIFIED_BY_ZAP", "injected", "주입 인증값으로 세션을 구성했습니다."));
+                    recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
+                            "주입 인증값 적용 완료 · 계정 크롤링 시작");
+                } else {
+                    recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "INFO",
+                            "ZAP Browser Based Authentication · Chrome Headless 시작");
+                    ScheduledFuture<?> authenticationHeartbeat = startZapWorkerHeartbeat(runId, index,
+                            "AUTHENTICATION", "ZAP 브라우저 로그인 · 인증 결과 대기");
+                    try {
+                        identity = state.zapAccounts().withSecret(lane.accountId(), secret ->
+                                new ZapBrowserAuthenticator(state.zap(), json, state.scope()::allows,
+                                        () -> state.authenticationEvidence(runId, lane.accountId())).authenticate(
+                                        runId, target, index, finalContextId, contextName, secret));
+                        recordZapHeartbeat(runId, index, "ZAP 브라우저 로그인 · 인증 성공 응답 수신");
+                    } finally {
+                        authenticationHeartbeat.cancel(false);
+                    }
+                    state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
+                            "ZAP 인증 성공과 재사용 가능한 인증 Evidence를 확인했습니다.");
+                    boolean sessionPromoted = state.promoteAuthenticatedSession(
+                            lane.accountId(), identity.verifiedEvidenceRuntimeId());
+                    if (!sessionPromoted) {
+                        throw new IllegalStateException("로그인은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다. "
+                                + "ANON으로 대체하지 않고 이 로그인 lane을 중단합니다.");
+                    }
+                    authenticationVerified = true;
+                    replaceZapAuthentication(index, new ZapAuthenticationResult(
+                            "VERIFIED_BY_ZAP", identity.browser(),
+                            "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."));
+                    recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
+                            "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
                 }
-                state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                        "ZAP 인증 성공과 재사용 가능한 인증 Evidence를 확인했습니다.");
-                boolean sessionPromoted = state.promoteAuthenticatedSession(
-                        lane.accountId(), identity.verifiedEvidenceRuntimeId());
-                if (!sessionPromoted) {
-                    throw new IllegalStateException("로그인은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다. "
-                            + "ANON으로 대체하지 않고 이 로그인 lane을 중단합니다.");
-                }
-                authenticationVerified = true;
-                replaceZapAuthentication(index, new ZapAuthenticationResult(
-                        "VERIFIED_BY_ZAP", identity.browser(),
-                        "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."));
-                recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
-                        "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
             }
             SeedResult firstSeeds = routeSeeds(target, warning);
             warning = resetClientMap(runId, target, lane, firstSeeds.warning(), firstSeeds.urls(), "");
@@ -1517,7 +1715,7 @@ public final class ZapCampaign implements AutoCloseable {
         String rule = firstText(task, "name", "rule", "scannerName", "pluginId");
         String url = firstText(task, "url", "uri", "message");
         String summary = (rule.isBlank() ? "Passive rule 실행 중" : rule)
-                + (url.isBlank() ? "" : " · " + io.flowscope.core.Masking.maskSecrets(url));
+                + (url.isBlank() ? "" : " · " + url);
         return summary.length() <= 320 ? summary : summary.substring(0, 317) + "...";
     }
 
@@ -1613,7 +1811,7 @@ public final class ZapCampaign implements AutoCloseable {
                                                 String level, String message) {
         List<ZapProgressEvent> copy = new ArrayList<>(zapProgressEvents);
         copy.add(new ZapProgressEvent(System.currentTimeMillis(), accountLabel, stage, level,
-                Masking.maskSecrets(message)));
+                message));
         if (copy.size() > MAX_ZAP_PROGRESS_EVENTS) {
             copy = new ArrayList<>(copy.subList(copy.size() - MAX_ZAP_PROGRESS_EVENTS, copy.size()));
         }
@@ -1854,14 +2052,14 @@ public final class ZapCampaign implements AutoCloseable {
             object.fieldNames().forEachRemaining(fields::add);
             for (String field : fields) {
                 JsonNode child = object.get(field);
-                if (child != null && child.isTextual()) object.put(field, Masking.maskHeaders(child.asText()));
+                if (child != null && child.isTextual()) object.put(field, child.asText());
                 else maskTextValuesInPlace(child);
             }
         } else if (value instanceof ArrayNode array) {
             for (int i = 0; i < array.size(); i++) {
                 JsonNode child = array.get(i);
                 if (child.isTextual()) array.set(i,
-                        com.fasterxml.jackson.databind.node.TextNode.valueOf(Masking.maskHeaders(child.asText())));
+                        com.fasterxml.jackson.databind.node.TextNode.valueOf(child.asText()));
                 else maskTextValuesInPlace(child);
             }
         }

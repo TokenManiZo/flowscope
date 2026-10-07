@@ -71,6 +71,7 @@ class AccuracyRegressionTest {
         List<RequestRecord> recs = List.of(
                 new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/a", 200, "anon"),
                 new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/b", 200, "sess:abc"));
+        recs.get(1).collectionAccountId = "user-a";
         Normalizer.assignIdentities(recs);
         assertEquals("anon", recs.get(0).idn, "비인증은 user-X 로 섞이면 안 됨(F-05)");
         assertEquals("user-a", recs.get(1).idn);

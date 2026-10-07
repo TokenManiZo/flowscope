@@ -19,6 +19,8 @@ export interface EventObject {
 
 export interface EventRecord {
   eventId: string
+  /** Request Lab이 편집·재전송할 원문(Burp 메모리 또는 저장본)이 있다. 없으면(false) 저장 한도를 넘어 일부만 남은 기록이다. */
+  rawAvailable?: boolean
   method: string
   path: string
   status: number
@@ -26,6 +28,8 @@ export interface EventRecord {
   idn: string
   /** Registered collection lane; independent of observed identity and role. */
   laneAccountId?: string | null
+  /** User-selected card for graph display; independent of observed identity. */
+  collectionAccountId?: string | null
   role: string
   source: Source
   op: string
@@ -301,7 +305,6 @@ export interface SurfaceObservation {
   presence?: string
   valueType?: string
   byteLength?: number
-  masked?: boolean
   contextSignature?: string
   confidence?: string
 }

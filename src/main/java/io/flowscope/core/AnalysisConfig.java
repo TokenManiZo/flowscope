@@ -227,22 +227,6 @@ public final class AnalysisConfig {
         return account == null ? identity : account.label();
     }
 
-    /** 정규화가 만든 가명 신원을 사용자가 등록한 계정으로 치환한다. */
-    public void applyIdentityBindings(List<RequestRecord> records) {
-        if (records == null) return;
-        Normalizer.assignIdentities(records);
-        synchronized (this) {
-            for (RequestRecord record : records) {
-                String normalizedService;
-                try { normalizedService = AccountProfile.normalizeService(record.service); }
-                catch (RuntimeException error) { continue; }
-                String accountId = sessionBindings.get(sessionKey(normalizedService, record.fp));
-                AccountProfile account = accountId == null ? null : accounts.get(accountId);
-                if (account != null && account.service().equals(normalizedService)) record.idn = accountId;
-            }
-        }
-    }
-
     public synchronized AnalysisConfig withEndpointRequirement(String operation, AccessRole role) {
         if (operation != null && role != null) endpointRequirements.put(operation, role);
         return this;

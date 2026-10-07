@@ -11,7 +11,7 @@ import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.BurpXmlParser;
 import io.flowscope.core.LaneCompletionPolicy;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.ResourcePolicy;
@@ -102,6 +102,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default RequestLabDraft requestLabDraft(String evidenceId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
+        /** Request Lab이 이 기록을 편집·재전송할 원문(메모리 또는 저장본)을 갖고 있는지. 화면이 열 기록을 고르는 데 쓴다. */
+        default boolean requestLabRawAvailable(RequestRecord record) { return false; }
         default List<RequestLabCredentialHeader> requestLabCredentials(String evidenceId, String request,
                                                                        CredentialMode mode, String accountId) {
             throw new UnsupportedOperationException("request lab credentials are unavailable");
@@ -241,7 +243,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     // RAW: 편집한 인증 헤더를 바꾸지 않고 그대로 보낸다(직접 입력). ANONYMOUS·ACCOUNT만 인증 헤더를 지우거나 교체한다.
     public enum CredentialMode { ORIGINAL, ANONYMOUS, ACCOUNT, RAW }
 
-    /** Safe metadata plus the stored masked request/response text. Raw credential values never cross the local API. */
+    /** Metadata plus the stored request/response text. */
     public record AccountRequestCandidate(String id, int status, String method, String path, String mime,
                                           boolean hasCookie, boolean hasAuthorization, boolean markMatched,
                                           boolean eligible, String reason, String request, String response) {}
@@ -406,7 +408,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return response(200, "application/json; charset=utf-8",
                 snapshots.write(state.revision(), state.datasetRevision(), state.snapshot(), state.config(), state.assessments(), state.validations(),
                         state.sessions() == null ? List.of() : state.sessions().views(), state.routeCandidates(),
-                        state.droppedRecords(), state.executionSummaries()));
+                        state.droppedRecords(), state.executionSummaries(), state::requestLabRawAvailable, RequestRecord::selectedIdentity));
     }
 
     private LoopbackHttpServer.Response evidence(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -818,7 +820,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("directory", status.directory());
         body.put("saveState", status.saveState());
         body.put("lastSavedAt", status.lastSavedAt());
-        body.put("saveError", Masking.maskSecrets(status.saveError()));
+        body.put("saveError", status.saveError());
         if (status.active() == null) body.putNull("active");
         else body.set("active", projectEntry(status.active()));
         var projects = body.putArray("projects");
@@ -1252,6 +1254,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
         zapNode.put("loginId", credentials == null ? "" : credentials.username());
         zapNode.put("password", credentials == null ? "" : credentials.password());
         zapNode.put("hasPassword", zap != null && zap.hasPassword());
+        // 로그인 방식(FORM 폼 로그인 / INJECT 인증값 주입). 쿠키·헤더 값은 되돌려 보내지 않고 보유 여부만 알린다.
+        zapNode.put("authMode", zap == null ? "FORM" : zap.authMode().name());
+        zapNode.put("hasCookie", zap != null && zap.hasCookie());
+        zapNode.put("hasHeaders", zap != null && zap.hasHeaders());
+        // 검증 URL은 비밀값이 아니라 로그인 URL처럼 그대로 보여 준다(설정 화면 재입력 방지).
+        zapNode.put("verifyUrl", zap == null ? "" : zap.verifyUrl());
         // ZAP 연결 문구는 로그인 결과가 아니다. 연결이 실제로 끊겼을 때만 보여 주고, 로그인 상태와 따로 표시한다.
         JsonNode zapConnection = state.zapStatus();
         boolean zapConnected = zapConnection.path("connected").asBoolean(false);
@@ -1485,12 +1493,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (!action.equals("save")) {
                 throw new IllegalArgumentException("action은 save, refresh-session 또는 delete여야 합니다.");
             }
+            // 주입 모드는 로그인 URL·ID·비밀번호가 없으므로 모두 선택값으로 받는다. 모드별 필수 검증은 ZapAccountVault가 한다.
             ZapAccountVault.View saved = state.saveZapAccount(new ZapAccountVault.Input(
                     form.getOrDefault("id", ""), required(form, "label"),
                     form.getOrDefault("role", "UNKNOWN"), required(form, "service"),
-                    required(form, "loginUrl"), requiredRaw(form, "username"), requiredRaw(form, "password"),
+                    form.getOrDefault("loginUrl", ""), form.getOrDefault("username", ""),
+                    form.getOrDefault("password", ""),
+                    form.getOrDefault("cookie", ""), form.getOrDefault("headers", ""),
+                    form.getOrDefault("authMode", "FORM"),
                     form.getOrDefault("loggedInIndicator", ""),
-                    form.getOrDefault("loggedOutIndicator", "")));
+                    form.getOrDefault("loggedOutIndicator", ""),
+                    form.getOrDefault("verifyUrl", "")));
             ObjectNode body = json.createObjectNode().put("success", true)
                     .put("message", "ZAP 로그인 계정을 현재 프로세스 메모리에 등록했습니다.");
             body.set("account", json.valueToTree(saved));
@@ -1700,10 +1713,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 RequestRecord target = state.snapshot().records.stream().filter(record -> resource.equals(record.resource)
                                 || record.resourceReferences.stream().anyMatch(reference -> resource.equals(reference.resource())))
                         .findFirst().orElseThrow(() -> new IllegalArgumentException("관측된 리소스를 선택하세요."));
-                boolean sameService = state.config().account(identity).map(account -> account.service().equals(target.service))
-                        .orElseGet(() -> state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
-                                && target.service.equals(record.service) && record.authState != io.flowscope.core.AuthState.UNRESOLVED
-                                && record.authState != io.flowscope.core.AuthState.ANONYMOUS));
+                boolean sameService = state.config().account(identity)
+                        .map(account -> account.service().equals(target.service)).orElse(false)
+                        || state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
+                                && target.service.equals(record.service)
+                                && record.authState == io.flowscope.core.AuthState.ACCOUNT_BOUND);
                 if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정·신원을 선택하세요.");
             }
             state.config().withResourceOwner(resource, identity);
@@ -1794,7 +1808,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private static String required(Map<String, String> form, String key) {
         String value = form.getOrDefault(key, "").trim();
         if (value.isBlank()) throw new IllegalArgumentException(key + " is required");
-        return Masking.truncate(Masking.maskSecrets(value), 2_000);
+        return TextLimits.truncate(value, 2_000);
     }
 
     private static String requiredRaw(Map<String, String> form, String key) {

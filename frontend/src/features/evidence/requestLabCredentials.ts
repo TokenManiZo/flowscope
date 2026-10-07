@@ -1,6 +1,8 @@
 import type { RequestLabCredentialHeader } from "@/lib/api/types"
 
-const managed = /^(authorization|cookie|proxy-authorization|x-csrf-token|x-xsrf-token|x-csrftoken)$/i
+/** 계정·비로그인 전송 때 서버가 지우고 다시 채우는 인증 헤더(SessionBroker.MANAGED_HEADER_NAMES와 같다). */
+export const managedCredentialHeader = /^(authorization|cookie|proxy-authorization|x-csrf-token|x-xsrf-token|x-csrftoken)$/i
+const managed = managedCredentialHeader
 const headerLine = /^[!#$%&'*+.^_`|~\w-]+:[^\r\n]*$/
 
 /** Replace only managed header lines; preserve the request line, other headers and exact body. */

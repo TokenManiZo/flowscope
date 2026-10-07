@@ -31,52 +31,52 @@ public final class SampleProject {
                 .withEndpointRequirement(SERVICE + " POST /api/admin/invites", AccessRole.ADMIN);
 
         List<RequestRecord> records = new ArrayList<>();
-        records.add(record(Source.HUMAN, "sess:demo-a", "GET", "/api/orders/101", 200, null,
+        records.add(record(Source.HUMAN, userA.id(), "sess:demo-a", "GET", "/api/orders/101", 200, null,
                 "{\"id\":101,\"ownerId\":\"acct-demo-user-a\",\"total\":12000}", 0));
-        records.add(record(Source.HUMAN, "sess:demo-a-rotated", "PATCH", "/api/orders/101", 200,
+        records.add(record(Source.HUMAN, userA.id(), "sess:demo-a-rotated", "PATCH", "/api/orders/101", 200,
                 "{\"status\":\"READY\"}", "{\"id\":101,\"ownerId\":\"acct-demo-user-a\",\"status\":\"READY\"}", 1));
-        records.add(record(Source.HUMAN, "sess:demo-b", "GET", "/api/orders/202", 200, null,
+        records.add(record(Source.HUMAN, userB.id(), "sess:demo-b", "GET", "/api/orders/202", 200, null,
                 "{\"id\":202,\"ownerId\":\"acct-demo-user-b\",\"total\":8300}", 2));
-        records.add(record(Source.HUMAN, "sess:demo-a", "POST", "/api/admin/invites", 403,
-                "{\"email\":\"masked@example.test\"}", "{\"error\":\"forbidden\"}", 3));
-        records.add(record(Source.HUMAN, "sess:demo-admin", "GET", "/api/admin/users", 200, null,
+        records.add(record(Source.HUMAN, userA.id(), "sess:demo-a", "POST", "/api/admin/invites", 403,
+                "{\"email\":\"user-b@example.test\"}", "{\"error\":\"forbidden\"}", 3));
+        records.add(record(Source.HUMAN, admin.id(), "sess:demo-admin", "GET", "/api/admin/users", 200, null,
                 "[{\"id\":\"acct-demo-user-a\"},{\"id\":\"acct-demo-user-b\"}]", 4));
 
-        records.add(record(Source.SCANNER, "sess:demo-b", "GET", "/api/orders/101", 403, null,
+        records.add(record(Source.SCANNER, userB.id(), "sess:demo-b", "GET", "/api/orders/101", 403, null,
                 "{\"error\":\"forbidden\"}", 5));
-        records.add(record(Source.SCANNER, "sess:demo-b", "OPTIONS", "/api/orders/101", 200, null, "", 6));
+        records.add(record(Source.SCANNER, userB.id(), "sess:demo-b", "OPTIONS", "/api/orders/101", 200, null, "", 6));
 
-        records.add(record(Source.LLM, "sess:demo-b", "GET", "/api/orders/101", 200, null,
+        records.add(record(Source.LLM, userB.id(), "sess:demo-b", "GET", "/api/orders/101", 200, null,
                 "{\"id\":101,\"ownerId\":\"acct-demo-user-a\",\"total\":12000}", 7));
-        records.add(record(Source.LLM, "sess:demo-a", "POST", "/api/admin/invites", 200,
-                "{\"email\":\"masked@example.test\"}", "{\"created\":true}", 8));
-        records.add(record(Source.LLM, "sess:demo-a", "GET", "/api/orders/202", 404, null,
+        records.add(record(Source.LLM, userA.id(), "sess:demo-a", "POST", "/api/admin/invites", 200,
+                "{\"email\":\"user-b@example.test\"}", "{\"created\":true}", 8));
+        records.add(record(Source.LLM, userA.id(), "sess:demo-a", "GET", "/api/orders/202", 404, null,
                 "{\"error\":\"not found\"}", 9));
 
         // API group drill-down examples (PR #11): identity-bound APIs intentionally have no dummy Object.
-        records.add(record(Source.HUMAN, "sess:demo-a", "GET", "/api/profile", 200, null,
+        records.add(record(Source.HUMAN, userA.id(), "sess:demo-a", "GET", "/api/profile", 200, null,
                 "{\"displayName\":\"USER A\"}", 10));
-        records.add(record(Source.LLM, "sess:demo-b", "GET", "/api/profile", 200, null,
+        records.add(record(Source.LLM, userB.id(), "sess:demo-b", "GET", "/api/profile", 200, null,
                 "{\"displayName\":\"USER B\"}", 11));
-        records.add(record(Source.HUMAN, "sess:demo-b", "GET", "/api/account", 200, null,
+        records.add(record(Source.HUMAN, userB.id(), "sess:demo-b", "GET", "/api/account", 200, null,
                 "{\"plan\":\"demo\"}", 12));
-        records.add(record(Source.LLM, "sess:demo-a", "GET", "/api/account", 200, null,
+        records.add(record(Source.LLM, userA.id(), "sess:demo-a", "GET", "/api/account", 200, null,
                 "{\"plan\":\"demo\"}", 13));
 
         // Object-backed group example with two owners and a denied cross-owner scanner request.
-        records.add(record(Source.HUMAN, "sess:demo-a", "GET", "/api/posts/301", 200, null,
+        records.add(record(Source.HUMAN, userA.id(), "sess:demo-a", "GET", "/api/posts/301", 200, null,
                 "{\"id\":301,\"ownerId\":\"acct-demo-user-a\",\"title\":\"First post\"}", 14));
-        records.add(record(Source.HUMAN, "sess:demo-b", "GET", "/api/posts/302", 200, null,
+        records.add(record(Source.HUMAN, userB.id(), "sess:demo-b", "GET", "/api/posts/302", 200, null,
                 "{\"id\":302,\"ownerId\":\"acct-demo-user-b\",\"title\":\"Second post\"}", 15));
-        records.add(record(Source.SCANNER, "sess:demo-b", "GET", "/api/posts/301", 403, null,
+        records.add(record(Source.SCANNER, userB.id(), "sess:demo-b", "GET", "/api/posts/301", 403, null,
                 "{\"error\":\"forbidden\"}", 16));
 
-        RequestRecord login = record(Source.HUMAN, "sess:demo-a", "POST", "/login", 302,
-                "{\"username\":\"demo\",\"password\":\"***MASKED***\"}", "", 17);
+        RequestRecord login = record(Source.HUMAN, userA.id(), "sess:demo-a", "POST", "/login", 302,
+                "{\"username\":\"demo\",\"password\":\"demo-password\"}", "", 17);
         login.phase = RunPhase.SESSION_SETUP;
         records.add(login);
         for (int i = 0; i < 3; i++) {
-            RequestRecord polling = record(Source.HUMAN, "sess:demo-a", "GET", "/session/state", 200,
+            RequestRecord polling = record(Source.HUMAN, userA.id(), "sess:demo-a", "GET", "/session/state", 200,
                     null, "ready", 18 + i);
             polling.responseContentType = "text/plain";
             records.add(polling);
@@ -84,18 +84,20 @@ public final class SampleProject {
         return new Data(List.copyOf(records), config);
     }
 
-    private static RequestRecord record(Source source, String fingerprint, String method, String path,
+    private static RequestRecord record(Source source, String identity, String fingerprint, String method, String path,
                                         int status, String requestBody, String responseBody, int offset) {
         RequestRecord record = new RequestRecord(source, SERVICE, method, path, status, fingerprint);
+        record.collectionAccountId = identity;
         record.reqBody = requestBody;
         record.query = null;
         record.reqText = method + " " + path + " HTTP/1.1\r\nHost: demo.flowscope.test\r\n"
-                + "Authorization: ***MASKED***\r\n\r\n" + (requestBody == null ? "" : requestBody);
+                + "Authorization: Bearer " + fingerprint.substring(fingerprint.indexOf(':') + 1) + "-token\r\n\r\n"
+                + (requestBody == null ? "" : requestBody);
         record.body = responseBody;
         record.respText = "HTTP/1.1 " + status + " Demo\r\nContent-Type: application/json\r\n\r\n"
                 + (responseBody == null ? "" : responseBody);
-        record.requestPayload = StoredPayload.capture(Masking.maskHeaders(record.reqText), "", 1024 * 1024);
-        record.responsePayload = StoredPayload.capture(Masking.maskHeaders(record.respText), "", 1024 * 1024);
+        record.requestPayload = StoredPayload.capture(record.reqText, "", 1024 * 1024);
+        record.responsePayload = StoredPayload.capture(record.respText, "", 1024 * 1024);
         // The demo responses are JSON API representations; record the media type the way a live capture would
         // so identity-bound APIs without an object signal still classify as API traffic.
         if (requestBody != null) record.requestContentType = "application/json";

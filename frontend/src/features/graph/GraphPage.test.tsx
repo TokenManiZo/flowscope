@@ -146,7 +146,9 @@ it("switches the graph between judged APIs and every observed non-static request
   expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
   await userEvent.click(within(rail).getByRole("button", { name: "관측 전체" }))
   expect(within(rail).getByRole("button", { name: "관측 전체" })).toHaveAttribute("aria-pressed", "true")
-  expect(within(rail).getByText(/추가로 보이는 요청은 판정에 쓰지 않습니다/)).toBeVisible()
+  await userEvent.click(within(rail).getByRole("button", { name: "보기 범위 도움말" }))
+  expect(screen.getByText(/추가로 보이는 요청은 판정에 쓰지 않습니다/)).toBeVisible()
+  await userEvent.keyboard("{Escape}")
   // 정적 파일(/theme/site.css)은 관측 전체에서도 빠지고, 서버 렌더링 화면(/board/list.php) 묶음만 더해진다.
   expect(screen.queryAllByText("BOARD APIs").length).toBeGreaterThan(0)
   expect(screen.queryAllByText("THEME APIs")).toHaveLength(0)

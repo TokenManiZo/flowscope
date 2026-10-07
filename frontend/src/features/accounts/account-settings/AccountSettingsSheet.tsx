@@ -10,19 +10,22 @@ import { BasicAccountTab } from "./BasicAccountTab";
 import { HumanAccountTab } from "./HumanAccountTab";
 import { ZapAccountTab } from "./ZapAccountTab";
 import { HUMAN_STATUS_META, ZAP_STATUS_META, type StatusMeta } from "./statusMeta";
-import { validateProofPath, validateResponseMark, validateTarget, type AccountRole, type AccountSettings, type AccountSettingsAdapter, type LoginProofRule } from "./types";
+import { validateProofPath, validateResponseMark, validateTarget, type AccountRole, type AccountSettings, type AccountSettingsAdapter, type LoginProofRule, type ZapAuthMode } from "./types";
 
 const SETTINGS_REFRESH_MS = 3000;
 
 export interface AccountSettingsDraft {
   label: string; role: AccountRole; target: string; proof: LoginProofRule;
   zapEnabled: boolean; zapLoginUrl: string; zapLoginId: string;
+  zapAuthMode: ZapAuthMode; zapCookie: string; zapHeaders: string; zapVerifyUrl: string;
 }
 
 export function toDraft(settings: AccountSettings): AccountSettingsDraft {
   return { label: settings.label, role: settings.role, target: settings.target,
     proof: { ...settings.proofRule }, zapEnabled: settings.zap.enabled,
-    zapLoginUrl: settings.zap.loginUrl, zapLoginId: settings.zap.loginId };
+    zapLoginUrl: settings.zap.loginUrl, zapLoginId: settings.zap.loginId,
+    // 쿠키·헤더 값은 서버가 되돌려 주지 않으므로 편집창은 빈 값으로 시작한다(모드·검증 URL만 복원).
+    zapAuthMode: settings.zap.authMode ?? "FORM", zapCookie: "", zapHeaders: "", zapVerifyUrl: settings.zap.verifyUrl ?? "" };
 }
 
 export interface AccountSettingsSheetProps {
@@ -84,7 +87,11 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     return {
       basic: draft.label !== original.label || draft.role !== original.role || draft.target !== original.target,
       proof: JSON.stringify(draft.proof) !== JSON.stringify(original.proof),
-      zap: draft.zapEnabled !== original.zapEnabled || draft.zapLoginUrl !== original.zapLoginUrl || draft.zapLoginId !== original.zapLoginId || zapPassword !== (settings.zap.password ?? ""),
+      zap: draft.zapEnabled !== original.zapEnabled || draft.zapAuthMode !== original.zapAuthMode
+        || draft.zapLoginUrl !== original.zapLoginUrl || draft.zapLoginId !== original.zapLoginId
+        || zapPassword !== (settings.zap.password ?? "")
+        || draft.zapCookie.trim() !== "" || draft.zapHeaders.trim() !== ""
+        || draft.zapVerifyUrl !== (settings.zap.verifyUrl ?? ""),
     };
   }, [settings, draft, zapPassword]);
   const dirty = Object.values(changes).some(Boolean);
@@ -92,7 +99,9 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   const targetError = draft ? validateTarget(draft.target) : null;
   const pathError = draft && proofConfigured ? validateProofPath(draft.proof.path) : null;
   const markError = draft && proofConfigured ? validateResponseMark(draft.proof.responseMark) : null;
-  const zapCredentialsMissing = Boolean(draft && changes.zap && draft.zapEnabled && (!draft.zapLoginUrl.trim() || !draft.zapLoginId.trim() || !zapPassword));
+  const zapCredentialsMissing = Boolean(draft && changes.zap && draft.zapEnabled && (draft.zapAuthMode === "INJECT"
+    ? !draft.zapCookie.trim() && !draft.zapHeaders.trim()
+    : !draft.zapLoginUrl.trim() || !draft.zapLoginId.trim() || !zapPassword));
   const blocked = Boolean(targetError || pathError || markError || zapCredentialsMissing);
 
   const requestClose = (nextOpen: boolean) => {
@@ -106,7 +115,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
       let next = settings;
       if (changes.basic) next = await adapter.saveBasicInfo(settings.id, { label: draft.label, role: draft.role, target: draft.target });
       if (changes.proof) next = await adapter.saveProofRule(settings.id, proofConfigured ? draft.proof : null);
-      if (changes.zap) next = await adapter.saveZapLogin(settings.id, { enabled: draft.zapEnabled, loginUrl: draft.zapLoginUrl, loginId: draft.zapLoginId, password: zapPassword || undefined });
+      if (changes.zap) next = await adapter.saveZapLogin(settings.id, { enabled: draft.zapEnabled, authMode: draft.zapAuthMode, loginUrl: draft.zapLoginUrl, loginId: draft.zapLoginId, password: zapPassword || undefined, cookie: draft.zapCookie, headers: draft.zapHeaders, verifyUrl: draft.zapVerifyUrl });
       onSaved?.(next); return next;
     });
   };

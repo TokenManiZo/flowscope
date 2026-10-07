@@ -83,7 +83,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
   const hasRun = Boolean(run && run.status !== "IDLE")
   const readyAccounts = new Set((data?.accounts ?? []).filter((item) => item.status === "READY").map((item) => item.id))
   const availableAccounts = new Set(accounts.map((item) => item.id))
-  const nextAnonymous = anonymous ?? (run && run.status !== "IDLE" ? run.anonymous : true)
+  const nextAnonymous = anonymous ?? (run && run.status !== "IDLE" ? run.anonymous : false)
   const nextSelected = (selected ?? (run && run.status !== "IDLE" ? run.accountIds : []))
     .filter((id) => readyAccounts.has(id) && availableAccounts.has(id))
   const shownAnonymous = canConfigure ? nextAnonymous : (run?.anonymous ?? nextAnonymous)
@@ -217,10 +217,10 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
       <p role="status" className="text-xs text-muted-foreground">{steer.isPending ? "추가 지시 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : ""}</p>
     </form>
   </>
-  const feed = (view: RecordView) => <Card className={view.focused ? "flex min-h-0 flex-1 flex-col gap-0 overflow-hidden py-0" : "gap-0 overflow-hidden py-0"}>
-    <CardHeader className="border-b py-3"><div className="flex items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><div className="flex shrink-0 items-center gap-2"><RecordViewButton view={view} onExpand={() => setFeedOpen(true)} /><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div></div>{view.focused && <p className="text-xs text-muted-foreground">LLM 탐색 · {target} · 실행 모델 {run?.model || "Codex 기본 설정"}</p>}<p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
-    <CardContent className={view.focused ? "flex min-h-0 flex-1 flex-col p-0" : "p-0"}>
-      {feedOpen && <div data-record-list className={view.focused ? "min-h-0 flex-1 overflow-y-auto" : "max-h-[min(24rem,24vh)] overflow-y-auto"} aria-label="LLM 진행 메시지 및 수집 트래픽">
+  const feed = (view: RecordView) => <Card className={`flex flex-col gap-0 overflow-hidden py-0 ${feedOpen ? "min-h-32 flex-1" : "shrink-0"}`}>
+    <CardHeader className="shrink-0 border-b py-3"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><div className="flex shrink-0 items-center gap-2"><RecordViewButton view={view} onExpand={() => setFeedOpen(true)} /><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div></div>{view.focused && <p className="text-xs text-muted-foreground">LLM 탐색 · {target} · 실행 모델 {run?.model || "Codex 기본 설정"}</p>}<p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
+    <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+      {feedOpen && <div data-record-list className="min-h-0 flex-1 overflow-y-auto" aria-label="LLM 진행 메시지 및 수집 트래픽">
         {feedItems.length ? feedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
@@ -232,7 +232,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
           </article>
         }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비·HTTP 요청·기록 번호가 여기에 순서대로 표시됩니다.</p>}
       </div>}
-      <div className={view.focused ? "max-h-[40%] shrink-0 overflow-y-auto" : undefined}>{feedFooter}</div>
+      <div className="max-h-[40%] shrink-0 overflow-y-auto border-t">{feedFooter}</div>
     </CardContent>
   </Card>
 

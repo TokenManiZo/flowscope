@@ -9,8 +9,8 @@ import java.util.function.Consumer;
 
 /**
  * The one browser window FlowScope opens: the operator logs in there, and afterwards the Explorer drives the same
- * window so the operator can watch. The window reaches no Burp listener, so its traffic can never be mistaken for
- * HUMAN collection; FlowScope records it from the browser itself, and only while {@link Session#recording} is on.
+ * window so the operator can watch. FlowScope records its Evidence through CDP, only while
+ * {@link Session#recording} is on; an optional dedicated Burp listener also retains Proxy history.
  */
 interface LoginBrowser {
     Session open(URI loginUrl, Consumer<Exchange> recorder) throws IOException;
@@ -22,7 +22,7 @@ interface LoginBrowser {
     /** One interactive element the Explorer may click or type into. */
     record Element(String ref, String role, String name) {}
 
-    /** What the window shows now. {@code text} is masked before it leaves FlowScope. */
+    /** What the window shows now. */
     record Page(String url, String title, List<Element> elements, String text) {}
 
     interface Session extends AutoCloseable {

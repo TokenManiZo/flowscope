@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import type { ParameterNodeCardView } from "@/features/parameter-map/parameterNodeCard"
 import { pathAfterGroup } from "@/lib/display/pathLines"
 import type { GraphNode, GraphProjection, GraphRouteCandidate } from "./graphProjection"
@@ -75,7 +76,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "resource") {
-    const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? node.owner ?? "UNKNOWN" : "UNKNOWN"
+    const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? identityLabel(node.owner ?? "UNKNOWN") : "UNKNOWN"
     return {
       // 자원 키 앞의 서비스 오리진("http://host:port ")은 카드에서 뺀다. 전체 키는 접근 이름에 남는다.
       kind: "target", badge: "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: `owner: ${owner}`, icon: "box",

@@ -160,7 +160,8 @@ it("switches to a separate resend graph of Request Lab and Repeater sends withou
   const repeater = { ...observed(), eventId: "rep-1", idn: "USER B", op: resendOp, path: "/api/orders/3", resource: "orders:3", sourceDetail: "BURP_REPEATER", phase: "BASELINE", status: 403 } as EventRecord
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [repeater], manualVerifications: [{ eventId: "lab-1", originEvidenceId: "ev-0", operation: cells[0].op, resource: "orders:0", identity: "anon", identityId: "anon", timestamp: 2, status: 401, durationMs: 5 }] })
   render(<RelationshipGraphView />)
-  expect(screen.getByText("재전송 2건은 이 그래프에 없음")).toBeVisible()
+  expect(screen.getByRole("button", { name: "재전송 보기" })).toBeVisible()
+  expect(screen.queryByText(/건은 이 그래프에 없음/)).not.toBeInTheDocument()
   expect(screen.getByTestId("search-canvas").dataset.nodes).not.toContain("resend-operation:")
   const changes = state.changes.mock.calls.length
 
@@ -175,7 +176,7 @@ it("switches to a separate resend graph of Request Lab and Repeater sends withou
   await userEvent.click(screen.getByRole("checkbox", { name: /Repeater/ }))
   expect(screen.getByTestId("search-canvas").dataset.nodes).not.toContain("resend-operation:repeater:")
 
-  await userEvent.click(screen.getByRole("button", { name: "수집 그래프로" }))
+  await userEvent.click(screen.getByRole("button", { name: "수집 그래프" }))
   expect(screen.getByTestId("search-canvas").dataset.nodes).toContain(`target:${service}`)
   expect(state.changes.mock.calls.length).toBe(changes)
 })

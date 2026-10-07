@@ -125,7 +125,7 @@ public final class AuthorizationMatrixAnalyzer {
             String label = account == null ? identityLabel(id) : account.label();
             String kind = account != null ? "REGISTERED"
                     : Fingerprints.ANONYMOUS.equals(id) ? "ANONYMOUS"
-                    : id != null && id.startsWith("unresolved-") ? "UNRESOLVED" : "OBSERVED";
+                    : "OBSERVED";
             return new Identity(id, label, role.label(), kind);
         }).sorted(Comparator.comparingInt((Identity value) -> roleRank(value.role()))
                 .thenComparing(Identity::label)).toList();
@@ -134,9 +134,9 @@ public final class AuthorizationMatrixAnalyzer {
     /** Registered accounts belong to their configured service; observed-only identities belong to services they actually used. */
     private static Map<String, Set<String>> identityServices(Pipeline.Result result, AnalysisConfig config) {
         Map<String, Set<String>> services = new LinkedHashMap<>();
-        config.accounts().forEach((id, account) -> services.put(id, Set.of(account.service())));
+        config.accounts().forEach((id, account) -> services.put(id, new LinkedHashSet<>(Set.of(account.service()))));
         for (RequestRecord record : result.records) {
-            if (record.idn == null || record.service == null || config.account(record.idn).isPresent()) continue;
+            if (record.idn == null || record.service == null) continue;
             services.computeIfAbsent(record.idn, ignored -> new LinkedHashSet<>()).add(record.service);
         }
         return services;
@@ -245,7 +245,7 @@ public final class AuthorizationMatrixAnalyzer {
                                                              Pipeline.Result result, AnalysisConfig config,
                                                              Map<String, RequestRecord> recordsByEvidence,
                                                              AccessRole required) {
-        if ("UNRESOLVED".equals(target.kind()) || actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
+        if (actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
         AccessRole targetRole = config.identityRole(target.id());
         if (targetRole == AccessRole.UNKNOWN || targetRole == AccessRole.ADMIN) return null;
         boolean strongPolicyMismatch = required != AccessRole.UNKNOWN && !targetRole.isKnownAndAtLeast(required);
@@ -278,7 +278,7 @@ public final class AuthorizationMatrixAnalyzer {
     private static TestRecommendation objectRecommendation(Identity target, OperationResource row, Actual actual,
                                                            Pipeline.Result result, AnalysisConfig config,
                                                            Map<String, RequestRecord> recordsByEvidence) {
-        if ("UNRESOLVED".equals(target.kind()) || config.identityRole(target.id()) == AccessRole.ADMIN
+        if (config.identityRole(target.id()) == AccessRole.ADMIN
                 || actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
         // 판정 가능한 O2/O3 소유자 자신은 자기 객체의 교차 테스트 대상이 아니다(D-166·D-167).
         AuthorizationAnalysis.OwnerInfo owner = result.analysis.owners().get(row.resource());
@@ -417,10 +417,9 @@ public final class AuthorizationMatrixAnalyzer {
     private static List<Gate> gates(Identity identity, String operation, List<RequestRecord> records,
                                     Oracle oracle, BaselineComparison baseline) {
         List<Gate> out = new ArrayList<>();
-        boolean unresolved = "UNRESOLVED".equals(identity.kind())
-                || records.stream().anyMatch(record -> record.authState == AuthState.UNRESOLVED);
-        out.add(new Gate("session", "테스트 신원 유효", unresolved ? GateState.FAIL : GateState.PASS,
-                unresolved ? "등록 계정 또는 비로그인 상태로 귀속되지 않은 세션" : "요청이 등록 계정 또는 비로그인 상태로 귀속됨"));
+        boolean attributed = records.stream().allMatch(record -> identity.id().equals(record.selectedIdentity()));
+        out.add(new Gate("session", "테스트 신원 유효", attributed ? GateState.PASS : GateState.FAIL,
+                attributed ? "요청이 선택한 수집 세션으로 귀속됨" : "요청과 선택한 수집 세션이 일치하지 않음"));
 
         out.add(new Gate("baseline", "정상 기준선", baseline.matched() ? GateState.PASS : GateState.UNKNOWN,
                 baseline.basis()));
@@ -486,7 +485,7 @@ public final class AuthorizationMatrixAnalyzer {
         boolean hasTimedPair = false;
         for (RequestRecord target : successfulTargets) {
             for (RequestRecord baseline : baselines) {
-                if (!currentlyAttributed(List.of(target, baseline), config)) continue;
+                if (!currentlyAttributed(List.of(target, baseline))) continue;
                 hasCurrentPair = true;
                 if (target.timestamp <= 0 || baseline.timestamp <= 0) continue;
                 hasTimedPair = true;
@@ -512,13 +511,9 @@ public final class AuthorizationMatrixAnalyzer {
                 + " 기준선은 있으나 30분 이내 대상 ID·응답 구조·정규화 길이 차등이 일치하지 않음");
     }
 
-    private static boolean currentlyAttributed(List<RequestRecord> records, AnalysisConfig config) {
-        return !records.isEmpty() && records.stream().allMatch(record -> {
-            if (record.authState == AuthState.ANONYMOUS) return Fingerprints.ANONYMOUS.equals(record.idn);
-            if (record.authState != AuthState.ACCOUNT_BOUND || record.idn == null) return false;
-            return config.boundAccount(record.service, record.fp)
-                    .map(account -> account.id().equals(record.idn)).orElse(false);
-        });
+    private static boolean currentlyAttributed(List<RequestRecord> records) {
+        return !records.isEmpty() && records.stream()
+                .allMatch(record -> record.selectedIdentity().equals(record.idn));
     }
 
     private static ResponseComparison compareResponses(RequestRecord target, RequestRecord baseline,
@@ -730,7 +725,7 @@ public final class AuthorizationMatrixAnalyzer {
         return out.isEmpty() ? List.of("BOLA") : List.copyOf(out);
     }
 
-    /** 정규화된 경로·쿼리·본문(마스킹 사본)에 직접 객체 참조 이름이 있는지만 본다. 값은 읽지 않는다. */
+    /** 정규화된 경로·쿼리·본문에 직접 객체 참조 이름이 있는지만 본다. 값은 읽지 않는다. */
     private static boolean hasDirectObjectReference(RequestRecord record) {
         if (record == null) return false;
         if (record.resourceReferences != null && !record.resourceReferences.isEmpty()) return true;
@@ -917,7 +912,6 @@ public final class AuthorizationMatrixAnalyzer {
 
     private static String identityLabel(String id) {
         if (Fingerprints.ANONYMOUS.equals(id)) return "ANONYMOUS";
-        if (id != null && id.startsWith("unresolved-")) return "미확정 세션";
         return id == null || id.isBlank() ? "UNKNOWN" : id;
     }
 

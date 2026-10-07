@@ -46,25 +46,37 @@ class NormalizerTest {
     }
 
     @Test
-    void 신원_라벨은_최초관측_순서로_결정적() {
+    void 신원은_선택세션으로_결정적() {
         List<RequestRecord> recs = List.of(
                 new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/a", 200, "AAA"),
                 new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/b", 200, "ADM"),
                 new RequestRecord(Source.SCANNER, "https://t:443", "GET", "/c", 200, "BBB"),
                 new RequestRecord(Source.SCANNER, "https://t:443", "GET", "/d", 200, "AAA")
         );
+        recs.get(0).collectionAccountId = "user-a";
+        recs.get(1).collectionAccountId = "user-b";
+        if (recs.size() > 2) {
+            recs.get(2).collectionAccountId = "user-c";
+            recs.get(3).collectionAccountId = "user-a";
+        }
         Normalizer.assignIdentities(recs);
         assertEquals("user-a", recs.get(0).idn);
         assertEquals("user-b", recs.get(1).idn);
         assertEquals("user-c", recs.get(2).idn);
-        assertEquals("user-a", recs.get(3).idn, "같은 fp 는 같은 신원");
+        assertEquals("user-a", recs.get(3).idn, "같은 선택 세션은 같은 신원");
     }
 
     @Test
-    void 다른_서비스의_같은_subject는_다른_신원이다() {
+    void 다른_서비스의_같은_subject도_선택한_세션을_사용한다() {
         List<RequestRecord> recs = List.of(
                 new RequestRecord(Source.HUMAN, "https://a:443", "GET", "/", 200, "sub:42"),
                 new RequestRecord(Source.HUMAN, "https://b:443", "GET", "/", 200, "sub:42"));
+        recs.get(0).collectionAccountId = "user-a";
+        recs.get(1).collectionAccountId = "user-b";
+        if (recs.size() > 2) {
+            recs.get(2).collectionAccountId = "user-c";
+            recs.get(3).collectionAccountId = "user-a";
+        }
         Normalizer.assignIdentities(recs);
         assertNotEquals(recs.get(0).idn, recs.get(1).idn);
     }

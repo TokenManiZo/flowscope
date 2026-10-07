@@ -96,7 +96,7 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
     return () => observer.disconnect()
   }, [compact, contextCollapsed, contextWidth, hasContext, hasInspector, inspectorCollapsed, inspectorWidth])
 
-  return <section ref={workspaceRef} className={`relative flex min-h-full min-w-0 xl:h-full xl:flex-row xl:overflow-hidden ${compact ? "flex-col" : "h-full flex-row overflow-hidden"}`}>
+  return <section ref={workspaceRef} className={`relative flex min-h-full min-w-0 xl:h-full xl:flex-row xl:overflow-hidden ${compact ? contentOverflow === "hidden" ? "h-full flex-col overflow-hidden" : "flex-col" : "h-full flex-row overflow-hidden"}`}>
     {/* 접으면 40px 띠를 남겨 언제든 다시 열 수 있게 한다(경계의 숨은 버튼만 남으면 다시 여는 법을 찾기 어렵다). */}
     {!compact && hasContext ? !contextCollapsed ? <><RouteContextPanel title={CONTEXT_TITLE} showTitle={contextTitle} className="min-h-0 shrink-0 overflow-y-auto" style={{ width: contextWidth }}>{context}</RouteContextPanel><PaneResizeHandle side="left" label={CONTEXT_TITLE} width={contextWidth} min={CONTEXT_MIN_WIDTH} max={contextMax()} onWidthChange={setContextWidth} onCollapse={() => setContextCollapsed(true)} /></>
       : <div className="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-border/70 py-3">

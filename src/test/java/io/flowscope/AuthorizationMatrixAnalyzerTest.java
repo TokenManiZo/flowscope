@@ -527,6 +527,8 @@ class AuthorizationMatrixAnalyzerTest {
     private static RequestRecord record(String service, Source source, String fingerprint,
                                         String method, String path, int status, String body) {
         RequestRecord record = new RequestRecord(source, service, method, path, status, fingerprint);
+        record.collectionAccountId = fingerprint.equals("tok:foreign") ? "foreign-user"
+                : fingerprint.startsWith("tok:") ? fingerprint.substring(4) : "anon";
         record.body = body;
         record.respText = "HTTP/1.1 " + status + " Test\r\nContent-Type: application/json\r\n\r\n" + body;
         record.responseContentType = "application/json";

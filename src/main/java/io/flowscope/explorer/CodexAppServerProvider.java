@@ -3,7 +3,7 @@ package io.flowscope.explorer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.flowscope.core.Masking;
+import io.flowscope.core.TextLimits;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -471,7 +471,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         }
 
         @Override public void steer(String message) {
-            String safe = Masking.truncate(Masking.maskSecrets(message == null ? "" : message.trim()), 4_000);
+            String safe = TextLimits.truncate(message == null ? "" : message.trim(), 4_000);
             if (safe.isBlank() || threadId.isBlank() || turnId.isBlank() || cancelled.get()) {
                 throw new IllegalStateException("진행 중인 Explorer turn이 없습니다.");
             }
@@ -581,7 +581,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode browserTool() {
             ObjectNode tool = JSON.createObjectNode().put("type", "function")
                     .put("name", "flowscope_browser")
-                    .put("description", "Drive the browser window the operator logged in to: the window performs the real requests, so JavaScript runs and a single-page app's own XHRs are observed. Returns the page's URL, title, clickable elements, and masked text. Use it to discover what the application actually does; use flowscope_http_request to verify authorization on what it found.");
+                    .put("description", "Drive the browser window the operator logged in to: the window performs the real requests, so JavaScript runs and a single-page app's own XHRs are observed. Returns the page's URL, title, clickable elements, and visible text. Use it to discover what the application actually does; use flowscope_http_request to verify authorization on what it found.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
             properties.putObject("account").put("type", "string")
@@ -600,7 +600,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private ObjectNode artifactListTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_list",
-                    "List masked response artifacts retained for the active Explorer run, including Evidence ID, URL, media type, size, completeness, and SHA-256.");
+                    "List response artifacts retained for the active Explorer run, including Evidence ID, URL, media type, size, completeness, and SHA-256.");
             tool.putObject("inputSchema").put("type", "object").put("additionalProperties", false)
                     .putObject("properties");
             return tool;
@@ -608,7 +608,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private ObjectNode artifactSearchTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_search",
-                    "Search active-run masked response artifacts without copying the full artifact into model context. Use repeated literal searches for routes, API clients, source maps, chunks, and parameter names.");
+                    "Search active-run response artifacts without copying the full artifact into model context. Use repeated literal searches for routes, API clients, source maps, chunks, and parameter names.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
                     .put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
@@ -623,7 +623,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private ObjectNode artifactReadTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_read",
-                    "Read a bounded character range from one active-run masked artifact. Continue with char_offset until end_of_artifact when exact surrounding source is required.");
+                    "Read a bounded character range from one active-run artifact. Continue with char_offset until end_of_artifact when exact surrounding source is required.");
             ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
                     .put("additionalProperties", false);
             ObjectNode properties = schema.putObject("properties");
@@ -808,7 +808,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     }
 
     private static String safe(String value) {
-        return Masking.truncate(Masking.maskSecrets(value == null ? "" : value), DETAIL_LIMIT);
+        return TextLimits.truncate(value == null ? "" : value, DETAIL_LIMIT);
     }
 
     static String resolveExecutable() {

@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.Set;
 
-/** Versioned, masked FlowScope session file. Model-provider credentials are never part of this schema. */
+/** Versioned FlowScope session file. Model-provider credentials are never part of this schema. */
 public final class ProjectStore {
     /** A diagnostic workspace's user-visible identity. Secrets are never part of this metadata. */
     public record ProjectContext(String name, List<String> scope, Instant createdAt) {
@@ -73,7 +73,7 @@ public final class ProjectStore {
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
-    /** Large masked discovery artifacts may be retained up to the Explorer response limit. */
+    /** Large discovery artifacts may be retained up to the Explorer response limit. */
     private static final int MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
     private final ObjectMapper json = new ObjectMapper();
     private final long maxRestoredPayloadBytes;
@@ -436,7 +436,7 @@ public final class ProjectStore {
                 required(value, "path"), enumValue(RunExecutionLedger.Outcome.class, required(value, "outcome")),
                 value.path("status").asInt(-1), nullable(value, "evidence_id"),
                 Instant.parse(required(value, "attempted_at")), value.path("duration_ms").asLong(-1),
-                masked(value, "origin_evidence_id"));
+                boundedText(value, "origin_evidence_id"));
     }
 
     private ObjectNode writeCompletedRun(RunContextRegistry.CompletedRun run) {
@@ -497,24 +497,24 @@ public final class ProjectStore {
             entry.put("run_id", item.runId());
             entry.put("adapter", item.adapter());
             entry.put("applicability", item.applicability().name());
-            entry.put("reason", Masking.maskSecrets(item.reason()));
+            entry.put("reason", item.reason());
         });
         ArrayNode declaredParameters = out.putArray("declared_parameters");
         candidate.declaredParameters().forEach(item -> {
             ObjectNode entry = declaredParameters.addObject();
             entry.put("location", item.location().name());
-            entry.put("field_path", Masking.maskSecrets(item.fieldPath()));
-            entry.put("display_name", Masking.maskSecrets(item.displayName()));
+            entry.put("field_path", item.fieldPath());
+            entry.put("display_name", item.displayName());
             entry.put("requirement", item.requirement().name());
             entry.put("evidence_id", item.evidenceId());
             entry.put("source", item.source().name());
             entry.put("run_id", item.runId());
             entry.put("adapter", item.adapter());
-            entry.put("reason", Masking.maskSecrets(item.reason()));
+            entry.put("reason", item.reason());
             entry.put("coordinate_version", item.coordinateVersion().name());
         });
         out.put("applicability", candidate.applicability().name());
-        out.put("review_reason", Masking.maskSecrets(candidate.reviewReason()));
+        out.put("review_reason", candidate.reviewReason());
         return out;
     }
 
@@ -527,7 +527,7 @@ public final class ProjectStore {
                 required(item, "evidence_id"), enumValue(Source.class, optional(item, "source", "UNKNOWN")),
                 optional(item, "run_id", "legacy-project"), optional(item, "adapter", "legacy-project"),
                 enumValue(RouteCandidate.Applicability.class, optional(item, "applicability", "REVIEW")),
-                masked(item, "reason"))));
+                boundedText(item, "reason"))));
         if (provenance.isEmpty()) {
             for (String evidence : stringList(value, "provenance_evidence_ids")) {
                 provenance.add(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.LEGACY_UNMAPPED,
@@ -539,12 +539,12 @@ public final class ProjectStore {
         if (storedParameters.isArray()) storedParameters.forEach(item -> declaredParameters.add(
                 new RouteCandidate.DeclaredParameter(
                         enumValue(SurfaceAnalysis.ParameterLocation.class, required(item, "location")),
-                        masked(item, "field_path"), masked(item, "display_name"),
+                        boundedText(item, "field_path"), boundedText(item, "display_name"),
                         enumValue(SurfaceAnalysis.Requirement.class, optional(item, "requirement", "UNKNOWN")),
                         required(item, "evidence_id"),
                         enumValue(Source.class, optional(item, "source", "UNKNOWN")),
                         optional(item, "run_id", "legacy-project"),
-                        optional(item, "adapter", "legacy-project"), masked(item, "reason"),
+                        optional(item, "adapter", "legacy-project"), boundedText(item, "reason"),
                         enumValue(io.flowscope.core.parameter.ParameterCoordinates.CoordinateVersion.class,
                                 optional(item, "coordinate_version", "LEGACY_V1")))));
         return new RouteCandidate(required(value, "service"), required(value, "method"),
@@ -552,7 +552,7 @@ public final class ProjectStore {
                 value.path("concrete_paths_truncated").asBoolean(false),
                 value.path("observed").asBoolean(false), provenance,
                 enumValue(RouteCandidate.Applicability.class, required(value, "applicability")),
-                masked(value, "review_reason"), declaredParameters);
+                boundedText(value, "review_reason"), declaredParameters);
     }
 
     private ObjectNode writeRecord(RequestRecord r, ObjectNode payloads) {
@@ -576,6 +576,7 @@ public final class ProjectStore {
         out.set("classification_reasons", json.valueToTree(r.trafficClassification.reasons()));
         put(out, "run_id", r.runId);
         put(out, "lane_account_id", r.laneAccountId);
+        put(out, "collection_account_id", r.collectionAccountId);
         put(out, "supporting_page_url", r.supportingPageUrl);
         put(out, "replay_basis_identity", r.replayBasisIdentity);
         put(out, "replay_basis_evidence_id", r.replayBasisEvidenceId);
@@ -614,10 +615,9 @@ public final class ProjectStore {
         r.executionTrust = enumValue(ExecutionTrust.class, optional(value, "execution_trust", "UNKNOWN"));
         int listenerPort = value.path("proxy_listener_port").asInt(-1);
         r.proxyListenerPort = listenerPort > 0 && listenerPort <= 65535 ? listenerPort : -1;
-        r.authState = enumValue(AuthState.class, optional(value, "auth_state", "UNRESOLVED"));
         List<String> reasons = new ArrayList<>();
         JsonNode reasonNodes = value.path("classification_reasons");
-        if (reasonNodes.isArray()) reasonNodes.forEach(reason -> reasons.add(Masking.maskSecrets(reason.asText())));
+        if (reasonNodes.isArray()) reasonNodes.forEach(reason -> reasons.add(reason.asText()));
         r.trafficClassification = new TrafficClassification(
                 enumValue(TrafficClassification.TrafficClass.class,
                         optional(value, "traffic_class", "UNKNOWN")),
@@ -626,36 +626,38 @@ public final class ProjectStore {
                 reasons, value.path("traffic_user_override").asBoolean(false));
         r.runId = optional(value, "run_id", "project-import");
         r.laneAccountId = nullable(value, "lane_account_id");
+        r.collectionAccountId = nullable(value, "collection_account_id");
+        r.authState = Fingerprints.ANONYMOUS.equals(r.selectedIdentity())
+                ? AuthState.ANONYMOUS : AuthState.ACCOUNT_BOUND;
         r.supportingPageUrl = nullable(value, "supporting_page_url");
         r.replayBasisIdentity = nullable(value, "replay_basis_identity");
         r.replayBasisEvidenceId = nullable(value, "replay_basis_evidence_id");
         r.evidenceId = nullable(value, "evidence_id");
-        r.originEvidenceId = masked(value, "origin_evidence_id");
+        r.originEvidenceId = boundedText(value, "origin_evidence_id");
         r.durationMillis = Math.max(0, value.path("duration_millis").asLong());
         r.contentDigest = nullable(value, "content_digest");
-        r.query = masked(value, "query");
-        r.reqBody = masked(value, "request_body");
-        r.requestContentType = masked(value, "request_content_type");
-        r.responseContentType = masked(value, "response_content_type");
-        r.secFetchDest = masked(value, "sec_fetch_dest");
-        r.secFetchMode = masked(value, "sec_fetch_mode");
-        r.accessControlRequestMethod = masked(value, "access_control_request_method");
-        r.reqText = maskedHeaders(value, "request");
+        r.query = boundedText(value, "query");
+        r.reqBody = boundedText(value, "request_body");
+        r.requestContentType = boundedText(value, "request_content_type");
+        r.responseContentType = boundedText(value, "response_content_type");
+        r.secFetchDest = boundedText(value, "sec_fetch_dest");
+        r.secFetchMode = boundedText(value, "sec_fetch_mode");
+        r.accessControlRequestMethod = boundedText(value, "access_control_request_method");
+        r.reqText = boundedText(value, "request");
         r.requestPayload = readPayload(value.path("request_payload"), payloads,
                 restoredPayloads, restoredPayloadBytes);
         r.timestamp = value.path("timestamp").asLong();
-        r.body = masked(value, "response_body");
-        r.respText = maskedHeaders(value, "response");
+        r.body = boundedText(value, "response_body");
+        r.respText = boundedText(value, "response");
         r.responsePayload = readPayload(value.path("response_payload"), payloads,
                 restoredPayloads, restoredPayloadBytes);
-        r.location = masked(value, "location");
+        r.location = boundedText(value, "location");
         r.hasResponse = value.path("has_response").asBoolean(false);
         return r;
     }
 
-    private void writePayload(ObjectNode record, String field, StoredPayload stored, ObjectNode payloads) {
-        if (stored == null) { record.putNull(field); return; }
-        StoredPayload payload = diskSafe(stored);
+    private void writePayload(ObjectNode record, String field, StoredPayload payload, ObjectNode payloads) {
+        if (payload == null) { record.putNull(field); return; }
         ObjectNode reference = record.putObject(field);
         reference.put("digest", payload.digest());
         reference.put("original_bytes", payload.originalBytes());
@@ -663,24 +665,6 @@ public final class ProjectStore {
         if (payload.retained() && !payloads.has(payload.digest())) {
             payloads.put(payload.digest(), payload.gzipBase64());
         }
-    }
-
-    /**
-     * A retained payload must already be a masking fixed point. If it is not (a capture-time masking gap), one record
-     * must not make the whole project unsavable: store the re-masked text, which is never less masked, or only the
-     * metadata when masking does not settle. Either way no unmasked text reaches the disk.
-     */
-    static StoredPayload diskSafe(StoredPayload payload) {
-        if (!payload.retained()) return payload;
-        String text = payload.text();
-        for (int pass = 0; pass < 3; pass++) {
-            String masked = Masking.maskHeaders(text);
-            if (masked.equals(text)) {
-                return pass == 0 ? payload : StoredPayload.capture(text, "text/plain", Integer.MAX_VALUE);
-            }
-            text = masked;
-        }
-        return payload.metadataOnly(StoredPayload.Retention.CAPACITY_METADATA_ONLY);
     }
 
     private StoredPayload readPayload(JsonNode reference, JsonNode payloads,
@@ -794,8 +778,8 @@ public final class ProjectStore {
         out.put("id", value.id());
         out.put("type", value.type());
         out.put("verdict", value.verdict());
-        out.put("title", Masking.maskSecrets(value.title()));
-        out.put("reason", Masking.maskSecrets(value.reason()));
+        out.put("title", value.title());
+        out.put("reason", value.reason());
         out.set("evidence_ids", json.valueToTree(value.evidenceIds()));
         out.put("created_at", value.createdAt().toString());
         return out;
@@ -817,7 +801,7 @@ public final class ProjectStore {
         ObjectNode out = json.createObjectNode();
         out.put("candidate_id", value.candidateId());
         out.put("verdict", value.verdict().name());
-        out.put("reason", Masking.maskSecrets(value.reason()));
+        out.put("reason", value.reason());
         out.set("original_evidence_ids", json.valueToTree(value.originalEvidenceIds()));
         out.set("validation_evidence_ids", json.valueToTree(value.validationEvidenceIds()));
         out.set("control_evidence_ids", json.valueToTree(value.controlEvidenceIds()));
@@ -831,10 +815,10 @@ public final class ProjectStore {
         value.path("evidence_ids").forEach(id -> evidence.add(id.asText()));
         Map<String, String> policy = new LinkedHashMap<>();
         value.path("policy_context").fields().forEachRemaining(entry ->
-                policy.put(Masking.maskSecrets(entry.getKey()), Masking.maskSecrets(entry.getValue().asText())));
+                policy.put(entry.getKey(), entry.getValue().asText()));
         return new ReviewDecision(required(value, "item_id"),
                 enumValue(ReviewDecision.Status.class, required(value, "status")),
-                masked(value, "note"), List.copyOf(evidence),
+                boundedText(value, "note"), List.copyOf(evidence),
                 Instant.parse(required(value, "decided_at")), policy,
                 // 수동 검증 연결 이전에 저장한 판정에는 이 필드가 없다.
                 value.has("manual_validation_evidence_ids") ? stringList(value, "manual_validation_evidence_ids") : List.of());
@@ -848,14 +832,14 @@ public final class ProjectStore {
             throw new IllegalArgumentException("invalid assessment verdict: " + verdict);
         }
         return new LegacyAssessment(required(value, "id"), required(value, "type"),
-                verdict, masked(value, "title"), masked(value, "reason"),
+                verdict, boundedText(value, "title"), boundedText(value, "reason"),
                 List.copyOf(evidence), Instant.parse(required(value, "created_at")));
     }
 
     private ValidationDecision readValidation(JsonNode value) {
         return new ValidationDecision(required(value, "candidate_id"),
                 enumValue(ValidationDecision.FinalVerdict.class, required(value, "verdict")),
-                masked(value, "reason"), stringList(value, "original_evidence_ids"),
+                boundedText(value, "reason"), stringList(value, "original_evidence_ids"),
                 stringList(value, "validation_evidence_ids"), stringList(value, "control_evidence_ids"),
                 optional(value, "run_id", ""), Instant.parse(required(value, "decided_at")));
     }
@@ -875,24 +859,18 @@ public final class ProjectStore {
 
     private static void put(ObjectNode node, String field, String value) {
         if (value == null) node.putNull(field);
-        else node.put(field, Masking.truncate(Masking.maskSecrets(value), MAX_TEXT));
+        else node.put(field, TextLimits.truncate(value, MAX_TEXT));
     }
 
     private static void putHeaders(ObjectNode node, String field, String value) {
         if (value == null) node.putNull(field);
-        else node.put(field, Masking.truncate(Masking.maskHeaders(value), MAX_TEXT));
+        else node.put(field, TextLimits.truncate(value, MAX_TEXT));
     }
 
-    private static String masked(JsonNode node, String field) {
+    private static String boundedText(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null || value.isNull() ? null
-                : Masking.truncate(Masking.maskSecrets(value.asText()), MAX_TEXT);
-    }
-
-    private static String maskedHeaders(JsonNode node, String field) {
-        JsonNode value = node.get(field);
-        return value == null || value.isNull() ? null
-                : Masking.truncate(Masking.maskHeaders(value.asText()), MAX_TEXT);
+                : TextLimits.truncate(value.asText(), MAX_TEXT);
     }
 
     private static String required(JsonNode node, String field) {

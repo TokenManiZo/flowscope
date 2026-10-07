@@ -1,3 +1,4 @@
+import { HelpHint } from "@/components/HelpHint"
 import { useRef, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -59,13 +60,13 @@ export function SourcePassLayout({
   const root = useRef<HTMLElement>(null)
   const view = useRecordView(root, onRecordFocusChange)
   return (
-    <section ref={root} onKeyDown={view.onKeyDown} className={view.focused ? "flex h-full min-h-0 flex-col gap-3" : "grid gap-2"} aria-label={`${label} 실행 영역`}>
+    <section ref={root} onKeyDown={view.onKeyDown} className="flex h-full min-h-0 flex-col gap-3" aria-label={`${label} 실행 영역`}>
       {notices}
 
-      <div hidden={view.focused} className={view.focused ? "hidden" : aside ? "grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "grid gap-4"}>
+      <div hidden={view.focused} className={view.focused ? "hidden" : aside ? "grid shrink-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "grid shrink-0 gap-4"}>
         <Card className="gap-0 py-0">
           <CardContent className="grid gap-4 p-5">
-            <div className="flex items-start justify-between gap-6"><div><h2 className="text-base font-semibold">{title}</h2>{description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}</div>{titleControl}</div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-1"><h2 className="text-base font-semibold">{title}</h2>{description && <HelpHint label={title}>{description}</HelpHint>}</div>{titleControl}</div>
             {statusTiles.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${label} 실행 상태`} role="group">
               {statusTiles.map((tile) => (
                 <div key={tile.label} className="rounded-lg bg-muted px-3 py-2.5">
@@ -80,7 +81,7 @@ export function SourcePassLayout({
         {aside}
       </div>
 
-      {(typeof feedContent === "function" ? feedContent(view) : feedContent) ?? <Card className="flex min-h-[20rem] flex-col overflow-hidden">
+      {(typeof feedContent === "function" ? feedContent(view) : feedContent) ?? <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <CardHeader className="border-b">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -93,7 +94,7 @@ export function SourcePassLayout({
         <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-0">
           {/* The card had a floor and no ceiling, so overflow-y-auto never fired and the card grew without end,
               pushing the footer off screen. The cap is what makes this list actually scroll. */}
-          <div className="max-h-[34rem] flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
             {feedItems.length ? feedItems.map((item) => (
               /* Three real columns: the status used to share a wrapping flex row with the title, so it landed in a
                  different place on every line. */

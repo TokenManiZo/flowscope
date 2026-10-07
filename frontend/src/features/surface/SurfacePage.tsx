@@ -1,3 +1,4 @@
+import { identityLabel } from "@/lib/display/identityLabel"
 import { ApiActions, DeleteTrafficButton } from "@/features/api-management/ApiActions"
 import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { HttpStatusBadge, MethodBadge, SourceMarks } from "@/components/TrafficBadges"
@@ -249,7 +250,7 @@ export function SurfacePage() {
         const source = sourceLabel([observation.source])
         const ordinal = evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, observation.evidenceId)
         const accountId = event?.laneAccountId?.trim() || event?.idn || observation.identity
-        const account = snapshot.data?.accounts.find((item) => item.id === accountId)?.label ?? accountId
+        const account = identityLabel(accountId, snapshot.data?.accounts.find((item) => item.id === accountId)?.label ?? accountId)
         return <Button type="button" variant={selectedEvidenceId === observation.evidenceId ? "secondary" : "outline"} aria-pressed={selectedEvidenceId === observation.evidenceId} aria-label={`관측 기록 상세 · ${ordinal} · ${source} · ${account} · HTTP ${observation.status}`} className="h-auto w-full justify-start whitespace-normal border-border/70 px-3 py-2.5 text-left" disabled={!event || snapshot.isError} key={observation.evidenceId} onClick={() => selectEvidence(observation.evidenceId)}><span className="grid min-w-0 flex-1 gap-1.5"><span className="flex flex-wrap items-center justify-between gap-2"><span className="flex min-w-0 flex-wrap items-center gap-2 text-xs"><span className="font-mono text-muted-foreground">{ordinal}</span><SourceMarks sources={[observation.source]} /><span className="break-all">{account}</span></span><HttpStatusBadge status={observation.status} /></span><span className="break-all font-mono text-[11px] text-muted-foreground">{event?.path ?? selected.key.pathTemplate}</span></span><ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /></Button>
       })}</div>}
       {selectedEvent && <section className="border-t pt-4" aria-label="선택 관측 기록 작업"><OperationDetail showMetadata={false} compactPolicy evidenceLabel={evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, selectedEvent.eventId)} event={selectedEvent} snapshot={snapshot.data!} onOpenRequestLab={() => setRequestLabOpen(true)} disabled={snapshot.isError} detailContent={<>

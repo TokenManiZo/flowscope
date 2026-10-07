@@ -12,6 +12,6 @@ it("keeps sources, search and repeat inline and tucks the ten traffic classes in
   expect(screen.queryByRole("checkbox", { name: "정적 자원" })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "분류 5/10" }))
   for (const label of ["인증·세션 준비", "반복 백그라운드", "탐색 메타데이터", "CORS 사전 요청"]) expect(screen.getByRole("checkbox", { name: label })).toBeVisible()
-  await userEvent.type(screen.getByRole("searchbox", { name: "경로·신원 검색" }), "a")
+  await userEvent.type(screen.getByRole("searchbox", { name: "번호·경로·계정 검색" }), "a")
   expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ query: "a" }))
 })

@@ -1,3 +1,5 @@
+import { identityLabel } from "@/lib/display/identityLabel"
+import { graphAccountLabel } from "./graphAccounts"
 import { apiConfirmed, apiTint } from "@/features/api-management/apiAppearance"
 import { Fragment, useMemo, useState, type KeyboardEvent } from "react"
 import { ChevronDown, ChevronRight, Search } from "lucide-react"
@@ -5,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import type { Cell, Snapshot } from "@/lib/api/types"
 import { apiRowStats, groupApiRows, objectRows, shortPath, type ApiRowStats } from "./graphApiRows"
-import { HIGHLIGHT_SOURCE_COLOR } from "./graphHighlight"
+import { EMPTY_HIGHLIGHT, highlightRecords, HIGHLIGHT_SOURCE_COLOR, type GraphHighlight } from "./graphHighlight"
 import type { HierarchyNode } from "./graphHierarchy"
 import { MethodBadge as Method, StatusBadge } from "./httpBadges"
 import { operationParts } from "./relationshipNodeCard"
@@ -31,7 +33,7 @@ function StatCells({ stats, rowKey, openObjects, onObject }: { stats: ApiRowStat
   </>
 }
 
-type TableSnapshot = Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix">
+type TableSnapshot = Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix"> & Partial<Pick<Snapshot, "accounts">>
 
 function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: { operations: readonly string[]; type: string; snapshot: TableSnapshot; selectedId: string | null; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
   const [all, setAll] = useState(false)
@@ -44,8 +46,8 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
       <tbody>
         {shown.map(row => <tr key={row.resource} tabIndex={0} aria-label={row.label} aria-selected={selectedId === `resource:${row.resource}`} onClick={() => onSelectObject(row.resource, row.cells)} onKeyDown={activate(() => onSelectObject(row.resource, row.cells))} className={cn("h-10 cursor-pointer border-b border-border/70 last:border-0 hover:bg-muted/40", selectedId === `resource:${row.resource}` && "bg-sky-500/10")}>
           <td className="truncate px-2 font-mono text-sm" title={row.resource}>{row.label}</td>
-          <td className="truncate px-2">{row.owner ?? <span className="text-muted-foreground/70">미확정</span>}</td>
-          <td className="px-2"><div className="flex flex-wrap gap-x-3 gap-y-1">{row.identities.map(identity => <span key={identity.name} className="inline-flex items-center gap-1 whitespace-nowrap">{identity.name}{identity.codes.map(code => <StatusBadge key={code} code={code} />)}{identity.suspicious && <span className="rounded border border-red-500/50 bg-red-500/15 px-1 text-[11px] font-semibold text-red-600 dark:text-red-300">IDOR 후보</span>}</span>)}</div></td>
+          <td className="truncate px-2">{row.owner ? identityLabel(row.owner) : <span className="text-muted-foreground/70">미확정</span>}</td>
+          <td className="px-2"><div className="flex flex-wrap gap-x-3 gap-y-1">{row.identities.map(identity => <span key={identity.name} className="inline-flex items-center gap-1 whitespace-nowrap">{snapshot.accounts ? graphAccountLabel({ accounts: snapshot.accounts }, identity.name) : identityLabel(identity.name)}{identity.codes.map(code => <StatusBadge key={code} code={code} />)}{identity.suspicious && <span className="rounded border border-red-500/50 bg-red-500/15 px-1 text-[11px] font-semibold text-red-600 dark:text-red-300">IDOR 후보</span>}</span>)}</div></td>
         </tr>)}
         {!all && rows.length > OBJECT_PREVIEW && <tr tabIndex={0} className="h-10 cursor-pointer text-muted-foreground hover:bg-muted/40" onClick={() => setAll(true)} onKeyDown={activate(() => setAll(true))}><td colSpan={3} className="px-2 font-mono">… {rows.length - OBJECT_PREVIEW}개 더</td></tr>}
       </tbody>
@@ -57,7 +59,8 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
  * 그룹 화면의 API 목록 표. 메서드 + 경로 형식이 같은 API는 한 줄로 묶어 접어 두고, 펼치면 실제 경로가 들여 써져 나온다.
  * 줄을 누르면 화면을 옮기지 않고 그 API를 선택한다(상세는 오른쪽 패널). 객체 칩은 그 줄 아래에 객체 목록을 펼친다.
  */
-export function ApiListTable({ operations, snapshot, selectedId, revealNodeId, searchMatches, onRevealDismiss, onSelectApi, onSelectObject }: { operations: readonly HierarchyNode[]; snapshot: TableSnapshot; selectedId: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; onRevealDismiss?(): void; onSelectApi(node: HierarchyNode): void; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
+export function ApiListTable({ operations, snapshot: originalSnapshot, filters = EMPTY_HIGHLIGHT, selectedId, revealNodeId, searchMatches, onRevealDismiss, onSelectApi, onSelectObject }: { operations: readonly HierarchyNode[]; snapshot: TableSnapshot; filters?: GraphHighlight; selectedId: string | null; revealNodeId?: string; searchMatches?: ReadonlyMap<string, "direct" | "member">; onRevealDismiss?(): void; onSelectApi(node: HierarchyNode): void; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
+  const snapshot = useMemo(() => highlightRecords(originalSnapshot, filters), [originalSnapshot, filters])
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState<readonly string[]>([])
   const [showAll, setShowAll] = useState<readonly string[]>([])

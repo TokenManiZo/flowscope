@@ -32,6 +32,8 @@ class DataFlowAnalyzerTest {
     void 다른_신원은_같은_ID여도_연결하지_않는다() {
         RequestRecord a = rec("POST", "/api/orders", 1_000, "{\"orderId\":\"abc-101\"}");
         RequestRecord b = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/api/orders/abc-101", 200, "B");
+        b.collectionAccountId = "user-b";
+        a.collectionAccountId = "user-a";
         b.query = "orderId=abc-101";
         b.timestamp = 2_000;
         b.hasResponse = true;
