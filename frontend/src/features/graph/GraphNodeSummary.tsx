@@ -90,14 +90,14 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
 const verdicts = new Set<string>(severity)
 
 /** children은 통계 상자 바로 아래에 둔다(예: 객체 소유자 지정). */
-export function GraphNodeSummary({ summary, hint, children }: { summary: Summary; hint?: string; children?: ReactNode }) {
+export function GraphNodeSummary({ summary, hint, children, labelIdentity = identityLabel }: { summary: Summary; hint?: string; children?: ReactNode; labelIdentity?: (identity: string) => string }) {
   const list = <ul className={summary.objectOwners ? "grid min-w-0 gap-2" : "grid"}>{summary.list.map(([label, value]) => {
       if (summary.objectOwners) return <li key={label} className="min-w-0 rounded-md border border-border/70 bg-muted/20 p-3">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 break-all text-xs font-medium text-muted-foreground">{label.split(":")[0]}</span><span className="rounded-md bg-muted px-2 py-1 text-xs"><span className="text-muted-foreground">소유자 </span>{value === "소유자 확인 필요" ? "미확정" : value}</span></div>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="min-w-0 break-all text-xs font-medium text-muted-foreground">{label.split(":")[0]}</span><span className="rounded-md bg-muted px-2 py-1 text-xs"><span className="text-muted-foreground">소유자 </span>{value === "소유자 확인 필요" ? "미확정" : labelIdentity(value)}</span></div>
         <span className="block break-all font-mono text-xs leading-5 select-text" title={label}>{label}</span>
       </li>
       const tone = verdicts.has(value) ? matrixVerdictTone(value as Verdict) : null
-      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 flex-1 truncate font-mono text-sm" title={identityLabel(label)}>{identityLabel(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
+      return <li key={label} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-t-0"><span className="min-w-0 flex-1 truncate font-mono text-sm" title={labelIdentity(label)}>{labelIdentity(label)}</span>{tone ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${tone.className}`}>{tone.label}</span> : <span className="shrink-0 text-sm text-muted-foreground">{value}</span>}</li>
     })}</ul>
   return <section aria-label="노드 요약" className="mb-4 grid gap-3 border-b pb-4 text-sm">
     <dl className="grid grid-cols-3 gap-2">{summary.stats.map(([label, value]) => <div key={label} className="rounded-md border border-border/70 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-base font-semibold tabular-nums">{value}</dd></div>)}</dl>

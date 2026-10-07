@@ -66,6 +66,23 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void snapshotUsesExplicitRunCardWithoutChangingCookieIdentity() throws Exception {
+        state.record.runId = "selected-run";
+        state.record.phase = RunPhase.EXPLORATION;
+        state.rebuild();
+        state.contexts.activateHuman(new RunContextRegistry.Context(SourceDetail.BROWSER,
+                Orchestrator.HUMAN, ToolKind.BROWSER, RunPhase.EXPLORATION, "selected-run", null));
+        start();
+        var event = json(get("/api/snapshot", token, origin())).path("events").get(0);
+        assertEquals("anon", event.path("collectionAccountId").asText());
+        assertTrue(event.path("idn").asText().startsWith("unresolved-"));
+        assertTrue(event.path("fp").asText().startsWith("sess:"));
+        assertNull(state.record.collectionAccountId, "snapshot fallback must not mutate stored evidence");
+        state.contexts.abort(Source.HUMAN, "selected-run");
+        var historical = json(get("/api/snapshot", token, origin())).path("events").get(0);
+        assertFalse(historical.has("collectionAccountId"), "no card inference without a matching run");
+    }
+
     @Test void apiDeletionPreviewUsesTheAuthenticatedLocalPostBoundary() throws Exception {
         start();
         var change = new io.flowscope.core.ApiManagement.Request("preview-delete", state.datasetRevision(), state.revision(), List.of(io.flowscope.core.ApiManagement.operation(state.record)), List.of(), "", null);
@@ -402,6 +419,37 @@ final class FlowScopeWebServerTest {
                 "action=delete&id=" + encode(accountId), token);
         assertEquals(200, deleted.statusCode(), deleted.body());
         assertEquals(0, json(get("/api/scanner-run", token, origin())).at("/accounts").size());
+    }
+
+    @Test
+    void savesAnInjectedZapAccountWithoutLoginUrlAndKeepsCookieHeaderMemoryOnly() throws Exception {
+        start();
+        String accountId = json(post("/api/account-save",
+                "label=USER+B&role=User&target=" + encode(state.record.service), token)).path("id").asText();
+
+        HttpResponse<String> saved = post("/api/zap-accounts",
+                "action=save&id=" + encode(accountId) + "&label=USER+B&role=USER&authMode=INJECT&service="
+                        + encode(state.record.service)
+                        + "&cookie=" + encode("SESSION=inject-abc; csrf=z9")
+                        + "&headers=" + encode("Authorization: Bearer inject-token-xyz")
+                        + "&verifyUrl=" + encode(state.record.service + "/api/me"), token);
+
+        assertEquals(200, saved.statusCode(), saved.body());
+        // 저장 응답·스캐너 메타데이터에 주입 비밀값이 새어 나오면 안 된다.
+        assertFalse(saved.body().contains("inject-abc"));
+        assertFalse(saved.body().contains("inject-token-xyz"));
+        assertEquals("SESSION=inject-abc; csrf=z9", state.lastZapAccountInput.cookie());
+        assertEquals("Authorization: Bearer inject-token-xyz", state.lastZapAccountInput.headers());
+
+        JsonNode settings = json(get("/api/account-settings?account=" + encode(accountId), token, origin()));
+        assertEquals("INJECT", settings.at("/zap/authMode").asText());
+        assertTrue(settings.at("/zap/hasCookie").asBoolean());
+        assertTrue(settings.at("/zap/hasHeaders").asBoolean());
+        assertEquals(state.record.service + "/api/me", settings.at("/zap/verifyUrl").asText());
+        assertEquals("", settings.at("/zap/loginUrl").asText());
+        assertFalse(settings.at("/zap/hasPassword").asBoolean());
+        assertFalse(settings.toString().contains("inject-abc"));
+        assertFalse(settings.toString().contains("inject-token-xyz"));
     }
 
     @Test

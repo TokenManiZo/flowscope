@@ -72,6 +72,16 @@ final class FakeZap {
                 "{\"scanners\":[{\"id\":\"10020\",\"enabled\":\"true\"}]}"));
         server.createContext("/JSON/alert/view/numberOfAlerts/", exchange -> zapReply(exchange,
                 "{\"numberOfAlerts\":\"" + alertCount + "\"}"));
+        // 주입 인증: 쿠키 세션 심기(httpSessions)와 세션 제거. 모두 OK로 응답한다.
+        for (String action : new String[] {"addSessionToken", "createEmptySession", "setSessionTokenValue",
+                "setActiveSession", "removeSession", "removeSessionToken"}) {
+            server.createContext("/JSON/httpSessions/action/" + action + "/", exchange -> zapReply(exchange,
+                    "{\"Result\":\"OK\"}"));
+        }
+        // 주입 인증값 검증 프로브: 기본은 로그인된 200 응답. 테스트가 context를 바꿔 끼워 401·리다이렉트를 모사한다.
+        server.createContext("/JSON/core/action/sendRequest/", exchange -> zapReply(exchange,
+                "{\"sendRequest\":[{\"responseHeader\":\"HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\n\","
+                        + "\"responseBody\":\"{\\\"user\\\":\\\"ok\\\"}\"}]}"));
         registerTraditionalSpider(server);
         registerClientMapReset(server);
     }

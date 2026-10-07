@@ -16,17 +16,29 @@ import java.util.function.Function;
 public final class ZapAccountVault implements AutoCloseable {
     public enum AuthStatus { UNVERIFIED, AUTHENTICATING, VERIFIED_BY_ZAP, FAILED }
 
+    /** FORM: ZAP이 로그인 URL에 ID/PW를 넣는 폼 로그인. INJECT: 사용자가 직접 로그인 후 얻은 쿠키·헤더를 주입. */
+    public enum AuthMode { FORM, INJECT }
+
     public record Input(String id, String label, String role, String service, String loginUrl,
-                        String username, String password, String loggedInIndicator,
-                        String loggedOutIndicator) {}
+                        String username, String password, String cookie, String headers,
+                        String authMode, String loggedInIndicator, String loggedOutIndicator,
+                        String verifyUrl) {
+        /** 기존 폼 로그인 호출(쿠키·헤더·모드·검증 URL 없음) 호환 생성자. */
+        public Input(String id, String label, String role, String service, String loginUrl,
+                     String username, String password, String loggedInIndicator, String loggedOutIndicator) {
+            this(id, label, role, service, loginUrl, username, password, "", "", "FORM",
+                    loggedInIndicator, loggedOutIndicator, "");
+        }
+    }
 
     public record View(String id, String label, String role, String service, String loginUrl,
                        AuthStatus status, String message, String updatedAt, boolean hasPassword,
-                       boolean hasLoggedInIndicator, boolean hasLoggedOutIndicator) {}
+                       boolean hasLoggedInIndicator, boolean hasLoggedOutIndicator,
+                       AuthMode authMode, boolean hasCookie, boolean hasHeaders, String verifyUrl) {}
 
-    record Secret(String id, String label, String role, URI service, URI loginUrl,
-                  char[] username, char[] password, String loggedInIndicator,
-                  String loggedOutIndicator) {}
+    record Secret(String id, String label, String role, URI service, AuthMode authMode, URI loginUrl,
+                  char[] username, char[] password, char[] cookie, char[] headers,
+                  String loggedInIndicator, String loggedOutIndicator, URI verifyUrl) {}
 
     /** 계정 설정 화면에 그대로 보여 줄 로그인 ID·비밀번호. 프로젝트·Evidence·로그·LLM으로는 내보내지 않는다. */
     public record Credentials(String username, String password) {}
@@ -44,14 +56,39 @@ public final class ZapAccountVault implements AutoCloseable {
         String label = required(input.label(), "계정 이름", 96);
         String role = accountRole(input.role());
         URI service = serviceOrigin(input.service());
-        URI loginUrl = absoluteHttp(input.loginUrl(), "로그인 URL");
-        String username = requiredCredential(input.username(), "로그인 ID", 512);
-        if (username.isBlank()) throw new IllegalArgumentException("로그인 ID가 필요합니다.");
-        String password = requiredCredential(input.password(), "비밀번호", 4_096);
+        AuthMode authMode = authMode(input.authMode());
         String loggedInIndicator = verificationPattern(input.loggedInIndicator(), "로그인 상태 정규식");
         String loggedOutIndicator = verificationPattern(input.loggedOutIndicator(), "로그아웃 상태 정규식");
-        Entry replacement = new Entry(id, label, role, service, loginUrl,
-                username.toCharArray(), password.toCharArray(), loggedInIndicator, loggedOutIndicator);
+        URI loginUrl;
+        String username;
+        String password;
+        String cookie;
+        String headers;
+        URI verifyUrl = null;
+        if (authMode == AuthMode.FORM) {
+            loginUrl = absoluteHttp(input.loginUrl(), "로그인 URL");
+            username = requiredCredential(input.username(), "로그인 ID", 512);
+            if (username.isBlank()) throw new IllegalArgumentException("로그인 ID가 필요합니다.");
+            password = requiredCredential(input.password(), "비밀번호", 4_096);
+            cookie = "";
+            headers = "";
+        } else {
+            // 주입 모드는 ZAP이 폼 로그인을 하지 않으므로 로그인 URL·ID·비밀번호가 없다. 쿠키나 헤더를 하나 이상 받는다.
+            loginUrl = null;
+            username = "";
+            password = "";
+            cookie = cookieBlock(input.cookie());
+            headers = headerBlock(input.headers());
+            if (cookie.isBlank() && headers.isBlank()) {
+                throw new IllegalArgumentException("주입할 쿠키나 인증 헤더를 하나 이상 입력하세요.");
+            }
+            // 검증 URL(선택): 로그인해야 열리는 대상 주소. 주입값을 실어 보내 응답 상태로 로그인 여부를 확인한다.
+            // 대상 서비스와 같은 origin만 허용해 범위 밖으로 요청이 새지 않게 한다.
+            verifyUrl = sameOriginVerifyUrl(input.verifyUrl(), service);
+        }
+        Entry replacement = new Entry(id, label, role, service, authMode, loginUrl,
+                username.toCharArray(), password.toCharArray(), cookie.toCharArray(), headers.toCharArray(),
+                loggedInIndicator, loggedOutIndicator, verifyUrl);
         Entry previous = entries.put(id, replacement);
         if (previous != null) previous.clear();
         return replacement.view();
@@ -86,6 +123,8 @@ public final class ZapAccountVault implements AutoCloseable {
         finally {
             Arrays.fill(secret.username(), '\0');
             Arrays.fill(secret.password(), '\0');
+            Arrays.fill(secret.cookie(), '\0');
+            Arrays.fill(secret.headers(), '\0');
         }
     }
 
@@ -126,6 +165,76 @@ public final class ZapAccountVault implements AutoCloseable {
         String host = rawHost.contains(":") ? "[" + rawHost + "]" : rawHost;
         return URI.create(uri.getScheme().toLowerCase(java.util.Locale.ROOT) + "://"
                 + host.toLowerCase(java.util.Locale.ROOT) + ":" + port);
+    }
+
+    private static AuthMode authMode(String value) {
+        String mode = clean(value, 16).toUpperCase(java.util.Locale.ROOT);
+        if (mode.isBlank()) return AuthMode.FORM;
+        try {
+            return AuthMode.valueOf(mode);
+        } catch (IllegalArgumentException error) {
+            throw new IllegalArgumentException("로그인 방식은 FORM 또는 INJECT여야 합니다.");
+        }
+    }
+
+    /** 주입 쿠키 블록(`name=value; name2=value2`). CR·LF·제어문자를 막아 헤더 스머글링을 차단한다. */
+    private static String cookieBlock(String value) {
+        String clean = clean(value, 8_192);
+        if (clean.isBlank()) return "";
+        if (hasControlChar(clean)) throw new IllegalArgumentException("쿠키에 줄바꿈·제어문자가 있습니다.");
+        boolean any = false;
+        for (String pair : clean.split(";")) {
+            String trimmed = pair.trim();
+            if (trimmed.isEmpty()) continue;
+            int eq = trimmed.indexOf('=');
+            if (eq <= 0) throw new IllegalArgumentException("쿠키는 name=value 형식이어야 합니다.");
+            any = true;
+        }
+        if (!any) throw new IllegalArgumentException("쿠키는 name=value 형식이어야 합니다.");
+        return clean;
+    }
+
+    /** 주입 인증 헤더 블록(줄바꿈 구분 `Name: value`). 각 줄은 헤더 이름과 값을 가져야 한다. */
+    private static String headerBlock(String value) {
+        String clean = clean(value, 8_192);
+        if (clean.isBlank()) return "";
+        boolean any = false;
+        for (String line : clean.split("\n", -1)) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty()) continue;
+            if (hasControlChar(trimmed)) throw new IllegalArgumentException("인증 헤더에 제어문자가 있습니다.");
+            int colon = trimmed.indexOf(':');
+            if (colon <= 0 || trimmed.substring(colon + 1).isBlank()) {
+                throw new IllegalArgumentException("인증 헤더는 Name: value 형식이어야 합니다.");
+            }
+            any = true;
+        }
+        if (!any) throw new IllegalArgumentException("인증 헤더는 Name: value 형식이어야 합니다.");
+        return clean;
+    }
+
+    /** 검증 URL은 비워 둘 수 있다. 넣으면 절대 HTTP(S)이고 대상 서비스와 같은 origin이어야 한다(범위 밖 전송 방지). */
+    private static URI sameOriginVerifyUrl(String value, URI service) {
+        String clean = clean(value, 2_048);
+        if (clean.isBlank()) return null;
+        URI uri = absoluteHttp(clean, "검증 URL");
+        int port = uri.getPort() >= 0 ? uri.getPort()
+                : "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+        boolean sameOrigin = uri.getScheme().equalsIgnoreCase(service.getScheme())
+                && uri.getHost() != null && uri.getHost().equalsIgnoreCase(service.getHost())
+                && port == service.getPort();
+        if (!sameOrigin) {
+            throw new IllegalArgumentException("검증 URL은 대상 서비스와 같은 호스트·포트여야 합니다.");
+        }
+        return uri;
+    }
+
+    private static boolean hasControlChar(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c < 0x20 || c == 0x7f) return true;
+        }
+        return false;
     }
 
     private static String accountRole(String value) {
@@ -192,43 +301,55 @@ public final class ZapAccountVault implements AutoCloseable {
         private final String label;
         private final String role;
         private final URI service;
+        private final AuthMode authMode;
         private final URI loginUrl;
         private final char[] username;
         private final char[] password;
+        private final char[] cookie;
+        private final char[] headers;
         private final String loggedInIndicator;
         private final String loggedOutIndicator;
+        private final URI verifyUrl;
         private AuthStatus status = AuthStatus.UNVERIFIED;
         private String message = "ZAP 로그인 확인 전";
         private Instant updatedAt = Instant.now();
 
-        private Entry(String id, String label, String role, URI service, URI loginUrl,
-                      char[] username, char[] password, String loggedInIndicator,
-                      String loggedOutIndicator) {
+        private Entry(String id, String label, String role, URI service, AuthMode authMode, URI loginUrl,
+                      char[] username, char[] password, char[] cookie, char[] headers,
+                      String loggedInIndicator, String loggedOutIndicator, URI verifyUrl) {
             this.id = id;
             this.label = label;
             this.role = role;
             this.service = service;
+            this.authMode = authMode;
             this.loginUrl = loginUrl;
             this.username = username;
             this.password = password;
+            this.cookie = cookie;
+            this.headers = headers;
             this.loggedInIndicator = loggedInIndicator;
             this.loggedOutIndicator = loggedOutIndicator;
+            this.verifyUrl = verifyUrl;
         }
 
         private Secret secret() {
-            return new Secret(id, label, role, service, loginUrl, username.clone(), password.clone(),
-                    loggedInIndicator, loggedOutIndicator);
+            return new Secret(id, label, role, service, authMode, loginUrl,
+                    username.clone(), password.clone(), cookie.clone(), headers.clone(),
+                    loggedInIndicator, loggedOutIndicator, verifyUrl);
         }
 
         private View view() {
-            return new View(id, label, role, service.toString(), loginUrl.toString(), status,
-                    message, updatedAt.toString(), password.length > 0,
-                    !loggedInIndicator.isBlank(), !loggedOutIndicator.isBlank());
+            return new View(id, label, role, service.toString(), loginUrl == null ? "" : loginUrl.toString(),
+                    status, message, updatedAt.toString(), password.length > 0,
+                    !loggedInIndicator.isBlank(), !loggedOutIndicator.isBlank(),
+                    authMode, cookie.length > 0, headers.length > 0, verifyUrl == null ? "" : verifyUrl.toString());
         }
 
         private void clear() {
             Arrays.fill(username, '\0');
             Arrays.fill(password, '\0');
+            Arrays.fill(cookie, '\0');
+            Arrays.fill(headers, '\0');
             status = AuthStatus.FAILED;
             message = "메모리 자격증명 폐기";
             updatedAt = Instant.now();

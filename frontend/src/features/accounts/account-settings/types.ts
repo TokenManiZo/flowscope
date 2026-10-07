@@ -60,6 +60,9 @@ export type ZapLoginStatus =
   | "VERIFIED_BY_ZAP"
   | "FAILED";
 
+/** FORM: ZAP 폼 로그인(ID/PW). INJECT: 사용자가 직접 로그인 후 얻은 쿠키·헤더 주입. */
+export type ZapAuthMode = "FORM" | "INJECT";
+
 export interface ZapLoginSettings {
   enabled: boolean;
   status: ZapLoginStatus;
@@ -68,6 +71,12 @@ export interface ZapLoginSettings {
   /** 저장된 비밀번호. 계정 설정 화면에서 다시 입력하지 않도록 그대로 보여 준다. */
   password: string;
   hasPassword: boolean;
+  /** 로그인 방식. 서버가 내려 주며, 없으면 FORM으로 본다. 쿠키·헤더 값은 되돌려 받지 않고 보유 여부만. */
+  authMode?: ZapAuthMode;
+  hasCookie?: boolean;
+  hasHeaders?: boolean;
+  /** 주입 모드 검증 URL(로그인해야 열리는 대상 주소). 비밀값이 아니라 그대로 돌려받는다. */
+  verifyUrl?: string;
   /** ZAP이 실제로 연결돼 있는지. 끊겼을 때만 connectionLabel을 보여 준다. */
   connected?: boolean;
   connectionLabel: string;
@@ -113,6 +122,11 @@ export interface CredentialInput {
   loginUrl: string;
   loginId: string;
   password?: string | undefined;
+  /** 주입 모드에서 사용자가 넣는 값. FORM이면 무시된다. */
+  authMode?: ZapAuthMode;
+  cookie?: string;
+  headers?: string;
+  verifyUrl?: string;
 }
 
 export interface AccountSettingsAdapter {

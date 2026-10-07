@@ -96,6 +96,17 @@ public final class SnapshotJsonWriter {
                         List<RouteCandidate> routeCandidates, long droppedRecords,
                         List<RunExecutionLedger.Summary> executionSummaries,
                         java.util.function.Predicate<RequestRecord> rawAvailable) throws JsonProcessingException {
+        return write(revision, datasetRevision, result, config, assessments, validations, managedSessions,
+                routeCandidates, droppedRecords, executionSummaries, rawAvailable, record -> record.collectionAccountId);
+    }
+
+    public byte[] write(long revision, long datasetRevision, Pipeline.Result result, AnalysisConfig config,
+                        List<LegacyAssessment> assessments, List<ValidationDecision> validations,
+                        List<SessionBroker.SessionView> managedSessions,
+                        List<RouteCandidate> routeCandidates, long droppedRecords,
+                        List<RunExecutionLedger.Summary> executionSummaries,
+                        java.util.function.Predicate<RequestRecord> rawAvailable,
+                        java.util.function.Function<RequestRecord, String> collectionAccount) throws JsonProcessingException {
         config = config.snapshotCopy();
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
@@ -106,7 +117,7 @@ public final class SnapshotJsonWriter {
                         && record.runId != null && record.runId.startsWith("demo-")));
         var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
-        root.set("events", events(result, rawAvailable));
+        root.set("events", events(result, rawAvailable, collectionAccount));
         root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
                 .map(GraphObservationFact::from).toList()));
@@ -237,7 +248,8 @@ public final class SnapshotJsonWriter {
     }
 
 
-    private ArrayNode events(Pipeline.Result result, java.util.function.Predicate<RequestRecord> rawAvailable) {
+    private ArrayNode events(Pipeline.Result result, java.util.function.Predicate<RequestRecord> rawAvailable,
+                             java.util.function.Function<RequestRecord, String> collectionAccount) {
         Map<String, ObservationCollapser.Group> clusters = ObservationCollapser.byEvidence(result.records);
         Map<String, Verdict> verdicts = new LinkedHashMap<>();
         for (AuthorizationAnalysis.CoverageCell cell : result.analysis.cells()) {
@@ -254,6 +266,8 @@ public final class SnapshotJsonWriter {
             event.put("status", record.status);
             event.put("fp", record.fp);
             event.put("idn", record.idn);
+            String card = collectionAccount.apply(record);
+            if (card != null) event.put("collectionAccountId", card);
             event.put("role", record.role.label());
             event.put("source", wire(record.source));
             event.put("op", record.op);

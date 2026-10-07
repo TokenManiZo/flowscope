@@ -1,4 +1,4 @@
-import { identityLabel } from "@/lib/display/identityLabel"
+import { collectionGraphSnapshot, graphAccountLabel } from "./graphAccounts"
 import { HelpHint } from "@/components/HelpHint"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AlignVerticalSpaceAround, Bot, ChevronDown, ChevronLeft, ChevronRight, Crosshair, Filter, LockKeyhole, Maximize2, Minus, Plus, RotateCcw, ScanLine, UserRound } from "lucide-react"
@@ -81,6 +81,7 @@ function changed<T>(change: Change<T>, current: T): T { return typeof change ===
 
 function ProjectGraphView({ dataset }: { dataset: number }) {
   const snapshot = useSnapshotQuery()
+  const graphData = useMemo(() => snapshot.data ? collectionGraphSnapshot(snapshot.data) : undefined, [snapshot.data])
   const workspaceState = useGraphWorkspace(dataset)
   const workspace = workspaceState.workspace ?? emptyGraphWorkspace
   const navigation = workspace.navigation
@@ -116,7 +117,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchTerm, setSearchTerm] = useState("")
   const [searchLimit, setSearchLimit] = useState(30)
-  const searchIndex = useMemo(() => snapshot.data ? buildGraphSearchIndex(snapshot.data, filters) : emptySearchIndex, [snapshot.data, filters])
+  const searchIndex = useMemo(() => graphData ? buildGraphSearchIndex(graphData, filters) : emptySearchIndex, [graphData, filters])
   useEffect(() => {
     if (!searchQuery.trim()) { setSearchTerm(""); return }
     const timer = window.setTimeout(() => setSearchTerm(searchQuery), 120)
@@ -142,20 +143,20 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     if (graphViewKey(next) !== viewKey) { setOpenObjectGroup(null); setFitVersion(0); setLayoutVersion(0); setLaneLayout({ lane: 0, version: 0 }) }
     workspaceState.update(current => ({ ...current, navigation: next }))
   }
-  const collectedGraph = useMemo(() => snapshot.data && workspaceState.workspace ? projectHierarchy(snapshot.data, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal) : null, [expandedGroups, filters, snapshot.data, navigation, workspaceState.workspace !== null, anchor])
-  const sends = useMemo(() => snapshot.data ? resendSends(snapshot.data) : [], [snapshot.data])
-  const resendGraph = useMemo(() => resend && snapshot.data && workspaceState.workspace ? projectResendGraph(snapshot.data, navigation, filters.view, shownResendTools) : null, [resend, snapshot.data, workspaceState.workspace !== null, navigation, filters.view, shownResendTools])
+  const collectedGraph = useMemo(() => graphData && workspaceState.workspace ? projectHierarchy(graphData, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal) : null, [expandedGroups, filters, graphData, navigation, workspaceState.workspace !== null, anchor])
+  const sends = useMemo(() => graphData ? resendSends(snapshot.data!) : [], [graphData])
+  const resendGraph = useMemo(() => resend && graphData && workspaceState.workspace ? projectResendGraph(snapshot.data!, navigation, filters.view, shownResendTools) : null, [resend, graphData, workspaceState.workspace !== null, navigation, filters.view, shownResendTools])
   const graph = resend ? resendGraph : collectedGraph
   const results = useMemo(() => searchGraph(searchIndex, searchQuery.trim() ? searchTerm : "", navigation, searchLimit), [searchIndex, searchTerm, searchQuery.trim() === "", navigation, searchLimit])
   const searchMatches = useMemo(() => graph ? searchHighlights(graph, results.keys) : new Map<string, "direct" | "member">(), [graph, results.keys])
   const confirmedNodeIds = useMemo(() => {
-    const matrix = snapshot.data?.authorizationMatrix
-    if (!graph || !snapshot.data) return new Set<string>()
+    const matrix = graphData?.authorizationMatrix
+    if (!graph || !graphData) return new Set<string>()
     const confirmed = [...(matrix?.functions ?? []), ...(matrix?.objects ?? []), ...(matrix?.evidence ?? [])].filter(item => item.reviewStatus === "CONFIRMED" && judgmentTone(item.status) === "risk")
     return new Set(graph.nodes.filter(node => node.kind === "operation"
-      ? (apiConfirmed(snapshot.data!, node.selection.operation ?? "") || confirmed.some(item => item.operation === node.selection.operation))
+      ? (apiConfirmed(graphData!, node.selection.operation ?? "") || confirmed.some(item => item.operation === node.selection.operation))
       : node.kind === "resource" && confirmed.some(item => "resource" in item && item.operation === node.selection.operation && item.resource === node.selection.resource)).map(node => node.id))
-  }, [graph, snapshot.data])
+  }, [graph, graphData])
   const resolvedNavigation = graph?.navigation ?? navigation
   // 필터·snapshot 변화로 현재 단계가 사라지면 projection이 상위 단계로 되돌리고, 선택도 함께 비운다.
   useEffect(() => { if (graph && graph.navigation !== navigation) { setNavigation(graph.navigation); setSelection(null); setSelectedElementId(null); setInspectorOpen(false) } }, [graph, navigation])
@@ -164,7 +165,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     if (snapshot.isError) return
     if (!selection) return
     if (selection.routeCandidate) {
-      const currentCandidate = snapshot.data?.routeCandidates.find((candidate) => graphRouteCandidateId(candidate) === selection.routeCandidate?.id)
+      const currentCandidate = graphData?.routeCandidates.find((candidate) => graphRouteCandidateId(candidate) === selection.routeCandidate?.id)
       if (!currentCandidate) { setSelection(null); setSelectedElementId(null); setInspectorOpen(false) }
       else {
         const currentSelection = projectRouteCandidate(currentCandidate, new Set(filters.source)).selection
@@ -183,12 +184,12 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     }
     // 계층 선택은 서버 셀 key로 현재 snapshot과 재조정한다. 셀이 모두 사라지면 선택을 비우고, 일부만 남으면 남은 셀·Gap ID로 갱신한다.
     const cellSelection = selection as Partial<HierarchySelection>
-    if (cellSelection.cells?.length && snapshot.data) {
+    if (cellSelection.cells?.length && graphData) {
       const selectedKeys = new Set(cellSelection.cellKeys)
-      const cells = snapshot.data.cells.filter((cell) => selectedKeys.has(graphCellKey(cell)))
+      const cells = graphData.cells.filter((cell) => selectedKeys.has(graphCellKey(cell)) && (!selection.evidenceIds.length || cell.evidenceIds.some(id => selection.evidenceIds.includes(id))))
       if (!cells.length) { setSelection(null); setSelectedElementId(null); setInspectorOpen(false); return }
       const currentKeys = new Set(cells.map(graphCellKey))
-      const gapIds = snapshot.data.gaps.filter((gap) => currentKeys.has(graphCellKey(gap))).map((gap) => gap.id)
+      const gapIds = graphData.gaps.filter((gap) => currentKeys.has(graphCellKey(gap))).map((gap) => gap.id)
       if (cells.length !== cellSelection.cells.length || cells.some((cell, index) => cell !== cellSelection.cells?.[index]) || JSON.stringify(gapIds) !== JSON.stringify(cellSelection.gapIds ?? [])) {
         setSelection({ ...selection, ...graphCellSelection(cells, selection.source), gapIds } as HierarchySelection)
       }
@@ -196,14 +197,14 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     }
     // Target·API 그룹 노드는 셀 없이 요약만 여는 선택이라, 노드가 화면에 남아 있는 동안 유지한다.
     if (!cellSelection.cellKeys?.length && selectedElementId && graph?.nodes.some((node) => node.id === selectedElementId && (node.kind === "target" || node.kind === "api-group"))) return
-    const currentCell = cellSelection.cellKeys?.some((key) => snapshot.data?.cells.some((cell) => graphCellKey(cell) === key))
-    const currentGap = cellSelection.gapIds?.some((id) => snapshot.data?.gaps.some((gap) => gap.id === id))
-    const currentEvent = selection.evidenceIds.some((id) => snapshot.data?.events.some((event) => event.eventId === id || event.clusterEvidenceIds?.includes(id)))
+    const currentCell = cellSelection.cellKeys?.some((key) => graphData?.cells.some((cell) => graphCellKey(cell) === key))
+    const currentGap = cellSelection.gapIds?.some((id) => graphData?.gaps.some((gap) => gap.id === id))
+    const currentEvent = selection.evidenceIds.some((id) => graphData?.events.some((event) => event.eventId === id || event.clusterEvidenceIds?.includes(id)))
     if (!currentCell && !currentGap && !currentEvent) { setSelection(null); setSelectedElementId(null); setInspectorOpen(false) }
-  }, [filters.source, graph, selectedElementId, selection, snapshot.data, snapshot.isError])
+  }, [filters.source, graph, selectedElementId, selection, graphData, snapshot.isError])
 
   const shownSendIds = new Set(sends.filter(send => shownResendTools.includes(send.tool)).map(send => send.eventId))
-  const includedEvents = (snapshot.data?.events ?? []).filter((event) => resend ? shownSendIds.has(event.eventId)
+  const includedEvents = (graphData?.events ?? []).filter((event) => resend ? shownSendIds.has(event.eventId)
     : filters.includeSupportTraffic
       ? event.trafficDisposition === "INCLUDE" || isObservedTraffic(event)
       : event.trafficDisposition === "INCLUDE" && !supportTrafficClasses.has(event.trafficClass))
@@ -213,11 +214,11 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const statusGroupList = statusGroups(includedEvents)
   // Site Overview는 묶음 안의 기록으로 필터를 판정하며, 구조 엣지의 색은 그대로 둔다.
   const edgeHighlight = useMemo(() => {
-    if (!graph || !snapshot.data) return null
-    if (graph.kind !== "site") return projectHighlight(graph.edges, snapshot.data.events, highlight)
-    return projectSiteHighlight(graph, snapshot.data.events, highlight, graphContents(snapshot.data, filters))
-  }, [graph, snapshot.data, filters, highlight])
-  const statusesByNode = useMemo(() => graph && snapshot.data ? nodeStatusCodes(graph.nodes, snapshot.data.events) : undefined, [graph, snapshot.data])
+    if (!graph || !graphData) return null
+    if (graph.kind !== "site") return projectHighlight(graph.edges, graphData.events, highlight)
+    return projectSiteHighlight(graph, graphData.events, highlight, graphContents(graphData, filters))
+  }, [graph, graphData, filters, highlight])
+  const statusesByNode = useMemo(() => graph && graphData ? nodeStatusCodes(graph.nodes, graphData.events) : undefined, [graph, graphData])
   const statusColors = useMemo(() => statusHighlightColors(highlight), [highlight])
   const splitSources = useMemo(() => highlight.sources.length > 1 ? allSources.filter((source) => highlight.sources.includes(source)) : [], [highlight.sources])
   // 객체 집중 펼침은 화면 메모리에서만 관리한다. API 묶음은 기존 프로젝트 저장을 유지한다.
@@ -255,7 +256,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     const all = codes.every((status) => current.statuses.includes(status))
     return { ...current, statuses: all ? current.statuses.filter((status) => !codes.includes(status)) : [...new Set([...current.statuses, ...codes])] }
   })
-  const selectedEvent = selection ? snapshot.data?.events.find((event) => (selection.source === null || event.source === selection.source) && (selection.identity === null || event.idn === selection.identity) && (selection.operation === null || event.op === selection.operation) && (selection.resource === null || event.resource === selection.resource) && (selection.evidenceIds.includes(event.eventId) || (event.clusterEvidenceIds ?? []).some((id) => selection.evidenceIds.includes(id)))) ?? null : null
+  const selectedEvent = selection ? graphData?.events.find((event) => (selection.source === null || event.source === selection.source) && (selection.identity === null || event.idn === selection.identity) && (selection.operation === null || event.op === selection.operation) && (selection.resource === null || event.resource === selection.resource) && (selection.evidenceIds.includes(event.eventId) || (event.clusterEvidenceIds ?? []).some((id) => selection.evidenceIds.includes(id)))) ?? null : null
   const updatePreferences = (update: Pick<GraphPreferences, "positions" | "viewport" | "sizes">) => workspaceState.update(current => {
     const saved = current.views[viewKey] ?? emptyGraphView, next = mergeGraphLayout(saved, update)
     return next === saved ? current : { ...current, views: { ...current.views, [viewKey]: next } }
@@ -359,7 +360,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const clearSearchAnchor = (next: GraphNavigation = navigation) => {
     setSearchAnchor(null); cancelSearchMove()
     if (next !== navigation) setNavigation(next)
-    const base = snapshot.data && projectHierarchy(snapshot.data, { ...filters, expandedObjectGroups: expandedGroups }, next)
+    const base = graphData && projectHierarchy(graphData, { ...filters, expandedObjectGroups: expandedGroups }, next)
     if (selectedElementId && !base?.nodes.some(node => node.id === selectedElementId && !node.hiddenInGraph)) clearGraphSelection()
   }
   const lanes = resend ? ["보낸 신원", "재전송한 API", "OBJECT"] : graph?.kind === "site" ? ["TARGET", "API GROUP"] : ["IDENTITY", "API", "OBJECT"]
@@ -400,7 +401,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     {resend && <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">재전송 도구</legend><div className="grid gap-2.5">{resendTools.map((tool) => <label className="grid cursor-pointer grid-cols-[1rem_0.75rem_1fr_auto] items-center gap-2" key={tool}><Checkbox checked={shownResendTools.includes(tool)} onCheckedChange={() => { clearGraphSelection(); setShownResendTools((current) => toggle(current, tool)) }} /><span aria-hidden="true" className="size-2.5 rounded-sm" style={{ background: resendToolColors[tool] }} /><span className="font-medium">{resendToolNames[tool]}</span><span className="tabular-nums text-muted-foreground">{sends.filter(send => send.tool === tool).length}</span></label>)}</div><p className="mt-2 text-xs leading-5 text-muted-foreground">Burp Intruder 요청은 그래프에 넣지 않고 관측 기록에만 남깁니다.</p></fieldset>}
     {!resend && <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground"><span className="flex items-center gap-1">보기 범위<HelpHint label="보기 범위">{filters.includeSupportTraffic ? "정적 파일(CSS·JS·이미지·폰트)을 제외한 관측 요청을 보여 줍니다. 추가로 보이는 요청은 판정에 쓰지 않습니다." : "인가 판정에 쓰는 요청만 보여 줍니다."}</HelpHint></span></legend><div className="grid grid-cols-2 gap-1.5">{([[false, "핵심 API만"], [true, "관측 전체"]] as const).map(([broad, label]) => <Button key={label} size="sm" variant={filters.includeSupportTraffic === broad ? "secondary" : "ghost"} aria-pressed={filters.includeSupportTraffic === broad} onClick={() => setFilters((current) => ({ ...current, includeSupportTraffic: broad }))}>{label}</Button>)}</div></fieldset>}
     <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">출처</legend><div className="grid gap-2.5">{railSources.map((source) => <label className="grid cursor-pointer grid-cols-[1rem_1.5rem_1fr_auto] items-center gap-2" key={source}><Checkbox checked={highlight.sources.includes(source)} onCheckedChange={() => setHighlight((current) => ({ ...current, sources: toggle(current.sources, source) }))} /><SourceIcon source={source} /><span className="font-medium">{sourceNames[source]}</span><span className="tabular-nums text-muted-foreground">{sourceCount(source)}</span></label>)}</div></fieldset>
-    <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">신원</legend><div className="grid gap-2.5">{identities.map((identity) => <label className="grid cursor-pointer grid-cols-[1rem_1fr_auto] items-center gap-2" key={identity}><Checkbox checked={highlight.identities.includes(identity)} onCheckedChange={() => setHighlight((current) => ({ ...current, identities: toggle(current.identities, identity) }))} /><span className="truncate font-medium">{identityLabel(identity)}</span><span className="tabular-nums text-muted-foreground">{identityCount(identity)}</span></label>)}{!identities.length && <span className="text-xs text-muted-foreground">INCLUDE 신원이 없습니다.</span>}</div></fieldset>
+    <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">신원</legend><div className="grid gap-2.5">{identities.map((identity) => <label className="grid cursor-pointer grid-cols-[1rem_1fr_auto] items-center gap-2" key={identity}><Checkbox checked={highlight.identities.includes(identity)} onCheckedChange={() => setHighlight((current) => ({ ...current, identities: toggle(current.identities, identity) }))} /><span className="truncate font-medium">{graphData ? graphAccountLabel(graphData, identity) : identity}</span><span className="tabular-nums text-muted-foreground">{identityCount(identity)}</span></label>)}{!identities.length && <span className="text-xs text-muted-foreground">INCLUDE 신원이 없습니다.</span>}</div></fieldset>
     <fieldset className="border-b border-border/70 py-5"><legend className="mb-3 text-[13px] font-semibold text-muted-foreground">응답 코드</legend><div className="grid gap-1.5">{statusGroupList.map((group) => {
       const codes = group.codes.map((code) => code.status), chosen = codes.filter((status) => highlight.statuses.includes(status)).length
       const open = expandedStatus.includes(group.cls), label = group.cls
@@ -424,14 +425,14 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     {workspaceState.error && <Alert variant="destructive" className="m-4"><AlertTitle>그래프 배치를 저장하거나 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{workspaceState.error}</p><p>화면의 변경은 아직 프로젝트에 반영되지 않았을 수 있습니다. 다시 불러오면 미저장 변경을 버리고 저장된 배치로 돌아갑니다.</p><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => void workspaceState.retry().catch(() => {})}>다시 저장</Button><Button variant="outline" size="sm" onClick={() => void workspaceState.reload()}>저장된 배치 다시 불러오기</Button></div></AlertDescription></Alert>}
     {!workspaceState.workspace && !workspaceState.error && <p className="m-4 text-sm text-muted-foreground">프로젝트 배치를 불러오는 중입니다.</p>}
     {snapshot.isError && <Alert variant="destructive" className="m-4"><AlertTitle>그래프를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
-    <ReferenceAnalysisWorkspace context={filterRail} contextTitle={false} contextBadge={highlight.sources.length + highlight.identities.length + highlight.statuses.length} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && snapshot.data ? <GraphInspectorPanel selection={selection} event={selectedEvent} snapshot={snapshot.data} suspended={snapshot.isError} node={graph?.nodes.find(node => node.id === selectedElementId) ?? null} projection={graph} actions={scopeActions} /> : resend ? <p className="p-4 text-sm text-muted-foreground">재전송 카드를 누르면 보낸 기록이 여기에 나옵니다. 값을 바꿔 보낸 요청이라 판정에 쓰지 않습니다.</p> : graph && "navigation" in graph ? <GraphViewOverview projection={graph} owners={snapshot.data?.owners} actions={scopeActions} /> : <p className="p-4 text-sm text-muted-foreground">노드를 누르면 정보가 여기에 나옵니다.</p>} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) clearGraphSelection() }} ariaLabel="접근 그래프 작업면">
+    <ReferenceAnalysisWorkspace context={filterRail} contextTitle={false} contextBadge={highlight.sources.length + highlight.identities.length + highlight.statuses.length} toolbar={toolbar} contextOpen={filterOpen} onContextOpenChange={setFilterOpen} inspector={selection && graphData ? <GraphInspectorPanel selection={selection} event={snapshot.data?.events.find(event => event.eventId === selectedEvent?.eventId) ?? null} snapshot={snapshot.data!} suspended={snapshot.isError} node={graph?.nodes.find(node => node.id === selectedElementId) ?? null} projection={graph} actions={scopeActions} /> : resend ? <p className="p-4 text-sm text-muted-foreground">재전송 카드를 누르면 보낸 기록이 여기에 나옵니다. 값을 바꿔 보낸 요청이라 판정에 쓰지 않습니다.</p> : graph && "navigation" in graph ? <GraphViewOverview projection={graph} owners={graphData?.owners} labelIdentity={identity => graphData ? graphAccountLabel(graphData, identity) : identity} actions={scopeActions} /> : <p className="p-4 text-sm text-muted-foreground">노드를 누르면 정보가 여기에 나옵니다.</p>} inspectorOpen={inspectorOpen} inspectorPersistent onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) clearGraphSelection() }} ariaLabel="접근 그래프 작업면">
       {resend ? <div role="status" className="flex min-w-0 items-center gap-2 border-b border-border/70 px-4 py-2 text-xs text-muted-foreground"><span className="min-w-0 flex-1">값을 바꿔 보낸 요청입니다. Request Lab은 원본 기록과 응답 코드를 비교하고, Repeater는 원본을 알 수 없어 응답 코드만 보여 줍니다.</span></div> : <nav aria-label="그래프 계층" className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border/70 px-4 py-2 text-xs"><ol className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"><li className="shrink-0">{resolvedNavigation.level === "site" ? <span aria-current="page" className="font-semibold">Site Overview</span> : <Button size="sm" variant="link" className="h-auto p-0 text-xs text-sky-700 dark:text-sky-300" onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "site"))}>Site Overview</Button>}</li>{resolvedNavigation.level !== "site" && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className={resolvedNavigation.level === "group" ? "min-w-0" : "shrink-0"}>{resolvedNavigation.level === "group" ? <span aria-current="page" className="block truncate font-semibold" title={groupLabel}>{groupLabel}</span> : <Button size="sm" variant="link" className="h-auto max-w-48 justify-start truncate p-0 text-xs text-sky-700 dark:text-sky-300" title={groupLabel} onClick={() => changeNavigation(navigateHierarchy(resolvedNavigation, "group", resolvedNavigation.groupId))}>{groupLabel}</Button>}</li></>}{operationLabel && <><li aria-hidden="true" className="text-muted-foreground">›</li><li className="min-w-0"><span aria-current="page" className="block truncate font-semibold" title={`${operationLabel.method} ${operationLabel.path}`}>{operationLabel.method} {operationLabel.path}</span></li></>}</ol>{(graph?.revealedNodeCount ?? 0) > 0 && <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">검색으로 {graph?.revealedNodeCount}개 추가 표시<Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={() => clearSearchAnchor()}>해제</Button></span>}{hiddenCount > 0 && <Button size="sm" variant="outline" className="shrink-0" onClick={expand}>{resolvedNavigation.level === "operation" ? "객체" : "노드"} 18개 더 보기 ({hiddenCount}개 남음)</Button>}</nav>}
       {resend && graph && !graph.nodes.length && <p className="m-4 rounded-md border border-border/70 p-6 text-sm text-muted-foreground">{shownResendTools.length ? "고른 도구로 보낸 재전송 기록이 없습니다." : "재전송 도구를 하나 이상 고르세요."}</p>}
       {snapshot.isLoading && <p className="m-4 rounded-md border border-border/70 p-6 text-sm text-muted-foreground">공격면을 불러오는 중입니다.</p>}
-      {graph && (compact || listMode ? <div ref={listShellRef} className="p-4" onClick={(event) => { if (!(event.target as HTMLElement).closest("table, input, button, a")) clearGraphSelection() }}><ResponsiveGraphList projection={graph} snapshot={snapshot.data} revealNodeId={revealRequest?.nodeId} searchMatches={searchMatches} highlight={edgeHighlight} onRevealDismiss={cancelSearchMove} selectedId={selectedElementId} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
+      {graph && (compact || listMode ? <div ref={listShellRef} className="p-4" onClick={(event) => { if (!(event.target as HTMLElement).closest("table, input, button, a")) clearGraphSelection() }}><ResponsiveGraphList projection={graph} snapshot={graphData} revealNodeId={revealRequest?.nodeId} searchMatches={searchMatches} highlight={edgeHighlight} onRevealDismiss={cancelSearchMove} selectedId={selectedElementId} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
         const { left, right } = laneHeader(index)
         return right <= left ? null : <button key={lane} type="button" aria-label={`${lane} 레인 기준 정렬`} className="absolute top-0 flex h-10 items-center justify-center truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" style={{ left, width: right - left }} onClick={() => setLaneLayout((current) => ({ lane: index, version: current.version + 1 }))}><span className="truncate">{lane}</span></button>
-      })}</div><CytoscapeGraph key={resend ? "resend" : viewKey} projection={graph} statusesByNode={statusesByNode} apiMarks={snapshot.data?.apiMarks} highlight={edgeHighlight} statusColors={statusColors} splitSources={splitSources} onToggleObjectGroup={toggleObjectGroup} openObjectGroupId={openObjectGroupId} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={resend ? null : preferences} searchMatches={searchMatches} revealRequest={revealRequest} onInteraction={cancelSearchMove} onRevealed={requestId => setRevealRequest(current => current?.requestId === requestId ? null : current)} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={resend ? noop : navigateNode} onStepBack={resend ? noop : () => changeNavigation(stepBack(resolvedNavigation))} onClearSelection={clearGraphSelection} onSelect={selectGraph} onPreferencesChange={resend ? noop : updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-600 dark:text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-600 dark:text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-yellow-600 dark:text-yellow-400" />LLM</span></div></div>)}
+      })}</div><CytoscapeGraph key={resend ? "resend" : viewKey} projection={graph} statusesByNode={statusesByNode} apiMarks={graphData?.apiMarks} highlight={edgeHighlight} statusColors={statusColors} splitSources={splitSources} onToggleObjectGroup={toggleObjectGroup} openObjectGroupId={openObjectGroupId} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={resend ? null : preferences} searchMatches={searchMatches} revealRequest={revealRequest} onInteraction={cancelSearchMove} onRevealed={requestId => setRevealRequest(current => current?.requestId === requestId ? null : current)} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={resend ? noop : navigateNode} onStepBack={resend ? noop : () => changeNavigation(stepBack(resolvedNavigation))} onClearSelection={clearGraphSelection} onSelect={selectGraph} onPreferencesChange={resend ? noop : updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-600 dark:text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-600 dark:text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-yellow-600 dark:text-yellow-400" />LLM</span></div></div>)}
     </ReferenceAnalysisWorkspace>
   </section>
 }

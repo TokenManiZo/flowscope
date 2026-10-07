@@ -1010,6 +1010,7 @@ public final class FlowScopeExtension implements BurpExtension {
             rec.phase = rec.sourceDetail == SourceDetail.ZAP_AUTHENTICATION
                     ? RunPhase.SESSION_SETUP : context.phase();
             rec.runId = context.runId();
+            rec.collectionAccountId = context.accountId() == null ? "anon" : context.accountId();
             if (profile.source() != Source.HUMAN) rec.laneAccountId = context.accountId();
         }
         if (profile.source() == Source.HUMAN) rec.laneAccountId = observation != null
@@ -3364,6 +3365,7 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.runId = input.runId();
             record.laneAccountId = emptyToNull(input.accountId());
+            record.collectionAccountId = record.laneAccountId == null ? "anon" : record.laneAccountId;
             record.supportingPageUrl = input.supportingPageUrl();
             appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
@@ -3415,6 +3417,7 @@ public final class FlowScopeExtension implements BurpExtension {
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
             record.runId = exchange.runId();
             record.laneAccountId = emptyToNull(exchange.accountId());
+            record.collectionAccountId = record.laneAccountId == null ? "anon" : record.laneAccountId;
             appendControlledToolRecord(record, () -> retainRawExchange(record, request, response));
             scheduleRebuildForNewRecords();
         } catch (Exception error) {

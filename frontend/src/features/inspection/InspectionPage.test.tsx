@@ -218,7 +218,7 @@ describe("unified inspection hub", () => {
     expect(fetchStub.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false)
   })
 
-  it("shows all ZAP records, searches older requests, and preserves raw viewing", async () => {
+  it("shows all ZAP records, searches older requests, and opens them in Request Lab", async () => {
     const user = userEvent.setup()
     const zapEvents = Array.from({ length: 201 }, (_, index) => ({ ...humanEvent, eventId: `zap-${index}`, path: `/api/zap/${index}`, source: "scanner", sourceDetail: "ZAP_CLIENT_SPIDER", tool: "ZAP", timestamp: index }))
     const browserEvents = Array.from({ length: 205 }, (_, index) => ({ ...humanEvent, eventId: `human-${index}`, path: `/browser/${index}`, timestamp: 1000 + index }))
@@ -239,9 +239,10 @@ describe("unified inspection hub", () => {
     expect(screen.queryByLabelText("기록된 요청 목록")).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "작업 피드 펼치기" }))
     await user.click(within(screen.getByLabelText("기록된 요청 목록")).getByRole("button"))
-    expect(await screen.findByRole("dialog", { name: "원문 보기" })).toBeVisible()
+    expect(await screen.findByRole("dialog", { name: "Request Lab" })).toBeVisible()
     expect(fetchStub.mock.calls.some(([path]) => path === "/api/request-lab?eventId=zap-0")).toBe(true)
     await user.click(screen.getByRole("button", { name: "닫기" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     await user.clear(search)
     await user.type(search, "/browser/")
     expect(screen.getByText("검색 결과가 없습니다.")).toBeVisible()
@@ -295,11 +296,11 @@ describe("unified inspection hub", () => {
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
     await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
     // 등록 계정은 표시 이름으로, 연결되지 않은 서버 임시 신원은 "미등록 로그인 N"으로 보인다.
-    expect(await screen.findByRole("button", { name: /GET \/api\/me 활성 계정 HTTP 200 원문 보기/ })).toBeVisible()
-    await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ })
+    expect(await screen.findByRole("button", { name: /GET \/api\/me 활성 계정 HTTP 200 Request Lab에서 열기/ })).toBeVisible()
+    await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 Request Lab에서 열기/ })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
     await user.type(screen.getByLabelText("수집 기록 검색"), "profile")
-    expect(screen.getByRole("button", { name: /GET \/api\/profile 미등록 로그인 2 HTTP 403 원문 보기/ })).toBeVisible()
+    expect(screen.getByRole("button", { name: /GET \/api\/profile 미등록 로그인 2 HTTP 403 Request Lab에서 열기/ })).toBeVisible()
     expect(screen.queryByRole("button", { name: /POST \/api\/orders/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "작업 피드 접기" }))
     expect(screen.queryByRole("button", { name: /GET \/api\/profile/ })).not.toBeInTheDocument()
@@ -334,8 +335,8 @@ describe("unified inspection hub", () => {
     expect(screen.getByRole("tab", { name: "수집 기록" })).toBeVisible()
     expect(screen.queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "크게 보기" }))
-    await user.click(screen.getByRole("button", { name: /POST \/api\/profile.*원문 보기/ }))
-    expect(await screen.findByRole("dialog")).toBeVisible()
+    await user.click(screen.getByRole("button", { name: /POST \/api\/profile.*Request Lab에서 열기/ }))
+    expect(await screen.findByRole("dialog", { name: "Request Lab" })).toBeVisible()
     await user.keyboard("{Escape}")
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     expect(screen.getByRole("button", { name: "원래 크기" })).toBeVisible()
@@ -344,29 +345,29 @@ describe("unified inspection hub", () => {
     expect(list.style.height).toBe("")
   })
 
-  it("loads masked raw data only on row click and clears it when closed or the dataset changes", async () => {
+  it("opens a collected record in Request Lab only on row click and closes it when the dataset changes", async () => {
     const user = userEvent.setup()
-    const maskedRequest = "POST /api/orders HTTP/1.1\nAuthorization: ***MASKED***"
+    const rawRequest = "POST /api/orders HTTP/1.1\nAuthorization: Bearer test-token"
     const { client, fetchStub } = renderInspection({ humanEvents: [humanEvent], requestDraft: {
-      eventId: humanEvent.eventId, service: target, request: maskedRequest, response: null,
+      eventId: humanEvent.eventId, service: target, request: rawRequest, response: null,
       rawRequestRetained: true, rawResponseRetained: false, requestEditable: false,
       requestCharset: "UTF-8", responseCharset: null, observedIdentity: "alice",
       reusableSession: "", message: "응답 원문은 보존되지 않았습니다.",
     } })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
     await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
-    await user.click(await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ }))
-    expect(await screen.findByLabelText("요청 원문")).toHaveTextContent("Authorization: ***MASKED***")
-    expect(screen.getByLabelText("응답 원문 패널")).toHaveTextContent("이 원문은 보존되지 않아 사용할 수 없습니다.")
-    expect(within(screen.getByRole("dialog")).getByText("alice")).toBeVisible()
-    expect(screen.queryByRole("button", { name: /전송|Repeater|편집/ })).not.toBeInTheDocument()
+    const row = await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 Request Lab에서 열기/ })
+    await user.click(row)
+    const dialog = await screen.findByRole("dialog", { name: "Request Lab" })
+    expect(await within(dialog).findByLabelText("Request Lab 요청 원문")).toHaveValue(rawRequest)
+    expect(fetchStub.mock.calls.some(([path]) => path === `/api/request-lab?eventId=${humanEvent.eventId}`)).toBe(true)
+    expect(screen.queryByRole("dialog", { name: "원문 보기" })).not.toBeInTheDocument()
     expect(client.getQueryCache().findAll().some((query) => JSON.stringify(query.queryKey).includes("request-lab"))).toBe(false)
-    await user.click(screen.getByRole("button", { name: "닫기" }))
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
-    await user.click(screen.getByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 원문 보기/ }))
-    await screen.findByLabelText("요청 원문")
-    expect(fetchStub.mock.calls.filter(([path]) => String(path).startsWith("/api/request-lab?")).length).toBe(2)
-    window.dispatchEvent(new Event(DATASET_REPLACING))
+    await user.click(within(dialog).getByRole("button", { name: "닫기" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    await user.click(row)
+    expect(await within(await screen.findByRole("dialog", { name: "Request Lab" })).findByLabelText("Request Lab 요청 원문")).toHaveValue(rawRequest)
+    act(() => window.dispatchEvent(new Event(DATASET_REPLACING)))
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
   })
   it("removes the duplicate scope strip and keeps the inspection tabs", async () => {

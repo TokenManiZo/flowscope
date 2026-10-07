@@ -304,6 +304,82 @@ final class ZapCampaignTest {
     }
 
     @Test
+    void injectedVerificationProbesTheSessionAndReportsLoggedIn() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            List<String> probes = new CopyOnWriteArrayList<>();
+            fixture.server.removeContext("/JSON/core/action/sendRequest/");
+            fixture.server.createContext("/JSON/core/action/sendRequest/", exchange -> {
+                probes.add(new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                zapReply(exchange, "{\"sendRequest\":[{\"responseHeader\":\"HTTP/1.1 200 OK\\r\\nContent-Type: application/json\\r\\n\",\"responseBody\":\"{\\\"user\\\":\\\"ok\\\"}\"}]}");
+            });
+            fixture.addInjectedAccount("user-a", "SESSION=abc123", "", TARGET + "api/me");
+
+            campaign.startAuthenticationOnly("user-a");
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", terminal.path("status").asText(), terminal.toString());
+            assertEquals("VERIFIED_BY_ZAP", fixture.accounts.view("user-a").status().name());
+            assertTrue(fixture.accounts.view("user-a").message().contains("로그인 확인"), fixture.accounts.view("user-a").message());
+            // 프로브 요청에 주입 쿠키가 실렸다. 폼 로그인(authenticateAsUser)은 쓰지 않는다.
+            assertTrue(probes.stream().anyMatch(p -> p.contains("SESSION%3Dabc123") || p.contains("SESSION=abc123")), probes.toString());
+        }
+    }
+
+    @Test
+    void injectedVerificationReportsNotLoggedInOnLoginRedirect() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            fixture.server.removeContext("/JSON/core/action/sendRequest/");
+            fixture.server.createContext("/JSON/core/action/sendRequest/", exchange -> zapReply(exchange,
+                    "{\"sendRequest\":[{\"responseHeader\":\"HTTP/1.1 302 Found\\r\\nLocation: " + TARGET + "login\\r\\n\",\"responseBody\":\"\"}]}"));
+            fixture.addInjectedAccount("user-a", "SESSION=stale", "", TARGET + "api/me");
+
+            campaign.startAuthenticationOnly("user-a");
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
+            assertEquals("FAILED", fixture.accounts.view("user-a").status().name());
+        }
+    }
+
+    @Test
+    void injectedAccountSeedsTheSessionCookieAndCrawlsWithoutFormLogin() throws Exception {
+        try (Fixture fixture = new Fixture(false);
+             ZapCampaign campaign = new ZapCampaign(fixture)) {
+            List<String> calls = new CopyOnWriteArrayList<>();
+            for (String action : List.of("addSessionToken", "createEmptySession", "setSessionTokenValue", "setActiveSession")) {
+                fixture.server.removeContext("/JSON/httpSessions/action/" + action + "/");
+                fixture.server.createContext("/JSON/httpSessions/action/" + action + "/", exchange -> {
+                    // ZapClient는 이 액션들을 POST 본문(form)으로 보낸다. 쿼리가 아니라 본문을 읽는다.
+                    calls.add(action + "?" + java.net.URLDecoder.decode(new String(exchange.getRequestBody().readAllBytes(),
+                            java.nio.charset.StandardCharsets.UTF_8), java.nio.charset.StandardCharsets.UTF_8));
+                    zapReply(exchange, "{\"Result\":\"OK\"}");
+                });
+            }
+            // 폼 로그인(ZAP user 인증)을 쓰면 안 된다는 것을 확인한다.
+            fixture.server.removeContext("/JSON/users/action/authenticateAsUser/");
+            fixture.server.createContext("/JSON/users/action/authenticateAsUser/", exchange -> {
+                calls.add("authenticateAsUser");
+                zapReply(exchange, "{\"authSuccessful\":true}");
+            });
+            fixture.addInjectedAccount("user-a", "SESSION=abc123; csrf=z9", "");
+
+            campaign.startDeterministicZapCampaign(TARGET, List.of("user-a"), false);
+            JsonNode terminal = awaitTerminal(campaign);
+
+            assertEquals("COMPLETED", terminal.path("status").asText(), terminal.toString());
+            assertEquals("VERIFIED_BY_ZAP", fixture.accounts.view("user-a").status().name());
+            assertTrue(calls.stream().anyMatch(c -> c.startsWith("addSessionToken") && c.contains("SESSION")), calls.toString());
+            assertTrue(calls.stream().anyMatch(c -> c.startsWith("setSessionTokenValue") && c.contains("abc123")), calls.toString());
+            assertTrue(calls.stream().anyMatch(c -> c.startsWith("setActiveSession")), calls.toString());
+            // 주입 모드는 ZAP user 폼 인증을 하지 않는다. 세션 승격도 없다.
+            assertFalse(calls.contains("authenticateAsUser"), calls.toString());
+            assertEquals("", fixture.promotedAccountId);
+        }
+    }
+
+    @Test
     void authenticatedCampaignDoesNotFallBackToAnonymousWhenSessionPromotionFails() throws Exception {
         try (Fixture fixture = new Fixture(false);
              ZapCampaign campaign = new ZapCampaign(fixture)) {
@@ -798,6 +874,15 @@ final class ZapCampaignTest {
             accounts.save(new ZapAccountVault.Input(id, "User A", "USER", TARGET,
                     TARGET + "login", "user-a@example.test", "secret-password",
                     "Signed in", "Sign in"));
+        }
+
+        private void addInjectedAccount(String id, String cookie, String headers) {
+            addInjectedAccount(id, cookie, headers, "");
+        }
+
+        private void addInjectedAccount(String id, String cookie, String headers, String verifyUrl) {
+            accounts.save(new ZapAccountVault.Input(id, "Injected", "USER", TARGET,
+                    "", "", "", cookie, headers, "INJECT", "", "", verifyUrl));
         }
 
         @Override public Pipeline.Result snapshot() { return Pipeline.run(List.copyOf(records)); }

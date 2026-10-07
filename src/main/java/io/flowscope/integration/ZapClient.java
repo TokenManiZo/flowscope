@@ -66,6 +66,20 @@ public final class ZapClient {
         return post("/JSON/sessionManagement/action/setSessionManagementMethod/",
                 "contextId=" + enc(contextId) + "&methodName=autoDetectSessionManagement");
     }
+    /** 쿠키 세션 추적: 서버가 주는 Set-Cookie를 따라 세션 쿠키를 갱신한다(수동 주입 쿠키용). */
+    public String setCookieBasedSessionManagement(String contextId) {
+        return post("/JSON/sessionManagement/action/setSessionManagementMethod/",
+                "contextId=" + enc(contextId) + "&methodName=cookieBasedSessionManagement");
+    }
+    /** 헤더 세션 추적: 주입한 인증 헤더로 세션을 따라간다. headers는 "Authorization: Bearer {%token%}" 같은 줄바꿈 구분 템플릿. */
+    public String setHeaderBasedSessionManagement(String contextId, String headers) {
+        if (headers == null || headers.isBlank()) {
+            throw new IllegalArgumentException("header session template is required");
+        }
+        return postSensitive("/JSON/sessionManagement/action/setSessionManagementMethod/",
+                "contextId=" + enc(contextId) + "&methodName=headerBasedSessionManagement"
+                        + "&methodConfigParams=" + enc("headers=" + headers));
+    }
     public String setLoggedInIndicator(String contextId, String pattern) {
         return post("/JSON/authentication/action/setLoggedInIndicator/",
                 "contextId=" + enc(contextId) + "&loggedInIndicatorRegex=" + enc(pattern));
@@ -118,6 +132,40 @@ public final class ZapClient {
             throw new IllegalArgumentException("ZAP Replacer rule description is required");
         }
         return post("/JSON/replacer/action/removeRule/", "description=" + enc(description));
+    }
+    // 수동 주입 쿠키를 ZAP 세션 쿠키잔에 심는다. 이후 ZAP이 Set-Cookie 회전을 따라가 세션을 유지한다.
+    public String addSessionToken(String site, String token) {
+        return post("/JSON/httpSessions/action/addSessionToken/",
+                "site=" + enc(site) + "&sessionToken=" + enc(token));
+    }
+    public String createHttpSession(String site, String session) {
+        return post("/JSON/httpSessions/action/createEmptySession/",
+                "site=" + enc(site) + "&session=" + enc(session));
+    }
+    public String setSessionTokenValue(String site, String session, String token, String value) {
+        return postSensitive("/JSON/httpSessions/action/setSessionTokenValue/",
+                "site=" + enc(site) + "&session=" + enc(session)
+                        + "&sessionToken=" + enc(token) + "&tokenValue=" + enc(value));
+    }
+    public String setActiveHttpSession(String site, String session) {
+        return post("/JSON/httpSessions/action/setActiveSession/",
+                "site=" + enc(site) + "&session=" + enc(session));
+    }
+    public String removeHttpSession(String site, String session) {
+        return post("/JSON/httpSessions/action/removeSession/",
+                "site=" + enc(site) + "&session=" + enc(session));
+    }
+    public String removeSessionToken(String site, String token) {
+        return post("/JSON/httpSessions/action/removeSessionToken/",
+                "site=" + enc(site) + "&sessionToken=" + enc(token));
+    }
+    /** 주어진 raw 요청을 ZAP이 그대로 한 번 보내고 응답(헤더·본문)을 돌려준다. 주입 인증값 검증용. 요청에 인증값이 실리므로 민감. */
+    public String sendRequest(String rawRequest, boolean followRedirects) {
+        if (rawRequest == null || rawRequest.isBlank()) {
+            throw new IllegalArgumentException("ZAP sendRequest raw message is required");
+        }
+        return postSensitive("/JSON/core/action/sendRequest/",
+                "request=" + enc(rawRequest) + "&followRedirects=" + (followRedirects ? "true" : "false"));
     }
     public String clientSpider(String target) {
         return clientSpider(target, "");
