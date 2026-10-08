@@ -379,7 +379,7 @@ it("keeps the operation column unpinned and wraps long paths into two lines insi
   expect(within(header).getByText(full)).toHaveClass("sr-only")
 })
 
-it("puts judgment controls above the table and preserves other views in a compact menu", async () => {
+it("keeps only the two judgment views above the table", async () => {
   const user = userEvent.setup()
   const { MatrixPage } = await import("./MatrixPage")
   renderView(<MatrixPage />)
@@ -389,6 +389,6 @@ it("puts judgment controls above the table and preserves other views in a compac
   const views = within(workspace).getByRole("tablist", { name: "판정 매트릭스 보기" })
   await user.click(within(views).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
   expect(within(views).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" })).toHaveAttribute("aria-selected", "true")
-  await user.click(within(workspace).getByRole("button", { name: "다른 보기" }))
-  expect(screen.getByRole("button", { name: "파라미터 커버리지" })).toBeVisible()
+  expect(screen.queryByRole("button", { name: "다른 보기" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("heading", { name: "파라미터 커버리지" })).not.toBeInTheDocument()
 })

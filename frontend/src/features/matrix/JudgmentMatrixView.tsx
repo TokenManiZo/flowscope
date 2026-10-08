@@ -1,5 +1,5 @@
 import { identityLabel } from "@/lib/display/identityLabel"
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -122,12 +122,12 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
   </div>
 }
 
-export function JudgmentMatrixView({ viewSwitcher }: { viewSwitcher?: ReactNode } = {}) {
+export function JudgmentMatrixView() {
   const snapshot = useSnapshotQuery()
-  return <JudgmentMatrixWorkspace key={snapshot.data?.datasetRevision ?? "legacy"} snapshot={snapshot} viewSwitcher={viewSwitcher} />
+  return <JudgmentMatrixWorkspace key={snapshot.data?.datasetRevision ?? "legacy"} snapshot={snapshot} />
 }
 
-function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnType<typeof useSnapshotQuery>; viewSwitcher?: ReactNode }) {
+function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof useSnapshotQuery> }) {
   const [apiLabEvent, setApiLabEvent] = useState<EventRecord | null>(null)
   const [operationWidth, setOperationWidth] = useState(OPERATION_COLUMN_DEFAULT_WIDTH)
   const [view, setView] = useState<JudgmentView>("function")
@@ -153,7 +153,7 @@ function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnT
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={null} contentOverflow="hidden" inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4" aria-labelledby="judgment-title">
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-4"><h1 id="judgment-title" className="text-lg font-semibold">판정 매트릭스</h1>{controls}</div>{viewSwitcher}</header>
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3"><div className="flex flex-wrap items-center gap-4"><h1 id="judgment-title" className="text-lg font-semibold">판정 매트릭스</h1>{controls}</div></header>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>판정 매트릭스를 불러오지 못했습니다.</AlertTitle><AlertDescription>
         <p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
         {snapshot.data ? <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 && Number.isFinite(snapshot.dataUpdatedAt) ? <time dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 요청 기록 상세와 사람 판정 저장이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
