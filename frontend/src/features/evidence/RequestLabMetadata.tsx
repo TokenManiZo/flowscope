@@ -61,7 +61,7 @@ export function RequestLabMetadata({ service, identity, observedCredential, requ
       {(!requestRetained || !responseRetained) && <dd className="text-xs text-muted-foreground">요청 {requestRetained ? "보존" : "미보존"} · 응답 {responseRetained ? "보존" : "미보존"}</dd>}
     </dl>
     <div className="grid gap-2">
-      <IdentityBox title="요청한 계정" info="이 요청을 보낸 계정의 당시 인증값이에요." name={identityLabel(identity)} detail={observedCredential ?? "인증값 없음"} />
+      <IdentityBox title="요청한 계정" info="이 요청을 보낸 계정의 당시 인증값이에요." name={identityLabel(identity)} detail={observedCredential ?? "로그인 정보 없음"} />
       <IdentityBox title="현재 세션" info="지금 수집 중인 계정의 최신 인증값이에요."
         name={currentSession?.label ?? "없음"}
         detail={currentSession ? currentSession.credential ?? "확인 중" : "아직 저장된 최신 인증값이 없어요."} />

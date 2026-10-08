@@ -45,21 +45,21 @@ const service = "https://demo.test:443"
 const confidence = (code: string, level: number, label = code) => ({ code, level, label, basis: `${code} basis` })
 const base = { expected: "UNKNOWN" as const, blockingLayers: [] as const, actual: "UNTESTED" as const, policy: confidence("P0", 0, "정책 미정"), evidence: confidence("E0", 0, "미실행"), oracle: { type: "READ_SEMANTIC", label: "읽기 의미 응답", satisfied: false, requirement: "응답에 대상 객체 식별자가 포함되고 soft-deny가 아님" }, gates: [{ key: "session", label: "테스트 계정 유효", state: "PASS" as const, reason: "등록 계정 귀속" }, { key: "repeat", label: "독립 반복", state: "UNKNOWN" as const, reason: "자동 통제 반복 묶음이 없음" }], sourceVerdicts: {}, statusCodes: [], evidenceIds: [], validationVerdict: "NONE", recommendation: null, reviewStatus: "UNRESOLVED" as const, reviewNote: "", reviewEvidenceIds: [] }
 const fn = (id: string, identity: string, operation: string, overrides: Partial<MatrixFunctionCell> = {}): MatrixFunctionCell => ({ ...base, id, identity, identityLabel: identity.toUpperCase(), role: "User", operation, status: "COVERAGE_GAP", statusLabel: "미점검", ...overrides })
-const obj = (id: string, identity: string, resource: string, overrides: Partial<MatrixObjectCell> = {}): MatrixObjectCell => ({ ...base, id, identity, identityLabel: identity.toUpperCase(), role: "User", operation: `${service} GET /api/orders/{id}`, resource, owner: "a", ownerLabel: "A", relation: "SAME_ROLE_FOREIGN", techniques: ["BOLA", "IDOR"], resourcePolicy: "UNKNOWN", ownership: confidence("O3", 3, "확정"), status: "POLICY_ENFORCED", statusLabel: "차단 대상 · 차단 관측", ...overrides })
+const obj = (id: string, identity: string, resource: string, overrides: Partial<MatrixObjectCell> = {}): MatrixObjectCell => ({ ...base, id, identity, identityLabel: identity.toUpperCase(), role: "User", operation: `${service} GET /api/orders/{id}`, resource, owner: "a", ownerLabel: "A", relation: "SAME_ROLE_FOREIGN", techniques: ["BOLA", "IDOR"], resourcePolicy: "UNKNOWN", ownership: confidence("O3", 3, "확정"), status: "POLICY_ENFORCED", statusLabel: "정상 (막힘)", ...overrides })
 const recommendation = { type: "BOLA/IDOR", basisIdentity: "a", basisIdentityLabel: "A", testIdentity: "b", testIdentityLabel: "B", reason: "다른 계정에 연결된 객체를 교차 접근하는 조합입니다.", instruction: "B 세션으로 객체 요청을 Burp Repeater에서 수동 실행하세요.", stateChanging: false, basisEvidenceIds: ["ev-a"] }
 const matrix: AuthorizationMatrix = {
   summary: { policyConfirmed: 1, policyReview: 0, bflaCandidates: 0, bolaIdorCandidates: 0, coverageGaps: 1, invalidExperiments: 0, bflaTestRecommendations: 1, bolaIdorTestRecommendations: 1, manualReviewPending: 2, humanConfirmed: 0, humanDismissed: 0 },
   identities: [{ id: "a", label: "A", role: "User", kind: "REGISTERED" }, { id: "b", label: "B", role: "User", kind: "REGISTERED" }],
   configurationWarnings: [],
   functions: [
-    fn("function-a", "a", `${service} GET /api/admin/export`, { status: "EXPECTED_ACCESS", statusLabel: "허용 대상 · 접근 관측", policy: confidence("P3", 3, "사람 확인 정책"), expected: "ALLOW", actual: "SUCCESS", evidenceIds: ["ev-a"], statusCodes: [200], sourceVerdicts: { HUMAN: "ALLOW" } }),
-    fn("function-b", "b", `${service} GET /api/admin/export`, { status: "BFLA_TEST_RECOMMENDED", statusLabel: "기능 접근 테스트 필요", policy: confidence("P3", 3, "사람 확인 정책"), expected: "DENY", recommendation: { ...recommendation, type: "BFLA", instruction: "B 세션으로 같은 기능 요청을 Burp Repeater에서 수동 실행하세요." } }),
+    fn("function-a", "a", `${service} GET /api/admin/export`, { status: "EXPECTED_ACCESS", statusLabel: "정상 (허용)", policy: confidence("P3", 3, "사람 확인 정책"), expected: "ALLOW", actual: "SUCCESS", evidenceIds: ["ev-a"], statusCodes: [200], sourceVerdicts: { HUMAN: "ALLOW" } }),
+    fn("function-b", "b", `${service} GET /api/admin/export`, { status: "BFLA_TEST_RECOMMENDED", statusLabel: "이 계정으로 시험 필요", policy: confidence("P3", 3, "사람 확인 정책"), expected: "DENY", recommendation: { ...recommendation, type: "BFLA", instruction: "B 세션으로 같은 기능 요청을 Burp Repeater에서 수동 실행하세요." } }),
   ],
   objects: [
-    obj("object-a", "a", `${service} orders:101`, { status: "EXPECTED_ACCESS", statusLabel: "허용 대상 · 접근 관측", relation: "OWNER", expected: "ALLOW", actual: "SUCCESS", evidenceIds: ["ev-a"], statusCodes: [200], sourceVerdicts: { HUMAN: "ALLOW" } }),
-    obj("object-b", "b", `${service} orders:101`, { status: "BOLA_IDOR_TEST_RECOMMENDED", statusLabel: "객체 접근 테스트 필요", expected: "DENY", recommendation, reviewEvidenceIds: ["ev-a"] }),
+    obj("object-a", "a", `${service} orders:101`, { status: "EXPECTED_ACCESS", statusLabel: "정상 (허용)", relation: "OWNER", expected: "ALLOW", actual: "SUCCESS", evidenceIds: ["ev-a"], statusCodes: [200], sourceVerdicts: { HUMAN: "ALLOW" } }),
+    obj("object-b", "b", `${service} orders:101`, { status: "BOLA_IDOR_TEST_RECOMMENDED", statusLabel: "이 계정으로 시험 필요", expected: "DENY", recommendation, reviewEvidenceIds: ["ev-a"] }),
   ],
-  evidence: [{ ...obj("object-a", "a", `${service} orders:101`, { status: "EXPECTED_ACCESS", statusLabel: "허용 대상 · 접근 관측", evidenceIds: ["ev-a"], statusCodes: [200] }), type: "BOLA/IDOR" }],
+  evidence: [{ ...obj("object-a", "a", `${service} orders:101`, { status: "EXPECTED_ACCESS", statusLabel: "정상 (허용)", evidenceIds: ["ev-a"], statusCodes: [200] }), type: "BOLA/IDOR" }],
   policyLegend: [{ code: "P3", title: "사람 확인", description: "명시적으로 확인한 기대 역할" }],
   evidenceLegend: [{ code: "E0", title: "미점검", description: "응답 없음" }],
   ownershipLegend: [{ code: "O3", title: "확정", description: "명시적 소유 필드" }],
@@ -89,7 +89,7 @@ it("renders the compact server summary and matrix without row subtitles or P/E/O
   expect(within(table).getByText("GET")).toHaveClass("text-observation-human")
   expect(within(table).getByText("/api/admin/export")).toBeVisible()
   expect(within(table).queryByText("P3 · 사람 확인 정책")).not.toBeInTheDocument()
-  const cell = within(table).getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" })
+  const cell = within(table).getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" })
   expect(cell).toHaveAttribute("data-tone", "risk")
   expect(cell).not.toHaveTextContent("기대 차단 → 실제 미실행")
   expect(within(cell).queryByText("P3")).not.toBeInTheDocument()
@@ -129,18 +129,18 @@ it("opens the recommendation detail, saves a human review against the server cel
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   expect(within(table).queryByText(`${service} orders:101 · 소유 A`)).not.toBeInTheDocument()
-  await user.click(within(table).getByRole("button", { name: `객체 접근 테스트 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(table).getByRole("button", { name: `이 계정으로 시험 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
-  // 상세는 역할·정책 지정, Request Lab 전송, 사람 최종 판정 세 칸뿐이다.
-  expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["정책·역할 지정", "Request Lab 전송", "사람 최종 판정"])
-  expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("A → B: Request Lab의 전송 인증에서 B을(를) 고르세요.")
+  // 상세는 역할·정책 지정, Request Lab 전송, 최종 판단 세 칸뿐이다.
+  expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["정책·역할 지정", "Request Lab 전송", "최종 판단"])
+  expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("A → B: Request Lab의 전송 계정에서 B을(를) 고르세요.")
   expect(inspector).not.toHaveTextContent("ev-a")
   expect(within(inspector).queryByRole("region", { name: "독립 신뢰도 축" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "테스트 유효성 게이트" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "기대와 실제" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "결과 오라클" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "대상 요청 기록" })).not.toBeInTheDocument()
-  const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
+  const review = within(inspector).getByRole("region", { name: "최종 판단" })
   await user.click(within(review).getByRole("checkbox"))
   await user.type(within(review).getByLabelText("검증 메모"), "repeater reproduced")
   await user.click(within(review).getByRole("button", { name: "판정 저장" }))
@@ -153,7 +153,7 @@ it("opens the recommendation detail, saves a human review against the server cel
 it("opens the recommendation's basis record in Request Lab without the removed auto-replay controls", async () => {
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
-  await user.click(screen.getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" }))
   expect(screen.queryByRole("region", { name: "안전 능동 재전송" })).not.toBeInTheDocument()
   expect(screen.queryByRole("checkbox", { name: "안전 자동 재전송 허용 (이번 1회)" })).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: /Repeater/ })).not.toBeInTheDocument()
@@ -171,7 +171,7 @@ it("opens a same-API record whose raw is still in memory when the basis record l
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
-  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `객체 접근 테스트 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `이 계정으로 시험 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
   await user.click(within(screen.getByRole("region", { name: "Request Lab 전송" })).getByRole("button", { name: "Request Lab에서 보내기" }))
   expect(await screen.findByRole("dialog", { name: "Request Lab" })).toHaveTextContent("ev-live")
 })
@@ -181,9 +181,9 @@ it("keeps the same sections on non-reviewable observed cells, locks review, and 
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  await user.click(within(table).getByRole("button", { name: `허용 대상 · 접근 관측: A · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(table).getByRole("button", { name: `정상 (허용): A · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
-  const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
+  const review = within(inspector).getByRole("region", { name: "최종 판단" })
   expect(within(review).getByRole("button", { name: "판정 저장" })).toBeDisabled()
   expect(within(review).getByLabelText("검증 메모")).toBeDisabled()
   expect(review).toHaveTextContent("검토할 추천이 없는 셀입니다.")
@@ -201,7 +201,7 @@ it("filters attention rows with a separate switch and clears a selection whose s
   expect(attention).toHaveAttribute("aria-checked", "true")
   expect(screen.getByRole("region", { name: "판정 매트릭스 표" })).toBeVisible()
   await user.click(attention)
-  await user.click(screen.getByRole("button", { name: "허용 대상 · 접근 관측: A · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "정상 (허용): A · GET /api/admin/export" }))
   current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, functions: [matrix.functions[1]] } }
   rerender(<JudgmentMatrixView />)
   await waitFor(() => expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument())
@@ -215,13 +215,13 @@ it("marks confirmed cells red, keeps review available, and explains a gap withou
   ] } }
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  expect(within(table).getByRole("button", { name: "허용 대상 · 접근 관측 · 사용자 확정: A · GET /api/admin/export" })).toHaveClass("border-red-500/50", "bg-red-500/10")
+  expect(within(table).getByRole("button", { name: "정상 (허용) · 사용자 확정: A · GET /api/admin/export" })).toHaveClass("border-red-500/50", "bg-red-500/10")
   await user.click(within(table).getByRole("button", { name: "미점검: B · GET /api/admin/export" }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   // 이 API를 요청한 기록이 하나도 없으면 Request Lab을 열 수 없다고 알린다.
   expect(within(inspector).getByRole("button", { name: "Request Lab에서 보내기" })).toBeDisabled()
   expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("이 API의 요청 기록이 없어 Request Lab을 열 수 없습니다.")
-  const review = within(inspector).getByRole("region", { name: "사람 최종 판정" })
+  const review = within(inspector).getByRole("region", { name: "최종 판단" })
   expect(within(review).getByRole("checkbox", { name: "취약점으로 확정" })).toBeEnabled()
   expect(within(review).getByRole("button", { name: "판정 저장" })).toBeEnabled()
 })
@@ -250,7 +250,7 @@ it.each(["success", "failure"])("does not carry a late review %s or pending stat
   ] } }
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  await user.click(within(table).getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" }))
+  await user.click(within(table).getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" }))
   await user.type(screen.getByLabelText("검증 메모"), "B review")
   await user.click(screen.getByRole("button", { name: "판정 저장" }))
   await waitFor(() => expect(saveReview).toHaveBeenCalledWith("function-b", "UNRESOLVED", "B review"))
@@ -265,7 +265,7 @@ it("preserves review drafts on traffic revisions and clears reused ids on datase
   const user = userEvent.setup()
   current = { ...snapshot, datasetRevision: 1 }
   const { rerender } = renderView(<JudgmentMatrixView />)
-  await user.click(screen.getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" }))
   await user.type(screen.getByLabelText("검증 메모"), "unsaved old project")
   current = { ...current, revision: 5 }
   rerender(<JudgmentMatrixView />)
@@ -273,14 +273,14 @@ it("preserves review drafts on traffic revisions and clears reused ids on datase
   current = { ...current, revision: 6, datasetRevision: 2 }
   rerender(<JudgmentMatrixView />)
   expect(screen.queryByLabelText("검증 메모")).not.toBeInTheDocument()
-  await user.click(screen.getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" }))
   expect(screen.getByLabelText("검증 메모")).toHaveValue("")
 })
 
 it("starts a fresh review when the same cell has different server review 요청 기록", async () => {
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
-  await user.click(screen.getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" }))
   await user.type(screen.getByLabelText("검증 메모"), "old 요청 기록 note")
   current = { ...snapshot, revision: 5, authorizationMatrix: { ...matrix, functions: [matrix.functions[0], { ...matrix.functions[1], reviewEvidenceIds: ["ev-new"] }] } }
   rerender(<JudgmentMatrixView />)
@@ -290,14 +290,14 @@ it("starts a fresh review when the same cell has different server review 요청 
 it("retains the selected cell and unsaved review note while snapshot actions are suspended", async () => {
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
-  await user.click(screen.getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" }))
+  await user.click(screen.getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" }))
   await user.type(screen.getByLabelText("검증 메모"), "keep during outage")
   queryError = true
   rerender(<JudgmentMatrixView />)
   expect(screen.getByLabelText("검증 메모")).toHaveValue("keep during outage")
   expect(screen.getByLabelText("검증 메모")).toBeDisabled()
   expect(screen.getByText("마지막으로 불러온 데이터를 표시하고 있습니다.")).toBeVisible()
-  expect(screen.getByRole("button", { name: "기능 접근 테스트 필요: B · GET /api/admin/export" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "이 계정으로 시험 필요: B · GET /api/admin/export" })).toBeDisabled()
   await user.click(screen.getByRole("button", { name: "snapshot 다시 시도" }))
   expect(refetchSnapshot).toHaveBeenCalledOnce()
   queryError = false
@@ -314,9 +314,9 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   // 판단할 것 없는 흔한 상태는 짧은 회색 글자로만 보이고 서버 문구는 이름·툴팁에 남는다.
-  const quiet = within(table).getByRole("button", { name: "접근 정책 확인 필요: C · GET /api/admin/export" })
-  expect(quiet).toHaveTextContent(/^접근 정책 확인 필요$/)
-  expect(quiet).toHaveAttribute("title", "접근 정책 확인 필요")
+  const quiet = within(table).getByRole("button", { name: "권한 규칙 지정 필요: C · GET /api/admin/export" })
+  expect(quiet).toHaveTextContent(/^권한 규칙 지정 필요$/)
+  expect(quiet).toHaveAttribute("title", "권한 규칙 지정 필요")
   expect(quiet).toHaveClass("text-muted-foreground")
   await user.click(quiet)
   const assignment = screen.getByRole("region", { name: "정책·역할 지정" })
@@ -328,7 +328,7 @@ it("offers required-role and identity-role assignment on a P0 cell through the e
   await user.click(within(assignment).getByRole("button", { name: "계정 역할 저장" }))
   await waitFor(() => expect(saveRole).toHaveBeenCalledWith("c", "USER"))
   // 정책이 확인된 셀에도 같은 자리에 지정 칸이 있고, 현재 필수 역할이 미리 채워진다.
-  await user.click(within(table).getByRole("button", { name: "허용 대상 · 접근 관측: A · GET /api/admin/export" }))
+  await user.click(within(table).getByRole("button", { name: "정상 (허용): A · GET /api/admin/export" }))
   expect(within(screen.getByRole("region", { name: "정책·역할 지정" })).getByRole("combobox", { name: "필수 역할" })).toBeVisible()
 })
 
@@ -338,7 +338,7 @@ it("hides the blocking-layer subtitle and saves an object policy from the object
     cell.id === "object-b" ? { ...cell, blockingLayers: ["BOLA"], resourcePolicy: "OWNER_ONLY" } : cell) } }
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
-  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `객체 접근 테스트 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `이 계정으로 시험 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
 
   expect(screen.queryByText("차단층")).not.toBeInTheDocument()
   const assignment = screen.getByRole("region", { name: "정책·역할 지정" })

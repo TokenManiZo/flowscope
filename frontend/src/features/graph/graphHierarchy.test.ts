@@ -112,7 +112,7 @@ describe("API hierarchy", () => {
     expect(group.kind).toBe("group")
     expect(group.nodes.some(node => node.kind === "resource")).toBe(true)
     expect(group.edges.every(edge => edge.relation === "identity-operation" || edge.relation === "operation-resource")).toBe(true)
-    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
+    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "사람"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "스캐너"]])
     expect(group.operations.find(node => node.selection.operation === get)!.selection.cells[0].overall).toBe("undecided")
     expect(group.listItems).toEqual(group.operations)
   })
@@ -306,7 +306,7 @@ describe("API hierarchy", () => {
     const group = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
     expect(group.nodes.filter(node => node.kind === "observed-operation").map(node => node.selection.operation).sort()).toEqual([`${service} GET /api/orders/include`, `${service} GET /api/orders/poll`])
     expect(group.edges.filter(edge => edge.relation === "support").map(edge => [edge.source, edge.selection.evidenceIds, edge.selection.cellKeys])).toEqual([["human", ["review-api", "support-1"], []], ["llm", ["unverified"], []]])
-    // 판정 셀·출처 집계는 그대로다. 관측 전체는 표시만 더한다.
+    // 판정 셀·출처 집계는 그대로다. 전체는 표시만 더한다.
     expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 }, observedCount: 3 })
     expect(group.nodes.filter(node => node.staticResource && node.kind === "operation-group")).toHaveLength(1)
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "observed-operation")).toBe(false)

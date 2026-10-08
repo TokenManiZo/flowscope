@@ -107,10 +107,10 @@ const PAGE_SIZE = 18
 const supportClasses = new Set(["AUTH_SESSION", "NAVIGATION", "POLLING", "BACKGROUND"])
 
 export const sourceStyles: Record<Source | "unknown", Pick<GraphEdge, "sourceText" | "line" | "color">> = {
-  human: { sourceText: "HUMAN", line: "solid", color: "#2563eb" },
-  scanner: { sourceText: "SCANNER", line: "dashed", color: "#dc2626" },
+  human: { sourceText: "사람", line: "solid", color: "#2563eb" },
+  scanner: { sourceText: "스캐너", line: "dashed", color: "#dc2626" },
   llm: { sourceText: "LLM", line: "dotted", color: "#e4e4e7" },
-  unknown: { sourceText: "UNKNOWN", line: "dotted", color: "#6b7280" },
+  unknown: { sourceText: "미확인", line: "dotted", color: "#6b7280" },
 }
 
 export const verdictStyles: Record<Verdict | "unknown", { text: string; color: string }> = {

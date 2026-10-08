@@ -113,7 +113,7 @@ it("reorders locked nodes without changing lock state and does not restore on fi
   } finally { core.destroy() }
 })
 
-it("keeps Site Overview positions unchanged when filters highlight nodes", () => {
+it("keeps 전체 사이트 positions unchanged when filters highlight nodes", () => {
   const core = cytoscape({ headless: true, layout: { name: "preset" }, elements: [
     { data: { id: "target", kind: "target", height: 100, hl: "yes" }, position: { x: 180, y: 400 } },
     { data: { id: "first", kind: "api-group", height: 100, hl: "no" }, position: { x: 540, y: 100 } },

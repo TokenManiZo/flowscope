@@ -40,25 +40,25 @@ export interface StatusMeta {
 }
 
 export const HUMAN_STATUS_META: Record<HumanSessionStatus, StatusMeta> = {
-  ACTIVE: { label: "인증값 있음", tone: "ok" },
+  ACTIVE: { label: "로그인 정보 있음", tone: "ok" },
   CAPTURING: { label: "수집 중", tone: "warn", icon: Clock3 },
-  UNVERIFIED: { label: "인증값 없음", tone: "idle" },
-  SUSPECT: { label: "인증값 만료", tone: "warn" },
-  REAUTH_REQUIRED: { label: "인증값 만료", tone: "warn" },
-  REVOKED: { label: "인증값 없음", tone: "idle" },
+  UNVERIFIED: { label: "로그인 정보 없음", tone: "idle" },
+  SUSPECT: { label: "로그인 정보 만료", tone: "warn" },
+  REAUTH_REQUIRED: { label: "로그인 정보 만료", tone: "warn" },
+  REVOKED: { label: "로그인 정보 없음", tone: "idle" },
 };
 
 export const VERIFICATION_META: Record<VerificationSource, StatusMeta> = {
-  OPERATOR_ASSERTED: { label: "운영자 확인", tone: "ok" },
-  RULE_MATCHED: { label: "규칙 확인", tone: "ok" },
-  LEGACY_RESPONSE: { label: "약검증", tone: "warn" },
-  NONE: { label: "미검증", tone: "idle" },
+  OPERATOR_ASSERTED: { label: "직접 확인", tone: "ok" },
+  RULE_MATCHED: { label: "규칙으로 확인", tone: "ok" },
+  LEGACY_RESPONSE: { label: "로그인 추정", tone: "warn" },
+  NONE: { label: "확인 안 됨", tone: "idle" },
 };
 
 export const ZAP_STATUS_META: Record<ZapLoginStatus, StatusMeta> = {
   UNVERIFIED: { label: "미확인", tone: "idle" },
   AUTHENTICATING: { label: "로그인 중", tone: "warn", icon: Clock3 },
-  VERIFIED_BY_ZAP: { label: "ZAP 확인됨", tone: "ok" },
+  VERIFIED_BY_ZAP: { label: "ZAP으로 확인", tone: "ok" },
   FAILED: { label: "실패", tone: "bad" },
 };
 
@@ -91,7 +91,7 @@ export function ConflictBadge() {
       className="gap-1 border-destructive/50 font-mono text-[11px] text-destructive"
     >
       <CircleSlash className="size-3" aria-hidden="true" />
-      자격 충돌
+      다른 계정 로그인 정보 섞임
     </Badge>
   );
 }

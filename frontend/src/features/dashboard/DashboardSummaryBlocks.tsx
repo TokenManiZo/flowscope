@@ -64,7 +64,7 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
       { name: "권한 변형 미점검", label: "권한 변형 미점검", value: format(counts.authVariants), tone: zero(counts.authVariants) },
       { name: "미점검 파라미터", label: "미점검 파라미터", value: format(counts.unobserved), tone: zero(counts.unobserved) },
     ]} />
-    <Stage notch step="판정" href="#matrix" go="권한 매트릭스" value={candidates} unit="인가 후보" hot={candidates > 0} rows={[
+    <Stage notch step="판정" href="#matrix" go="판정 매트릭스" value={candidates} unit="IDOR·BFLA 의심" hot={candidates > 0} rows={[
       { name: "BOLA/IDOR 후보", label: "BOLA/IDOR 후보", value: format(auth?.bolaIdorCandidates ?? 0), tone: (auth?.bolaIdorCandidates ?? 0) > 0 ? "candidate" : "zero" },
       { name: "BFLA 후보", label: "BFLA 후보", value: format(auth?.bflaCandidates ?? 0), tone: (auth?.bflaCandidates ?? 0) > 0 ? "candidate" : "zero" },
       { name: "검토 대기", label: "검토 대기", value: format(auth?.manualReviewPending ?? 0), tone: zero(auth?.manualReviewPending ?? 0) },
@@ -80,7 +80,7 @@ export function SnapshotFootnote({ trafficStats }: Pick<DashboardSummaryValues, 
 }
 
 const reasonLabels: Record<string, string> = {
-  WRITE_METHOD: "쓰기 요청", AUTH_VARIANT_UNTESTED: "권한 변형 미점검", SOURCE_DISCREPANCY: "소스 불일치", HUMAN_REVIEW_REQUIRED: "사람 검토 필요",
+  WRITE_METHOD: "쓰기 요청", AUTH_VARIANT_UNTESTED: "권한 변형 미점검", SOURCE_DISCREPANCY: "도구마다 결과 다름", HUMAN_REVIEW_REQUIRED: "직접 확인 필요",
 }
 const methodTone: Record<string, string> = { GET: "text-observation-human", POST: "text-observation-scanner" }
 
@@ -103,7 +103,7 @@ const reviewLabels: Record<ReviewStatus, string> = { UNRESOLVED: "검토 전", C
 
 /** 규칙 후보 목록. 제목은 이름과 요청 두 줄로 나눈다. */
 export function CandidateList({ scenarios }: { scenarios: readonly Scenario[] }) {
-  return <ListCard title="인가 후보" href="#scenarios" linkLabel="시나리오 보기" empty="규칙에 해당하는 후보가 없습니다.">{scenarios.slice(0, 5).map(scenario => {
+  return <ListCard title="IDOR·BFLA 의심" href="#scenarios" linkLabel="시나리오 보기" empty="규칙에 해당하는 후보가 없습니다.">{scenarios.slice(0, 5).map(scenario => {
     const { name, target } = scenarioTitleParts(scenario.title)
     return <li key={scenario.id} className="border-t border-border first:border-t-0"><a href="#scenarios" className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
       <span className="rounded border border-candidate-border px-1.5 text-[11px] font-semibold text-candidate">{scenario.risk}</span>

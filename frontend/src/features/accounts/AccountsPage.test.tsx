@@ -71,7 +71,7 @@ describe("account and session management", () => {
     expect(await screen.findByRole("heading", { name: "계정·세션" })).toBeVisible()
     expect(screen.queryByText("관측된 세션")).not.toBeInTheDocument()
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
-    await waitFor(() => expect(lanes).toHaveTextContent(/Human\s*수집 대기\s*0건/))
+    await waitFor(() => expect(lanes).toHaveTextContent(/사람\s*수집 대기\s*0건/))
     expect(lanes).toHaveTextContent(/LLM\s*사용 안 함/)
     expect(screen.queryByLabelText("등록 계정 표시 이름")).not.toBeInTheDocument()
     expect(screen.queryByText("고급 세션 진단")).not.toBeInTheDocument()
@@ -149,7 +149,7 @@ describe("account and session management", () => {
     renderAccounts({}, data)
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
     await waitFor(() => expect(lanes).toHaveTextContent(/LLM\s*사용 안 함\s*1건/))
-    expect(lanes).toHaveTextContent(/Human\s*수집 대기\s*1건/)
+    expect(lanes).toHaveTextContent(/사람\s*수집 대기\s*1건/)
     expect(lanes).toHaveTextContent(/ZAP[\s\S]*1건/)
   })
 

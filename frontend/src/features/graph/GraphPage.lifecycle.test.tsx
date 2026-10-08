@@ -33,7 +33,7 @@ it("opens only the relationship hierarchy, without the removed priority tab", as
   const { GraphPage } = await import("./GraphPage")
   render(<GraphPage />)
   expect(screen.queryByRole("tab", { name: "점검 우선순위" })).not.toBeInTheDocument()
-  expect(screen.getByText("Site Overview")).toBeVisible()
+  expect(screen.getByText("전체 사이트")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByLabelText("공격면 Cytoscape 그래프")).toBeVisible()
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)

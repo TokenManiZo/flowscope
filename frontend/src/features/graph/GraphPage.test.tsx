@@ -36,7 +36,7 @@ it("opens the graph on the full relationship view", () => {
   expect(screen.queryByText("분석 필터")).not.toBeInTheDocument()
   expect(within(toolbar).queryByText(/identities|API groups/)).not.toBeInTheDocument()
   expect(within(toolbar).queryByText("ACCESS GRAPH")).not.toBeInTheDocument()
-  expect(screen.getByText("Site Overview")).toBeVisible()
+  expect(screen.getByText("전체 사이트")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toBeVisible()
 })
@@ -48,8 +48,8 @@ it("keeps an empty lane header at its anchor instead of overlapping the neighbou
   ;(globalThis as { graphLaneBounds?: ReadonlyArray<{ left: number; right: number } | null> }).graphLaneBounds = [{ left: 200, right: 900 }, null]
   render(<CurrentGraphPage />)
 
-  const target = screen.getByRole("button", { name: "TARGET 레인 기준 정렬" })
-  const group = screen.getByRole("button", { name: "API GROUP 레인 기준 정렬" })
+  const target = screen.getByRole("button", { name: "대상 레인 기준 정렬" })
+  const group = screen.getByRole("button", { name: "API 묶음 레인 기준 정렬" })
   const right = (element: HTMLElement) => Number.parseFloat(element.style.left) + Number.parseFloat(element.style.width)
   expect(right(target)).toBe(900)
   expect(Number.parseFloat(group.style.left)).toBeGreaterThanOrEqual(right(target))
@@ -60,10 +60,10 @@ it("re-sorts a single lane from its header placed on the bounds the canvas repor
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
-  const laneButton = screen.getByRole("button", { name: "API GROUP 레인 기준 정렬" })
+  const laneButton = screen.getByRole("button", { name: "API 묶음 레인 기준 정렬" })
   // 캔버스가 알린 범위(mock: 두 번째 레인 400~700)를 그대로 머리글 위치로 쓴다.
   expect(laneButton).toHaveStyle({ left: "400px", width: "300px" })
-  expect(screen.getByRole("button", { name: "TARGET 레인 기준 정렬" })).toBeVisible()
+  expect(screen.getByRole("button", { name: "대상 레인 기준 정렬" })).toBeVisible()
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-lane-layout", "0:0")
 
   await userEvent.click(laneButton)
@@ -92,12 +92,12 @@ it("navigates Site→Group and selects API and Object in the list without leavin
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [hierarchyCell] }
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
-  expect(screen.getByText("Site Overview")).toBeVisible()
+  expect(screen.getByText("전체 사이트")).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
   await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   const breadcrumb = screen.getByRole("navigation", { name: "그래프 계층" })
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
-  expect(within(breadcrumb).getByRole("button", { name: "Site Overview" })).toBeVisible()
+  expect(within(breadcrumb).getByRole("button", { name: "전체 사이트" })).toBeVisible()
   expect(screen.queryByText("orders:101")).not.toBeInTheDocument()
   // 목록 표에서 API를 눌러도 화면은 그룹에 머물고 선택만 바뀐다. 객체는 객체 칩으로 줄 아래에 펼친다.
   await userEvent.click(screen.getByRole("row", { name: /^GET \/api\/orders\/\{id\}/ }))
@@ -128,7 +128,7 @@ it("requires explicit 18-item expansion for APIs and retains group paging on Bac
   await openAllOrders()
   expect(screen.getByRole("row", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
   // 목록에서는 API로 들어가지 않으므로, 사이트로 나갔다가 뒤로 돌아와도 그룹 페이지 수가 유지되는지 본다.
-  await userEvent.click(within(screen.getByRole("navigation", { name: "그래프 계층" })).getByRole("button", { name: "Site Overview" }))
+  await userEvent.click(within(screen.getByRole("navigation", { name: "그래프 계층" })).getByRole("button", { name: "전체 사이트" }))
   await userEvent.click(screen.getByRole("button", { name: "뒤로" }))
   await openAllOrders()
   expect(screen.getByRole("row", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
@@ -142,18 +142,18 @@ it("switches the graph between judged APIs and every observed request including 
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
   const rail = screen.getByRole("complementary", { name: "분석 필터" })
-  expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
+  expect(within(rail).getByRole("button", { name: "주요 API만" })).toHaveAttribute("aria-pressed", "true")
   expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
-  await userEvent.click(within(rail).getByRole("button", { name: "관측 전체" }))
-  expect(within(rail).getByRole("button", { name: "관측 전체" })).toHaveAttribute("aria-pressed", "true")
+  await userEvent.click(within(rail).getByRole("button", { name: "전체" }))
+  expect(within(rail).getByRole("button", { name: "전체" })).toHaveAttribute("aria-pressed", "true")
   await userEvent.click(within(rail).getByRole("button", { name: "보기 범위 도움말" }))
   expect(screen.getByText(/판정에 쓰지 않습니다/)).toBeVisible()
   await userEvent.keyboard("{Escape}")
-  // 관측 전체에서 정적 자원 묶음과 서버 렌더링 화면이 함께 추가된다.
+  // 전체에서 정적 자원 묶음과 서버 렌더링 화면이 함께 추가된다.
   expect(screen.queryAllByText("BOARD APIs").length).toBeGreaterThan(0)
   expect(screen.queryAllByText("THEME APIs").length).toBeGreaterThan(0)
   await userEvent.click(within(rail).getByRole("button", { name: "초기화" }))
-  expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
+  expect(within(rail).getByRole("button", { name: "주요 API만" })).toHaveAttribute("aria-pressed", "true")
   expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)
 })
 
@@ -169,8 +169,8 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   for (const section of ["보기 범위", "출처", "계정", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
   // 판정·Gap 목록·역할 개수·보기 전환은 그래프 필터에서 뺐다(판정은 매트릭스, 색 기준은 강조 필터가 맡는다).
   for (const removed of ["Verdict", "Gap", "Role · policy", "View options", "고급", "경로 후보 표시", "인증·화면·반복 보조 흐름 표시", "그래프 입력 방식"]) expect(within(rail).queryByText(removed)).not.toBeInTheDocument()
-  expect(screen.getAllByText("TARGET")).toHaveLength(1)
-  expect(screen.getAllByText("API GROUP")).toHaveLength(1)
+  expect(screen.getAllByText("대상")).toHaveLength(1)
+  expect(screen.getAllByText("API 묶음")).toHaveLength(1)
   expect(screen.queryByText("OBJECT")).not.toBeInTheDocument()
   expect(screen.getByRole("region", { name: "접근 그래프 작업면" })).toContainElement(screen.getByTestId("cytoscape-graph"))
   expect(screen.queryByText("ACCESS GRAPH")).not.toBeInTheDocument()
@@ -238,7 +238,7 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   const filters = screen.getByRole("dialog", { name: "분석 필터" })
   // 강조 필터는 아무것도 고르지 않은 상태로 시작하고, 고른 조건만 강조한다(데이터를 숨기지 않는다).
-  const scanner = within(filters).getByRole("checkbox", { name: /SCANNER\s*0/ })
+  const scanner = within(filters).getByRole("checkbox", { name: /스캐너\s*0/ })
   const identity = within(filters).getByRole("checkbox", { name: /alice\s*1/ })
   const success = within(filters).getByRole("checkbox", { name: /2xx\s*1/ })
   const redirect = within(filters).getByRole("checkbox", { name: /3xx\s*0/ })
@@ -261,12 +261,12 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   expect(success).not.toBeChecked()
 })
 
-it("applies highlight filters on Site Overview and retains them inside an API group", async () => {
+it("applies highlight filters on 전체 사이트 and retains them inside an API group", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
   const filters = screen.getByRole("complementary", { name: "분석 필터" })
-  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /사람\s*1/ }))
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
   await userEvent.click(screen.getByRole("button", { name: "목록" }))
   await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
@@ -274,7 +274,7 @@ it("applies highlight filters on Site Overview and retains them inside an API gr
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
 })
 
-it("dims unmatched Site Overview list cards and restores them when the filter is cleared", async () => {
+it("dims unmatched 전체 사이트 list cards and restores them when the filter is cleared", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, cells: [...snapshot.cells, { ...hierarchyCell, op: "GET /api/products/list", idn: "bob", perSource: { scanner: "allow" } }] }
   render(<CurrentGraphPage />)
@@ -283,11 +283,11 @@ it("dims unmatched Site Overview list cards and restores them when the filter is
   const orders = within(list).getByRole("button", { name: /ORDERS APIs/ })
   const products = within(list).getByRole("button", { name: /PRODUCTS APIs/ })
   const filters = screen.getByRole("complementary", { name: "분석 필터" })
-  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /사람\s*1/ }))
   expect(orders).not.toHaveClass("opacity-30")
   expect(products).toHaveClass("opacity-30")
   expect(products).toBeEnabled()
-  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /사람\s*1/ }))
   expect(products).not.toHaveClass("opacity-30")
   await userEvent.click(within(filters).getByRole("checkbox", { name: /LLM\s*0/ }))
   expect(orders).toHaveClass("opacity-30")
@@ -310,7 +310,7 @@ it("moves back and forward through graph levels from the toolbar", async () => {
   await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
   await userEvent.click(back)
-  expect(within(breadcrumb).getByText("Site Overview")).toHaveAttribute("aria-current", "page")
+  expect(within(breadcrumb).getByText("전체 사이트")).toHaveAttribute("aria-current", "page")
   expect(forward).toBeEnabled()
   await userEvent.click(forward)
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
@@ -325,5 +325,5 @@ it("uses exact HUMAN, SCANNER, and LLM source semantics in the canvas legend", a
   render(<GraphPage />)
 
   const legend = screen.getByRole("list", { name: "그래프 소스 범례" })
-  expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["HUMAN", "SCANNER", "LLM"])
+  expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["사람", "스캐너", "LLM"])
 })

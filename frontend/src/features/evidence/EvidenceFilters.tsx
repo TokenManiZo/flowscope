@@ -9,9 +9,9 @@ import { cn } from "@/lib/utils"
 import { trafficClassDefaults, type EvidenceFiltersState } from "./evidenceSelectors"
 
 const sourceLabels = {
-  human: "사람 H",
-  scanner: "스캐너 S",
-  llm: "LLM L",
+  human: "사람",
+  scanner: "스캐너",
+  llm: "LLM",
 } as const
 
 type Props = {

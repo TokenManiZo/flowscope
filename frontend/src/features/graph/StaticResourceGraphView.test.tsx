@@ -38,12 +38,12 @@ it.each(["API", "resource"])("double-clicking the folded %s opens both lists, th
   const user = userEvent.setup(), entries = staticResourceEntries(fixture.data!, filters)
   render(<RelationshipGraphView />)
   const rail = screen.getByRole("complementary", { name: "분석 필터" })
-  await user.click(within(rail).getByRole("button", { name: "관측 전체" }))
+  await user.click(within(rail).getByRole("button", { name: "전체" }))
   await user.dblClick(within(screen.getByTestId("static-canvas")).getByText("api-group IMAGES APIs"))
   const familyId = `operation-group:${entries[0].familyId}`
   const summaryId = `object-group:static-family-objects:${entries[0].familyId}`
   await user.click(screen.getByTestId(familyId))
-  for (const name of ["API 하이라이트", "취약점 등록", "API 삭제"]) expect(screen.getByRole("button", { name })).toBeEnabled()
+  for (const name of ["API 하이라이트", "취약점으로 표시", "API 삭제"]) expect(screen.getByRole("button", { name })).toBeEnabled()
   await user.dblClick(screen.getByTestId(side === "API" ? familyId : summaryId))
   expect(screen.queryByTestId(summaryId)).not.toBeInTheDocument()
   for (const entry of entries) {
@@ -52,7 +52,7 @@ it.each(["API", "resource"])("double-clicking the folded %s opens both lists, th
     expect(screen.queryByTestId(`resource:${entry.objectKey}`)).not.toBeInTheDocument()
   }
   await user.click(screen.getByTestId(`operation:${entries[0].apiId}`))
-  for (const name of ["API 하이라이트", "취약점 등록", "API 삭제"]) expect(screen.getByRole("button", { name })).toBeEnabled()
+  for (const name of ["API 하이라이트", "취약점으로 표시", "API 삭제"]) expect(screen.getByRole("button", { name })).toBeEnabled()
   await user.dblClick(screen.getByTestId(`object-group:${entries[0].groupKey}`))
   expect(screen.queryByTestId(`resource:${entries[1].objectKey}`)).not.toBeInTheDocument()
   await user.dblClick(screen.getByTestId(`resource:${entries[0].objectKey}`))

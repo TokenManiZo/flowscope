@@ -105,7 +105,7 @@ const observed = (changes: Partial<EventRecord> = {}): EventRecord => ({ eventId
 
 it("refreshes event-only search results and selects an observed API outside the page limit", async () => {
   const view = render(<RelationshipGraphView />)
-  await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
+  await userEvent.click(screen.getByRole("button", { name: "전체" }))
   await userEvent.type(screen.getByRole("combobox"), "/orders/observed")
   await screen.findByText("검색 결과가 없습니다. 검색어를 바꿔 보세요.")
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed()] })
@@ -126,7 +126,7 @@ it("refreshes event-only search results and selects an observed API outside the 
 it("keeps judged and other-account evidence updated on the same API card", async () => {
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed({ op: cells[0].op })] })
   const view = render(<RelationshipGraphView />)
-  await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
+  await userEvent.click(screen.getByRole("button", { name: "전체" }))
   await userEvent.type(screen.getByRole("combobox"), "/orders/00")
   const option = await screen.findByRole("option", { name: /^API\s*GET \/api\/orders\/00/ })
   await waitFor(() => expect(option).toHaveAttribute("aria-disabled", "false"))
@@ -143,7 +143,7 @@ it("reveals and highlights observed search cards in the compact list", async () 
   state.snapshot = targetSnapshot({ datasetRevision: 5, cells, events: [observed()] })
   render(<RelationshipGraphView />)
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
-  await userEvent.click(screen.getByRole("button", { name: "관측 전체" }))
+  await userEvent.click(screen.getByRole("button", { name: "전체" }))
   await userEvent.click(screen.getByRole("button", { name: "Close" }))
   await userEvent.type(screen.getByRole("combobox"), "/orders/observed")
   const option = await screen.findByRole("option", { name: /^관측 API/ })

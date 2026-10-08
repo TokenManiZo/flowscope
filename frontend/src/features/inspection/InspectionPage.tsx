@@ -163,8 +163,8 @@ export function InspectionPage() {
     const who = identityLabel(identity)
     return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
       sourceCode: event.source === "human" ? "H" : event.source === "scanner" ? "S" : event.source === "llm" ? "L" : "—",
-      sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인 자동 검증" : "자동 검증")
-        : event.source === "human" ? "Human" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
+      sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인으로 자동 재전송" : "자동 검증")
+        : event.source === "human" ? "사람" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 
@@ -271,7 +271,7 @@ export function InspectionPage() {
             feedTitle="ZAP 요청 기록"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
             emptyHint="아직 기록된 ZAP 요청이 없습니다."
-            feedContent={(view) => <HumanRequestFeed view={view} onOpenRecord={openRecord} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} onOpenRecord={openRecord} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 요청 목록 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
           />
         </TabsContent>
 
