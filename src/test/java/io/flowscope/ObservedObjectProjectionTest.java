@@ -50,4 +50,23 @@ class ObservedObjectProjectionTest {
         b = record("/posts/200", 2); b.executionTrust = ExecutionTrust.UNVERIFIED_RUNTIME;
         assertTrue(ObservedObjectProjection.build(List.of(a,b)).isEmpty());
     }
+    @Test void queryObjectsUseAllFieldsAndCompareCombinationsWithoutRequiringTwoObservations() {
+        var a = record("/lookup", 1); a.query = "page=1&userid=1";
+        var b = record("/lookup", 2); b.query = "userid=1&page=1";
+        var c = record("/lookup", 3); c.query = "page=2&userid=1";
+        var out = ObservedObjectProjection.build(List.of(a,b,c));
+        assertEquals(3, out.size()); assertEquals(List.of("/page", "/userid"), out.getFirst().fields());
+        assertEquals(out.get(0).objectKey(), out.get(1).objectKey());
+        assertEquals(List.of(1,1,2), out.stream().map(ObservedObjectProjection.ObjectObservation::ordinal).toList());
+        assertEquals(1, ObservedObjectProjection.build(List.of(a)).size());
+    }
+    @Test void queryPreservesRepeatedValueOrderAndNeverUsesPasswordValueInObjectIdentity() {
+        var a = record("/lookup", 1); a.query = "a=1&a=2&password=first-secret";
+        var b = record("/lookup", 2); b.query = "a=2&a=1&password=second-secret";
+        var c = record("/lookup", 3); c.query = "a=1&a=2&password=third-secret";
+        var out = ObservedObjectProjection.build(List.of(a,b,c));
+        assertNotEquals(out.get(0).objectKey(), out.get(1).objectKey());
+        assertEquals(out.get(0).objectKey(), out.get(2).objectKey());
+        assertFalse(out.toString().contains("first-secret"));
+    }
 }

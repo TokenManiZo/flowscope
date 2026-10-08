@@ -59,4 +59,16 @@ describe("observed display objects", () => {
     expect(graph.resources.map(node => node.label)).toEqual(["OBJ 2", "OBJ 3"])
     expect(graph.resources.flatMap(node => node.selection.evidenceIds)).not.toContain("ev-1")
   })
+  it("folds query schemas by field names and opens locally numbered combinations", () => {
+    const snapshot = data()
+    snapshot.displayObjects = snapshot.displayObjects!.map(object => ({ ...object, kind: "QUERY", fields: ["/page", "/userid"], groupKey: "query-group" }))
+    const collapsed = projectHierarchy(snapshot, filters, nav)
+    expect(collapsed.resources).toHaveLength(0)
+    expect(collapsed.nodes.find(node => node.kind === "object-group")?.label).toBe("page · userid")
+    const expanded = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: ["object-group:query-group"] }, nav)
+    expect(expanded.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 2", "OBJ 3"])
+    const entry = buildGraphSearchIndex(snapshot, filters).entries.find(item => item.title === "OBJ 2")!
+    const destination = searchDestination(entry, nav, null, false)
+    expect(projectHierarchy(snapshot, filters, destination.navigation, destination.reveal).nodes.some(node => node.id === destination.nodeId)).toBe(true)
+  })
 })

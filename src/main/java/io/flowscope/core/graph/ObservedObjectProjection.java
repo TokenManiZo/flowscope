@@ -9,12 +9,15 @@ import java.util.regex.Pattern;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.net.URLDecoder;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** Display-only observations. Never changes operation/resource, authorization or replay targets. */
 public final class ObservedObjectProjection {
     private ObservedObjectProjection() {}
     public record ObjectObservation(String eventId, String operation, String apiKey, String groupKey,
             String objectKey, String kind, List<String> fields, String legacyResource, int ordinal) {}
+    private static final ObjectMapper JSON = new ObjectMapper();
     private record PathRow(RequestRecord record, List<String> segments, Set<Integer> positions) {}
     private static final Pattern TOKEN = Pattern.compile("(?:\\d+|(?=[A-Za-z0-9._~-]*[A-Za-z])(?=[A-Za-z0-9._~-]*\\d)[A-Za-z0-9._~-]+)");
     private static boolean token(String value) { return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches(); }
@@ -65,7 +68,47 @@ public final class ObservedObjectProjection {
             String legacy = row.record.resource;
             add(out, ordinals, row.record, apiKey, group, object, "PATH", List.of("/segments/" + (position - 1)), legacy);
         }
+        Map<String, String> pathApis = new HashMap<>();
+        for (ObjectObservation object : out) pathApis.put(object.eventId(), object.apiKey());
+        unique.values().stream().sorted(Comparator.comparingLong((RequestRecord r) -> r.timestamp).thenComparing(r -> r.evidenceId))
+                .forEach(r -> addQuery(out, ordinals, r, pathApis.getOrDefault(r.evidenceId, r.op)));
         return List.copyOf(out);
+    }
+
+    private static void addQuery(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
+                                 RequestRecord r, String api) {
+        if (r.query == null || r.query.isBlank() || r.query.length() > 1_000_000) return;
+        // Sorting names ignores query ordering, but repeated values retain their order and presence.
+        Map<String, List<String>> values = new TreeMap<>();
+        try {
+            String[] pairs = r.query.split("&", -1);
+            if (pairs.length > 10_000) return;
+            for (String pair : pairs) {
+                if (pair.isEmpty()) continue;
+                String[] kv = pair.split("=", 2);
+                String name = URLDecoder.decode(kv[0], StandardCharsets.UTF_8);
+                if (name.length() > 8192) return;
+                String value = kv.length == 1 ? "absent:" : "value:" + URLDecoder.decode(kv[1], StandardCharsets.UTF_8);
+                values.computeIfAbsent(name, ignored -> new ArrayList<>()).add(sensitive(name) ? "[sensitive]" : value);
+            }
+            if (values.isEmpty()) return;
+            List<String> fields = values.keySet().stream().map(name -> "/" + name.replace("~", "~0").replace("/", "~1")).toList();
+            String group = key("QUERY", api, JSON.writeValueAsString(fields));
+            String object = key("QUERY", api, JSON.writeValueAsString(values));
+            add(out, ordinals, r, api, group, object, "QUERY", fields, legacy(r, "QUERY", fields));
+        } catch (Exception ignored) { /* malformed percent encoding is not interpreted as a different value */ }
+    }
+    private static boolean sensitive(String name) {
+        String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+        return normalized.contains("password") || normalized.contains("passwd") || normalized.contains("secret")
+                || normalized.contains("token") || normalized.contains("authorization") || normalized.contains("cookie")
+                || normalized.contains("session") || normalized.equals("pwd") || normalized.equals("apikey")
+                || normalized.equals("credential") || normalized.equals("credentials");
+    }
+    private static String legacy(RequestRecord r, String channel, List<String> fields) {
+        if (fields.size() != 1 || r.resource == null) return null;
+        var references = r.resourceReferences.stream().filter(ref -> ref.evidence().startsWith(channel)).toList();
+        return references.size() == 1 && r.resource.equals(references.getFirst().resource()) ? r.resource : null;
     }
 
     private static String siblingKey(PathRow row, int position) {
