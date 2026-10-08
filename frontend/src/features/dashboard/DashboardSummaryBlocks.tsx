@@ -117,7 +117,7 @@ const sourceMarks = [["HUMAN", "H", "bg-observation-human"], ["SCANNER", "S", "b
 
 /** 3-way 비교: API마다 어느 소스가 관측했는지. 빈 칸은 그 소스가 아직 보지 못한 API다(취약점 판정 아님). */
 export function SourceCoverageList({ rows }: { rows: readonly SourceCoverageRow[] }) {
-  return <ListCard title="소스별 발견" href="#surface" linkLabel="API·입력 차이에서 모두 보기" empty="실제 응답이 있는 API가 아직 없습니다.">{rows.length === 0 ? [] : [
+  return <ListCard title="출처별 발견" href="#surface" linkLabel="API·입력 차이에서 모두 보기" empty="실제 응답이 있는 API가 아직 없습니다.">{rows.length === 0 ? [] : [
     <li key="head" aria-hidden="true" className="grid grid-cols-[4.5rem_minmax(0,1fr)_repeat(3,1.75rem)] items-center gap-3 px-4 pt-2 pb-1 text-[11px] font-semibold text-muted-foreground"><span /><span />{sourceMarks.map(([, short]) => <span key={short} className="text-center">{short}</span>)}</li>,
     ...rows.map(row => <li key={row.key} className="border-t border-border/70"><a href="#surface" aria-label={`${row.method} ${row.path} · ${row.sources.join(", ")} 관측`} className="grid grid-cols-[4.5rem_minmax(0,1fr)_repeat(3,1.75rem)] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
       <span className={cn("rounded border border-border px-1.5 text-center font-mono text-[11px]", methodTone[row.method] ?? "text-muted-foreground")}>{row.method}</span>

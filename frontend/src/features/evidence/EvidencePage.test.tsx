@@ -133,7 +133,7 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
     const row = (await screen.findByText("outside-evidence")).closest("tr")!
     expect(within(row).getAllByRole("cell")).toHaveLength(10)
-    for (const name of ["#", "소스", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
+    for (const name of ["#", "출처", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
     await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
     const detail = await screen.findByRole("region", { name: "요청 기록 상세" })
     fireEvent.pointerDown(detail)
@@ -388,7 +388,7 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
     const user = userEvent.setup({ applyAccept: false })
     await user.click(await screen.findByRole("button", { name: "XML 가져오기" }))
-    await user.selectOptions(screen.getByLabelText("가져올 소스"), "scanner")
+    await user.selectOptions(screen.getByLabelText("가져올 출처"), "scanner")
     const input = screen.getByLabelText("XML 파일 선택")
     const first = new File(["<items />"], "first file.xml", { type: "application/xml" })
     const second = new File(["<items />"], "second file.xml", { type: "application/xml" })

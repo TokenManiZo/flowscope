@@ -71,8 +71,8 @@ export function ImportXmlDialog({ importFile, afterImport }: Props) {
           <DialogTitle>XML 가져오기</DialogTitle>
           <DialogDescription id="xml-import-description">XML 원문은 저장하지 않습니다.</DialogDescription>
         </DialogHeader>
-        <label className="grid gap-1" htmlFor="xml-source">가져올 소스
-          <select id="xml-source" aria-label="가져올 소스" value={source} onChange={(event) => setSource(event.target.value as ImportSource)} disabled={active}>
+        <label className="grid gap-1" htmlFor="xml-source">가져올 출처
+          <select id="xml-source" aria-label="가져올 출처" value={source} onChange={(event) => setSource(event.target.value as ImportSource)} disabled={active}>
             <option value="human">사람</option><option value="scanner">스캐너</option><option value="llm">LLM</option>
           </select>
         </label>
