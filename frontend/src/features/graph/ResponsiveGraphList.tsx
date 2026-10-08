@@ -46,6 +46,10 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, r
       return <Button key={item.id} data-graph-node-id={item.id} aria-label={card.accessibleLabel} variant="outline" className={`h-auto justify-start whitespace-normal border-border/80 bg-card/80 p-3 text-left ${snapshot ? apiTint(snapshot, op) : ""} ${searchMatches?.has(item.id) ? "outline-2 outline-dashed outline-emerald-600 dark:outline-emerald-300" : ""}`} onClick={() => onSelect(item.selection, item.id)}><CompactNodeCard badge={card.badge} title={card.title} detail={card.detail} footer={card.footer} /></Button>
     })}
     {!(hierarchy?.kind === "group" && snapshot) && items.map((item) => {
+      if (hierarchy && item.kind === "target") {
+        const card = relationshipNodeCard(item, hierarchy)
+        return <Button key={item.id} data-graph-node-id={item.id} aria-label={card.accessibleLabel} variant="outline" className="h-auto justify-start whitespace-normal p-3 text-left" onClick={() => onSelect(item.selection, item.id)}><CompactNodeCard badge={card.badge} title={card.title} detail={card.detail} footer={card.footer} /></Button>
+      }
       if (hierarchy && item.kind === "api-group") {
         const group = hierarchy.groups.find(group => group.id === (item as HierarchyNode).groupId)
         const card = relationshipNodeCard(item, hierarchy)

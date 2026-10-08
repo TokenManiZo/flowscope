@@ -578,6 +578,7 @@ public final class ProjectStore {
         put(out, "lane_account_id", r.laneAccountId);
         put(out, "collection_account_id", r.collectionAccountId);
         put(out, "supporting_page_url", r.supportingPageUrl);
+        if (r.passiveSubdomainTraffic) out.put("passive_subdomain_traffic", true);
         put(out, "replay_basis_identity", r.replayBasisIdentity);
         put(out, "replay_basis_evidence_id", r.replayBasisEvidenceId);
         put(out, "evidence_id", r.evidenceId);
@@ -630,6 +631,7 @@ public final class ProjectStore {
         r.authState = Fingerprints.ANONYMOUS.equals(r.selectedIdentity())
                 ? AuthState.ANONYMOUS : AuthState.ACCOUNT_BOUND;
         r.supportingPageUrl = nullable(value, "supporting_page_url");
+        r.passiveSubdomainTraffic = value.path("passive_subdomain_traffic").asBoolean(false);
         r.replayBasisIdentity = nullable(value, "replay_basis_identity");
         r.replayBasisEvidenceId = nullable(value, "replay_basis_evidence_id");
         r.evidenceId = nullable(value, "evidence_id");

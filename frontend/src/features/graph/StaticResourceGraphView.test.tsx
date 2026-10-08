@@ -10,7 +10,7 @@ import type { GraphFilters } from "./graphProjection"
 
 const fixture = vi.hoisted(() => ({ data: null as Snapshot | null }))
 vi.mock("./useGraphWorkspace", async () => ({ useGraphWorkspace: (await import("@/test/graphWorkspace")).useMemoryGraphWorkspace }))
-vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: fixture.data, isLoading: false, isError: false }) }))
+vi.mock("@/lib/query/hooks", () => ({ useProjectsQuery: () => ({ data: undefined }), useSnapshotQuery: () => ({ data: fixture.data, isLoading: false, isError: false }) }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: ({ event }: { event: EventRecord }) => <div role="dialog" aria-label="자원 Request Lab">{event.eventId} {event.path}</div> }))
 vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ projection, onNavigate, onSelect, onToggleObjectGroup, onOpenObject }: {
   projection: HierarchyProjection; onNavigate(node: HierarchyNode): void; onSelect(selection: HierarchySelection, id: string): void;

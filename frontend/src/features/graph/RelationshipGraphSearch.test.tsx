@@ -10,7 +10,7 @@ import { operationGroup, type HierarchyProjection, type HierarchyNode } from "./
 import type { GraphSelection } from "./graphProjection"
 
 const state = vi.hoisted(() => ({ snapshot: null as Snapshot | null, workspace: null as GraphWorkspace | null, changes: vi.fn(), projections: vi.fn() }))
-vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: state.snapshot, isError: false, isLoading: false }) }))
+vi.mock("@/lib/query/hooks", () => ({ useProjectsQuery: () => ({ data: undefined }), useSnapshotQuery: () => ({ data: state.snapshot, isError: false, isLoading: false }) }))
 vi.mock("./useGraphWorkspace", () => ({ useGraphWorkspace: () => {
   const [workspace, setWorkspace] = useState(state.workspace!)
   return { workspace, error: "", saving: false, reload: vi.fn(), retry: vi.fn(), update: (change: (current: GraphWorkspace) => GraphWorkspace) => setWorkspace(current => {
