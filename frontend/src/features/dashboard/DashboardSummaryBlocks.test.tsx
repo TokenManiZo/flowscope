@@ -15,7 +15,7 @@ it("renders observe → compare → judge as three links with source counts insi
   // 검토 필요 트래픽은 칸 링크와 따로 Evidence 검토 탭으로 바로 간다(링크 안에 링크를 넣지 않는다).
   expect(within(stage).getByRole("link", { name: "검토 필요 트래픽" })).toHaveAttribute("href", "#evidence-review")
   expect(observe.querySelector("a")).toBeNull()
-  expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toHaveAttribute("href", "#graph")
+  expect(screen.getByRole("link", { name: "비교 · 점검 그래프" })).toHaveAttribute("href", "#graph")
   expect(screen.getByRole("link", { name: "판정 · 판정 매트릭스" })).toHaveAttribute("href", "#matrix")
   expect(screen.queryByRole("button")).not.toBeInTheDocument()
   expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument()

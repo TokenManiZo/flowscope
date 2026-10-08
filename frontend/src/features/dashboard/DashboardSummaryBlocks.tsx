@@ -59,7 +59,7 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
       "divider",
       { name: "검토 필요 트래픽", label: "검토 필요 트래픽", value: format(counts.review), tone: zero(counts.review), href: counts.review > 0 ? "#evidence-review" : undefined },
     ]} />
-    <Stage notch step="비교" href="#graph" go="Gap 그래프" value={counts.openGaps} unit="미점검" rows={[
+    <Stage notch step="비교" href="#graph" go="점검 그래프" value={counts.openGaps} unit="미점검" rows={[
       { name: "우선 점검 API", label: "우선 점검 API", value: format(counts.priorityApis), tone: zero(counts.priorityApis) },
       { name: "권한 변형 미점검", label: "권한 변형 미점검", value: format(counts.authVariants), tone: zero(counts.authVariants) },
       { name: "미점검 파라미터", label: "미점검 파라미터", value: format(counts.unobserved), tone: zero(counts.unobserved) },
@@ -92,7 +92,7 @@ function ListCard({ title, href, linkLabel, empty, children }: { title: string; 
 }
 
 export function PriorityApiList({ rows }: { rows: readonly PriorityApiRow[] }) {
-  return <ListCard title="우선 점검 API" href="#graph" linkLabel="Gap 그래프에서 모두 보기" empty="우선순위 근거가 있는 미점검 항목이 없습니다.">{rows.map(row => <li key={row.key} className="border-t border-border first:border-t-0"><a href="#graph" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
+  return <ListCard title="우선 점검 API" href="#graph" linkLabel="점검 그래프에서 모두 보기" empty="우선순위 근거가 있는 미점검 항목이 없습니다.">{rows.map(row => <li key={row.key} className="border-t border-border first:border-t-0"><a href="#graph" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
     <span className={cn("rounded border border-border px-1.5 text-center font-mono text-[11px]", methodTone[row.method] ?? "text-muted-foreground")}>{row.method}</span>
     <span className="flex min-w-0 flex-wrap items-center gap-1.5"><span className="break-all font-mono text-xs">{row.path}</span>{row.reasons.filter(reason => reasonLabels[reason]).map(reason => <span key={reason} className="rounded border border-border px-1.5 text-[11px] text-muted-foreground">{reasonLabels[reason]}</span>)}</span>
     <span className="text-xs tabular-nums text-muted-foreground">미점검 {format(row.gapCount)}</span>
