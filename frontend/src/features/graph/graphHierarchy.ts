@@ -1,3 +1,4 @@
+import { applyObservedObjects } from "./observedObjects"
 import { graphAccountLabel } from "./graphAccounts"
 import { operationShapeKey } from "./graphPathShape"
 import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
@@ -34,6 +35,7 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   selection: HierarchySelection
   groupId?: string
   service?: string
+  displayOperations?: readonly string[]
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
   publicRead?: boolean
@@ -495,5 +497,6 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
+  hiddenObjectCount += applyObservedObjects(snapshot, filters, resolved, nodes, edges, listItems, reveal)
   return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount, revealedNodeCount }
 }

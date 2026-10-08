@@ -1,3 +1,4 @@
+import { observedObjectEntries } from "./observedObjects"
 import { graphAccountLabel } from "./graphAccounts"
 import type { Snapshot } from "@/lib/api/types"
 import type { GraphFilters } from "./graphProjection"
@@ -39,7 +40,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     add("api-group", group.service, group.id, group.label, context)
     add("operation", group.service, cell.op, cell.op.replace(/^https?:\/\/\S+\s+/i, ""), context)
     add("identity", group.service, cell.idn, graphAccountLabel(snapshot, cell.idn), context)
-    if (cell.resource) {
+    if (cell.resource && snapshot.displayObjects === undefined) {
       add("resource", group.service, cell.resource, cell.resource, context)
       const object = objectGroupKey(cell.resource)
       if (object) add("object-group", group.service, object.id, object.key, context)
@@ -71,6 +72,23 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
       const group = operationGroup(operation, resolveGroup)
       add("operation-group", bucket.service, bucket.shape, bucket.shape.replace(/^https?:\/\/\S+\s+/i, ""), { groupId: group.id, groupLabel: group.label, operation })
     }
+  }
+  const display = observedObjectEntries(snapshot, filters)
+  const apiMembers = new Map<string, string[]>()
+  for (const { object } of display) apiMembers.set(object.apiKey, [...new Set([...(apiMembers.get(object.apiKey) ?? []), object.operation])].sort())
+  for (const { object } of display) {
+    const group = operationGroup(object.operation, resolveGroup)
+    const operation = apiMembers.get(object.apiKey)![0]
+    const context = { groupId: group.id, groupLabel: group.label, operation }
+    for (const member of apiMembers.get(object.apiKey)!) {
+      entries.delete(searchKey("operation", group.service, member))
+      entries.delete(searchKey("observed-operation", group.service, member))
+      entries.delete(searchKey("operation-group", group.service, operationShapeKey(member)))
+    }
+    add("operation", group.service, operation, object.apiKey.replace(/^https?:\/\/\S+\s+/i, ""), context)
+    const owner = object.legacyResource ? snapshot.owners[object.legacyResource] : null
+    add("resource", group.service, object.objectKey, `OBJ ${object.ordinal}${owner ? ` - ${graphAccountLabel(snapshot, owner)}` : ""}`, context)
+    if (object.kind !== "PATH") add("object-group", group.service, object.groupKey, object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · "), context)
   }
   const result = [...entries.values()].map(entry => {
     const contexts = [...entry.contexts.values()].sort((a, b) => compare(a.operation, b.operation))

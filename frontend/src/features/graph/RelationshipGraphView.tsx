@@ -360,7 +360,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   }
   const navigateNode = (node: HierarchyNode) => {
     if (node.kind === "api-group" && node.groupId) changeNavigation(navigateHierarchy(resolvedNavigation, "group", node.groupId))
-    else if (node.kind === "operation" && node.selection.operation) changeNavigation({ ...navigateHierarchy(resolvedNavigation, "operation", resolvedNavigation.groupId, node.selection.operation), operationLimit: resolvedNavigation.operationLimit })
+    else if (node.kind === "operation" && (node.displayOperations?.[0] || node.selection.operation)) changeNavigation({ ...navigateHierarchy(resolvedNavigation, "operation", resolvedNavigation.groupId, node.displayOperations?.[0] ?? node.selection.operation!), operationLimit: resolvedNavigation.operationLimit })
   }
   // 오퍼레이션 레벨은 객체만, 그룹 레벨은 API·객체를 함께 더 펼친다(둘 다 접기/펼치기 대상).
   const expand = () => setNavigation({ ...resolvedNavigation, ...(resolvedNavigation.level === "operation" ? { objectLimit: resolvedNavigation.objectLimit + GRAPH_PAGE_SIZE } : { operationLimit: resolvedNavigation.operationLimit + GRAPH_PAGE_SIZE, objectLimit: resolvedNavigation.objectLimit + GRAPH_PAGE_SIZE }) })

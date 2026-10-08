@@ -43,6 +43,8 @@ public final class SnapshotJsonWriter {
     private Pipeline.Result surfaceResult;
     private List<RouteCandidate> surfaceCandidates;
     private SurfaceAnalysis cachedSurface;
+    private Pipeline.Result objectResult;
+    private List<io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation> objectProjection;
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
                         List<LegacyAssessment> assessments,
@@ -118,6 +120,11 @@ public final class SnapshotJsonWriter {
         var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
         root.set("events", events(result, rawAvailable, collectionAccount));
+        if (objectResult != result) {
+            objectProjection = io.flowscope.core.graph.ObservedObjectProjection.build(result.records);
+            objectResult = result;
+        }
+        root.set("displayObjects", json.valueToTree(objectProjection));
         root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
                 .map(GraphObservationFact::from).toList()));

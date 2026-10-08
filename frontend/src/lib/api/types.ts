@@ -12,6 +12,19 @@ export interface TrafficStats {
   humanApiOutsideRun?: number
 }
 
+/** Graph-only observations; these keys never identify matrix cells or replay requests. */
+export interface DisplayObject {
+  eventId: string
+  operation: string
+  apiKey: string
+  groupKey: string
+  objectKey: string
+  kind: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  fields: readonly string[]
+  legacyResource: string | null
+  ordinal: number
+}
+
 export interface EventObject {
   resource: string
   evidence: string
@@ -479,6 +492,7 @@ export interface LegacyLlm {
 }
 
 export interface Snapshot {
+  displayObjects?: readonly DisplayObject[]
   apiMarks?: Readonly<Record<string, { color: string; registered: boolean; evidenceIds: readonly string[] }>>
   legacyLlm?: LegacyLlm
   revision: number
