@@ -65,7 +65,8 @@ function BoundedEvidenceIds({ ids, ordinals }: { ids: readonly string[]; ordinal
   const [expanded, setExpanded] = useState(false)
   const labels = evidenceOrdinalLabels(ordinals, ids)
   const visible = expanded ? labels : labels.slice(0, INITIAL_EVIDENCE_ID_COUNT)
-  return <div className="grid gap-1"><p className="font-medium">요청 기록{labels.length ? ` ${labels.length}건` : ""}</p>{visible.length ? <p className="break-all font-mono">{visible.join(" ")}</p> : <p>없음</p>}{labels.length > INITIAL_EVIDENCE_ID_COUNT && <button type="button" className="w-fit text-xs underline" onClick={() => setExpanded((current) => !current)}>{expanded ? "요청 기록 접기" : "요청 기록 더 보기"}</button>}</div>
+  if (!labels.length) return null
+  return <div className="grid gap-1"><p className="font-medium">요청 기록 {labels.length}건</p><p className="break-all font-mono">{visible.join(" ")}</p>{labels.length > INITIAL_EVIDENCE_ID_COUNT && <button type="button" className="w-fit text-xs underline" onClick={() => setExpanded((current) => !current)}>{expanded ? "요청 기록 접기" : "요청 기록 더 보기"}</button>}</div>
 }
 
 export interface EvidenceSheetProps {

@@ -100,9 +100,9 @@ export function ScenariosPage() {
                   <h3 className="font-medium break-words">{entry.title} · {entry.verdict}</h3>
                   <p className="break-all text-muted-foreground" title={entry.id}>{entry.at}</p>
                   <p className="whitespace-pre-wrap break-words">{entry.reason}</p>
-                  <details>
-                    <summary>요청 기록{entry.present.length ? ` ${entry.present.length}건` : ""}</summary>
-                    {entry.present.length ? entry.present.map((id) => {
+                  {entry.present.length > 0 && <details>
+                    <summary>요청 기록 {entry.present.length}건</summary>
+                    {entry.present.map((id) => {
                       const open = evidenceAction(entry.evidenceIds, id)
                       return (
                         <div className="flex flex-wrap items-center gap-2" key={id}>
@@ -110,8 +110,8 @@ export function ScenariosPage() {
                           {open && <Button size="sm" variant="outline" onClick={open}>요청 기록 열기</Button>}
                         </div>
                       )
-                    }) : <p>없음</p>}
-                  </details>
+                    })}
+                  </details>}
                 </article>
               ))}
             </div>

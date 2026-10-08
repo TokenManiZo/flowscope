@@ -32,7 +32,8 @@ function EvidenceGroup({ label, ids, ordinals, onOpen }: { label: string; ids: r
   // 번호가 없는 기록(삭제됐거나 지금 분석에 없는 기록)은 열 수 없어 보여 주지 않는다.
   const present = [...new Set(ids)].filter((id) => hasEvidenceOrdinal(ordinals, id))
   const visible = expanded ? present : present.slice(0, LIST_LIMIT)
-  return <section className="grid gap-2 rounded-md border p-3"><h4 className="font-medium">{label}</h4>{present.length === 0 ? <p className="text-sm text-muted-foreground">요청 기록이 없습니다.</p> : visible.map((id) => {
+  if (!present.length) return null
+  return <section className="grid gap-2 rounded-md border p-3"><h4 className="font-medium">{label}</h4>{visible.map((id) => {
     const exact = onOpen(ids, id)
     return <div className="flex flex-wrap items-center gap-2" key={id}><span className="font-mono text-sm">{evidenceOrdinalLabel(ordinals, id)}</span>{exact ? <Button type="button" size="sm" variant="outline" aria-label={`요청 기록 ${evidenceOrdinalLabel(ordinals, id)} 열기`} onClick={exact}>요청 기록 열기</Button> : <Badge variant="secondary">사용 불가</Badge>}</div>
   })}{present.length > LIST_LIMIT && <Button type="button" variant="link" size="sm" className="h-auto w-fit p-0" onClick={() => setExpanded((value) => !value)}>{expanded ? "요청 기록 접기" : "요청 기록 더 보기"}</Button>}</section>

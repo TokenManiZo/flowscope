@@ -28,9 +28,10 @@ it("shows found-in records as #N, hides unnumbered ones, and names runs by tool"
   expect(screen.queryByText(/reason-11/)).not.toBeInTheDocument()
 })
 
-it("says 없음 when no linked record has a number", () => {
+it("leaves out the found-in row when no linked record has a number", () => {
   render(<RouteCandidateDetail candidate={candidate} />)
-  expect(screen.getByText(/찾은 요청 기록:/).parentElement).toHaveTextContent("찾은 요청 기록: 없음")
+  expect(screen.queryByText(/찾은 요청 기록/)).not.toBeInTheDocument()
+  expect(document.body).not.toHaveTextContent("없음")
   expect(document.body).not.toHaveTextContent("evidence-1")
 })
 

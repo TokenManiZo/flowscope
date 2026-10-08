@@ -30,7 +30,7 @@ it("shows linked records only as #N and leaves out records that no longer have a
   expect(section).not.toHaveTextContent("ev-11")
 })
 
-it("says 없음 when none of the linked records has a number", () => {
+it("shows no record row at all when none of the linked records has a number", () => {
   render(
     <EvidenceSheet
       event={null}
@@ -41,7 +41,8 @@ it("says 없음 when none of the linked records has a number", () => {
   )
 
   const section = screen.getByText("시나리오 요청 기록 선택").closest("section")!
-  expect(section).toHaveTextContent("요청 기록없음")
+  expect(section).toHaveTextContent(/^시나리오 요청 기록 선택$/)
+  expect(section).not.toHaveTextContent("없음")
   expect(section).not.toHaveTextContent("ev-gone")
 })
 

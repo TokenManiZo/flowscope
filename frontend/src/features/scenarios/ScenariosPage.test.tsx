@@ -63,8 +63,9 @@ it("keeps restored LLM verdicts in a read-only archive, never in the current can
   // 지금 프로젝트에 없는 기록(missing)과 실행 ID는 보이지 않고, 남은 기록만 #번호로 보인다.
   expect(document.body).not.toHaveTextContent("missing")
   expect(document.body).not.toHaveTextContent("retired-run")
-  expect(screen.getByText("요청 기록 1건")).toBeInTheDocument()
-  expect(screen.getAllByText("요청 기록").length).toBeGreaterThan(0)
+  // 옛 평가는 남은 기록이 없어 요청 기록 칸이 아예 없고, 옛 판정만 1건을 보여 준다.
+  expect([...document.querySelectorAll("summary")].map((item) => item.textContent).filter((text) => text?.startsWith("요청 기록"))).toEqual(["요청 기록 1건"])
+  expect(document.body).not.toHaveTextContent("없음")
 })
 
 it("opens exact candidate 요청 기록 and clears selection when revision changes", async () => {
