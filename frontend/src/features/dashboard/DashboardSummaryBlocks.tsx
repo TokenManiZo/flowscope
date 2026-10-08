@@ -76,7 +76,7 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
 /** 수집 수는 관측 칸의 큰 숫자가 맡고, 나머지 snapshot 통계는 한 줄 각주로 둔다. */
 export function SnapshotFootnote({ trafficStats }: Pick<DashboardSummaryValues, "trafficStats">) {
   const items = [["분석 대상", trafficStats.coverage], ["제외", trafficStats.excluded], ["삭제", trafficStats.dropped], ["Payload 메타", trafficStats.payloadMetadataOnly]] as const
-  return <dl aria-label="현재 snapshot 요약" className="flex flex-wrap gap-x-1.5 px-0.5 text-xs text-muted-foreground">{items.map(([label, value], index) => <div key={label} className="flex gap-1">{index > 0 && <span aria-hidden="true">·</span>}<dt>{label}</dt><dd className="tabular-nums">{format(value)}</dd></div>)}</dl>
+  return <dl aria-label="현재 요약" className="flex flex-wrap gap-x-1.5 px-0.5 text-xs text-muted-foreground">{items.map(([label, value], index) => <div key={label} className="flex gap-1">{index > 0 && <span aria-hidden="true">·</span>}<dt>{label}</dt><dd className="tabular-nums">{format(value)}</dd></div>)}</dl>
 }
 
 const reasonLabels: Record<string, string> = {

@@ -282,7 +282,7 @@ describe("dashboard shell", () => {
 
     await screen.findByRole("link", { name: "비교 · Gap 그래프" })
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
-    expect(screen.getByLabelText("현재 snapshot 요약")).toBeVisible()
+    expect(screen.getByLabelText("현재 요약")).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toBeVisible()
@@ -294,7 +294,7 @@ describe("dashboard shell", () => {
 
     await screen.findByRole("link", { name: "비교 · Gap 그래프" })
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
-    expect(screen.getByLabelText("현재 snapshot 요약")).toBeVisible()
+    expect(screen.getByLabelText("현재 요약")).toBeVisible()
 
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.queryByRole("dialog", { name: "선택 상세" })).not.toBeInTheDocument()

@@ -33,7 +33,7 @@ it("keeps absent authorization data neutral and highlights only positive candida
 
 it("moves the remaining snapshot counts into a single footnote", () => {
   render(<SnapshotFootnote trafficStats={{ captured: 21, coverage: 17, excluded: 1, dropped: 0, payloadMetadataOnly: 0 }} />)
-  expect(screen.getByLabelText("현재 snapshot 요약").querySelectorAll("dt")).toHaveLength(4)
+  expect(screen.getByLabelText("현재 요약").querySelectorAll("dt")).toHaveLength(4)
 })
 
 it("lists prioritized APIs and rule candidates with their reasons and review state", () => {

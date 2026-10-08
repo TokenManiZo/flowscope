@@ -13,7 +13,7 @@ const states = {
   ALLOW: { icon: Check, label: "허용", color: "text-emerald-700 dark:text-emerald-300" },
   DENY: { icon: X, label: "거부", color: "text-blue-700 dark:text-blue-300" },
   SUSPICIOUS: { icon: ShieldAlert, label: "의심", color: "text-red-700 dark:text-red-300" },
-  UNDECIDED: { icon: CircleHelp, label: "판정 보류", color: "text-amber-700 dark:text-amber-300" },
+  UNDECIDED: { icon: CircleHelp, label: "근거 부족", color: "text-amber-700 dark:text-amber-300" },
   UNTESTED: { icon: Clock, label: "미점검", color: "text-orange-700 dark:text-orange-300" },
   NOT_APPLICABLE: { icon: CircleMinus, label: "적용 불가", color: "text-muted-foreground" },
 }
