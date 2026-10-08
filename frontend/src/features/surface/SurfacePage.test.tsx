@@ -249,3 +249,33 @@ it("preserves a registered account named anon instead of calling it 비로그인
   expect(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ })).toBeVisible()
   expect(screen.queryByRole("button", { name: /관측 기록 상세.*비로그인/ })).not.toBeInTheDocument()
 })
+
+it("exports the visible API list as a URL text file, or only the checked rows", async () => {
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [], surface: {
+    extractions: [], probes: [], endpoints: [
+      { key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/identity/api/auth/signup" }, observedSources: [], observations: [], declarations: [{ evidenceId: "d1", source: "LLM", runId: "llm-1", type: "ROUTE", adapter: "javascript-ast", reason: "fetch AST call-site" }], parameters: [], deltaState: "DECLARED_NOT_OBSERVED", kinds: ["ARTIFACT_API"] },
+      { key: { service: "https://api.example.test:443", method: "GET", pathTemplate: "/community/api/v2/community/posts/recent" }, observedSources: [], observations: [], declarations: [{ evidenceId: "d2", source: "LLM", runId: "llm-1", type: "ROUTE", adapter: "javascript-ast", reason: "fetch AST call-site" }], parameters: [], deltaState: "DECLARED_NOT_OBSERVED", kinds: ["ARTIFACT_API"] },
+    ],
+  } }
+  const blobs: Blob[] = []
+  const createObjectURL = vi.fn((blob: Blob) => { blobs.push(blob); return "blob:mock" })
+  vi.stubGlobal("URL", Object.assign(function () {}, URL, { createObjectURL, revokeObjectURL: vi.fn() }))
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined)
+  try {
+    const user = userEvent.setup()
+    render(<AppProviders><SurfacePage /></AppProviders>)
+    await user.click(screen.getByRole("button", { name: /URL 내보내기 2/ }))
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    const anchor = document.querySelector("a[download]") as HTMLAnchorElement | null
+    expect((anchor ?? clickSpy.mock.instances[0] as HTMLAnchorElement)?.download ?? "").toMatch(/^flowscope-urls-\d{8}-\d{4}\.txt$/)
+    expect(await blobs[0].text()).toBe("https://api.example.test:443/community/api/v2/community/posts/recent\nhttps://api.example.test:443/identity/api/auth/signup\n")
+
+    // 한 행만 체크하면 그 URL만 내보낸다.
+    await user.click(screen.getByRole("checkbox", { name: "POST /identity/api/auth/signup 선택" }))
+    await user.click(screen.getByRole("button", { name: /URL 내보내기 1/ }))
+    expect(await blobs[1].text()).toBe("https://api.example.test:443/identity/api/auth/signup\n")
+  } finally {
+    clickSpy.mockRestore()
+    vi.unstubAllGlobals()
+  }
+})
