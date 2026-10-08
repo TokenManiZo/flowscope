@@ -87,7 +87,7 @@ function ApiRegistration({ snapshot, operation, disabled = false }: { snapshot: 
   const [open, setOpen] = useState(false), [ids, setIds] = useState<string[]>([])
   const events = snapshot.events.filter(event => apiOperation(event.op) === op && event.status > 0)
   const label = mark?.registered ? "등록 해제" : "취약점 등록"
-  const status = confirmed ? "Confirmed" : "Unmarked"
+  const status = confirmed ? "확정됨" : "표시 없음"
   const detail = mark?.registered ? `근거 요청 기록 ${mark.evidenceIds.length}건 · 사용자 등록` : confirmed ? "판정 매트릭스에서 확정된 항목이 있습니다." : "확인한 요청 기록을 골라 등록합니다."
   return <Dialog open={open} onOpenChange={setOpen}>
       <Button size="icon" variant="outline" className={`size-9 ${confirmed ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300" : ""}`} aria-label={label} title={`${status} · ${detail}`} disabled={disabled || action.isPending || (!mark?.registered && events.length === 0)} onClick={() => { action.reset(); setIds([]); setOpen(true) }}><CircleAlert className="size-5" strokeWidth={2.25} /><span className="sr-only">{status}</span></Button>
