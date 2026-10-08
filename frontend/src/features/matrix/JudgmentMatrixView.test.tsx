@@ -147,7 +147,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  expect(within(table).getByText("orders:101 · 소유자 A")).toBeVisible()
+  expect(within(table).getByText("orders:101 · 객체 소유자 A")).toBeVisible()
   await user.click(within(table).getByRole("button", { name: `다른 계정으로 확인 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   // 상세는 역할·정책 지정, 요청·응답 확인, 취약점 확인 세 칸뿐이다.
@@ -345,7 +345,7 @@ it("sets the minimum access role without duplicating account role management", a
   expect(within(screen.getByRole("region", { name: "접근 허용 기준" })).getByRole("combobox", { name: "최소 권한" })).toBeVisible()
 })
 
-it("hides the blocking-layer subtitle and saves an object policy from the object cell", async () => {
+it("keeps object rules out of the panel and reveals status explanations only from the help button", async () => {
   const user = userEvent.setup()
   current = { ...snapshot, authorizationMatrix: { ...matrix, objects: matrix.objects.map((cell) =>
     cell.id === "object-b" ? { ...cell, blockingLayers: ["BOLA"], resourcePolicy: "OWNER_ONLY" } : cell) } }
@@ -355,10 +355,13 @@ it("hides the blocking-layer subtitle and saves an object policy from the object
 
   expect(screen.queryByText("차단층")).not.toBeInTheDocument()
   const assignment = screen.getByRole("region", { name: "접근 허용 기준" })
-  expect(within(assignment).getByRole("combobox", { name: "이 데이터에 접근할 수 있는 계정" })).toHaveValue("OWNER_ONLY")
-  await user.selectOptions(within(assignment).getByRole("combobox", { name: "이 데이터에 접근할 수 있는 계정" }), "PUBLIC")
-  await user.click(within(assignment).getByRole("button", { name: "데이터 접근 기준 저장" }))
-  await waitFor(() => expect(saveResourcePolicy).toHaveBeenCalledWith(`${service} orders:101`, "PUBLIC"))
+  expect(within(assignment).queryByRole("combobox", { name: "이 데이터에 접근할 수 있는 계정" })).not.toBeInTheDocument()
+  expect(within(assignment).getAllByRole("combobox")).toHaveLength(1)
+  expect(saveResourcePolicy).not.toHaveBeenCalled()
+  const explanation = "다른 계정에서 이 데이터에 접근한 기록이 있습니다. 이 계정으로도 볼 수 있는지 확인해 보세요. 아직 취약점으로 확정된 결과는 아닙니다."
+  expect(screen.queryByText(explanation)).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "다른 계정으로 확인 필요 설명" }))
+  expect(await screen.findByText(explanation)).toBeVisible()
 })
 
 it("keeps the operation column unpinned and wraps long paths into two lines inside a bounded block", () => {
