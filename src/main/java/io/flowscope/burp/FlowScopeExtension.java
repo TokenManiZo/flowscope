@@ -48,6 +48,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
+import io.flowscope.core.PassiveHostDiscovery;
 import io.flowscope.core.SupportingAssetScope;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
@@ -336,6 +337,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final List<RouteCandidateExtractor.Seed> siteMapSeeds = new ArrayList<>();
     private final List<RouteCandidate> restoredRouteCandidates = new ArrayList<>();
     private volatile ScopePolicy scope = ScopePolicy.parse("");
+    private final PassiveHostDiscovery hostDiscovery = new PassiveHostDiscovery();
     private volatile String scopeText = "";
     private final AtomicLong revision = new AtomicLong();
     private final AtomicLong databaseSavedRevision = new AtomicLong(-1);
@@ -596,8 +598,10 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
+            long discoveryEpoch = datasetEpoch.get();
             String originalUserAgent = explorerOriginalUserAgent(request);
             if (originalUserAgent != null) {
+                hostDiscovery.observe(discoveryEpoch, scope, request.url());
                 // Preserve the direct login browser's redirects and CDN/subresource loads.
                 // Explorer actions and CDP Evidence still use their existing exact-scope gates.
                 // Burp history retains the real exchange; CDP alone retains account/run Evidence.
@@ -626,6 +630,14 @@ public final class FlowScopeExtension implements BurpExtension {
             PortProfile profile = managed != null ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER)
                     : humanListeners.resolve(request.listenerInterface(), request.url(), scope,
                     humanRun, loginCaptureHandle, linkedHumanAsset);
+            if (profile.source() == Source.HUMAN || humanRun != null
+                    && humanListeners.boundPort(humanRun.runId()) == observedPort) {
+                hostDiscovery.observe(discoveryEpoch, scope, request.url());
+                if (profile.source() == Source.UNKNOWN
+                        && hostDiscovery.allowsPassiveCapture(discoveryEpoch, scope, request.url())) {
+                    profile = new PortProfile(Source.HUMAN, SourceDetail.BROWSER);
+                }
+            }
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             long captureGeneration = profile.source() == Source.HUMAN && humanRun != null
                     ? runContexts.humanCaptureGeneration(humanRun.runId()) : -1;
@@ -786,7 +798,15 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (staleObservation(observation)) return ProxyResponseReceivedAction.continueWith(response);
                 PortProfile profile = new PortProfile(observation.source(), observation.detail());
                 boolean captured = capture(response.initiatingRequest(), response, profile, observation);
-                if (captured) {
+                HttpRequest request = response.initiatingRequest();
+                String runId = observation.context() == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
+                        : observation.context().runId();
+                boolean passiveResponse = !scope.allows(request.url()) && profile.source() == Source.HUMAN
+                        && profile.detail() == SourceDetail.BROWSER
+                        && hostDiscovery.allowsPassiveCapture(datasetEpoch.get(), scope, request.url())
+                        && supportingAssets.pageUrlFor(profile.source(), runId, scope::allows, request.method(), request.url(),
+                        request.headerValue("Referer"), request.headerValue("Sec-Fetch-Dest")) == null;
+                if (captured && !passiveResponse) {
                     observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
                             response.headerValue("Location"), boundedResponseBody(response), response.headers(), observation);
                 }
@@ -895,7 +915,10 @@ public final class FlowScopeExtension implements BurpExtension {
         String supportingPage = scope.allows(req.url()) ? null : supportingAssets.pageUrlFor(
                 profile.source(), runId, scope::allows, req.method(), req.url(), req.headerValue("Referer"),
                 req.headerValue("Sec-Fetch-Dest"));
-        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) && supportingPage == null) return false;
+        boolean passiveSubdomain = supportingPage == null && !scope.allows(req.url()) && profile.source() == Source.HUMAN
+                && profile.detail() == SourceDetail.BROWSER && observation != null
+                && hostDiscovery.allowsPassiveCapture(datasetEpoch.get(), scope, req.url());
+        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) && supportingPage == null && !passiveSubdomain) return false;
         if (supportingPage != null && profile.source() == Source.SCANNER) return false;
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
@@ -903,7 +926,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return false;
             }
         }
-        RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation);
+        RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation, null, passiveSubdomain);
         rec.supportingPageUrl = supportingPage;
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
@@ -917,7 +940,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 records.add(rec);
                 retainRawExchange(rec, req, response);
-                if (liveCrossIdentityReplay != null
+                if (!passiveSubdomain && liveCrossIdentityReplay != null
                         && liveCrossIdentityReplay.acceptingCaptures(rec)) {
                     pendingLiveReplays.add(rec.runtimeId());
                 }
@@ -929,7 +952,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 ? runContexts.captureHumanIfCurrent(runId, observation.humanCaptureGeneration(), commit)
                 : commit.getAsBoolean();
         if (!captured) return false;
-        if (supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
+        if (!passiveSubdomain && supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
                 && String.valueOf(response.headerValue("Content-Type")).toLowerCase(Locale.ROOT)
                 .contains("text/html")) {
             supportingAssets.observeHtml(profile.source(), rec.runId, scope::allows, req.url(), rec.responseBodyForAnalysis());
@@ -958,6 +981,13 @@ public final class FlowScopeExtension implements BurpExtension {
                                      long timestamp, boolean applyRunContext, String runId,
                                      InFlightRequestTracker.Observation observation,
                                      String forcedAccountId) {
+        return recordFrom(req, response, profile, timestamp, applyRunContext, runId, observation, forcedAccountId, false);
+    }
+
+    private RequestRecord recordFrom(HttpRequest req, HttpResponse response, PortProfile profile,
+                                     long timestamp, boolean applyRunContext, String runId,
+                                     InFlightRequestTracker.Observation observation,
+                                     String forcedAccountId, boolean passiveSubdomain) {
         int status = response.statusCode();
         String location = response.headerValue("Location");
         String responseContentType = response.headerValue("Content-Type");
@@ -976,18 +1006,19 @@ public final class FlowScopeExtension implements BurpExtension {
         String service = serviceOf(req);
         RunContextRegistry.Context context = !applyRunContext ? null : observation == null
                 ? runContexts.current(profile.source()) : observation.context();
-        String humanCaptureAccountId = profile.source() != Source.HUMAN ? null : observation == null
+        String humanCaptureAccountId = passiveSubdomain || profile.source() != Source.HUMAN ? null : observation == null
                 ? sessionBroker.activeCaptureForService(service).flatMap(sessionBroker::accountForHandle).orElse(null)
                 : observation.humanCaptureAccountId();
-        String detectedAccountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
+        String detectedAccountId = passiveSubdomain ? null : sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
                 java.time.Instant.now()).orElse(null);
-        String accountId = forcedAccountId != null ? forcedAccountId
+        String accountId = passiveSubdomain ? null : forcedAccountId != null ? forcedAccountId
                 : resolveObservedAccount(profile.source(), context == null ? null : context.accountId(),
                 humanCaptureAccountId, detectedAccountId);
         String fp = captureFingerprint(profile.source(), context, accountId,
                 req.headerValue("Authorization"), req.headerValue("Cookie"));
         RequestRecord rec = new RequestRecord(
                 profile.source(), service, req.method(), req.pathWithoutQuery(), status, fp);
+        rec.passiveSubdomainTraffic = passiveSubdomain;
         rec.sourceDetail = profile.detail();
         rec.orchestrator = profile.source() == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
         rec.tool = effectiveTool(profile.source(), profile.detail(), null);
@@ -2167,6 +2198,12 @@ public final class FlowScopeExtension implements BurpExtension {
                 return zapCampaign.startAuthenticationOnly(id);
             }
             @Override public List<String> scopeEntries() { return scope.entries(); }
+            @Override public List<String> discoveredOrigins() {
+                return hostDiscovery.candidates(datasetEpoch.get(), scope);
+            }
+            @Override public List<String> observedOrigins() {
+                return hostDiscovery.observedOrigins(datasetEpoch.get(), scope);
+            }
             @Override public ProjectWorkspace.Status projectStatus() {
                 return currentProjectStatus();
             }

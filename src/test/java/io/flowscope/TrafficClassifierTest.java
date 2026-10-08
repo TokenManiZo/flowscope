@@ -8,6 +8,17 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TrafficClassifierTest {
+    @Test void passiveSubdomainTrafficRetainsEvidenceWithoutCoverageEvenWithAnIncludeOverride() {
+        RequestRecord api = record("GET", "/api/orders", null, "application/json");
+        api.passiveSubdomainTraffic = true;
+        api.sourceDetail = SourceDetail.BROWSER;
+        api.phase = RunPhase.EXPLORATION;
+        AnalysisConfig config = new AnalysisConfig().withTrafficOverride(classified(api).op, TrafficOverride.INCLUDE);
+        var result = Pipeline.run(List.of(api), config);
+        assertTrue(result.records.getFirst().passiveSubdomainTraffic);
+        assertEquals(List.of(TrafficClassifier.PASSIVE_SUBDOMAIN_TRAFFIC), result.records.getFirst().trafficClassification.reasons());
+        assertTrue(result.coverageRecords.isEmpty());
+    }
     private RequestRecord record(String method, String path, String requestType, String responseType) {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://t:443", method, path, 200, "anon");
         record.hasResponse = true;

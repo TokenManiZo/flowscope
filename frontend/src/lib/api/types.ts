@@ -928,6 +928,9 @@ export interface ProjectEntry {
 }
 
 export interface ProjectStatus {
+  discoveredOrigins?: readonly string[]
+  observedOrigins?: readonly string[]
+  datasetRevision?: number
   directory: string
   active: ProjectEntry | null
   projects: readonly ProjectEntry[]

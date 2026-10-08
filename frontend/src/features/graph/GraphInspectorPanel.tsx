@@ -58,7 +58,8 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}
       {/* 대상·API 그룹은 후보·확인 필요·신원별 접근으로 정리한 요약을 보여 준다. */}
-      {structural && projection ? <GraphScopeSummary labelIdentity={identity => graphAccountLabel(snapshot, identity)} scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
+      {node?.discovery ? <p className="mb-4 text-sm text-muted-foreground">{node.discovery === "unregistered" ? "브라우저에서 발견한 주소입니다." : "점검 범위에 등록된 주소입니다."} 트래픽이 들어오면 여기에 연결됩니다.</p>
+        : structural && projection ? <GraphScopeSummary labelIdentity={identity => graphAccountLabel(snapshot, identity)} scope={node?.kind === "target" ? "site" : "group"} groups={node?.kind === "target" ? projection.groups : projection.groups.filter(group => group.id === node?.groupId)} owners={snapshot.owners} {...actions} />
         : summary && <GraphNodeSummary labelIdentity={identity => graphAccountLabel(snapshot, identity)} summary={merged ? { ...summary, list: [] } : summary} />}
       {!structural && !selection.routeCandidate && unjudgedCount > 0 && <p className="mb-4 text-xs text-muted-foreground">인가 판정에 포함되지 않은 관측 기록 {unjudgedCount}건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>}
       {node?.kind === "resend-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">Request Lab·Repeater로 값을 바꿔 다시 보낸 요청입니다. 판정과 Gap에 쓰지 않습니다.</p>}

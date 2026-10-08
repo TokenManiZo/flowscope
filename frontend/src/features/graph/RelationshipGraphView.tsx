@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { apiConfirmed } from "@/features/api-management/apiAppearance"
 import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { Source, Verdict } from "@/lib/api/types"
-import { useSnapshotQuery } from "@/lib/query/hooks"
+import { useProjectsQuery, useSnapshotQuery } from "@/lib/query/hooks"
 import { SourceIcon } from "@/features/evidence/SourceIcon"
 
 import { CytoscapeGraph } from "./CytoscapeGraph"
@@ -24,7 +24,7 @@ import { emptyGraphView, emptyGraphWorkspace, graphView, graphViewKey, mergeGrap
 import { useGraphWorkspace } from "./useGraphWorkspace"
 import { EMPTY_HIGHLIGHT, highlightRecords, nodeStatusCodes, projectHighlight, projectSiteHighlight, statusGroups, statusHighlightColors, type GraphHighlight } from "./graphHighlight"
 import { graphCellKey, graphCellSelection, graphRouteCandidateId, projectRouteCandidate, type GraphFilters, type GraphSelection } from "./graphProjection"
-import { GRAPH_PAGE_SIZE, graphContents, navigateHierarchy, stepBack, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection, isObservedTraffic } from "./graphHierarchy"
+import { GRAPH_PAGE_SIZE, graphContents, navigateHierarchy, stepBack, projectHierarchy, type GraphNavigation, type HierarchyNode, type HierarchySelection, isObservedTraffic, isPassiveSubdomainTraffic } from "./graphHierarchy"
 import { ResponsiveGraphList } from "./ResponsiveGraphList"
 import { operationParts } from "./relationshipNodeCard"
 import { projectResendGraph, resendSends, resendToolColors, resendToolNames, type ResendTool } from "./resendGraph"
@@ -82,6 +82,13 @@ function changed<T>(change: Change<T>, current: T): T { return typeof change ===
 function ProjectGraphView({ dataset }: { dataset: number }) {
   const snapshot = useSnapshotQuery()
   const graphData = snapshot.data
+  const projects = useProjectsQuery()
+  const observedHosts = useMemo(() => {
+    const project = projects.data
+    if (!project?.active || project.datasetRevision !== dataset) return []
+    const unregistered = new Set(project.discoveredOrigins ?? [])
+    return [...new Set(project.observedOrigins ?? [])].sort().map(service => ({ service, registered: !unregistered.has(service) }))
+  }, [projects.data, dataset])
   const workspaceState = useGraphWorkspace(dataset)
   const workspace = workspaceState.workspace ?? emptyGraphWorkspace
   const navigation = workspace.navigation
@@ -143,7 +150,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     if (graphViewKey(next) !== viewKey) { setOpenObjectGroup(null); setFitVersion(0); setLayoutVersion(0); setLaneLayout({ lane: 0, version: 0 }) }
     workspaceState.update(current => ({ ...current, navigation: next }))
   }
-  const collectedGraph = useMemo(() => graphData && workspaceState.workspace ? projectHierarchy(graphData, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal) : null, [expandedGroups, filters, graphData, navigation, workspaceState.workspace !== null, anchor])
+  const collectedGraph = useMemo(() => graphData && workspaceState.workspace ? projectHierarchy(graphData, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal, observedHosts) : null, [expandedGroups, filters, graphData, navigation, workspaceState.workspace !== null, anchor, observedHosts])
   const sends = useMemo(() => graphData ? resendSends(snapshot.data!) : [], [graphData])
   const resendGraph = useMemo(() => resend && graphData && workspaceState.workspace ? projectResendGraph(snapshot.data!, navigation, filters.view, shownResendTools) : null, [resend, graphData, workspaceState.workspace !== null, navigation, filters.view, shownResendTools])
   const graph = resend ? resendGraph : collectedGraph
@@ -207,7 +214,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const includedEvents = (graphData?.events ?? []).filter((event) => resend ? shownSendIds.has(event.eventId)
     : filters.includeSupportTraffic
       ? event.trafficDisposition === "INCLUDE" || isObservedTraffic(event)
-      : event.trafficDisposition === "INCLUDE" && !supportTrafficClasses.has(event.trafficClass))
+      : isPassiveSubdomainTraffic(event) || event.trafficDisposition === "INCLUDE" && !supportTrafficClasses.has(event.trafficClass))
   const identities = [...new Set(includedEvents.map((event) => event.idn))].sort()
   const sourceCount = (source: Source) => includedEvents.filter((event) => event.source === source).length
   const identityCount = (identity: string) => includedEvents.filter((event) => event.idn === identity).length

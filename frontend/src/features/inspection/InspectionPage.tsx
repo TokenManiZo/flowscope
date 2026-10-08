@@ -63,7 +63,7 @@ function normalizedOrigin(value: string): string {
 
 
 function displayOrigin(value: string): string {
-  try { return new URL(value).origin } catch { return value }
+  try { const url = new URL(value); return url.origin + (url.pathname === "/" ? "" : url.pathname) } catch { return value }
 }
 
 function CopyButton({ value }: { value: string }) {

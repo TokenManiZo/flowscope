@@ -34,6 +34,8 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   selection: HierarchySelection
   groupId?: string
   service?: string
+  /** Browser-observed host metadata, without API or authorization Evidence. */
+  discovery?: "registered" | "unregistered"
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
   publicRead?: boolean
@@ -88,6 +90,10 @@ export function isObservedTraffic(event: Snapshot["events"][number]): boolean {
     && !event.classificationReasons.includes("USER_EXCLUDE") && !(event.classificationOverride && event.trafficDisposition === "EXCLUDE")
     && !hiddenTrafficClasses.has(event.trafficClass) && !staticExtension.test(event.path.split("?")[0])
     && !manualResendDetails.has(event.sourceDetail)
+}
+
+export function isPassiveSubdomainTraffic(event: Snapshot["events"][number]): boolean {
+  return event.source === "human" && event.classificationReasons.includes("PASSIVE_SUBDOMAIN_TRAFFIC") && isObservedTraffic(event)
 }
 
 /** 묶음 기준 칸(api·rest·버전 다음 첫 칸)과, 그 칸이 경로의 마지막 칸인지(/login.php처럼 한 칸짜리 주소인지). */
@@ -191,7 +197,7 @@ export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
   const auxiliaryClasses = new Set(["POLLING", "BACKGROUND", "AUTH_SESSION", "TELEMETRY_CANDIDATE"])
   const unjudgedEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn)
     && isObservedTraffic(event) && !eventEvidenceIds(event).some(id => judgedEvidence.has(id))
-    && (filters.includeSupportTraffic || cellOperations.has(event.op) && !auxiliaryClasses.has(event.trafficClass)))
+    && (filters.includeSupportTraffic || isPassiveSubdomainTraffic(event) || cellOperations.has(event.op) && !auxiliaryClasses.has(event.trafficClass)))
   const observedEvents = unjudgedEvents.filter(event => !cellOperations.has(event.op))
   const attachedEvents = unjudgedEvents.filter(event => cellOperations.has(event.op))
   const routeCandidates = filters.includeRouteCandidates ? projectRouteCandidates(snapshot, filters)
@@ -201,7 +207,7 @@ export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
 
 export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string }
 
-export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
+export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}, observedHosts: readonly { service: string; registered: boolean }[] = []): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const { cells, observedEvents, attachedEvents, routeCandidates: candidateList, resolveGroup } = graphContents(snapshot, filters)
   const operationGroup = (operation: string) => { const { service, path } = splitOperation(operation); return resolveGroup(service, path) }
@@ -401,6 +407,11 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       addEdge("target-group", target.id, node.id, emptySelection())
       listItems.push(node)
     }
+    for (const host of observedHosts) {
+      if (nodes.some(node => node.kind === "target" && node.service === host.service)) continue
+      const node = addNode("target", host.service, emptySelection(), { service: host.service, discovery: host.registered ? "registered" : "unregistered" })
+      listItems.push(node)
+    }
   } else if (group && resolved.level === "group") {
     const scores = new Map<string, number>()
     const priorities = new Map<string, number>()
@@ -437,8 +448,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     if (revealedRoute && !visibleRoutes.includes(revealedRoute)) { visibleRoutes.push(revealedRoute); revealedNodeCount++ }
     routeCandidates = visibleRoutes
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
-    if (filters.includeSupportTraffic) {
-      const supportEvents = observedEvents.filter(event => operationGroup(event.op).id === group.id)
+    {
+      const supportEvents = observedEvents.filter(event => operationGroup(event.op).id === group.id && (filters.includeSupportTraffic || isPassiveSubdomainTraffic(event)))
       const humanWrites = new Set(supportEvents.filter(event => event.source === "human" && isWriteOperation(event.op)).map(event => event.op))
       const allSupportOps = [...new Set(supportEvents.map(event => event.op))].sort((left, right) => Number(humanWrites.has(right)) - Number(humanWrites.has(left)) || Number(isWriteOperation(right)) - Number(isWriteOperation(left)) || compareText(left, right))
       const supportOps = allSupportOps.slice(0, resolved.operationLimit)

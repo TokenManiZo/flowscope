@@ -21,6 +21,11 @@ const projection = (nodes: readonly HierarchyNode[]): HierarchyProjection => ({
 })
 
 describe("relationship graph node cards", () => {
+  it("labels an observed host independently of API counts and authorization verdicts", () => {
+    const host = node("target", service, { service, discovery: "unregistered", selection: selection([]) })
+    expect(relationshipNodeCard(host, projection([host]))).toMatchObject({ badge: "HOST", title: service, detail: "브라우저에서 발견됨", footer: "범위 미등록" })
+    expect(relationshipNodeCard({ ...host, discovery: "registered" }, projection([host])).footer).toBe("범위 등록됨 · 표시할 API 없음")
+  })
   it("maps the hierarchy node kinds without changing server-backed selection facts", () => {
     const target = node("target", service, { service, selection: selection([]) })
     const group = node("api-group", "ORDERS APIs", { groupId: "orders", service, selection: selection([]) })

@@ -34,6 +34,8 @@ public final class RequestRecord {
     public String collectionAccountId;
     /** Cross-origin static resource's in-scope document URL; never makes the asset an API observation. */
     public String supportingPageUrl;
+    /** Browser-observed subdomain traffic, retained for display without active scope registration. */
+    public boolean passiveSubdomainTraffic;
     /** 안전 능동 재전송의 기준 신원과 원 Evidence. 자격 원문은 절대 담지 않는다. */
     public String replayBasisIdentity;
     public String replayBasisEvidenceId;
@@ -113,6 +115,7 @@ public final class RequestRecord {
         copy.laneAccountId = laneAccountId;
         copy.collectionAccountId = collectionAccountId;
         copy.supportingPageUrl = supportingPageUrl;
+        copy.passiveSubdomainTraffic = passiveSubdomainTraffic;
         copy.replayBasisIdentity = replayBasisIdentity;
         copy.replayBasisEvidenceId = replayBasisEvidenceId;
         copy.evidenceId = evidenceId;

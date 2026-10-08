@@ -569,6 +569,18 @@ describe("unified inspection hub", () => {
     expect(screen.getByText("scope에 포함된 대상이 없습니다.")).toBeVisible()
   })
 
+  it("distinguishes registered path scopes in the target picker", async () => {
+    const user = userEvent.setup()
+    renderInspection({ scanner: () => ({ run: { status: "NOT_STARTED" }, scope: [`${target}/api`, `${target}/admin`] }) })
+    await screen.findByRole("tablist", { name: "점검 진행 단계" })
+    await user.click(screen.getByRole("tab", { name: /ZAP 스캔/ }))
+    const picker = screen.getByRole("combobox", { name: "ZAP 대상" })
+    await waitFor(() => expect(picker).toHaveTextContent("/api"))
+    await user.click(picker)
+    expect(screen.getByRole("option", { name: `${target}/admin` })).toBeVisible()
+    expect(screen.getByRole("option", { name: `${target}/api` })).toBeVisible()
+  })
+
   it("disables ZAP start and explains how to turn ZAP on when it is disconnected", async () => {
     const user = userEvent.setup()
     renderInspection({ zap: { connected: false, state: "DISCONNECTED", message: "ZAP 연결 대기" } })

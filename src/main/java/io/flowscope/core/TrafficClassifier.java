@@ -13,7 +13,8 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 
 /** 표준 요청 문맥과 저장된 Evidence만 사용하는 보수적 비파괴 분류기. */
 public final class TrafficClassifier {
-    public static final int VERSION = 9;
+    public static final int VERSION = 10;
+    public static final String PASSIVE_SUBDOMAIN_TRAFFIC = "PASSIVE_SUBDOMAIN_TRAFFIC";
 
     /** Reason set on HUMAN API traffic captured while no exploration pass was active (D-071). The snapshot reads it to guide a pass start (D-155). */
     public static final String HUMAN_OUTSIDE_EXPLORATION_RUN = "HUMAN_OUTSIDE_EXPLORATION_RUN";
@@ -44,6 +45,9 @@ public final class TrafficClassifier {
     public static TrafficClassification classify(RequestRecord record, AnalysisConfig config) {
         if (!record.hasResponse) {
             return result(inferredClass(record), Disposition.EXCLUDE, false, "NO_RESPONSE");
+        }
+        if (record.passiveSubdomainTraffic) {
+            return result(inferredClass(record), Disposition.EXCLUDE, false, PASSIVE_SUBDOMAIN_TRAFFIC);
         }
         if (record.supportingPageUrl != null) {
             return result(TrafficClass.STATIC_ASSET, Disposition.EXCLUDE, false, "SUPPORTING_CROSS_ORIGIN_ASSET");
