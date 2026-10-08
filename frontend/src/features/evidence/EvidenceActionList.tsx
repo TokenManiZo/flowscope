@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { Bot, ChevronDown, ChevronRight, CircleHelp, ScanLine, Send, UserRound } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { DeleteTrafficButton } from "@/features/api-management/ApiActions"
 import { MethodBadge, StatusBadge } from "@/features/graph/httpBadges"
 import { matrixVerdictTone } from "@/features/matrix/MatrixVerdictCell"
 import type { EventRecord, Snapshot, Source, Verdict } from "@/lib/api/types"
@@ -17,6 +18,7 @@ export const SOURCE_MARK: Record<Source, { Icon: typeof UserRound; label: string
   unknown: { Icon: CircleHelp, label: "UNKNOWN", className: "border-border bg-muted text-muted-foreground" },
 }
 const SOURCE_ORDER: readonly Source[] = ["human", "scanner", "llm", "unknown"]
+const DELETE_ACTION_STYLE = "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive dark:border-destructive/40 dark:bg-destructive/10 dark:hover:bg-destructive/20"
 
 /** 신원마다 카드 하나, 카드 안은 출처마다 한 줄. 신원은 최근 요청 순, 출처는 H·S·L 순, 줄 안 요청은 최신순이다. */
 function groupByIdentity(events: readonly EventRecord[], identities: Iterable<string>, identityOf: (event: EventRecord) => string) {
@@ -39,6 +41,7 @@ interface Props {
   events: readonly EventRecord[]
   snapshot: Snapshot
   disabled?: boolean
+  allowDelete?: boolean
   onOpenRequestLab?(): void
   /** 신원별 서버 판정(선택한 API의 셀 중 가장 급한 판정). 있으면 카드 제목 옆에 보여 준다. */
   identityVerdicts?: ReadonlyMap<string, Verdict>
@@ -50,7 +53,7 @@ interface Props {
  * 선택 항목에 연결된 실제 관측 기록. 신원마다 카드 하나로 묶고 카드 안에 출처별 한 줄을 둔다. 줄의 보내기 버튼은 그 출처의 가장 최근
  * 요청을 Request Lab으로 열고, 요청이 여럿이면 펼쳐서 요청마다 열 수 있다. 재전송은 Request Lab에서만 한다(Burp Repeater로 보내지 않는다).
  */
-export function EvidenceActionList({ events, snapshot, disabled = false, onOpenRequestLab, identityVerdicts, identityOf = event => event.idn, labelIdentity = identityLabel }: Props) {
+export function EvidenceActionList({ events, snapshot, disabled = false, allowDelete = false, onOpenRequestLab, identityVerdicts, identityOf = event => event.idn, labelIdentity = identityLabel }: Props) {
   const [labContext, setLabContext] = useState<string | null>(null)
   const [openGroups, setOpenGroups] = useState<readonly string[]>([])
   const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision ?? 0
@@ -95,6 +98,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, onOpenR
               <StatusBadge code={event.status} />
               <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>
               <span className="flex gap-0.5">
+                {allowDelete && <DeleteTrafficButton key={`${datasetRevision}:${event.eventId}`} snapshot={snapshot} evidenceIds={[event.eventId]} label={`${ordinal(event)} 요청 삭제`} iconOnly disabled={disabled} className={`size-7 [&_svg]:size-4 ${DELETE_ACTION_STYLE}`} />}
                 <Button type="button" size="icon-sm" variant="ghost" aria-label={`${ordinal(event)} Request Lab에서 보내기`} title="Request Lab에서 보내기" disabled={disabled} onClick={() => openLab(event)}><Send className="size-4" /></Button>
               </span>
             </li>)}</ul>}

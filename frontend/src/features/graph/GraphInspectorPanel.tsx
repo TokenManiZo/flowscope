@@ -1,5 +1,5 @@
 import { collectionIdentity, graphAccountLabel } from "./graphAccounts"
-import { ApiActions } from "@/features/api-management/ApiActions"
+import { ApiActions, DeleteTrafficButton, API_ACTION_LARGE_CLASS, API_ACTION_DELETE_STYLE } from "@/features/api-management/ApiActions"
 import { InspectorPanel } from "@/components/layout/InspectorPanel"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import type { EventRecord, Snapshot, Verdict } from "@/lib/api/types"
@@ -51,9 +51,11 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const judgedIds = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
   const unjudgedCount = events.filter(item => ![item.eventId, ...(item.clusterEvidenceIds ?? [])].some(id => judgedIds.has(id))).length
   const title = structural && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : "선택한 그래프 항목"
+  const objectSelection = node?.kind === "resource" || node?.kind === "object-group" || !node && !!selection.resource
+  const objectEvidenceIds = [...new Set(events.flatMap(item => [item.eventId, ...(item.clusterEvidenceIds ?? [])]))].filter(id => ids.has(id))
   const apiOp = selection.routeCandidate ? `${selection.routeCandidate.service} ${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : selection.operation && (!node || ["operation", "observed-operation"].includes(node.kind)) ? selection.operation : null
-  return <div className="flex min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
-    <InspectorPanel title="선택 작업" actions={apiOp && <ApiActions snapshot={snapshot} operation={apiOp} disabled={suspended} />} description={<div className="mt-2 grid gap-2"><span className="block break-all rounded-md border border-border/70 bg-background px-3 py-2 font-mono text-sm leading-relaxed text-foreground">{title}</span>{selection.identity && <span className="flex items-center gap-2 text-xs"><span className="text-muted-foreground">계정</span><span className="rounded border border-border/70 bg-background px-2 py-1 font-medium text-foreground">{graphAccountLabel(snapshot, selection.identity)}</span></span>}{selection.resource && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">객체 식별자</summary><span className="mt-1 block select-all break-all font-mono text-foreground">{stripOrigin(selection.resource) || selection.resource}</span></details>}</div>} tabs={null}>
+  return <div className="flex h-full min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
+    <InspectorPanel title="선택 작업" actionsPlacement="footer" actions={objectSelection && selection.operation ? <ApiActions snapshot={snapshot} operation={selection.operation} disabled={suspended} size="lg" deleteEvidenceIds={objectEvidenceIds} deleteLabel="객체 삭제" /> : objectSelection ? <DeleteTrafficButton key={JSON.stringify([snapshot.datasetRevision ?? snapshot.identityRevision, objectEvidenceIds])} snapshot={snapshot} evidenceIds={objectEvidenceIds} label="객체 삭제" iconOnly disabled={suspended || objectEvidenceIds.length === 0} className={`${API_ACTION_LARGE_CLASS} ${API_ACTION_DELETE_STYLE}`} /> : apiOp && <ApiActions snapshot={snapshot} operation={apiOp} disabled={suspended} size="lg" />} description={<div className="mt-2 grid gap-2"><span className="block break-all rounded-md border border-border/70 bg-background px-3 py-2 font-mono text-sm leading-relaxed text-foreground">{title}</span>{selection.identity && <span className="flex items-center gap-2 text-xs"><span className="text-muted-foreground">계정</span><span className="rounded border border-border/70 bg-background px-2 py-1 font-medium text-foreground">{graphAccountLabel(snapshot, selection.identity)}</span></span>}{selection.resource && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">객체 식별자</summary><span className="mt-1 block select-all break-all font-mono text-foreground">{stripOrigin(selection.resource) || selection.resource}</span></details>}</div>} tabs={null}>
       {/* 소유자를 모르면 이 객체의 판정이 보류되므로 패널 맨 위에서 먼저 묻는다. */}
       {node?.kind === "resource" && node.selection.resource && <GraphOwnerControl snapshot={snapshot} operation={node.selection.operation} resource={node.selection.resource} disabled={suspended} />}
       {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}
@@ -68,7 +70,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
         <p className="text-xs text-muted-foreground">원본 요청에 연결된 응답입니다. 상태 코드만으로 취약점을 판정하지 않습니다.</p>
         <ul className="mt-2 grid gap-1">{manual.map(item => <li key={item.eventId} className="font-mono text-xs">{snapshot.evidenceOrdinals?.[item.eventId] ? `#${snapshot.evidenceOrdinals[item.eventId]} · ` : ""}HTTP {item.status}</li>)}</ul>
       </section>}
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} /> : structural ? null : <EvidenceActionList allowDelete={objectSelection} onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
     </InspectorPanel>
   </div>
 }

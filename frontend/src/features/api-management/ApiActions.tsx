@@ -14,6 +14,9 @@ import { apiColors, apiConfirmed, apiOperation } from "./apiAppearance"
 type Targets = { operations?: readonly string[]; evidenceIds?: readonly string[] }
 type Change = Targets & { action: "highlight" | "register" | "unregister" | "preview-delete" | "delete"; color?: string; expectedEvidenceIds?: readonly string[] }
 interface Preview { operations: readonly string[]; evidenceIds: readonly string[]; records: number; reviews: number; declarations: number; revision?: number; datasetRevision?: number; apiMarks?: Snapshot["apiMarks"] }
+export const API_ACTION_LARGE_CLASS = "size-[58px] [&_svg]:size-[30px]"
+export const API_ACTION_DELETE_STYLE = "border-destructive/50 bg-destructive/10 text-destructive hover:border-destructive/70 hover:bg-destructive/20 hover:text-destructive dark:border-destructive/50 dark:bg-destructive/10 dark:hover:border-destructive/70 dark:hover:bg-destructive/20"
+
 function useApiAction(snapshot: Snapshot) {
   const client = useQueryClient()
   return useMutation({
@@ -66,21 +69,32 @@ export function DeleteTrafficButton({ snapshot, operations, evidenceIds, label =
     </DialogContent>
   </Dialog>
 }
-export function ApiActions({ snapshot, operation, disabled = false }: { snapshot: Snapshot; operation: string; disabled?: boolean }) {
+interface ApiActionsProps {
+  snapshot: Snapshot
+  operation: string
+  disabled?: boolean
+  size?: "default" | "lg"
+  /** 객체 상세에서도 강조·등록은 API 단위로 유지하고 삭제만 이 요청 범위로 제한한다. */
+  deleteEvidenceIds?: readonly string[]
+  deleteLabel?: string
+}
+export function ApiActions({ snapshot, operation, disabled = false, size = "default", deleteEvidenceIds, deleteLabel = "API 삭제" }: ApiActionsProps) {
   const op = apiOperation(operation), action = useApiAction(snapshot)
   const selectedColor = snapshot.apiMarks?.[op]?.color ?? ""
   const scope = JSON.stringify([snapshot.datasetRevision ?? snapshot.identityRevision, op])
-  return <div className="flex items-center gap-1">
-    <Popover><PopoverTrigger asChild><Button size="icon" variant="outline" className="size-9" aria-label="API 하이라이트" title="API 하이라이트" disabled={disabled}><Highlighter className="size-5" strokeWidth={2.25} style={{ color: apiColors.find(color => color.id === selectedColor)?.swatch }} /></Button></PopoverTrigger><PopoverContent align="end" className="w-60 p-3" aria-label="하이라이트 색상">
+  const deleteScope = JSON.stringify([scope, deleteEvidenceIds ?? null])
+  const buttonClassName = size === "lg" ? API_ACTION_LARGE_CLASS : "size-9"
+  return <div className={`flex items-center ${size === "lg" ? "gap-[28px]" : "gap-1"}`}>
+    <Popover><PopoverTrigger asChild><Button size="icon" variant="outline" className={buttonClassName} aria-label="API 하이라이트" title="API 하이라이트" disabled={disabled}><Highlighter className="size-5" strokeWidth={2.25} style={{ color: apiColors.find(color => color.id === selectedColor)?.swatch }} /></Button></PopoverTrigger><PopoverContent align="end" className="w-60 p-3" aria-label="하이라이트 색상">
       <h3 className="text-sm font-semibold">API 하이라이트</h3><p className="my-2 text-xs text-muted-foreground">그래프와 API 비교에 함께 적용합니다.</p>
       <div className="grid grid-cols-4 gap-2">{apiColors.map(color => <button key={color.id} type="button" aria-label={`${color.label} 하이라이트`} aria-pressed={selectedColor === color.id} disabled={action.isPending} className="flex h-9 items-center justify-center rounded-md border border-foreground/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50" style={{ backgroundColor: color.swatch }} onClick={() => action.mutate({ action: "highlight", operations: [op], color: color.id })}>{selectedColor === color.id && <Check className="size-4 text-black" />}</button>)}</div>
       <Button size="sm" variant="ghost" className="mt-2 w-full" disabled={action.isPending || !selectedColor} onClick={() => action.mutate({ action: "highlight", operations: [op], color: "" })}>하이라이트 해제</Button><ActionError error={action.error} />
     </PopoverContent></Popover>
-    <ApiRegistration key={"register:" + scope} snapshot={snapshot} operation={op} disabled={disabled} />
-    <DeleteTrafficButton key={"delete:" + scope} snapshot={snapshot} operations={[op]} iconOnly disabled={disabled} />
+    <ApiRegistration key={"register:" + scope} snapshot={snapshot} operation={op} disabled={disabled} className={buttonClassName} />
+    <DeleteTrafficButton key={"delete:" + deleteScope} snapshot={snapshot} operations={deleteEvidenceIds ? undefined : [op]} evidenceIds={deleteEvidenceIds} label={deleteLabel} iconOnly disabled={disabled || deleteEvidenceIds?.length === 0} className={`${buttonClassName} ${API_ACTION_DELETE_STYLE}`} />
   </div>
 }
-function ApiRegistration({ snapshot, operation, disabled = false }: { snapshot: Snapshot; operation: string; disabled?: boolean }) {
+function ApiRegistration({ snapshot, operation, disabled = false, className = "" }: { snapshot: Snapshot; operation: string; disabled?: boolean; className?: string }) {
   const op = apiOperation(operation), action = useApiAction(snapshot)
   const mark = snapshot.apiMarks?.[op]
   const confirmed = apiConfirmed(snapshot, op)
@@ -90,7 +104,7 @@ function ApiRegistration({ snapshot, operation, disabled = false }: { snapshot: 
   const status = confirmed ? "Confirmed" : "Unmarked"
   const detail = mark?.registered ? `관측 근거 ${mark.evidenceIds.length}건 · 사용자 등록` : confirmed ? "판정 매트릭스에서 확정된 항목이 있습니다." : "확인한 관측 근거를 선택해 등록합니다."
   return <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="icon" variant="outline" className={`size-9 ${confirmed ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300" : ""}`} aria-label={label} title={`${status} · ${detail}`} disabled={disabled || action.isPending || (!mark?.registered && events.length === 0)} onClick={() => { action.reset(); setIds([]); setOpen(true) }}><CircleAlert className="size-5" strokeWidth={2.25} /><span className="sr-only">{status}</span></Button>
+      <Button size="icon" variant="outline" className={`size-9 ${confirmed ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300" : ""} ${className}`} aria-label={label} title={`${status} · ${detail}`} disabled={disabled || action.isPending || (!mark?.registered && events.length === 0)} onClick={() => { action.reset(); setIds([]); setOpen(true) }}><CircleAlert className="size-5" strokeWidth={2.25} /><span className="sr-only">{status}</span></Button>
       <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{mark?.registered ? "사용자 취약점 등록을 해제할까요?" : "취약점 관측 근거 선택"}</DialogTitle><DialogDescription>{mark?.registered ? "직접 등록한 표시를 해제합니다. 판정 매트릭스의 별도 확정은 해당 판정에서 변경합니다." : "직접 확인한 요청·응답을 선택하세요. 응답 코드만으로 취약점을 판정하지 않습니다. 최대 20건을 저장합니다."}</DialogDescription></DialogHeader>
         {!mark?.registered && <div className="max-h-72 overflow-y-auto rounded-md border">{events.map(event => <label key={event.eventId} className="flex cursor-pointer items-center gap-3 border-b px-3 py-3 text-xs last:border-b-0 hover:bg-muted/40"><Checkbox aria-label={`${evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)} 관측 근거`} checked={ids.includes(event.eventId)} disabled={!ids.includes(event.eventId) && ids.length >= 20} onCheckedChange={checked => setIds(current => checked ? [...current, event.eventId] : current.filter(id => id !== event.eventId))} /><span className="font-mono">{evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)}</span><span className="min-w-0 flex-1 truncate">{identityLabel(event.idn)} · {event.source.toUpperCase()}</span><span>HTTP {event.status}</span></label>)}</div>}
         <ActionError error={action.error} /><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={action.isPending || (!mark?.registered && ids.length === 0)} onClick={() => action.mutate({ action: mark?.registered ? "unregister" : "register", operations: [op], evidenceIds: ids }, { onSuccess: () => setOpen(false) })}>{action.isPending ? "저장 중…" : mark?.registered ? "등록 해제" : `${ids.length}건 근거로 등록`}</Button></DialogFooter>
