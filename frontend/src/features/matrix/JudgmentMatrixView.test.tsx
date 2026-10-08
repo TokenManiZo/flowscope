@@ -139,7 +139,7 @@ it("shows an unmatched registered account service as a warning without adding a 
   expect(within(alert).getByText(warning.message)).toBeVisible()
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   expect(within(table).queryByText("Foreign user")).not.toBeInTheDocument()
-  expect(within(table).getAllByRole("button")).toHaveLength(2)
+  expect(within(table).getAllByRole("button").filter(button => button.hasAttribute("aria-pressed"))).toHaveLength(2)
 })
 
 it("opens the recommendation detail, saves a human review against the server cell id, and shows the server message", async () => {
@@ -167,6 +167,20 @@ it("opens the recommendation detail, saves a human review against the server cel
   expect(within(review).getAllByRole("button")).toHaveLength(1)
   await user.click(within(review).getByRole("button", { name: "취약점 확정 취소" }))
   await waitFor(() => expect(saveReview).toHaveBeenLastCalledWith("object-b", "UNRESOLVED", ""))
+})
+
+it("opens the latest API traffic directly without a registered account or cell selection", async () => {
+  const operation = `${service} GET /api/admin/export`
+  current = { ...snapshot, accounts: [], events: [
+    { ...snapshot.events[0], op: operation, eventId: "newest", timestamp: 20, idn: "anonymous" },
+    { ...snapshot.events[0], op: operation, eventId: "older", timestamp: 10, rawAvailable: true },
+  ], authorizationMatrix: { ...matrix, identities: [{ id: "anonymous", label: "비로그인", role: "Anonymous", kind: "ANONYMOUS" }], functions: [fn("anon", "anonymous", operation)] } }
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("button", { name: "GET /api/admin/export 최신 요청을 Request Lab에서 열기" }))
+  expect(await screen.findByRole("dialog", { name: "Request Lab" })).toHaveTextContent("newest")
+  expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
+  expect(runAuthorizationReplay).not.toHaveBeenCalled()
 })
 
 it("opens the recommendation's basis record in Request Lab without the removed auto-replay controls", async () => {
