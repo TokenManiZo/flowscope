@@ -31,13 +31,28 @@ export function uniqueOrigins(values: Iterable<string>): readonly string[] {
 
 /** Evidence 순번 표시. 서버 snapshot.evidenceOrdinals에 없으면 원본 id로 폴백한다. */
 export function evidenceOrdinalLabel(ordinals: Readonly<Record<string, number>> | undefined, eventId: string): string {
+  return hasEvidenceOrdinal(ordinals, eventId) ? `#${ordinals![eventId]}` : eventId
+}
+
+/** 순번이 있는 기록만 #N으로 바꾼다. 순번이 없는 기록(삭제됐거나 지금 분석에 없는 기록)은 열 수 없어 빼고 센다. */
+export function evidenceOrdinalLabels(ordinals: Readonly<Record<string, number>> | undefined, eventIds: readonly string[]): string[] {
+  const labels = eventIds.filter(id => hasEvidenceOrdinal(ordinals, id)).map(id => `#${ordinals![id]}`)
+  return [...new Set(labels)]
+}
+
+export function hasEvidenceOrdinal(ordinals: Readonly<Record<string, number>> | undefined, eventId: string): boolean {
   const ordinal = ordinals?.[eventId]
-  return typeof ordinal === "number" && Number.isFinite(ordinal) ? `#${ordinal}` : eventId
+  return typeof ordinal === "number" && Number.isFinite(ordinal)
 }
 
 /** 서버가 보낸 문장 안의 Evidence ID(ev-…)를 순번으로 바꿔 보여 준다. 순번이 없으면 원래 ID를 그대로 둔다. */
 export function withEvidenceOrdinals(text: string, ordinals: Readonly<Record<string, number>> | undefined): string {
   return text.replace(/\bev-[0-9a-f]{8,}\b/g, id => evidenceOrdinalLabel(ordinals, id))
+}
+
+/** 아직 번호가 없는 기록 ID(" · ev-…")를 문장에서 뺀다. 번호가 붙기 전 진행 기록에 긴 ID가 보이지 않게 한다. */
+export function withoutUnnumberedEvidence(text: string): string {
+  return text.replace(/\s*·\s*ev-[0-9a-f]{8,}\b/g, "")
 }
 
 const observedTimeFormat = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "medium" })

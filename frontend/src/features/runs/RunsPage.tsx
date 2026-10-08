@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RunExecutionSummary } from "@/lib/api/types"
-import { durationLabel, runStatusTone, scannerStageLabel } from "@/lib/display/runStatus"
+import { durationLabel, runLabel, runStatusTone, scannerStageLabel } from "@/lib/display/runStatus"
 import { RunLaneRow } from "./RunLaneRow"
 
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : "요청을 완료하지 못했습니다." }
@@ -64,7 +64,7 @@ export function RunsPage() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <SourceRunCard title="HUMAN" status={humanStatus}
-          facts={[["계정", human.data?.active ? human.data.accountId || "비로그인" : "—"], ["run", human.data?.runId ? <span className="font-mono text-xs">{human.data.runId}</span> : "—"], ["Proxy", human.data?.proxy ? <span className="font-mono text-xs">{human.data.proxy}</span> : "—"]]}
+          facts={[["계정", human.data?.active ? human.data.accountId || "비로그인" : "—"], ["Proxy", human.data?.proxy ? <span className="font-mono text-xs">{human.data.proxy}</span> : "—"]]}
           action={<Button variant="outline" size="sm" onClick={openInspection}>점검 시작에서 제어</Button>} />
         <SourceRunCard title="ZAP" status={scannerStatus}
           facts={[["연결", <RunStatusBadge key="zap" status={zapConnection} />], ["단계", `${scannerStageLabel(run?.stage)}${stageElapsed}`], ["수집", run?.captured_records === undefined ? "아직 없음" : `${run.captured_records}건 · Alert ${run.alert_count ?? 0}건`]]}
@@ -78,7 +78,7 @@ export function RunsPage() {
           action={<Button variant="outline" size="sm" onClick={openInspection}>LLM 단계 열기</Button>} />
       </div>
 
-      <Card><CardHeader><CardTitle>저장된 통제 요청 실행 기록</CardTitle><CardDescription>지난 실행 기록입니다. 응답 전 실패와 응답 관측 기록을 나눠 셉니다.</CardDescription></CardHeader><CardContent className="space-y-3">{snapshot.data?.runExecutions?.length ? snapshot.data.runExecutions.map((summary) => <div className="grid gap-2 rounded-md border p-3 text-sm md:grid-cols-[auto_minmax(0,1fr)_auto]" key={`${summary.source}:${summary.runId}`}><Badge variant={summary.quality === "ALL_FAILED" ? "destructive" : "outline"} title={summary.quality}>{qualityLabels[summary.quality] ?? summary.quality}</Badge><div className="min-w-0"><p className="break-all font-mono">{summary.source} · {summary.runId}</p><p className="text-xs text-muted-foreground">시도 {summary.attempted} · 응답 {summary.responses} · 실패 {summary.failures}</p></div><div className="text-xs text-muted-foreground">{Object.entries(summary.outcomes).map(([name, count]) => `${name} ${count}`).join(" · ") || "결과 없음"}</div></div>) : <p className="text-sm text-muted-foreground">기록된 실행이 없습니다.</p>}</CardContent></Card>
+      <Card><CardHeader><CardTitle>저장된 통제 요청 실행 기록</CardTitle><CardDescription>지난 실행 기록입니다. 응답 전 실패와 응답 받은 요청을 나눠 셉니다.</CardDescription></CardHeader><CardContent className="space-y-3">{snapshot.data?.runExecutions?.length ? snapshot.data.runExecutions.map((summary) => <div className="grid gap-2 rounded-md border p-3 text-sm md:grid-cols-[auto_minmax(0,1fr)_auto]" key={`${summary.source}:${summary.runId}`}><Badge variant={summary.quality === "ALL_FAILED" ? "destructive" : "outline"} title={summary.quality}>{qualityLabels[summary.quality] ?? summary.quality}</Badge><div className="min-w-0"><p className="break-all" title={summary.runId}>{runLabel(summary.runId, summary.source, summary.startedAt)}</p><p className="text-xs text-muted-foreground">시도 {summary.attempted} · 응답 {summary.responses} · 실패 {summary.failures}</p></div><div className="text-xs text-muted-foreground">{Object.entries(summary.outcomes).map(([name, count]) => `${name} ${count}`).join(" · ") || "결과 없음"}</div></div>) : <p className="text-sm text-muted-foreground">기록된 실행이 없습니다.</p>}</CardContent></Card>
     </section></ReferenceAnalysisWorkspace>
   )
 }

@@ -42,7 +42,7 @@ function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: 
   return <tr><td colSpan={2} /><td colSpan={5} className="py-2 pr-2">
     <table className="w-full table-fixed text-left text-[13px]" aria-label={`${type} 객체 목록`}>
       <colgroup><col className="w-[130px]" /><col className="w-[100px]" /><col /></colgroup>
-      <thead className="text-muted-foreground"><tr className="h-10 border-b border-border"><th className="px-2 font-normal">객체</th><th className="px-2 font-normal">소유자</th><th className="px-2 font-normal">접근한 신원</th></tr></thead>
+      <thead className="text-muted-foreground"><tr className="h-10 border-b border-border"><th className="px-2 font-normal">객체</th><th className="px-2 font-normal">소유자</th><th className="px-2 font-normal">접근한 계정</th></tr></thead>
       <tbody>
         {shown.map(row => <tr key={row.resource} tabIndex={0} aria-label={row.label} aria-selected={selectedId === `resource:${row.resource}`} onClick={() => onSelectObject(row.resource, row.cells)} onKeyDown={activate(() => onSelectObject(row.resource, row.cells))} className={cn("h-10 cursor-pointer border-b border-border/70 last:border-0 hover:bg-muted/40", selectedId === `resource:${row.resource}` && "bg-sky-500/10")}>
           <td className="truncate px-2 font-mono text-sm" title={row.resource}>{row.label}</td>
@@ -94,7 +94,7 @@ export function ApiListTable({ operations, snapshot: originalSnapshot, filters =
     <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full min-w-[800px] table-fixed text-left text-[13px]" aria-label="API 목록 표">
         <colgroup><col className="w-6" /><col className="w-[80px]" /><col /><col className="w-[140px]" /><col className="w-[76px]" /><col className="w-14" /><col className="w-[160px]" /></colgroup>
-        <thead className="sticky top-0 z-10 bg-card text-muted-foreground"><tr className="h-12 border-b border-border"><th /><th className="px-2 font-normal">메서드</th><th className="px-2 font-normal">경로</th><th className="px-2 font-normal">응답</th><th className="px-2 font-normal">출처</th><th className="px-2 font-normal">신원</th><th className="px-2 font-normal">객체</th></tr></thead>
+        <thead className="sticky top-0 z-10 bg-card text-muted-foreground"><tr className="h-12 border-b border-border"><th /><th className="px-2 font-normal">메서드</th><th className="px-2 font-normal">경로</th><th className="px-2 font-normal">응답</th><th className="px-2 font-normal">출처</th><th className="px-2 font-normal">계정</th><th className="px-2 font-normal">객체</th></tr></thead>
         <tbody>{groups.map(group => {
           if (group.items.length === 1) return hit(pathOf(group.items[0])) || group.items[0].id === revealNodeId ? apiRow(group.items[0], false) : null
           const shapeHit = needle !== "" && hit(group.path)

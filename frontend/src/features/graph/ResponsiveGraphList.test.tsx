@@ -12,11 +12,11 @@ const hierarchyFilters: GraphFilters = { source: ["human", "scanner", "llm"], id
 const operationNavigation: GraphNavigation = { level: "operation", groupId: '["Target","orders"]', operation: "GET /api/orders/{id}", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
 const rawCell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["raw-a"] }
 
-it("omits the redundant breakpoint notice and source-관측 기록 path list", () => {
+it("omits the redundant breakpoint notice and source-요청 기록 path list", () => {
   const hierarchy = projectHierarchy(targetSnapshot({ cells: [rawCell] }), hierarchyFilters, operationNavigation)
   render(<ResponsiveGraphList projection={hierarchy} onSelect={vi.fn()} />)
   expect(screen.queryByText(/900px 이하/)).not.toBeInTheDocument()
-  expect(screen.queryByLabelText("Source 관측 기록 경로")).not.toBeInTheDocument()
+  expect(screen.queryByLabelText("Source 요청 기록 경로")).not.toBeInTheDocument()
   expect(screen.getByRole("button", { name: /^orders:101/ })).toBeVisible()
 })
 
@@ -42,16 +42,17 @@ it("uses the same compact card hierarchy as the relationship graph nodes", () =>
   const operation = screen.getByRole("button", { name: /^GET \/orders\/\{id\}/ })
   expect(within(operation).getByText("GET")).toHaveAttribute("data-node-badge", "GET")
   expect(within(operation).getByText("/orders/{id}")).toBeVisible()
-  expect(within(operation).queryByText("2 관측 기록")).not.toBeInTheDocument()
+  expect(within(operation).queryByText("2 요청 기록")).not.toBeInTheDocument()
 })
 
-it("keeps candidate 기록 번호 outside the candidate button name while rendering full provenance detail", () => {
-  render(<ResponsiveGraphList projection={projection} onSelect={vi.fn()} />)
+it("keeps the candidate record number outside the candidate button name while rendering provenance detail", () => {
+  render(<ResponsiveGraphList projection={projection} snapshot={{ events: [], cells: [], owners: {}, apiMarks: [], evidenceOrdinals: { "route-evidence": 7 } } as never} onSelect={vi.fn()} />)
   const candidate = screen.getByRole("button", { name: /UNKNOWN \/unseen\/\{id\}/ })
-  expect(candidate).not.toHaveAccessibleName(/route-evidence/)
-  const evidenceId = screen.getByText("route-evidence")
-  expect(evidenceId).toBeVisible()
-  expect(evidenceId.closest("button")).toBeNull()
+  expect(candidate).not.toHaveAccessibleName(/route-evidence|#7/)
+  const number = screen.getByText("#7")
+  expect(number).toBeVisible()
+  expect(number.closest("button")).toBeNull()
+  expect(document.body).not.toHaveTextContent("route-evidence")
   expect(screen.getAllByText(/https:\/\/api\.example\.test/).length).toBeGreaterThan(0)
   expect(screen.getByText(/burp/)).toBeVisible()
 })

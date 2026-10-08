@@ -64,16 +64,16 @@ export function EvidenceActionList({ events, snapshot, disabled = false, allowDe
   const sorted = [...events].sort((left, right) => right.timestamp - left.timestamp)
   const openLab = (event: EventRecord) => { onOpenRequestLab?.(); setLabContext(contextOf(event)) }
 
-  if (!sorted.length && !identityVerdicts?.size) return <p className="text-sm text-muted-foreground">연결된 관측 기록이 없습니다.</p>
+  if (!sorted.length && !identityVerdicts?.size) return <p className="text-sm text-muted-foreground">연결된 요청 기록이 없습니다.</p>
   const cards = groupByIdentity(sorted, identityVerdicts?.keys() ?? [], identityOf)
   const ordinal = (event: EventRecord) => evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)
   const pathOf = (event: EventRecord) => stripOrigin(event.path) || event.path
   const toggle = (key: string) => setOpenGroups(current => current.includes(key) ? current.filter(item => item !== key) : [...current, key])
-  return <section aria-label="관측 기록" className="grid gap-3">
-    <h3 className="text-lg font-semibold">관측 기록</h3>
+  return <section aria-label="요청 기록" className="grid gap-3">
+    <h3 className="text-lg font-semibold">요청 기록</h3>
     <ul className="grid gap-4">{cards.map(card => {
       const verdict = identityVerdicts?.get(card.idn), tone = verdict ? matrixVerdictTone(verdict) : null
-      return <li key={card.idn} aria-label={`${labelIdentity(card.idn)} 관측 기록 ${card.count}건`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
+      return <li key={card.idn} aria-label={`${labelIdentity(card.idn)} 요청 기록 ${card.count}건`} className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
         <div className="flex min-w-0 items-center gap-2 px-4 py-3">
           <span className="truncate text-lg font-semibold">{labelIdentity(card.idn)}</span>
           {tone && <span className={`ms-auto shrink-0 rounded px-2 py-0.5 text-[13px] font-medium ${tone.className}`}>{tone.label}</span>}
@@ -93,7 +93,7 @@ export function EvidenceActionList({ events, snapshot, disabled = false, allowDe
                 <Button type="button" size="icon-sm" variant="outline" aria-label="Request Lab에서 보내기" title="Request Lab에서 보내기" disabled={disabled} onClick={() => openLab(latest)}><Send className="size-4" /></Button>
               </span>
             </div>
-            {open && <ul aria-label={`${labelIdentity(card.idn)} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`관측 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
+            {open && <ul aria-label={`${labelIdentity(card.idn)} · ${mark.label} 요청 목록`} className="grid">{row.events.map(event => <li key={event.eventId} aria-label={`요청 기록 ${ordinal(event)}`} className="grid grid-cols-[3rem_3.25rem_minmax(0,1fr)_auto] items-center gap-2 border-t border-border/50 py-2 text-[13px]">
               <span className="font-mono text-xs text-muted-foreground">{ordinal(event)}</span>
               <StatusBadge code={event.status} />
               <span className="truncate font-mono text-xs text-muted-foreground" title={`${event.method} ${pathOf(event)}`}>{pathOf(event)}</span>

@@ -60,9 +60,9 @@ export function DeleteTrafficButton({ snapshot, operations, evidenceIds, label =
   return <Dialog open={open} onOpenChange={value => { if (action.isPending) return; setOpen(value); if (value) prepare() }}>
     <Button type="button" variant="outline" size={iconOnly ? "icon" : "sm"} aria-label={label} title={label} disabled={disabled} onClick={() => { setOpen(true); prepare() }} className={`${iconOnly ? "size-9" : ""} ${className}`}><Trash2 className={iconOnly ? "size-5" : "size-4"} strokeWidth={2.25} />{!iconOnly && label}</Button>
     <DialogContent className="sm:max-w-md">
-      <DialogHeader><DialogTitle>{operations?.length ? "API와 연결 기록을 삭제할까요?" : "선택한 관측 기록을 삭제할까요?"}</DialogTitle><DialogDescription>{operations?.length ? "선택 API의 요청·응답, 선언 근거, 하이라이트와 관련 취약점 등록을 삭제합니다." : "선택 기록의 요청·응답과 연결된 재현 기록, 관련 판정을 삭제합니다."} 프로젝트에 저장되며 되돌릴 수 없습니다.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{operations?.length ? "API와 연결 기록을 삭제할까요?" : "선택한 요청 기록을 삭제할까요?"}</DialogTitle><DialogDescription>{operations?.length ? "선택 API의 요청·응답, 선언 근거, 하이라이트와 관련 취약점 등록을 삭제합니다." : "선택 기록의 요청·응답과 연결된 재현 기록, 관련 판정을 삭제합니다."} 프로젝트에 저장되며 되돌릴 수 없습니다.</DialogDescription></DialogHeader>
       {action.isPending && !preview && <p className="text-sm" role="status">삭제 범위를 확인하는 중…</p>}
-      {preview && <dl className="grid grid-cols-3 divide-x rounded-lg border bg-muted/30 py-3 text-center">{[["관측 기록", preview.records], ["관련 판정", preview.reviews], ["API 항목", preview.declarations]].map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{count}</dd></div>)}</dl>}
+      {preview && <dl className="grid grid-cols-3 divide-x rounded-lg border bg-muted/30 py-3 text-center">{[["요청 기록", preview.records], ["관련 판정", preview.reviews], ["API 항목", preview.declarations]].map(([label, count]) => <div key={label}><dt className="text-xs text-muted-foreground">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{count}</dd></div>)}</dl>}
       {preview && stale && <p role="status" className="text-xs text-muted-foreground">데이터가 변경되었습니다. 삭제 범위를 다시 확인해 주세요.</p>}
       <ActionError error={action.error} />
       <DialogFooter><Button variant="outline" disabled={action.isPending} onClick={() => setOpen(false)}>취소</Button>{!preview || stale || action.isError ? <Button variant="outline" disabled={action.isPending} onClick={prepare}>범위 다시 확인</Button> : <Button variant="destructive" disabled={action.isPending} onClick={() => action.mutate({ action: "delete", operations, evidenceIds, expectedEvidenceIds: preview.evidenceIds }, { onSuccess: () => { setOpen(false); onDeleted?.() } })}>{action.isPending ? "삭제 중…" : "영구 삭제"}</Button>}</DialogFooter>
@@ -71,14 +71,25 @@ export function DeleteTrafficButton({ snapshot, operations, evidenceIds, label =
 }
 interface ApiActionsProps {
   snapshot: Snapshot
-  operation: string
+  operation?: string
+  operations?: readonly string[]
   disabled?: boolean
   size?: "default" | "lg"
-  /** 객체 상세에서도 강조·등록은 API 단위로 유지하고 삭제만 이 요청 범위로 제한한다. */
+  /** 객체 상세의 강조·등록은 선택한 API에, 삭제는 객체의 요청 범위에 적용한다. */
   deleteEvidenceIds?: readonly string[]
   deleteLabel?: string
 }
-export function ApiActions({ snapshot, operation, disabled = false, size = "default", deleteEvidenceIds, deleteLabel = "API 삭제" }: ApiActionsProps) {
+export function ApiActions({ snapshot, operation, operations, disabled = false, size = "default", deleteEvidenceIds, deleteLabel = "API 삭제" }: ApiActionsProps) {
+  const targets = [...new Set((operations ?? (operation ? [operation] : [])).map(apiOperation))]
+  const [selected, setSelected] = useState("")
+  const current = targets.includes(selected) ? selected : targets[0]
+  if (!current) return null
+  return <div className={size === "lg" ? "flex w-full min-w-0 flex-col items-center gap-3" : "flex flex-wrap items-center justify-end gap-2"}>
+    {targets.length > 1 && <select aria-label="조작할 API" value={current} disabled={disabled} onChange={event => setSelected(event.target.value)} className={`h-9 min-w-0 rounded-md border border-border bg-background px-2 text-xs ${size === "lg" ? "w-full" : "max-w-64"}`} title={current}>{targets.map(op => <option key={op} value={op}>{op}</option>)}</select>}
+    <SingleApiActions key={current} snapshot={snapshot} operation={current} disabled={disabled} size={size} deleteEvidenceIds={deleteEvidenceIds} deleteLabel={deleteLabel} />
+  </div>
+}
+function SingleApiActions({ snapshot, operation, disabled = false, size = "default", deleteEvidenceIds, deleteLabel = "API 삭제" }: ApiActionsProps & { operation: string }) {
   const op = apiOperation(operation), action = useApiAction(snapshot)
   const selectedColor = snapshot.apiMarks?.[op]?.color ?? ""
   const scope = JSON.stringify([snapshot.datasetRevision ?? snapshot.identityRevision, op])
@@ -101,12 +112,12 @@ function ApiRegistration({ snapshot, operation, disabled = false, className = ""
   const [open, setOpen] = useState(false), [ids, setIds] = useState<string[]>([])
   const events = snapshot.events.filter(event => apiOperation(event.op) === op && event.status > 0)
   const label = mark?.registered ? "등록 해제" : "취약점 등록"
-  const status = confirmed ? "Confirmed" : "Unmarked"
-  const detail = mark?.registered ? `관측 근거 ${mark.evidenceIds.length}건 · 사용자 등록` : confirmed ? "판정 매트릭스에서 확정된 항목이 있습니다." : "확인한 관측 근거를 선택해 등록합니다."
+  const status = confirmed ? "확정됨" : "표시 없음"
+  const detail = mark?.registered ? `근거 요청 기록 ${mark.evidenceIds.length}건 · 사용자 등록` : confirmed ? "판정 매트릭스에서 확정된 항목이 있습니다." : "확인한 요청 기록을 골라 등록합니다."
   return <Dialog open={open} onOpenChange={setOpen}>
       <Button size="icon" variant="outline" className={`size-9 ${confirmed ? "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300" : ""} ${className}`} aria-label={label} title={`${status} · ${detail}`} disabled={disabled || action.isPending || (!mark?.registered && events.length === 0)} onClick={() => { action.reset(); setIds([]); setOpen(true) }}><CircleAlert className="size-5" strokeWidth={2.25} /><span className="sr-only">{status}</span></Button>
-      <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{mark?.registered ? "사용자 취약점 등록을 해제할까요?" : "취약점 관측 근거 선택"}</DialogTitle><DialogDescription>{mark?.registered ? "직접 등록한 표시를 해제합니다. 판정 매트릭스의 별도 확정은 해당 판정에서 변경합니다." : "직접 확인한 요청·응답을 선택하세요. 응답 코드만으로 취약점을 판정하지 않습니다. 최대 20건을 저장합니다."}</DialogDescription></DialogHeader>
-        {!mark?.registered && <div className="max-h-72 overflow-y-auto rounded-md border">{events.map(event => <label key={event.eventId} className="flex cursor-pointer items-center gap-3 border-b px-3 py-3 text-xs last:border-b-0 hover:bg-muted/40"><Checkbox aria-label={`${evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)} 관측 근거`} checked={ids.includes(event.eventId)} disabled={!ids.includes(event.eventId) && ids.length >= 20} onCheckedChange={checked => setIds(current => checked ? [...current, event.eventId] : current.filter(id => id !== event.eventId))} /><span className="font-mono">{evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)}</span><span className="min-w-0 flex-1 truncate">{identityLabel(event.idn)} · {event.source.toUpperCase()}</span><span>HTTP {event.status}</span></label>)}</div>}
+      <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle>{mark?.registered ? "사용자 취약점 등록을 해제할까요?" : "취약점 근거로 쓸 요청 기록 선택"}</DialogTitle><DialogDescription>{mark?.registered ? "직접 등록한 표시를 해제합니다. 판정 매트릭스의 별도 확정은 해당 판정에서 변경합니다." : "직접 확인한 요청·응답을 선택하세요. 응답 코드만으로 취약점을 판정하지 않습니다. 최대 20건을 저장합니다."}</DialogDescription></DialogHeader>
+        {!mark?.registered && <div className="max-h-72 overflow-y-auto rounded-md border">{events.map(event => <label key={event.eventId} className="flex cursor-pointer items-center gap-3 border-b px-3 py-3 text-xs last:border-b-0 hover:bg-muted/40"><Checkbox aria-label={`${evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)} 요청 기록 선택`} checked={ids.includes(event.eventId)} disabled={!ids.includes(event.eventId) && ids.length >= 20} onCheckedChange={checked => setIds(current => checked ? [...current, event.eventId] : current.filter(id => id !== event.eventId))} /><span className="font-mono">{evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)}</span><span className="min-w-0 flex-1 truncate">{identityLabel(event.idn)} · {event.source.toUpperCase()}</span><span>HTTP {event.status}</span></label>)}</div>}
         <ActionError error={action.error} /><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>취소</Button><Button disabled={action.isPending || (!mark?.registered && ids.length === 0)} onClick={() => action.mutate({ action: mark?.registered ? "unregister" : "register", operations: [op], evidenceIds: ids }, { onSuccess: () => setOpen(false) })}>{action.isPending ? "저장 중…" : mark?.registered ? "등록 해제" : `${ids.length}건 근거로 등록`}</Button></DialogFooter>
       </DialogContent>
     </Dialog>

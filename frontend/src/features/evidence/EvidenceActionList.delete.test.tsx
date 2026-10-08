@@ -63,7 +63,7 @@ it("previews the whole visible request group including repeats, then deletes onl
   expect(within(footer).getAllByRole("button")).toHaveLength(3)
   expect(within(footer).getByRole("button", { name: "API 하이라이트" })).toBeInTheDocument()
   expect(within(footer).getByRole("button", { name: "취약점 등록" })).toBeInTheDocument()
-  expect(within(screen.getByRole("region", { name: "관측 기록" })).queryByRole("button", { name: /전체 삭제/ })).not.toBeInTheDocument()
+  expect(within(screen.getByRole("region", { name: "요청 기록" })).queryByRole("button", { name: /전체 삭제/ })).not.toBeInTheDocument()
   await user.click(bulk)
   await screen.findByRole("button", { name: "영구 삭제" })
   expect(calls).toEqual([{ action: "preview-delete", evidenceIds: ["first", "second", "repeat"], datasetRevision: 7, revision: 3 }])
@@ -82,7 +82,7 @@ it("places per-request deletion before Send and targets the exact request rather
   const calls = mockDeletion(), user = userEvent.setup()
   renderList()
   await user.click(screen.getByRole("button", { name: "요청 2건 펼치기" }))
-  const row = screen.getByRole("listitem", { name: "관측 기록 #2" })
+  const row = screen.getByRole("listitem", { name: "요청 기록 #2" })
   const remove = within(row).getByRole("button", { name: "#2 요청 삭제" })
   expect(remove.nextElementSibling).toHaveAttribute("aria-label", "#2 Request Lab에서 보내기")
   await user.click(remove)
@@ -128,4 +128,27 @@ it("closes a deletion preview when the selected request group is replaced", asyn
 it("keeps request deletion opt-in for other uses of the observation list", () => {
   renderWithQueryClient(<EvidenceActionList events={[first, second]} snapshot={data} />)
   expect(screen.queryByRole("button", { name: /삭제/ })).not.toBeInTheDocument()
+})
+
+it.each(["resource", "object-group"] as const)("keeps three footer actions for a %s connected to multiple APIs and deletes only its evidence", async kind => {
+  const calls = mockDeletion(), user = userEvent.setup()
+  const next = { ...second, op: "POST /items/{id}" }
+  const snapshot = { ...data, events: [first, next, otherObject] }
+  const selection = {
+    operation: null, resource: kind === "resource" ? first.resource : null, identity: null, source: null,
+    evidenceIds: ["first", "second", "repeat"],
+    cells: [first, next].map(item => ({ idn: item.idn, op: item.op, resource: item.resource, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: item.clusterEvidenceIds ?? [] })),
+    cellKeys: [], gapIds: [],
+  }
+  const node = { id: kind + ":items", kind, label: "items", wrappedLabel: "items", verdict: "allow" as const, verdictText: "ALLOW", verdictColor: "green", selection }
+  const { container } = renderWithQueryClient(<GraphInspectorPanel selection={selection} event={null} snapshot={snapshot} node={node} />)
+  const footer = container.querySelector("footer")!
+  expect(within(footer).getAllByRole("button")).toHaveLength(3)
+  const picker = within(footer).getByRole("combobox", { name: "조작할 API" })
+  expect(within(picker).getAllByRole("option")).toHaveLength(2)
+  await user.selectOptions(picker, next.op)
+  await user.click(within(footer).getByRole("button", { name: "객체 삭제" }))
+  await screen.findByRole("button", { name: "영구 삭제" })
+  expect(calls[0]).toEqual({ action: "preview-delete", evidenceIds: ["first", "second", "repeat"], datasetRevision: 7, revision: 3 })
+  expect(calls[0]).not.toHaveProperty("operations")
 })
