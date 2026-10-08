@@ -36,6 +36,7 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   groupId?: string
   service?: string
   displayObjectCount?: number
+  displayObjectKind?: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
   displayOperations?: readonly string[]
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
@@ -159,7 +160,8 @@ export function objectGroupKey(resource: string): { id: string; key: string } | 
   return { id: `${space >= 0 ? resource.slice(0, space) : ""}|${key}`, key }
 }
 
-export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | null {
+export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | "lab" | null {
+  if (kind === "resource") return "lab"
   if (kind === "object-group" || kind === "operation-group") return "toggle"
   if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
   if (kind === "identity" && level !== "site") return "back"
@@ -498,6 +500,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
   }
-  hiddenObjectCount += applyObservedObjects(snapshot, filters, resolved, nodes, edges, listItems, reveal)
+  const displayHidden = applyObservedObjects(snapshot, filters, resolved, nodes, edges, listItems, reveal)
+  hiddenObjectCount = snapshot.displayObjects === undefined ? hiddenObjectCount + displayHidden : displayHidden
   return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount, revealedNodeCount }
 }

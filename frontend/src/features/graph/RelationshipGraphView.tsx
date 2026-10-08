@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { apiConfirmed } from "@/features/api-management/apiAppearance"
 import { judgmentTone } from "@/features/matrix/judgmentProjection"
-import type { Source, Verdict } from "@/lib/api/types"
+import type { EventRecord, Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
+import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { SourceIcon } from "@/features/evidence/SourceIcon"
 
 import { CytoscapeGraph } from "./CytoscapeGraph"
@@ -81,6 +82,7 @@ function changed<T>(change: Change<T>, current: T): T { return typeof change ===
 
 function ProjectGraphView({ dataset }: { dataset: number }) {
   const snapshot = useSnapshotQuery()
+  const [objectLabEvent, setObjectLabEvent] = useState<EventRecord | null>(null)
   const graphData = snapshot.data
   const workspaceState = useGraphWorkspace(dataset)
   const workspace = workspaceState.workspace ?? emptyGraphWorkspace
@@ -358,7 +360,19 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     },
     onOpenGroup: (groupId: string) => changeNavigation(navigateHierarchy(resolvedNavigation, "group", groupId)),
   }
+  useEffect(() => {
+    if (objectLabEvent && graphData && !graphData.events.some(event => event.eventId === objectLabEvent.eventId && event.op === objectLabEvent.op && event.idn === objectLabEvent.idn && event.source === objectLabEvent.source)) setObjectLabEvent(null)
+  }, [graphData, objectLabEvent])
+  const openObjectLab = (node: HierarchyNode) => {
+    if (snapshot.isError || !graphData) return
+    const evidence = new Set(node.selection.evidenceIds)
+    const candidates = graphData.events.filter(event => evidence.has(event.eventId) || (event.clusterEvidenceIds ?? []).some(id => evidence.has(id)))
+    const preferred = candidates.filter(event => (!selection?.identity || event.idn === selection.identity) && (!selection?.source || event.source === selection.source))
+    const event = [...(preferred.length ? preferred : candidates)].sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0) || b.eventId.localeCompare(a.eventId))[0]
+    if (event) setObjectLabEvent(event)
+  }
   const navigateNode = (node: HierarchyNode) => {
+    if (node.kind === "resource") { openObjectLab(node); return }
     if (node.kind === "api-group" && node.groupId) changeNavigation(navigateHierarchy(resolvedNavigation, "group", node.groupId))
     else if (node.kind === "operation" && (node.displayOperations?.[0] || node.selection.operation)) changeNavigation({ ...navigateHierarchy(resolvedNavigation, "operation", resolvedNavigation.groupId, node.displayOperations?.[0] ?? node.selection.operation!), operationLimit: resolvedNavigation.operationLimit })
   }
@@ -440,7 +454,8 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
       {graph && (compact || listMode ? <div ref={listShellRef} className="p-4" onClick={(event) => { if (!(event.target as HTMLElement).closest("table, input, button, a")) clearGraphSelection() }}><ResponsiveGraphList projection={graph} snapshot={graphData} revealNodeId={revealRequest?.nodeId} searchMatches={searchMatches} highlight={edgeHighlight} filters={resend ? EMPTY_HIGHLIGHT : highlight} onRevealDismiss={cancelSearchMove} selectedId={selectedElementId} onNavigate={navigateNode} onSelect={(nextSelection, id) => selectGraph(nextSelection, id ?? null)} /></div> : <div ref={canvasShellRef} className="relative min-h-[28rem] flex-1 overflow-hidden"><div className="absolute inset-x-0 top-0 z-10 h-10 border-b border-border/50 bg-[var(--flowscope-canvas)]">{lanes.map((lane, index) => {
         const { left, right } = laneHeader(index)
         return right <= left ? null : <button key={lane} type="button" aria-label={`${lane} 레인 기준 정렬`} className="absolute top-0 flex h-10 items-center justify-center truncate px-2 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring" style={{ left, width: right - left }} onClick={() => setLaneLayout((current) => ({ lane: index, version: current.version + 1 }))}><span className="truncate">{lane}</span></button>
-      })}</div><CytoscapeGraph key={resend ? "resend" : viewKey} projection={graph} statusesByNode={statusesByNode} apiMarks={graphData?.apiMarks} highlight={edgeHighlight} statusColors={statusColors} splitSources={splitSources} onToggleObjectGroup={toggleObjectGroup} openObjectGroupId={openObjectGroupId} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={resend ? null : preferences} searchMatches={searchMatches} revealRequest={revealRequest} onInteraction={cancelSearchMove} onRevealed={requestId => setRevealRequest(current => current?.requestId === requestId ? null : current)} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={resend ? noop : navigateNode} onStepBack={resend ? noop : () => changeNavigation(stepBack(resolvedNavigation))} onClearSelection={clearGraphSelection} onSelect={selectGraph} onPreferencesChange={resend ? noop : updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-600 dark:text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-600 dark:text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-yellow-600 dark:text-yellow-400" />LLM</span></div></div>)}
+      })}</div><CytoscapeGraph key={resend ? "resend" : viewKey} projection={graph} statusesByNode={statusesByNode} apiMarks={graphData?.apiMarks} highlight={edgeHighlight} statusColors={statusColors} splitSources={splitSources} onToggleObjectGroup={toggleObjectGroup} openObjectGroupId={openObjectGroupId} locked={preferences.locked} fitVersion={fitVersion} layoutVersion={layoutVersion} laneLayout={laneLayout} onLaneBoundsChange={setLaneBounds} preferences={resend ? null : preferences} searchMatches={searchMatches} revealRequest={revealRequest} onInteraction={cancelSearchMove} onRevealed={requestId => setRevealRequest(current => current?.requestId === requestId ? null : current)} confirmedNodeIds={confirmedNodeIds} selectedElementId={selectedElementId} onNavigate={resend ? noop : navigateNode} onOpenObject={openObjectLab} onStepBack={resend ? noop : () => changeNavigation(stepBack(resolvedNavigation))} onClearSelection={clearGraphSelection} onSelect={selectGraph} onPreferencesChange={resend ? noop : updatePreferences} onRendererUnavailable={() => setListMode(true)} /><div role="list" aria-label="그래프 소스 범례" className="pointer-events-none absolute bottom-3 left-3 z-10 flex flex-wrap gap-4 rounded border border-border/70 bg-[var(--flowscope-pane)] px-3 py-1.5 text-[10px] text-muted-foreground"><span role="listitem" className="flex items-center gap-1.5"><UserRound aria-hidden="true" className="size-3.5 text-blue-600 dark:text-blue-400" />HUMAN</span><span role="listitem" className="flex items-center gap-1.5"><ScanLine aria-hidden="true" className="size-3.5 text-red-600 dark:text-red-400" />SCANNER</span><span role="listitem" className="flex items-center gap-1.5"><Bot aria-hidden="true" className="size-3.5 text-yellow-600 dark:text-yellow-400" />LLM</span></div></div>)}
+    {objectLabEvent && graphData && <RequestLabDialog key={objectLabEvent.eventId} open onOpenChange={open => { if (!open) setObjectLabEvent(null) }} event={objectLabEvent} accounts={graphData.accounts} sessions={graphData.managedSessions} verifications={graphData.manualVerifications} datasetRevision={graphData.datasetRevision ?? 0} snapshotRevision={graphData.revision} suspended={snapshot.isError} />}
     </ReferenceAnalysisWorkspace>
   </section>
 }

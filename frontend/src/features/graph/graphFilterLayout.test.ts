@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { highlightPositions, type FilterLayoutNode } from "./graphFilterLayout"
+import { highlightPositions, focusedGroupPositions, type FilterLayoutNode } from "./graphFilterLayout"
 
 it("keeps identities fixed and permutes API and Object nodes within their existing coordinate slots", () => {
   const nodes: FilterLayoutNode[] = [
@@ -39,4 +39,19 @@ it("leaves Target fixed and only reorders the site graph's existing API group sl
 it("preserves relative order within matched and dimmed nodes, including coincident slots", () => {
   const nodes = [false, true, false, true].map((matched, index) => ({ id: String(index), lane: 1, x: 540, y: index < 2 ? 100 : index * 200, matched }))
   expect(highlightPositions(nodes, 3)).toEqual({ "0": { x: 540, y: 400 }, "1": { x: 540, y: 100 }, "2": { x: 540, y: 600 }, "3": { x: 540, y: 100 } })
+})
+
+it("places connected identities and APIs first and keeps the opened OBJ block in ordinal order", () => {
+  const node = (id: string, lane: number, y: number, matched: boolean, memberOf = "") => ({ id, lane, x: lane * 300, y, matched, memberOf, height: 100 })
+  const nodes = [node("identity:other", 0, 100, false), node("identity:linked", 0, 900, true),
+    node("api:other", 1, 100, false), node("api:linked", 1, 900, true),
+    node("query", 2, 100, false), node("path", 2, 900, true),
+    node("OBJ 1", 2, 1100, true, "path"), node("OBJ 2", 2, 500, true, "path")]
+  const positions = focusedGroupPositions(nodes, 3)
+  expect(positions["identity:linked"].y).toBeLessThan(positions["identity:other"].y)
+  expect(positions["api:linked"].y).toBeLessThan(positions["api:other"].y)
+  expect(positions.path.y).toBeLessThan(positions["OBJ 1"].y)
+  expect(positions["OBJ 1"].y).toBeLessThan(positions["OBJ 2"].y)
+  expect(positions["OBJ 2"].y).toBeLessThan(positions.query.y)
+  expect(focusedGroupPositions(nodes.map(item => ({ ...item, ...positions[item.id] })), 3)).toEqual(positions)
 })

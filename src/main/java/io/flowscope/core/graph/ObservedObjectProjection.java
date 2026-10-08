@@ -39,11 +39,13 @@ public final class ObservedObjectProjection {
     private static final class Observers {
         final Set<String> identities = new HashSet<>();
         final Set<Source> sources = EnumSet.noneOf(Source.class);
+        final Set<String> paths = new HashSet<>();
         void add(RequestRecord record) {
             if (record.idn != null && !record.idn.isBlank()) identities.add(record.idn);
             sources.add(record.source);
+            paths.add(record.path);
         }
-        boolean corroborated() { return identities.size() >= 2 || sources.size() >= 2; }
+        boolean corroborated() { return paths.size() >= 2 || identities.size() >= 2 || sources.size() >= 2; }
     }
     private static final Pattern TOKEN = Pattern.compile("(?:\\d+|(?=[A-Za-z0-9._~-]*[A-Za-z])(?=[A-Za-z0-9._~-]*\\d)[A-Za-z0-9._~-]+)");
     private static boolean token(String value) { return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches(); }

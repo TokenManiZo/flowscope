@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest"
 
 import { CytoscapeGraph, positionInLanes, moveGroupMembers, graphFocusStates, graphWheelIntent, readGroupBands, readMinimap, routeEdges, type RouteNode } from "./CytoscapeGraph"
 import type { GraphFilters, GraphProjection } from "./graphProjection"
-import { projectHierarchy } from "./graphHierarchy"
+import { projectHierarchy, operationGroup } from "./graphHierarchy"
 import { targetSnapshot } from "@/test/fixtures"
 
 let currentZoom = 1
@@ -967,4 +967,15 @@ it("moves open group members by the same distance as their dragged group node", 
   moveGroupMembers(core, "object-group:a", 30, -20)
   expect(at("resource:a:1")).toEqual({ x: 930, y: 140 })
   expect(at("resource:other")).toEqual({ x: 900, y: 220 })
+})
+
+it("opens the selected resource in Request Lab on double tap without navigating", () => {
+  const cell = { idn: "alice", op: "GET /orders/{id}", resource: "orders:1", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["e-1"] }
+  const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell] }), { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders"] }, { level: "operation", groupId: operationGroup(cell.op).id, operation: cell.op, operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const resource = hierarchy.nodes.find(item => item.kind === "resource")!
+  const open = vi.fn(), navigate = vi.fn()
+  render(<CytoscapeGraph projection={hierarchy} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} onOpenObject={open} onNavigate={navigate} />)
+  act(() => listeners.get("dbltap:node")?.({ target: { ...node, id: vi.fn(() => resource.id) } }))
+  expect(open).toHaveBeenCalledWith(resource)
+  expect(navigate).not.toHaveBeenCalled()
 })

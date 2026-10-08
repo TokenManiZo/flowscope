@@ -18,3 +18,28 @@ export function highlightPositions(nodes: readonly FilterLayoutNode[], laneCount
   }
   return positions
 }
+
+/** Opened objects form one ordered block; their connected identities/APIs precede unrelated nodes. */
+export function focusedGroupPositions(nodes: readonly (FilterLayoutNode & { height: number; memberOf: string })[], laneCount: number): Record<string, { x: number; y: number }> {
+  const positions: Record<string, { x: number; y: number }> = {}
+  for (let lane = 0; lane < laneCount; lane++) {
+    const column = nodes.filter(node => node.lane === lane)
+    const blocks = new Map<string, typeof column>()
+    for (const node of column) {
+      const key = node.memberOf || node.id
+      const block = blocks.get(key) ?? []; block.push(node); blocks.set(key, block)
+    }
+    const ordered = [...blocks.values()].sort((a, b) => Number(b.some(node => node.matched)) - Number(a.some(node => node.matched))
+      || Math.min(...a.map(node => node.y)) - Math.min(...b.map(node => node.y)))
+    let cursor = Math.min(...column.map(node => node.y - node.height / 2))
+    for (const block of ordered) {
+      // Projection inserts OBJ members in ordinal order, independent of their previous coordinates.
+      const members = [...block.filter(node => !node.memberOf), ...block.filter(node => node.memberOf)]
+      for (const node of members) {
+        positions[node.id] = { x: node.x, y: cursor + node.height / 2 }
+        cursor += node.height + 20
+      }
+    }
+  }
+  return positions
+}

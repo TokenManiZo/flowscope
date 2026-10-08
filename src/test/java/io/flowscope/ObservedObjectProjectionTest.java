@@ -61,11 +61,11 @@ class ObservedObjectProjectionTest {
     }
     @Test void separateSourcesCorroborateTheSameIdentityButRunIdsDoNot() {
         var a = record("/posts/100", 1);
-        var b = record("/posts/200", 2); b.idn = a.idn;
+        var b = record(a.path, 2); b.idn = a.idn;
         a.runId = "run-a"; b.runId = "run-b";
         assertTrue(ObservedObjectProjection.build(List.of(a,b)).isEmpty());
         for (Source source : List.of(Source.SCANNER, Source.LLM)) {
-            b = record("/posts/200", 2, source); b.idn = a.idn;
+            b = record(a.path, 2, source); b.idn = a.idn;
             assertEquals(2, ObservedObjectProjection.build(List.of(a,b)).size());
         }
         b.executionTrust = ExecutionTrust.UNVERIFIED_RUNTIME;
@@ -82,6 +82,13 @@ class ObservedObjectProjectionTest {
         }
         anon.phase = RunPhase.UNKNOWN; anon.sourceDetail = SourceDetail.AUTHORIZATION_REPLAY;
         assertTrue(ObservedObjectProjection.build(List.of(a,anon)).isEmpty());
+    }
+    @Test void differingPathValuesCorroborateOneIdentityAndSource() {
+        var a = record("/posts/opaqueA123", 1);
+        var b = record("/posts/opaqueB456", 2); b.idn = a.idn;
+        var out = ObservedObjectProjection.build(List.of(a,b));
+        assertEquals(2, out.size());
+        assertEquals(out.get(0).apiKey(), out.get(1).apiKey());
     }
     @Test void crapiStringIdsBecomeThreeObjectsAndRecentStaysAnApi() {
         var a = record("/community/posts/7bLfZ8nkq40LJuVovEVVLS", 1);

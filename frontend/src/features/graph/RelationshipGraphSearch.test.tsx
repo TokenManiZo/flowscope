@@ -6,7 +6,7 @@ import { targetSnapshot } from "@/test/fixtures"
 import type { Snapshot, EventRecord } from "@/lib/api/types"
 import { RelationshipGraphView } from "./RelationshipGraphView"
 import { emptyGraphWorkspace, graphViewKey, type GraphWorkspace } from "./graphWorkspace"
-import { operationGroup, type HierarchyProjection } from "./graphHierarchy"
+import { operationGroup, type HierarchyProjection, type HierarchyNode } from "./graphHierarchy"
 import type { GraphSelection } from "./graphProjection"
 
 const state = vi.hoisted(() => ({ snapshot: null as Snapshot | null, workspace: null as GraphWorkspace | null, changes: vi.fn(), projections: vi.fn() }))
@@ -20,15 +20,17 @@ vi.mock("./useGraphWorkspace", () => ({ useGraphWorkspace: () => {
     return next
   }) }
 } }))
-vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ projection, selectedElementId, openObjectGroupId, onToggleObjectGroup, onSelect, onClearSelection }: { projection: HierarchyProjection; selectedElementId: string | null; openObjectGroupId?: string | null; onToggleObjectGroup(id: string): void; onSelect(selection: GraphSelection, id: string): void; onClearSelection(): void }) => {
+vi.mock("./CytoscapeGraph", () => ({ CytoscapeGraph: ({ projection, selectedElementId, openObjectGroupId, onToggleObjectGroup, onSelect, onClearSelection, onOpenObject }: { projection: HierarchyProjection; selectedElementId: string | null; openObjectGroupId?: string | null; onToggleObjectGroup(id: string): void; onSelect(selection: GraphSelection, id: string): void; onClearSelection(): void; onOpenObject?(node: HierarchyNode): void }) => {
   useEffect(() => { state.projections(projection) }, [projection])
   return <div data-testid="search-canvas" data-selected={selectedElementId ?? ""} data-open-object={openObjectGroupId ?? ""} data-nodes={projection.nodes.filter(node => !node.hiddenInGraph).map(node => node.id).join("\n")}>
     {projection.nodes.filter(node => node.kind === "object-group").map(node => <button key={node.id} onClick={() => onToggleObjectGroup(node.id)}>toggle {node.id}</button>)}
-    {projection.nodes.filter(node => node.kind === "resource" || node.kind === "operation").map(node => <button key={node.id} onClick={() => onSelect(node.selection, node.id)}>select {node.id}</button>)}
+    {projection.nodes.filter(node => node.kind === "resource" || node.kind === "operation").map(node => <button key={node.id} onClick={() => onSelect(node.selection, node.id)} onDoubleClick={() => onOpenObject?.(node)}>select {node.id}</button>)}
     <button onClick={onClearSelection}>clear canvas</button>
   </div>
 } }))
 vi.mock("./GraphInspectorPanel", () => ({ GraphViewOverview: () => null, GraphInspectorPanel: ({ selection, actions }: { selection: { operation: string | null; resource: string | null; evidenceIds: readonly string[] }; actions: { onOpenRequestLab(): void } }) => <><p data-testid="search-detail" data-evidence={selection.evidenceIds.join(",")}>{selection.operation} {selection.resource}</p><button onClick={actions.onOpenRequestLab}>open lab</button></> }))
+
+vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: ({ event }: { event: EventRecord }) => <div role="dialog" data-testid="object-lab">{event.eventId}</div> }))
 
 const service = "https://search.test:443"
 const cells = Array.from({ length: 25 }, (_, index) => ({ idn: "USER A", op: `${service} GET /api/orders/${String(index).padStart(2, "0")}`, resource: `orders:${index}`, perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: [`ev-${index}`] }))
@@ -181,3 +183,14 @@ it("switches to a separate resend graph of Request Lab and Repeater sends withou
   expect(state.changes.mock.calls.length).toBe(changes)
 })
 
+
+it("opens the object's latest actual Evidence in Request Lab after a double click", async () => {
+  const op = cells[0].op
+  const events = [1,2].map(i => ({ eventId: `obj-event-${i}`, op, path: "/api/orders/00", method: "GET", idn: "USER A", source: "human", timestamp: i, status: 200, trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, executionTrust: "OBSERVED", sourceDetail: "BROWSER", phase: "EXPLORATION", classificationReasons: [], objects: [] } as unknown as EventRecord))
+  state.snapshot = targetSnapshot({ datasetRevision: 5, events, cells: [{ ...cells[0], evidenceIds: events.map(e => e.eventId) }], displayObjects: events.map(event => ({ eventId: event.eventId, operation: op, apiKey: `${service} GET /api/orders/{id}`, kind: "PATH", groupKey: "path", objectKey: "one-object", ordinal: 1, fields: ["/segments/2"], legacyResource: null })) })
+  state.workspace!.navigation = { level: "group", groupId: operationGroup(op).id, operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
+  render(<RelationshipGraphView />)
+  await userEvent.click(screen.getByRole("button", { name: "toggle object-group:path" }))
+  await userEvent.dblClick(screen.getByRole("button", { name: "select resource:one-object" }))
+  expect(await screen.findByTestId("object-lab")).toHaveTextContent("obj-event-2")
+})

@@ -8,7 +8,7 @@ import { graphNodeSummary } from "./GraphNodeSummary"
 import { relationshipNodeCard } from "./relationshipNodeCard"
 
 const service = "https://t:443"
-const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false }
+const filters: GraphFilters = { source: ["human", "scanner", "llm"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:path-group"] }
 const nav: GraphNavigation = { level: "group", groupId: apiGroupDescriptor(service, "/posts/A1").id, operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" }
 function data(): Snapshot {
   const events = [1, 2, 3].map(number => ({ eventId: `ev-${number}`, op: `${service} GET /posts/opaque${number}`, idn: "user-a", source: "human", phase: "DISCOVERY", executionTrust: "OBSERVED", status: 200, path: `/posts/opaque${number}`, method: "GET", classificationReasons: [], trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, objects: [], sourceDetail: "BROWSER", timestamp: number } as unknown as EventRecord))
@@ -17,6 +17,22 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("folds path objects and labels their parameter location", () => {
+    const graph = projectHierarchy(data(), { ...filters, expandedObjectGroups: [] }, nav)
+    expect(graph.resources).toHaveLength(0)
+    const group = graph.nodes.find(node => node.kind === "object-group")!
+    expect(group.label).toBe("id")
+    expect(relationshipNodeCard(group, graph).badge).toBe("PATH PARAM")
+  })
+  it("never exposes more than ten OBJ nodes even with larger limits or a search reveal", () => {
+    const snapshot = data(), base = snapshot.events[0], object = snapshot.displayObjects![0], cell = snapshot.cells[0]
+    snapshot.events = Array.from({ length: 12 }, (_, i) => ({ ...base, eventId: `ev-${i+1}` }))
+    snapshot.cells = snapshot.events.map(event => ({ ...cell, evidenceIds: [event.eventId] }))
+    snapshot.displayObjects = snapshot.events.map((event, i) => ({ ...object, eventId: event.eventId, ordinal: i+1, objectKey: `object-${i+1}` }))
+    const graph = projectHierarchy(snapshot, filters, { ...nav, objectLimit: 100 }, { resource: "object-12" })
+    expect(graph.resources.map(node => node.label)).toEqual(Array.from({ length: 10 }, (_, i) => `OBJ ${i+1}`))
+    expect(graph.hiddenObjectCount).toBe(0)
+  })
   it("shows crAPI detail requests as one API and three locally numbered objects without rewriting cells", () => {
     const snapshot = data(), original = JSON.stringify(snapshot.cells)
     const graph = projectHierarchy(snapshot, filters, nav)
@@ -27,7 +43,7 @@ describe("observed display objects", () => {
     expect(graph.resources.every(node => node.selection.resource === null)).toBe(true)
     expect(graph.resources.map(node => node.selection.evidenceIds)).toEqual([["ev-1"],["ev-2"],["ev-3"]])
     expect(JSON.stringify(snapshot.cells)).toBe(original)
-    expect(graph.edges.filter(edge => edge.relation === "operation-resource")).toHaveLength(3)
+    expect(graph.edges.filter(edge => edge.relation === "operation-resource")).toHaveLength(4)
     expect(graphNodeSummary(graph.operations[0], graph)?.stats).toContainEqual(["객체", 3])
     expect(graphNodeSummary(graph.resources[0], graph)?.stats).toContainEqual(["관측 기록", 1])
   })
@@ -36,6 +52,15 @@ describe("observed display objects", () => {
     snapshot.cells = [{ ...snapshot.cells[0], resource: `${service} posts:101` }]
     const graph = projectHierarchy(snapshot, filters, nav)
     expect(graph.resources).toHaveLength(0)
+  })
+  it("caps all expanded groups together at ten nodes without offering more legacy objects", () => {
+    const snapshot = data(), base = snapshot.displayObjects![0]
+    snapshot.displayObjects = ["path-group", "query-group"].flatMap(groupKey => Array.from({ length: 8 }, (_, i) => ({
+      ...base, groupKey, objectKey: `${groupKey}-${i}`, ordinal: i+1, kind: groupKey === "path-group" ? "PATH" as const : "QUERY" as const,
+    })))
+    const graph = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: ["object-group:path-group", "object-group:query-group"] }, nav)
+    expect(graph.resources).toHaveLength(10)
+    expect(graph.hiddenObjectCount).toBe(0)
   })
   it("links only confirmed owner labels and retains the canonical request for single-object selection", () => {
     const snapshot = data(); const legacy = `${service} posts:101`

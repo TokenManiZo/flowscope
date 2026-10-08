@@ -3,6 +3,8 @@ import { graphAccountLabel } from "./graphAccounts"
 import { graphCellKey, graphCellSelection, sourceStyles, verdictStyles, wrapOperationLabel, type GraphFilters } from "./graphProjection"
 import { isObservedTraffic, type HierarchyEdge, type HierarchyNode, type HierarchySelection, type GraphNavigation, type GraphReveal } from "./graphHierarchy"
 
+export const MAX_VISIBLE_OBJECTS = 10
+
 export interface ObjectEntry { object: DisplayObject; event: EventRecord }
 export function observedObjectEntries(snapshot: Snapshot, filters: GraphFilters): readonly ObjectEntry[] {
   const events = new Map(snapshot.events.map(event => [event.eventId, event]))
@@ -62,7 +64,7 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
   for (const entry of entries) {
     const bucket = byApi.get(entry.object.apiKey) ?? []; bucket.push(entry); byApi.set(entry.object.apiKey, bucket)
   }
-  let hidden = 0
+  let visibleObjects = 0
   for (const [api, items] of byApi) {
     const operations = [...new Set(items.map(item => item.object.operation))].sort()
     const apiNode = node("operation", operations[0], api, { ...select(items), displayApiKey: api }, { displayOperations: operations, displayObjectCount: new Set(items.map(item => item.object.objectKey)).size })
@@ -80,26 +82,25 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
       for (const item of members) {
         const bucket = objects.get(item.object.objectKey) ?? []; bucket.push(item); objects.set(item.object.objectKey, bucket)
       }
-      const first = members[0].object, grouped = first.kind !== "PATH", expanded = !grouped || (filters.expandedObjectGroups ?? []).includes(`object-group:${groupKey}`)
-      let groupNode: HierarchyNode | null = null
-      if (grouped) {
-        const label = first.kind === "RESPONSE_BODY" ? "OBJ" : [...new Set(first.fields.map(field => field.replace(/^\//, "").replace(/\//g, ".")))].join(" · ") || "OBJ"
-        groupNode = node("object-group", groupKey, label, { ...select(members), displayApiKey: api }, { objectGroup: { key: label, members: [...objects.keys()], owners: {}, expanded } })
-        edge("operation-resource", apiNode.id, groupNode.id, members)
-      }
+      const first = members[0].object, expanded = (filters.expandedObjectGroups ?? []).includes(`object-group:${groupKey}`)
+        const label = first.kind === "PATH" ? "id" : first.kind === "RESPONSE_BODY" ? "OBJ" : [...new Set(first.fields.map(field => field.replace(/^\//, "").replace(/\//g, ".")))].join(" · ") || "OBJ"
+      const groupNode = node("object-group", groupKey, label, { ...select(members), displayApiKey: api }, { displayObjectKind: first.kind, objectGroup: { key: label, members: [...objects.keys()], owners: {}, expanded } })
+      edge("operation-resource", apiNode.id, groupNode.id, members)
       let shown = 0
-      for (const [key, observations] of objects) {
+      for (const [key, observations] of [...objects].sort((a, b) => a[1][0].object.ordinal - b[1][0].object.ordinal)) {
         const forced = reveal.resource === key
+        if (shown++ >= MAX_VISIBLE_OBJECTS) continue
         if (!expanded && !forced) continue
-        if (shown++ >= navigation.objectLimit && !forced) { hidden++; continue }
+        if (visibleObjects >= MAX_VISIBLE_OBJECTS) continue
+        visibleObjects++
         const selection = { ...select(observations, null, true), displayObjectKey: key, displayApiKey: api }
         const owner = selection.resource ? snapshot.owners[selection.resource] : null
         const label = `OBJ ${observations[0].object.ordinal}${owner ? ` - ${graphAccountLabel(snapshot, owner)}` : ""}`
-        const objectNode = node("resource", key, label, selection, { owner })
+        const objectNode = node("resource", key, label, selection, { owner, displayObjectKind: first.kind })
         edge("operation-resource", apiNode.id, objectNode.id, observations, true)
         if (navigation.level === "operation") list.push(objectNode)
       }
     }
   }
-  return hidden
+  return 0
 }

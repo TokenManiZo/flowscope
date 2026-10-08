@@ -49,7 +49,7 @@ describe("API hierarchy", () => {
     expect(graphOpenAction("identity", "group")).toBe("back")
     expect(graphOpenAction("identity", "operation")).toBe("back")
     expect(graphOpenAction("target", "site")).toBeNull()
-    expect(graphOpenAction("resource", "operation")).toBeNull()
+    expect(graphOpenAction("resource", "operation")).toBe("lab")
     expect(graphOpenAction("operation", "operation")).toBeNull()
   })
 

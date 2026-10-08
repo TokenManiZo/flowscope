@@ -6,14 +6,18 @@
 
 ### 1~3단계 실험 설정 (후속 요청 반영)
 
+경로 객체도 접힌 `PATH PARAM · id` 그룹으로 표시한다. query는 `QUERY PARAM`, 요청 body는 `REQUEST BODY` 배지로 구분한다. 펼치면 연결 신원·API 및 해당 객체 그룹이 상단에 연속 배치되고 OBJ 번호순은 유지한다. 개별 OBJ는 화면 전체 최대 10개이며 더 보기/검색으로 제한을 우회하지 않는다. 전체 관측과 그룹 총개수는 유지한다. 개별 OBJ 더블클릭/Enter는 실제 관측 Evidence의 최신 요청을 Request Lab으로 열고, 그룹 더블클릭은 펼침/접기만 수행한다. 4단계는 비활성화 상태다.
+
+최종 변경 검증: 프런트엔드 전체 93개 파일·783개 테스트 통과 후 화면 전체 10개 제한 회귀를 추가해 관련 52개 테스트 통과. TypeScript 검사, Java 객체 투영·스냅샷 불변성·인가 판정·Request Lab 저장·20,000건 스냅샷 회귀 검사 통과. Request Lab 더블클릭은 실제 Evidence의 최신 eventId로 대화상자를 여는 UI 테스트와 캔버스 dbltap 콜백 테스트로 검증했다. 실제 실행 중인 Burp 확장은 JAR 재로드가 필요하며 기존 저장 판정은 변경하지 않는다.
+
 - 스냅샷에서 사용하는 기본 `build(input)`은 4단계 응답 객체를 비활성화한다. 해당 구현과 테스트는 유지하되, 명시적 `build(input, true)` 호출에서만 응답 객체를 생성한다.
 - `id`, `orderid`, `orderId`, `page`, `pageID`는 제외하지 않는다. `session`, `token`, `secret` 등의 부분 문자열을 근거로 값을 무시하던 규칙을 제거했다. `sessionName`, `tokenCount`, `secretNumber`처럼 일반 필드도 값이 다르면 다른 객체 조합으로 처리한다.
 - 민감 값 처리는 정규화 후 정확히 일치하는 자격 증명 이름으로 한정한다: password/passwd/pwd, sessionid/jsessionid/phpsessid, authorization/cookie/setcookie, accesstoken/refreshtoken/idtoken/csrftoken, apikey, credential/credentials. 필드명은 유지하고 값만 객체 구분 자료에서 제외한다.
-- query와 요청 body는 한 건부터 표시한다. POST body도 경로의 추가 관측 조건을 받지 않는다. 경로는 같은 서비스·메서드·경로 패턴 안에서 Identity 두 개 이상 또는 Source 두 개 이상일 때만 표시한다. 같은 Identity·Source의 반복 요청 및 run ID 변화는 근거를 늘리지 않는다. 실제 비로그인 관측은 Identity 하나로 세지만 자동 인가 재전송·검증·코치 probe는 제외한다.
+- query와 요청 body는 한 건부터 표시한다. 같은 서비스·메서드·경로 패턴의 서로 다른 URL 값이 발견되면 단일 Identity/Source여도 path를 표시한다. 완전히 같은 URL만 관측되면 Identity 두 개 또는 Source 두 개를 요구한다. 실제 비로그인 관측은 Identity 하나로 세지만 자동 인가 재전송·검증·코치 probe는 제외한다.
 - 기존 관측 트래픽 범위, 사용자 제외 설정, 재전송·세션 설정·검증 단계 제외, 정적 파일/OPTIONS 및 파싱 크기·깊이 제한은 유지한다. 객체 필드 이름에 대한 업무 규칙을 새로 추가하지 않는다.
 
 - 표시 전용 `ObservedObjectProjection`과 스냅샷 `displayObjects`를 추가했다. 기존 operation/resource, 판정 셀, 저장 키와 Request Lab의 원본 요청 좌표를 유지한다.
-- 경로는 같은 서비스·메서드·경로 계열에서 서로 다른 Identity 두 개 이상 또는 서로 다른 Source 두 개 이상이 관측되어야 표시한다(최종 사용자 지정 반영). 같은 URL도 이 조건을 충족하면 표시하며, 동일 계정·동일 Source의 반복 관측은 충분하지 않다. 한 건의 경로 후보는 응답 객체로 우회하지 않는다.
+- 경로의 서로 다른 값은 구조 근거로 인정한다. 완전히 같은 URL만 관측된 경우에는 Identity 두 개 또는 Source 두 개를 요구한다. 동일 계정·동일 Source의 같은 URL 반복 관측은 충분하지 않다. 한 건의 경로 후보는 응답 객체로 우회하지 않는다.
 - query와 요청 body는 두 건 관측 조건을 적용하지 않는다. 필드 스키마로 접힌 그룹을 만들고 실제 관측 조합을 펼친다. JSON 키 순서는 정규화하고 배열·반복 query 값의 순서는 유지한다. 민감 값은 객체 구분 자료에서 제외한다.
 - 파라미터 없는 성공 GET의 JSON/XML 응답 전체를 하나의 표시 객체로 처리한다. HTML, 오류 응답, 잘못된 문서, DTD 및 보존되지 않은 본문은 제외한다. XML 외부 엔티티 접근은 차단한다.
 - 각 그룹에서 OBJ 1부터 번호를 부여한다. 필터 변경으로 번호를 다시 매기지 않는다. 확정된 기존 소유자 연결이 있을 때만 계정 이름을 붙인다.

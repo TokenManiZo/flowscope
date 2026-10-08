@@ -1,4 +1,4 @@
-import { observedObjectEntries } from "./observedObjects"
+import { observedObjectEntries, MAX_VISIBLE_OBJECTS } from "./observedObjects"
 import { graphAccountLabel } from "./graphAccounts"
 import type { Snapshot } from "@/lib/api/types"
 import type { GraphFilters } from "./graphProjection"
@@ -89,12 +89,17 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     const operation = representatives.get(api)!, group = operationGroup(operation, resolveGroup)
     add("operation", group.service, operation, api.replace(/^https?:\/\/\S+\s+/i, ""), { groupId: group.id, groupLabel: group.label, operation })
   }
-  for (const { object } of display) {
+  const visibleKeys = new Map<string, Set<string>>()
+  for (const { object } of [...display].sort((a, b) => a.object.ordinal - b.object.ordinal)) {
+    const keys = visibleKeys.get(object.groupKey) ?? new Set<string>()
+    const visible = keys.has(object.objectKey) || keys.size < MAX_VISIBLE_OBJECTS
+    if (visible) keys.add(object.objectKey)
+    visibleKeys.set(object.groupKey, keys)
     const group = operationGroup(object.operation, resolveGroup), operation = representatives.get(object.apiKey)!
     const context = { groupId: group.id, groupLabel: group.label, operation }
     const owner = object.legacyResource ? snapshot.owners[object.legacyResource] : null
-    add("resource", group.service, object.objectKey, `OBJ ${object.ordinal}${owner ? ` - ${graphAccountLabel(snapshot, owner)}` : ""}`, context)
-    if (object.kind !== "PATH") add("object-group", group.service, object.groupKey, object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · "), context)
+    if (visible) add("resource", group.service, object.objectKey, `OBJ ${object.ordinal}${owner ? ` - ${graphAccountLabel(snapshot, owner)}` : ""}`, context)
+    add("object-group", group.service, object.groupKey, object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · "), context)
   }
   const result = [...entries.values()].map(entry => {
     const contexts = [...entry.contexts.values()].sort((a, b) => compare(a.operation, b.operation))

@@ -69,8 +69,9 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
 
   if (node.kind === "object-group" && "objectGroup" in node && node.objectGroup) {
     const { key, members, expanded } = node.objectGroup
+    const badge = "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind) : "OBJECTS"
     return {
-      kind: "target", badge: "OBJECTS", title: `${expanded ? "▾" : "▸"} ${key}`, detail: "", footer: `${members.length}개`, icon: "box",
+      kind: "target", badge, title: `${expanded ? "▾" : "▸"} ${key}`, detail: "", footer: `${members.length}개${members.length > 10 && "displayObjectKind" in node && node.displayObjectKind ? " · 최대 10개 표시" : ""}`, icon: "box",
       accessibleLabel: `${key} 객체 묶음; ${members.length}개; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
     }
   }
@@ -79,7 +80,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? identityLabel(node.owner ?? "UNKNOWN") : "UNKNOWN"
     return {
       // 자원 키 앞의 서비스 오리진("http://host:port ")은 카드에서 뺀다. 전체 키는 접근 이름에 남는다.
-      kind: "target", badge: "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: node.selection.displayObjectKey ? evidenceFooter(node) : `owner: ${owner}`, icon: "box",
+      kind: "target", badge: "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind) : "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: node.selection.displayObjectKey ? evidenceFooter(node) : `owner: ${owner}`, icon: "box",
       accessibleLabel: `${node.label}; Resource; verdict ${node.verdictText}; owner: ${owner}; ${evidenceFooter(node)}`,
     }
   }
@@ -118,4 +119,8 @@ export function relationshipRouteCandidateCard(candidate: GraphRouteCandidate): 
     kind: "operation", badge: "CANDIDATE", title, detail, footer, icon: "none",
     accessibleLabel: `Route candidate ${candidate.service} ${title}; ${candidate.observedText}; applicability ${candidate.applicability}; ${footer}`,
   }
+}
+
+function objectKindBadge(kind?: string): string {
+  return ({ PATH: "PATH PARAM", QUERY: "QUERY PARAM", REQUEST_BODY: "REQUEST BODY", RESPONSE_BODY: "RESPONSE BODY" } as Record<string, string>)[kind ?? ""] ?? "OBJECTS"
 }

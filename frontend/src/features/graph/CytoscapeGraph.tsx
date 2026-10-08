@@ -10,7 +10,7 @@ import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPr
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import { graphOpenAction, type HierarchyNode, type HierarchyProjection } from "./graphHierarchy"
-import { highlightPositions } from "./graphFilterLayout"
+import { highlightPositions, focusedGroupPositions } from "./graphFilterLayout"
 import { deriveGraphFocus } from "./graphFocus"
 import { graphSearchViewport } from "./graphSearch"
 import { relationshipNodeCard, relationshipRouteCandidateCard } from "./relationshipNodeCard"
@@ -43,6 +43,7 @@ interface Props {
   onInteraction?(): void
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
+  onOpenObject?(node: HierarchyNode): void
   /** 왼쪽 신원 노드를 열면(더블클릭·Enter) 한 단계 위 View로 간다. */
   onStepBack?(): void
   /** 빈 캔버스를 누르거나 Esc를 누르면 선택과 강조를 푼다. */
@@ -102,10 +103,12 @@ export function graphFocusStates(projection: GraphProjection | HierarchyProjecti
   if (hierarchy && selectedNode && (openObjectGroupId || edges.every(edge => edge.focused === "none"))) {
     const keys = new Set(selectedNode.selection.cellKeys)
     const edgeKeys = new Map(hierarchy.edges.map(edge => [edge.id, edge.selection.cellKeys]))
+    const evidence = new Set(selectedNode.selection.evidenceIds)
+    const evidenceEdges = new Map(hierarchy.edges.map(edge => [edge.id, edge.selection.evidenceIds]))
     for (const edge of edges) {
       const touches = edge.source === selectedNode.id || edge.target === selectedNode.id
       const sharesCell = keys.size > 0 && (edgeKeys.get(edge.id) ?? []).some(key => keys.has(key))
-      edge.focused = touches || sharesCell ? "yes" : "no"
+      edge.focused = touches || sharesCell || (evidenceEdges.get(edge.id) ?? []).some(id => evidence.has(id)) ? "yes" : "no"
     }
   }
   // 강조가 있으면 강조 엣지에 닿은 노드만 남기고 나머지 노드는 흐린다.
@@ -276,6 +279,20 @@ export function positionHighlightedInLanes(core: Core, laneCount: number): boole
   }
   if (typeof core.batch === "function") core.batch(apply); else apply()
   return moved
+}
+
+function positionFocusedObjects(core: Core, laneCount: number) {
+  const positions = focusedGroupPositions(core.nodes().toArray().map(node => ({
+    id: node.id(), lane: laneIndexForKind(String(node.data("kind")), laneCount),
+    ...node.position(), height: nodeModelHeight(node), matched: node.data("objectFocus") === "yes", memberOf: String(node.data("memberOf") ?? ""),
+  })), laneCount)
+  core.nodes().forEach(node => {
+    if (!positions[node.id()]) return
+    const locked = node.locked?.() ?? false
+    if (locked) node.unlock()
+    node.position(positions[node.id()])
+    if (locked) node.lock()
+  })
 }
 
 /** 새 멤버를 묶음 노드(와 이미 놓인 멤버) 바로 아래에 쌓고, 그 아래에 있던 같은 레인 노드를 그만큼 밀어 내린다. */
@@ -518,7 +535,7 @@ function applyEdgeRoutes(core: Core, laneCount: number) {
 const noStatusColors: ReadonlyMap<number, string> = new Map()
 const noSplitSources: readonly string[] = []
 
-export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, apiMarks, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
+export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion = 0, statusesByNode = noStatuses, highlight = null, statusColors = noStatusColors, splitSources = noSplitSources, onToggleObjectGroup, openObjectGroupId = null, laneLayout = noLaneLayout, preferences = null, apiMarks, confirmedNodeIds = noConfirmedNodes, selectedElementId = null, searchMatches = noSearchMatches, revealRequest = null, onRevealed, onInteraction, onSelect, onNavigate, onOpenObject, onStepBack, onClearSelection, onLaneBoundsChange, onPreferencesChange, onRendererUnavailable }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
@@ -550,6 +567,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     }
     setSearchRings(previous => previous.length === rings.length && previous.every((ring, index) => Object.entries(ring).every(([key, value]) => value === rings[index][key as keyof SearchRing])) ? previous : rings)
   }, [])
+  const openObjectRef = useRef(onOpenObject)
+  openObjectRef.current = onOpenObject
   const openObjectGroupRef = useRef(openObjectGroupId)
   openObjectGroupRef.current = openObjectGroupId
   const objectEditsRef = useRef(new Set<string>())
@@ -778,7 +797,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       const hierarchy = "kind" in current ? current : null
       const node = hierarchy?.nodes.find(item => item.id === event.target.id())
       const action = node && hierarchy ? graphOpenAction(node.kind, hierarchy.kind) : null
-      if (action === "in" && node) navigateRef.current?.(node)
+      if (action === "lab" && node) openObjectRef.current?.(node)
+      else if (action === "in" && node) navigateRef.current?.(node)
       else if (action === "back") stepBackRef.current?.()
       else if (action === "toggle" && node) toggleGroupRef.current?.(node.id)
     }
@@ -930,6 +950,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (point) node.position(point)
     })
     if (highlightRef.current) positionHighlightedInLanes(core, laneCount)
+    if (openObjectGroupRef.current) positionFocusedObjects(core, laneCount)
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
     })
@@ -952,7 +973,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     const core = coreRef.current
     if (!core) return
     applyHighlight(core, projectionRef.current, highlight, cardsRef.current, theme, statusColors, splitSources)
-    if (highlight && positionHighlightedInLanes(core, laneCount)) publishLayoutRef.current?.()
+    if (highlight && positionHighlightedInLanes(core, laneCount)) {
+      if (openObjectGroupRef.current) positionFocusedObjects(core, laneCount)
+      publishLayoutRef.current?.()
+    }
     setMinimap(readMinimap(core)); setBands(readGroupBands(core))
   }, [highlight, laneCount, projection, splitSources, statusColors, theme])
 
