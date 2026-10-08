@@ -118,6 +118,23 @@ it("applies acknowledged marks and revision without refetching the whole snapsho
   expect(fetch).toHaveBeenCalledTimes(1)
 })
 
+it("applies object highlight and registration to its API while restricting deletion to object evidence", async () => {
+  const calls = mockAction(), user = userEvent.setup()
+  renderWithQueryClient(<ApiActions snapshot={snapshot} operation={op} deleteEvidenceIds={["object-request"]} deleteLabel="객체 삭제" size="lg" />)
+  await user.click(screen.getByRole("button", { name: "API 하이라이트" }))
+  await user.click(screen.getByRole("button", { name: "보라 하이라이트" }))
+  await waitFor(() => expect(calls).toContainEqual({ action: "highlight", operations: [op], color: "purple", datasetRevision: 3, revision: 7 }))
+  await user.keyboard("{Escape}")
+  await user.click(screen.getByRole("button", { name: "취약점으로 표시" }))
+  await user.click(screen.getByRole("checkbox", { name: "#4 요청 기록 선택" }))
+  await user.click(screen.getByRole("button", { name: "1건 근거로 표시" }))
+  await waitFor(() => expect(calls).toContainEqual({ action: "register", operations: [op], evidenceIds: ["ev-basis"], datasetRevision: 3, revision: 7 }))
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+  await user.click(screen.getByRole("button", { name: "객체 삭제" }))
+  await screen.findByRole("button", { name: "영구 삭제" })
+  expect(calls.at(-1)).toEqual({ action: "preview-delete", evidenceIds: ["object-request"], datasetRevision: 3, revision: 7 })
+})
+
 it("uses the chosen original API key for actions on a displayed API bundle", async () => {
   const calls = mockAction(), user = userEvent.setup(), second = op + "/{id}"
   renderWithQueryClient(<ApiActions snapshot={snapshot} operations={[op + "#variant", op, second]} />)
