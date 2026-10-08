@@ -71,4 +71,13 @@ describe("observed display objects", () => {
     const destination = searchDestination(entry, nav, null, false)
     expect(projectHierarchy(snapshot, filters, destination.navigation, destination.reveal).nodes.some(node => node.id === destination.nodeId)).toBe(true)
   })
+  it("keeps query and body schemas separate and labels body fields without showing values", () => {
+    const snapshot = data(), base = snapshot.displayObjects![0]
+    snapshot.displayObjects = [{ ...base, kind: "QUERY", groupKey: "query", objectKey: "query-1", fields: ["/userID"] },
+      { ...base, kind: "REQUEST_BODY", groupKey: "body", objectKey: "body-1", fields: ["/password", "/userID"] }]
+    const graph = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: ["object-group:query", "object-group:body"] }, nav)
+    expect(graph.nodes.filter(node => node.kind === "object-group").map(node => node.label)).toEqual(["userID", "password · userID"])
+    expect(graph.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 1"])
+    expect(graph.resources.every(node => node.selection.evidenceIds.includes("ev-1"))).toBe(true)
+  })
 })

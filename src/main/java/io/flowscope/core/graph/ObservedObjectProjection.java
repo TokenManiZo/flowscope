@@ -11,13 +11,23 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.net.URLDecoder;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadConstraints;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import io.flowscope.core.parameter.ParameterExtractor;
+import io.flowscope.core.parameter.ParameterObservation;
 
 /** Display-only observations. Never changes operation/resource, authorization or replay targets. */
 public final class ObservedObjectProjection {
     private ObservedObjectProjection() {}
     public record ObjectObservation(String eventId, String operation, String apiKey, String groupKey,
             String objectKey, String kind, List<String> fields, String legacyResource, int ordinal) {}
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(128).maxStringLength(1_000_000).build()).build())
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private record PathRow(RequestRecord record, List<String> segments, Set<Integer> positions) {}
     private static final Pattern TOKEN = Pattern.compile("(?:\\d+|(?=[A-Za-z0-9._~-]*[A-Za-z])(?=[A-Za-z0-9._~-]*\\d)[A-Za-z0-9._~-]+)");
     private static boolean token(String value) { return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches(); }
@@ -71,7 +81,11 @@ public final class ObservedObjectProjection {
         Map<String, String> pathApis = new HashMap<>();
         for (ObjectObservation object : out) pathApis.put(object.eventId(), object.apiKey());
         unique.values().stream().sorted(Comparator.comparingLong((RequestRecord r) -> r.timestamp).thenComparing(r -> r.evidenceId))
-                .forEach(r -> addQuery(out, ordinals, r, pathApis.getOrDefault(r.evidenceId, r.op)));
+                .forEach(r -> {
+                    String api = pathApis.getOrDefault(r.evidenceId, r.op);
+                    addQuery(out, ordinals, r, api);
+                    addBody(out, ordinals, r, api);
+                });
         return List.copyOf(out);
     }
 
@@ -98,6 +112,70 @@ public final class ObservedObjectProjection {
             add(out, ordinals, r, api, group, object, "QUERY", fields, legacy(r, "QUERY", fields));
         } catch (Exception ignored) { /* malformed percent encoding is not interpreted as a different value */ }
     }
+    private static void addBody(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
+                                RequestRecord r, String api) {
+        if (r.requestPayload != null && !r.requestPayload.retained()) return;
+        String body = r.requestBodyForAnalysis();
+        if (body == null || body.isBlank() || body.length() > 1_000_000) return;
+        String contentType = r.requestContentType == null ? "" : r.requestContentType.toLowerCase(Locale.ROOT);
+        try {
+            SortedSet<String> fields = new TreeSet<>();
+            String canonical;
+            if (contentType.contains("json") || body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) {
+                JsonNode root = JSON.readTree(body);
+                if (root == null) return;
+                canonical = JSON.writeValueAsString(normalizeJson(root, "", fields, new int[]{0}));
+            } else {
+                // Reuse the bounded form/multipart/XML parser on body-only metadata, not retained raw messages.
+                var probe = new RequestRecord(r.source, r.service, r.method, "/", r.status, r.fp);
+                probe.op = r.op; probe.idn = r.idn; probe.evidenceId = r.evidenceId;
+                probe.reqBody = body; probe.requestContentType = r.requestContentType;
+                var extraction = ParameterExtractor.extract(probe);
+                if (!extraction.parsedCompletely()) return;
+                Map<String, List<String>> material = new TreeMap<>();
+                for (var observation : extraction.observations()) {
+                    if (observation.key().location() == ParameterObservation.Location.PATH || observation.key().location() == ParameterObservation.Location.QUERY) continue;
+                    String path = observation.key().canonicalPath();
+                    fields.add(path);
+                    boolean hidden = Arrays.stream(path.split("/")).anyMatch(ObservedObjectProjection::sensitive);
+                    var value = observation.value();
+                    material.put(observation.key().location() + ":" + path, hidden ? List.of("[sensitive]", observation.shape().name())
+                            : List.of(observation.shape().name(), value == null ? "container" : value.type().name(), value == null ? "" : value.digest()));
+                }
+                if (material.isEmpty()) return;
+                canonical = JSON.writeValueAsString(material);
+            }
+            List<String> schema = List.copyOf(fields);
+            String group = key("REQUEST_BODY", api, JSON.writeValueAsString(schema));
+            add(out, ordinals, r, api, group, key("REQUEST_BODY", api, canonical), "REQUEST_BODY", schema, legacy(r, "BODY", schema));
+        } catch (Exception ignored) { /* invalid, incomplete or over-limit bodies do not claim content equality */ }
+    }
+    private static JsonNode normalizeJson(JsonNode node, String path, SortedSet<String> fields, int[] visited) {
+        if (++visited[0] > 100_000 || path.length() > 8192) throw new IllegalArgumentException("object projection limit");
+        if (node.isObject()) {
+            var normalized = JSON.createObjectNode();
+            var names = new TreeSet<String>(); node.fieldNames().forEachRemaining(names::add);
+            for (String name : names) {
+                String childPath = path + "/" + name.replace("~", "~0").replace("/", "~1");
+                if (sensitive(name)) {
+                    fields.add(childPath);
+                    JsonNode child = node.get(name);
+                    normalized.put(name, "[sensitive:" + child.getNodeType().name() + "]");
+                } else normalized.set(name, normalizeJson(node.get(name), childPath, fields, visited));
+            }
+            if (names.isEmpty()) fields.add(path.isEmpty() ? "/" : path);
+            return normalized;
+        }
+        if (node.isArray()) {
+            var normalized = JSON.createArrayNode();
+            for (JsonNode child : node) normalized.add(normalizeJson(child, path + "/*", fields, visited));
+            if (node.isEmpty()) fields.add(path.isEmpty() ? "/" : path);
+            return normalized;
+        }
+        fields.add(path.isEmpty() ? "/" : path);
+        return node;
+    }
+
     private static boolean sensitive(String name) {
         String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
         return normalized.contains("password") || normalized.contains("passwd") || normalized.contains("secret")

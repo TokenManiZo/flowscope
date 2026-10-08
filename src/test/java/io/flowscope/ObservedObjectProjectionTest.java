@@ -69,4 +69,35 @@ class ObservedObjectProjectionTest {
         assertEquals(out.get(0).objectKey(), out.get(2).objectKey());
         assertFalse(out.toString().contains("first-secret"));
     }
+    @Test void bodyCombinesNestedTypedDataWithoutUsingSensitiveValuesOrKeyOrder() {
+        var a = record("/lookup", 1); a.reqBody = "{\"userID\":1,\"password\":\"one\",\"items\":[{\"id\":5}]}";
+        var b = record("/lookup", 2); b.reqBody = "{\"items\":[{\"id\":5}],\"password\":\"two\",\"userID\":1}";
+        var c = record("/lookup", 3); c.reqBody = "{\"userID\":\"1\",\"password\":\"three\",\"items\":[{\"id\":5}]}";
+        var out = ObservedObjectProjection.build(List.of(a,b,c));
+        assertEquals(3, out.size()); assertEquals("REQUEST_BODY", out.getFirst().kind());
+        assertEquals(out.get(0).objectKey(), out.get(1).objectKey());
+        assertNotEquals(out.get(0).objectKey(), out.get(2).objectKey());
+        assertEquals(List.of("/items/*/id", "/password", "/userID"), out.getFirst().fields());
+        assertEquals(1, ObservedObjectProjection.build(List.of(a)).size());
+    }
+    @Test void bodyKeepsArrayOrderAndParsesFormXmlAndRejectsInvalidJson() {
+        var a = record("/lookup", 1); a.reqBody = "{\"ids\":[1,2]}";
+        var b = record("/lookup", 2); b.reqBody = "{\"ids\":[2,1]}";
+        var out = ObservedObjectProjection.build(List.of(a,b));
+        assertNotEquals(out.get(0).objectKey(), out.get(1).objectKey());
+        var form = record("/lookup", 3); form.requestContentType = "application/x-www-form-urlencoded"; form.reqBody = "userID=1&password=abc";
+        assertEquals(1, ObservedObjectProjection.build(List.of(form)).size());
+        var xml = record("/lookup", 4); xml.requestContentType = "application/xml"; xml.reqBody = "<request><id>1</id></request>";
+        assertEquals(1, ObservedObjectProjection.build(List.of(xml)).size());
+        var invalid = record("/lookup", 5); invalid.reqBody = "{\"id\":1,\"id\":2}";
+        assertTrue(ObservedObjectProjection.build(List.of(invalid)).isEmpty());
+    }
+    @Test void pathQueryAndBodyAllRemainVisibleWithoutChangingCanonicalCoordinates() {
+        var a = record("/orders/101", 1); a.query = "page=1"; a.reqBody = "{\"userID\":9,\"password\":\"secret\"}";
+        var b = record("/orders/202", 2);
+        var original = a.op + "\0" + a.resource;
+        var out = ObservedObjectProjection.build(List.of(a,b));
+        assertEquals(Set.of("PATH","QUERY","REQUEST_BODY"), new HashSet<>(out.stream().filter(o -> o.eventId().equals(a.evidenceId)).map(ObservedObjectProjection.ObjectObservation::kind).toList()));
+        assertEquals(original, a.op + "\0" + a.resource);
+    }
 }
