@@ -18,7 +18,7 @@ it("keeps every server state accessible and actual 관측 기록 separate from b
   const untested = screen.getByRole("group", { name: /person-4/ })
   expect(untested).not.toHaveTextContent("실행 관측 기록")
   expect(untested).not.toHaveTextContent("좌표 근거")
-  const button = within(untested).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" })
+  const button = within(untested).getByRole("button", { name: "UNTESTED · 미점검 상세 보기" })
   button.focus()
   await userEvent.keyboard("{Enter}")
   expect(select).toHaveBeenCalledWith(cells[4])

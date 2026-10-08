@@ -156,7 +156,7 @@ function navItems(settings: AccountSettings): Array<[string, string, StatusMeta 
   const off: StatusMeta = { label: "사용 안 함", tone: "idle" };
   return [
     ["basic", "기본 정보", null],
-    ["human", "HUMAN", HUMAN_STATUS_META[settings.human.status]],
+    ["human", "사람", HUMAN_STATUS_META[settings.human.status]],
     ["zap", "ZAP 로그인", settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : off],
   ];
 }

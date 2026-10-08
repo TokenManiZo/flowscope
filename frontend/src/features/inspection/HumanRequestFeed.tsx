@@ -46,7 +46,7 @@ export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, 
           </div>
         </div>
       </CardHeader>
-      {showSource && <div aria-label="수집 출처 필터" className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
+      {showSource && <div aria-label="수집 출처 필터" className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">{["전체", "사람", "스캐너", "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
       {expanded && <CardContent className="flex min-h-0 flex-1 flex-col overflow-x-auto p-0">
         <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <><span className="text-center">출처</span><span className="text-center">수집 방식</span></>}<span>계정</span><span>상태</span><span className="text-center">시각</span></div>
         <div data-record-list aria-label="기록된 요청 목록" className={`${showSource ? "min-w-[920px] " : ""}min-h-0 flex-1 overflow-auto`}>
@@ -55,7 +55,7 @@ export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, 
             <span className="truncate font-mono text-xs text-muted-foreground" title={item.id}>{item.ordinal ?? "—"}</span>
             <MethodBadge method={item.badge} />
             <span className="truncate font-mono text-xs" title={item.title}>{item.title}</span>
-            {showSource && <><span className="truncate text-center text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "Human" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-center text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
+            {showSource && <><span className="truncate text-center text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "사람" ? "H" : item.sourceLabel === "스캐너" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-center text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
             <span className={`truncate ${item.mutedDetail ? "text-muted-foreground" : ""}`} title={item.detail}>{item.detail}</span>
             <HttpStatusBadge status={item.status} />
             <span className="text-center font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>

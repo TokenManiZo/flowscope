@@ -32,7 +32,7 @@ it("shows the real verification source and saves only the dirty section", async 
   const user = userEvent.setup();
   render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
 
-  expect(await screen.findByRole("tab", { name: /HUMAN\s*인증값 있음/ })).toBeInTheDocument();
+  expect(await screen.findByRole("tab", { name: /사람\s*인증값 있음/ })).toBeInTheDocument();
   expect(screen.queryByText(/mock adapter/i)).not.toBeInTheDocument();
   expect(screen.queryByDisplayValue(/password|cookie|authorization/i)).not.toBeInTheDocument();
   await user.clear(screen.getByLabelText("표시 이름"));
@@ -50,7 +50,7 @@ it("shows masked stored credentials and replaces them from a pasted header block
   const user = userEvent.setup();
   render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
 
-  await user.click(await screen.findByRole("tab", { name: /^HUMAN/ }));
+  await user.click(await screen.findByRole("tab", { name: /^사람/ }));
   expect(screen.getByRole("group", { name: "HUMAN 인증값 요약" })).toHaveTextContent(/\d{2}:\d{2}:41.*GET \/identity\/api\/v2\/vehicle\/vehicles/);
   const stored = screen.getByRole("region", { name: "저장된 인증값" });
   expect(stored).toHaveTextContent("Bearer eyJh••••");
@@ -77,7 +77,7 @@ it("refreshes stored credentials while open without discarding unsaved edits", a
     render(<AccountSettingsSheet accountId="account-b" adapter={api} open onOpenChange={vi.fn()} />);
 
     await user.type(await screen.findByLabelText("표시 이름"), " edited");
-    await user.click(screen.getByRole("tab", { name: /^HUMAN/ }));
+    await user.click(screen.getByRole("tab", { name: /^사람/ }));
     expect(screen.getByRole("region", { name: "저장된 인증값" })).toHaveTextContent("아직 없어요");
     await vi.advanceTimersByTimeAsync(3000);
 
@@ -95,7 +95,7 @@ it("rejects a pasted block without login headers", async () => {
   const user = userEvent.setup();
   render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
 
-  await user.click(await screen.findByRole("tab", { name: /^HUMAN/ }));
+  await user.click(await screen.findByRole("tab", { name: /^사람/ }));
   await user.click(screen.getByRole("button", { name: /헤더 붙여넣기로/ }));
   await user.click(screen.getByLabelText(/헤더를 그대로 붙여넣으세요/));
   await user.paste("Accept: */*");
@@ -112,7 +112,7 @@ it("expands a recorded request to its masked raw text with a truncated path row"
   const user = userEvent.setup();
   render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
 
-  await user.click(await screen.findByRole("tab", { name: /^HUMAN/ }));
+  await user.click(await screen.findByRole("tab", { name: /^사람/ }));
   await user.click(screen.getByRole("button", { name: "기록된 요청에서 가져오기" }));
   expect(screen.getByRole("button", { name: "기록된 요청에서 가져오기 설명" })).toBeInTheDocument();
   const toggle = screen.getByRole("button", { name: `GET ${path} 원문 보기` });

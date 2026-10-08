@@ -109,7 +109,7 @@ it("uses the shared parameter cell semantics and clears its 관측 기록 select
   expect(matrix).not.toHaveTextContent("좌표 근거")
   expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("/orders/{id}")
   expect(screen.getByRole("heading", { level: 2 })).not.toHaveTextContent("https://demo.test:443")
-  const select = within(matrix).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" })
+  const select = within(matrix).getByRole("button", { name: "UNTESTED · 미점검 상세 보기" })
   select.focus()
   await userEvent.keyboard("{Enter}")
   expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
@@ -122,7 +122,7 @@ it("uses the shared parameter cell semantics and clears its 관측 기록 select
   current = parameterSnapshot()
   rerender(<ParameterMatrixView />)
   expect(screen.queryByRole("dialog", { name: "관측 기록 상세" })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미검증 상세 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미점검 상세 보기" }))
   expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
 })
 
@@ -141,7 +141,7 @@ it("shows only error and retry guidance for an initial parameter snapshot failur
 it("retains parameter 관측 기록 detail while disabling actions after a refresh failure", async () => {
   current = parameterSnapshot()
   const { rerender } = renderPage(<ParameterMatrixView />)
-  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미검증 상세 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미점검 상세 보기" }))
   expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
   queryError = true
   rerender(<ParameterMatrixView />)

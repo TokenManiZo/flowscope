@@ -53,8 +53,8 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
   const zero = (value: number): Row["tone"] => value === 0 ? "zero" : undefined
   return <section aria-label="점검 흐름" className="grid overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-3">
     <Stage step="관측" href="#evidence" go="관측 기록" value={values.trafficStats.captured} unit="건 수집" rows={[
-      { name: "HUMAN", label: sourceDot("bg-observation-human", "HUMAN"), value: format(values.sourceCounts.human) },
-      { name: "SCANNER", label: sourceDot("bg-observation-scanner", "SCANNER"), value: format(values.sourceCounts.scanner) },
+      { name: "사람", label: sourceDot("bg-observation-human", "사람"), value: format(values.sourceCounts.human) },
+      { name: "스캐너", label: sourceDot("bg-observation-scanner", "스캐너"), value: format(values.sourceCounts.scanner) },
       { name: "LLM", label: sourceDot("bg-observation-llm", "LLM"), value: format(values.sourceCounts.llm) },
       "divider",
       { name: "검토 필요 트래픽", label: "검토 필요 트래픽", value: format(counts.review), tone: zero(counts.review), href: counts.review > 0 ? "#evidence-review" : undefined },
@@ -76,7 +76,7 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
 /** 수집 수는 관측 칸의 큰 숫자가 맡고, 나머지 snapshot 통계는 한 줄 각주로 둔다. */
 export function SnapshotFootnote({ trafficStats }: Pick<DashboardSummaryValues, "trafficStats">) {
   const items = [["분석 대상", trafficStats.coverage], ["제외", trafficStats.excluded], ["삭제", trafficStats.dropped], ["Payload 메타", trafficStats.payloadMetadataOnly]] as const
-  return <dl aria-label="현재 snapshot 요약" className="flex flex-wrap gap-x-1.5 px-0.5 text-xs text-muted-foreground">{items.map(([label, value], index) => <div key={label} className="flex gap-1">{index > 0 && <span aria-hidden="true">·</span>}<dt>{label}</dt><dd className="tabular-nums">{format(value)}</dd></div>)}</dl>
+  return <dl aria-label="현재 요약" className="flex flex-wrap gap-x-1.5 px-0.5 text-xs text-muted-foreground">{items.map(([label, value], index) => <div key={label} className="flex gap-1">{index > 0 && <span aria-hidden="true">·</span>}<dt>{label}</dt><dd className="tabular-nums">{format(value)}</dd></div>)}</dl>
 }
 
 const reasonLabels: Record<string, string> = {

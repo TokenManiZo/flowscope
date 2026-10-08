@@ -68,5 +68,5 @@ it("counts each identity's APIs by their most urgent verdict so the parts add up
     cell({ resource: "orders:1", overall: "allow" }), cell({ resource: "orders:2", overall: "untested" }),
     cell({ op: `${svc} GET /me`, overall: "allow" }),
   ])]} />)
-  expect(screen.getByRole("listitem", { name: "user-1 접근 요약" })).toHaveTextContent("API 2허용 1보류 1")
+  expect(screen.getByRole("listitem", { name: "user-1 접근 요약" })).toHaveTextContent("API 2허용 1미점검 1")
 })

@@ -238,7 +238,7 @@ it.each([900, 600])("opens the shared graph filters and keeps every meaningful t
   await userEvent.click(screen.getByRole("button", { name: "그래프 필터" }))
   const filters = screen.getByRole("dialog", { name: "분석 필터" })
   // 강조 필터는 아무것도 고르지 않은 상태로 시작하고, 고른 조건만 강조한다(데이터를 숨기지 않는다).
-  const scanner = within(filters).getByRole("checkbox", { name: /SCANNER\s*0/ })
+  const scanner = within(filters).getByRole("checkbox", { name: /스캐너\s*0/ })
   const identity = within(filters).getByRole("checkbox", { name: /alice\s*1/ })
   const success = within(filters).getByRole("checkbox", { name: /2xx\s*1/ })
   const redirect = within(filters).getByRole("checkbox", { name: /3xx\s*0/ })
@@ -266,7 +266,7 @@ it("applies highlight filters on Site Overview and retains them inside an API gr
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = snapshot
   render(<CurrentGraphPage />)
   const filters = screen.getByRole("complementary", { name: "분석 필터" })
-  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /사람\s*1/ }))
   expect(screen.getByTestId("cytoscape-graph")).toHaveAttribute("data-highlight", "on")
   await userEvent.click(screen.getByRole("button", { name: "목록" }))
   await userEvent.click(within(screen.getByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
@@ -283,11 +283,11 @@ it("dims unmatched Site Overview list cards and restores them when the filter is
   const orders = within(list).getByRole("button", { name: /ORDERS APIs/ })
   const products = within(list).getByRole("button", { name: /PRODUCTS APIs/ })
   const filters = screen.getByRole("complementary", { name: "분석 필터" })
-  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /사람\s*1/ }))
   expect(orders).not.toHaveClass("opacity-30")
   expect(products).toHaveClass("opacity-30")
   expect(products).toBeEnabled()
-  await userEvent.click(within(filters).getByRole("checkbox", { name: /HUMAN\s*1/ }))
+  await userEvent.click(within(filters).getByRole("checkbox", { name: /사람\s*1/ }))
   expect(products).not.toHaveClass("opacity-30")
   await userEvent.click(within(filters).getByRole("checkbox", { name: /LLM\s*0/ }))
   expect(orders).toHaveClass("opacity-30")
@@ -325,5 +325,5 @@ it("uses exact HUMAN, SCANNER, and LLM source semantics in the canvas legend", a
   render(<GraphPage />)
 
   const legend = screen.getByRole("list", { name: "그래프 소스 범례" })
-  expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["HUMAN", "SCANNER", "LLM"])
+  expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["사람", "스캐너", "LLM"])
 })

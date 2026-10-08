@@ -115,7 +115,7 @@ export function relationshipRouteCandidateCard(candidate: GraphRouteCandidate): 
   const detail = isJavascriptHiddenApi(candidate) ? "미요청 · JS에서 발견" : `${candidate.observedText} · ${candidate.applicability}`
   const footer = candidate.reviewReason || "정의 근거 확인"
   return {
-    kind: "operation", badge: "CANDIDATE", title, detail, footer, icon: "none",
+    kind: "operation", badge: "미요청", title, detail, footer, icon: "none",
     accessibleLabel: `Route candidate ${candidate.service} ${title}; ${candidate.observedText}; applicability ${candidate.applicability}; ${footer}`,
   }
 }

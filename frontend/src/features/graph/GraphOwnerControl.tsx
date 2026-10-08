@@ -90,7 +90,7 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
   return <section aria-label="소유자" className="mb-4 grid gap-2">
     {!resolved ? <div className="grid gap-2.5 rounded-lg border border-amber-500/50 bg-amber-500/10 p-3">
       <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-300"><AlertTriangle className="size-4" aria-hidden="true" />소유자를 정해야 판정할 수 있어요</h3>
-      <p className="text-xs leading-relaxed text-muted-foreground">이 객체의 주인을 모르면 다른 신원의 접근을 IDOR로 판단할 수 없어요.{untested > 0 && <> 지금 신원 {untested}개가 <span className="font-medium text-foreground">판정 보류(UNTESTED)</span>예요.</>}</p>
+      <p className="text-xs leading-relaxed text-muted-foreground">이 객체의 주인을 모르면 다른 신원의 접근을 IDOR로 판단할 수 없어요.{untested > 0 && <> 지금 신원 {untested}개가 <span className="font-medium text-foreground">미점검</span>이에요.</>}</p>
       <p className="text-xs font-medium">누가 이 객체의 주인인가요?</p>
       {picker}
     </div> : <div className="grid gap-2.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3">

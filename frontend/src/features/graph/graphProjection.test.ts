@@ -70,10 +70,10 @@ describe("projectGraph", () => {
 
     expect(graph.operations.map((item) => item.label)).toEqual(["GET /orders/{id}", "POST /login"])
     expect(graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ relation: "identity-resource", source: "human", line: "solid", color: "#2563eb", sourceText: "HUMAN", countLabel: "×2" }),
-      expect.objectContaining({ relation: "identity-resource", source: "scanner", line: "dashed", color: "#dc2626", sourceText: "SCANNER" }),
+      expect.objectContaining({ relation: "identity-resource", source: "human", line: "solid", color: "#2563eb", sourceText: "사람", countLabel: "×2" }),
+      expect.objectContaining({ relation: "identity-resource", source: "scanner", line: "dashed", color: "#dc2626", sourceText: "스캐너" }),
       expect.objectContaining({ relation: "identity-resource", source: "llm", line: "dotted", color: "#e4e4e7", sourceText: "LLM" }),
-      expect.objectContaining({ relation: "identity-operation", source: "unknown", sourceText: "UNKNOWN" }),
+      expect.objectContaining({ relation: "identity-operation", source: "unknown", sourceText: "미확인" }),
     ]))
     expect(graph.operations.find((item) => item.label === "GET /orders/{id}")).toMatchObject({ verdict: "allow", verdictText: "ALLOW", verdictColor: "#15803d" })
     expect(graph.operations.find((item) => item.label === "POST /login")).toMatchObject({ verdict: "undecided", verdictText: "확인 필요" })

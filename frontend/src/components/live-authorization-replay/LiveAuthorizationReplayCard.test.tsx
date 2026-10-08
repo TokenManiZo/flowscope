@@ -104,8 +104,8 @@ describe("LiveAuthorizationReplayCard", () => {
     expect(screen.getByTestId("replay-state-badge").textContent).toContain(
       "중지됨",
     );
-    expect(screen.getByLabelText("HUMAN 기준 요청")).toHaveAttribute("aria-checked", "true");
-    expect(screen.getByLabelText("ZAP 기준 요청")).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByLabelText("사람 기준 요청")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText("스캐너 기준 요청")).toHaveAttribute("aria-checked", "false");
     expect(screen.getByLabelText("LLM 기준 요청")).toHaveAttribute("aria-checked", "false");
   });
 
@@ -173,7 +173,7 @@ describe("LiveAuthorizationReplayCard", () => {
 
     await user.click(await screen.findByLabelText("USER B"));
     await user.click(screen.getByLabelText("ADMIN"));
-    await user.click(screen.getByLabelText("ZAP 기준 요청"));
+    await user.click(screen.getByLabelText("스캐너 기준 요청"));
     await user.click(screen.getByLabelText("LLM 기준 요청"));
     await user.click(screen.getByLabelText("비로그인(ANON) 포함"));
     await user.click(screen.getByLabelText("안전 자동 재전송을 허용합니다."));

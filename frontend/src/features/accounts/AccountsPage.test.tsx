@@ -297,7 +297,7 @@ describe("account and session management", () => {
     const user = userEvent.setup(); renderAccounts()
     await user.click(await screen.findByRole("button", { name: "계정 A 관리" }))
     const sheet = await screen.findByLabelText("계정 A 계정 설정")
-    for (const tab of [/^기본 정보/, /^HUMAN/, /^ZAP 로그인/]) expect(await within(sheet).findByRole("tab", { name: tab })).toBeVisible()
+    for (const tab of [/^기본 정보/, /^사람/, /^ZAP 로그인/]) expect(await within(sheet).findByRole("tab", { name: tab })).toBeVisible()
     // LLM 세션은 점검의 LLM 단계에서 브라우저 로그인으로 만든다.
     expect(within(sheet).queryByRole("tab", { name: /^LLM/ })).not.toBeInTheDocument()
     expect(within(sheet).queryByRole("button", { name: /관측 신원 연결/ })).not.toBeInTheDocument()

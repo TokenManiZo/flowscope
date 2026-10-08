@@ -11,7 +11,7 @@ it("renders observe → compare → judge as three links with source counts insi
   const observe = screen.getByRole("link", { name: "관측 · 관측 기록" })
   expect(observe).toHaveAttribute("href", "#evidence")
   const stage = observe.parentElement as HTMLElement
-  for (const [label, value] of [["HUMAN", "12"], ["SCANNER", "8"], ["LLM", "3"]]) expect(within(within(stage).getByRole("group", { name: label })).getByText(value)).toBeVisible()
+  for (const [label, value] of [["사람", "12"], ["스캐너", "8"], ["LLM", "3"]]) expect(within(within(stage).getByRole("group", { name: label })).getByText(value)).toBeVisible()
   // 검토 필요 트래픽은 칸 링크와 따로 Evidence 검토 탭으로 바로 간다(링크 안에 링크를 넣지 않는다).
   expect(within(stage).getByRole("link", { name: "검토 필요 트래픽" })).toHaveAttribute("href", "#evidence-review")
   expect(observe.querySelector("a")).toBeNull()
@@ -33,7 +33,7 @@ it("keeps absent authorization data neutral and highlights only positive candida
 
 it("moves the remaining snapshot counts into a single footnote", () => {
   render(<SnapshotFootnote trafficStats={{ captured: 21, coverage: 17, excluded: 1, dropped: 0, payloadMetadataOnly: 0 }} />)
-  expect(screen.getByLabelText("현재 snapshot 요약").querySelectorAll("dt")).toHaveLength(4)
+  expect(screen.getByLabelText("현재 요약").querySelectorAll("dt")).toHaveLength(4)
 })
 
 it("lists prioritized APIs and rule candidates with their reasons and review state", () => {
