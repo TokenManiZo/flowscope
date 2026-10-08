@@ -21,13 +21,12 @@ import { AccountLaneTable } from "./AccountLaneTable"
 import { useRecordView } from "./RecordView"
 
 /** 점검 시작 허브의 소스 스텝. */
-export type InspectionStep = "records" | "scanner" | "llm" | "review"
+export type InspectionStep = "records" | "scanner" | "llm"
 
 const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
   { step: "records", label: "수집 기록" },
   { step: "scanner", label: "ZAP 스캔" },
   { step: "llm", label: "LLM 탐색" },
-  { step: "review", label: "결과 비교" },
 ]
 
 const RELEASES_URL = "https://github.com/TokenManiZo/flowscope/releases"
@@ -279,12 +278,6 @@ export function InspectionPage() {
           <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} evidenceOrdinals={snapshot.data?.evidenceOrdinals} />
         </TabsContent>
 
-        <TabsContent value="review" className="mt-2">
-          <section className="grid gap-4 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
-            <div><h2 className="text-base font-semibold">결과 비교</h2><p className="mt-0.5 text-sm text-muted-foreground">Human·ZAP·LLM이 각각 찾은 API와 입력을 비교합니다.</p></div>
-            <div className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button></div>
-          </section>
-        </TabsContent>
       </Tabs>
 
       <AccountSettingsSheet
