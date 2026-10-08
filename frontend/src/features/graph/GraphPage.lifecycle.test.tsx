@@ -15,7 +15,7 @@ const cytoscapeState = vi.hoisted(() => {
 })
 
 vi.mock("cytoscape", () => ({ default: cytoscapeState.factory }))
-vi.mock("@/lib/query/hooks", () => ({ useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
+vi.mock("@/lib/query/hooks", () => ({ useProjectsQuery: () => ({ data: undefined }), useSnapshotQuery: () => ({ data: (globalThis as { graphFixture?: Snapshot }).graphFixture, isLoading: false, isError: false }) }))
 
 const snapshot: Snapshot = {
   revision: 1, identityRevision: 1, sampleMode: true, trafficStats: { captured: 1, coverage: 0, excluded: 0, review: 0, dropped: 0, payloadMetadataOnly: 0 }, replays: [], flowLinks: [], roles: {}, owners: {}, requiredRoles: {}, activeSources: ["human"], cells: [{ idn: "alice", op: "GET /orders/{id}", resource: "order:1", perSource: { human: "allow" }, reasons: {}, overall: "allow", conflict: false, missedSources: [], evidenceIds: ["ev-1"] }], verifications: [], gaps: [], scenarios: [], accounts: [], sessions: [], managedSessions: [], routeCandidates: [],
@@ -33,7 +33,7 @@ it("opens only the relationship hierarchy, without the removed priority tab", as
   const { GraphPage } = await import("./GraphPage")
   render(<GraphPage />)
   expect(screen.queryByRole("tab", { name: "점검 우선순위" })).not.toBeInTheDocument()
-  expect(screen.getByText("Site Overview")).toBeVisible()
+  expect(screen.getByText("전체 사이트")).toBeVisible()
   expect(screen.getByRole("button", { name: "그래프 맞추기" })).toBeVisible()
   expect(screen.getByLabelText("공격면 Cytoscape 그래프")).toBeVisible()
   expect(cytoscapeState.factory).toHaveBeenCalledTimes(1)

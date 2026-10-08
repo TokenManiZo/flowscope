@@ -10,7 +10,7 @@ export function matrixVerdictTone(verdict: Verdict | "unknown") {
   if (verdict === "suspicious") return { label: "SUSPICIOUS", className: "bg-amber-500/10 text-amber-800 dark:text-amber-200" }
   if (verdict === "undecided") return { label: "확인 필요", className: "bg-violet-500/10 text-violet-800 dark:text-violet-200" }
   if (verdict === "untested") return { label: "UNTESTED", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300" }
-  return { label: "UNKNOWN", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300" }
+  return { label: "미확인", className: "bg-zinc-500/10 text-zinc-700 dark:text-zinc-300" }
 }
 
 function SourceDetectionBadge({ member, source }: { member: MatrixMember; source: Source }) {

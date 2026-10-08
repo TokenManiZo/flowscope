@@ -21,6 +21,11 @@ const projection = (nodes: readonly HierarchyNode[]): HierarchyProjection => ({
 })
 
 describe("relationship graph node cards", () => {
+  it("labels an observed host independently of API counts and authorization verdicts", () => {
+    const host = node("target", service, { service, discovery: "unregistered", selection: selection([]) })
+    expect(relationshipNodeCard(host, projection([host]))).toMatchObject({ badge: "HOST", title: service, detail: "브라우저에서 발견됨", footer: "범위 미등록" })
+    expect(relationshipNodeCard({ ...host, discovery: "registered" }, projection([host])).footer).toBe("범위 등록됨 · 표시할 API 없음")
+  })
   it("maps the hierarchy node kinds without changing server-backed selection facts", () => {
     const target = node("target", service, { service, selection: selection([]) })
     const group = node("api-group", "ORDERS APIs", { groupId: "orders", service, selection: selection([]) })
@@ -79,14 +84,14 @@ describe("relationship graph node cards", () => {
     }
 
     expect(relationshipRouteCandidateCard(candidate)).toEqual({
-      kind: "operation", badge: "CANDIDATE", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
+      kind: "operation", badge: "미요청", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
       icon: "none", accessibleLabel: `Route candidate ${service} POST /api/orders/search; 미관측 후보; applicability REVIEW; 정적 참조`,
     })
   })
 
   it("labels APIs found in JavaScript code but never requested", () => {
     const base = { id: "route-candidate:otp", service, method: "POST", pathTemplate: "/identity/api/auth/v3/check-otp", observed: false, applicability: "REVIEW", provenance: [], provenanceTypes: ["JAVASCRIPT_LITERAL"], provenanceEvidenceIds: ["js-1"], priorityReasons: [], reviewReason: "", label: `${service} POST /identity/api/auth/v3/check-otp`, observedText: "미관측 후보" as const, selection: { operation: null, resource: null, identity: null, source: null, evidenceIds: [] } }
-    expect(relationshipRouteCandidateCard(base)).toMatchObject({ badge: "CANDIDATE", detail: "미요청 · JS에서 발견" })
+    expect(relationshipRouteCandidateCard(base)).toMatchObject({ badge: "미요청", detail: "미요청 · JS에서 발견" })
     expect(relationshipRouteCandidateCard({ ...base, observed: true, observedText: "관측됨" })).toMatchObject({ detail: "관측됨 · REVIEW" })
   })
 })

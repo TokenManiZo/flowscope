@@ -32,13 +32,24 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, r
   return <section className="grid gap-2" aria-label="공격면 API 목록">
     {summary && <Button data-graph-node-id={summary.id} variant="outline" className={`h-auto justify-start whitespace-normal p-3 text-left ${matchedSiteNodes && !matchedSiteNodes.has(summary.id) ? "opacity-30" : ""}`} onClick={() => onSelect(summary.selection, summary.id)}><CompactNodeCard badge={relationshipNodeCard(summary, projection).badge} title={summary.label} detail="검색으로 선택한 노드" footer="" /></Button>}
     {/* 그룹 화면의 API는 표로 보여준다(경로 형식 묶음). 줄을 누르면 화면을 옮기지 않고 선택만 한다. 요청 기록이 없으면 카드로 둔다. */}
-    {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation")} snapshot={snapshot} filters={filters} selectedId={selectedId} revealNodeId={revealNodeId} searchMatches={searchMatches} onRevealDismiss={onRevealDismiss} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
+    {hierarchy?.kind === "group" && snapshot && <ApiListTable operations={(items as HierarchyNode[]).filter(item => item.kind === "operation" && !item.staticResource)} snapshot={snapshot} filters={filters} selectedId={selectedId} revealNodeId={revealNodeId} searchMatches={searchMatches} onRevealDismiss={onRevealDismiss} onSelectApi={node => onSelect(node.selection, node.id)} onSelectObject={(resource, cells) => { if (cells.length) onSelect(graphCellSelection(cells), `resource:${resource}`) }} />}
+    {hierarchy?.kind === "group" && hierarchy.nodes.filter(node => node.staticResource && !node.hiddenInGraph).map(node => {
+      const card = relationshipNodeCard(node, projection)
+      return <Button key={node.id} data-graph-node-id={node.id} aria-label={card.accessibleLabel} variant="outline" className="h-auto justify-start whitespace-normal p-3 text-left"
+        onClick={() => onSelect(node.selection, node.id)} onDoubleClick={() => onNavigate?.(node)} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); onNavigate?.(node) } }}>
+        <CompactNodeCard badge={card.badge} title={card.title} detail={card.detail} footer={card.footer} />
+      </Button>
+    })}
     {hierarchy?.kind === "group" && snapshot && (items as HierarchyNode[]).filter(item => item.kind === "observed-operation" || item.kind === "support-operation").map(item => {
       const card = relationshipNodeCard(item, projection)
       const op = item.selection.operation ?? ""
       return <Button key={item.id} data-graph-node-id={item.id} aria-label={card.accessibleLabel} variant="outline" className={`h-auto justify-start whitespace-normal border-border/80 bg-card/80 p-3 text-left ${snapshot ? apiTint(snapshot, op) : ""} ${searchMatches?.has(item.id) ? "outline-2 outline-dashed outline-emerald-600 dark:outline-emerald-300" : ""}`} onClick={() => onSelect(item.selection, item.id)}><CompactNodeCard badge={card.badge} title={card.title} detail={card.detail} footer={card.footer} /></Button>
     })}
     {!(hierarchy?.kind === "group" && snapshot) && items.map((item) => {
+      if (hierarchy && item.kind === "target") {
+        const card = relationshipNodeCard(item, hierarchy)
+        return <Button key={item.id} data-graph-node-id={item.id} aria-label={card.accessibleLabel} variant="outline" className="h-auto justify-start whitespace-normal p-3 text-left" onClick={() => onSelect(item.selection, item.id)}><CompactNodeCard badge={card.badge} title={card.title} detail={card.detail} footer={card.footer} /></Button>
+      }
       if (hierarchy && item.kind === "api-group") {
         const group = hierarchy.groups.find(group => group.id === (item as HierarchyNode).groupId)
         const card = relationshipNodeCard(item, hierarchy)
@@ -55,6 +66,6 @@ export function ResponsiveGraphList({ projection, snapshot, selectedId = null, r
       </Button>
     })}
     {projection.routeCandidates.map((candidate) => <article className="grid gap-2 rounded-md border border-dashed p-3 text-sm" key={candidate.id}><Button data-graph-node-id={candidate.id} variant="outline" className={`h-auto justify-start whitespace-normal p-3 text-left ${snapshot ? apiTint(snapshot, `${candidate.service} ${candidate.method} ${candidate.pathTemplate}`) : ""} ${searchMatches?.has(candidate.id) ? "outline-2 outline-dashed outline-emerald-600 dark:outline-emerald-300" : ""}`} aria-label={`경로 후보 ${candidate.service} ${candidate.method} ${candidate.pathTemplate} ${candidate.observedText} ${candidate.applicability}`} onClick={() => onSelect(candidate.selection)}><span className="grid gap-1"><span className="font-mono break-all">{candidate.service}</span><span className="font-mono break-all">{candidate.method} {candidate.pathTemplate}</span><span>{candidate.observedText} · {candidate.applicability}</span></span></Button><RouteCandidateDetail candidate={candidate.selection.routeCandidate ?? candidate} ordinals={snapshot?.evidenceOrdinals} /></article>)}
-    {!projection.listItems.length && !projection.routeCandidates.length && <p className="rounded-md border p-3 text-sm text-muted-foreground">현재 필터에 표시할 INCLUDE 공격면이 없습니다. 요청 기록의 REVIEW/EXCLUDE는 그대로 유지됩니다.</p>}
+    {!projection.listItems.length && !projection.routeCandidates.length && <p className="rounded-md border p-3 text-sm text-muted-foreground">현재 필터에 표시할 API가 없습니다. 요청 기록에서 검토 필요·제외로 둔 기록은 그대로 유지됩니다.</p>}
   </section>
 }

@@ -17,13 +17,13 @@ const GROUP_PREVIEW = 5
 const VERDICT_CHIP: ReadonlyArray<[Verdict, string, string]> = [
   ["allow", "허용", "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"],
   ["suspicious", "후보", "bg-red-500/15 text-red-700 dark:text-red-300"],
-  ["undecided", "확인", "bg-amber-500/15 text-amber-700 dark:text-amber-300"],
+  ["undecided", "근거 부족", "bg-amber-500/15 text-amber-700 dark:text-amber-300"],
   ["deny", "거부", "border border-border text-muted-foreground"],
   ["untested", "미점검", "border border-dashed border-border text-muted-foreground"],
 ]
 const VERDICT_BADGE: Partial<Record<Verdict, [string, string]>> = {
-  allow: ["ALLOW", "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"],
-  deny: ["DENY", "border border-border text-muted-foreground"],
+  allow: ["허용", "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"],
+  deny: ["거부", "border border-border text-muted-foreground"],
   untested: ["미점검", "border border-dashed border-border text-muted-foreground"],
 }
 const severity: readonly Verdict[] = ["suspicious", "undecided", "untested", "deny", "allow"]

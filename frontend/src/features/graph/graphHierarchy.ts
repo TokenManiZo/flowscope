@@ -1,4 +1,6 @@
-import { graphAccountLabel } from "./graphAccounts"
+import { applyObservedObjects } from "./observedObjects"
+import { applyStaticResources, staticResourceEntries } from "./staticResourceGraph"
+import { graphAccountIdentities, graphAccountLabel } from "./graphAccounts"
 import { operationShapeKey } from "./graphPathShape"
 import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
 import { manualResendDetails } from "./resendGraph"
@@ -30,13 +32,25 @@ export interface ApiGroup extends ApiGroupDescriptor {
 }
 export interface HierarchySelection extends GraphCellSelection { gapIds: readonly string[] }
 export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
+  /** Replacement groups inherit the folded summary's position. */
+  layoutAnchorId?: string
   kind: GraphNode["kind"] | "target" | "api-group" | "observed-operation" | "object-group" | "operation-group" | "support-operation" | "resend-operation"
   selection: HierarchySelection
   groupId?: string
   service?: string
+  /** Browser-observed host metadata, without API or authorization Evidence. */
+  discovery?: "registered" | "unregistered"
+  displayObjectCount?: number
+  displayObjectKind?: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  displayObjectFieldCount?: number
+  displayOperations?: readonly string[]
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
   publicRead?: boolean
+  /** Graph-only static observations; never authorization objects. */
+  staticResource?: boolean
+  /** A folded resource summary opens its API family first. */
+  expandGroupId?: string
   /** 객체 묶음 노드: 묶음 이름, 묶인 객체 ID, 객체별 서버 소유자, 펼침 여부. */
   objectGroup?: { key: string; members: readonly string[]; owners: Readonly<Record<string, string | null>>; expanded: boolean }
   /** 접힌 API 묶음의 멤버. 그래프에서는 그리지 않고 목록·선택 상세에서만 쓴다. */
@@ -76,6 +90,7 @@ export function isPublicRead(snapshot: Snapshot, operation: string, resource: st
 const hiddenTrafficClasses = new Set(["STATIC_ASSET", "PREFLIGHT", "DISCOVERY_METADATA"])
 /** 탐색 중 그대로 관측한 요청이 아닌 단계: 로그인 확인, 교차 신원 재전송, LLM 확인 요청, Request Lab 같은 수동 재전송. */
 const nonCollectionPhases = new Set(["SESSION_SETUP", "AUTHORIZATION_REPLAY", "COACH_PROBE", "VALIDATION"])
+// Legacy/unrequested route candidates only; captured traffic uses backend classification.
 const staticExtension = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|bmp|woff2?|ttf|eot|mp3|mp4|webm)$/i
 
 /**
@@ -83,11 +98,19 @@ const staticExtension = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|bmp|w
  * 출처가 아니므로(D-008) 그리지 않는다. Request Lab·Repeater 전송은 재전송 그래프(resendGraph)에서 따로 본다. 응답 없는 시도, 사용자가 직접 제외한 요청, 출처·실행 환경을 확인하지 못한 요청도 뺀다.
  */
 export function isObservedTraffic(event: Snapshot["events"][number]): boolean {
+  return isGraphObservation(event, false)
+}
+
+export function isGraphObservation(event: Snapshot["events"][number], includeStatic: boolean): boolean {
   return event.source !== "unknown" && event.executionTrust !== "UNVERIFIED_RUNTIME" && !nonCollectionPhases.has(event.phase)
     && event.status >= 100 && event.status <= 599 && !event.classificationReasons.includes("NO_RESPONSE")
     && !event.classificationReasons.includes("USER_EXCLUDE") && !(event.classificationOverride && event.trafficDisposition === "EXCLUDE")
-    && !hiddenTrafficClasses.has(event.trafficClass) && !staticExtension.test(event.path.split("?")[0])
+    && (!hiddenTrafficClasses.has(event.trafficClass) || includeStatic && event.trafficClass === "STATIC_ASSET" && !event.classificationReasons.includes("SUPPORTING_CROSS_ORIGIN_ASSET"))
     && !manualResendDetails.has(event.sourceDetail)
+}
+
+export function isPassiveSubdomainTraffic(event: Snapshot["events"][number]): boolean {
+  return event.source === "human" && event.classificationReasons.includes("PASSIVE_SUBDOMAIN_TRAFFIC") && isObservedTraffic(event)
 }
 
 /** 묶음 기준 칸(api·rest·버전 다음 첫 칸)과, 그 칸이 경로의 마지막 칸인지(/login.php처럼 한 칸짜리 주소인지). */
@@ -156,7 +179,8 @@ export function objectGroupKey(resource: string): { id: string; key: string } | 
   return { id: `${space >= 0 ? resource.slice(0, space) : ""}|${key}`, key }
 }
 
-export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | null {
+export function graphOpenAction(kind: HierarchyNode["kind"], level: GraphLevel): "in" | "back" | "toggle" | "lab" | null {
+  if (kind === "resource") return "lab"
   if (kind === "object-group" || kind === "operation-group") return "toggle"
   if (kind === "api-group" || (kind === "operation" && level === "group")) return "in"
   if (kind === "identity" && level !== "site") return "back"
@@ -191,19 +215,20 @@ export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
   const auxiliaryClasses = new Set(["POLLING", "BACKGROUND", "AUTH_SESSION", "TELEMETRY_CANDIDATE"])
   const unjudgedEvents = snapshot.events.filter(event => filters.source.includes(event.source) && identityMatches(event.idn)
     && isObservedTraffic(event) && !eventEvidenceIds(event).some(id => judgedEvidence.has(id))
-    && (filters.includeSupportTraffic || cellOperations.has(event.op) && !auxiliaryClasses.has(event.trafficClass)))
+    && (filters.includeSupportTraffic || isPassiveSubdomainTraffic(event) || cellOperations.has(event.op) && !auxiliaryClasses.has(event.trafficClass)))
   const observedEvents = unjudgedEvents.filter(event => !cellOperations.has(event.op))
   const attachedEvents = unjudgedEvents.filter(event => cellOperations.has(event.op))
   const routeCandidates = filters.includeRouteCandidates ? projectRouteCandidates(snapshot, filters)
     : filters.includeSupportTraffic ? projectRouteCandidates(snapshot, { ...filters, includeRouteCandidates: true }).filter(isJavascriptHiddenApi) : []
-  return { cells, observedEvents, attachedEvents, routeCandidates, resolveGroup }
+  const staticEntries = staticResourceEntries(snapshot, filters)
+  return { cells, observedEvents, attachedEvents, routeCandidates, resolveGroup, staticEntries }
 }
 
-export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string }
+export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string; staticApiId?: string }
 
-export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
+export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}, observedHosts: readonly { service: string; registered: boolean }[] = []): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
-  const { cells, observedEvents, attachedEvents, routeCandidates: candidateList, resolveGroup } = graphContents(snapshot, filters)
+  const { cells, observedEvents, attachedEvents, routeCandidates: candidateList, resolveGroup, staticEntries } = graphContents(snapshot, filters)
   const operationGroup = (operation: string) => { const { service, path } = splitOperation(operation); return resolveGroup(service, path) }
   const gapIdsByCell = new Map<string, string[]>()
   for (const gap of snapshot.gaps) {
@@ -245,6 +270,10 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
   for (const event of observedEvents) {
     const id = ensure(operationGroup(event.op)).id
     observedOperationsByGroup.set(id, (observedOperationsByGroup.get(id) ?? new Set()).add(event.op))
+  }
+  for (const entry of staticEntries) {
+    const id = ensure(resolveGroup(entry.service, entry.apiPath)).id
+    observedOperationsByGroup.set(id, (observedOperationsByGroup.get(id) ?? new Set()).add(entry.apiId))
   }
   for (const group of groupsById.values()) {
     group.operations = [...new Set(group.cells.map(cell => cell.op))]
@@ -401,6 +430,11 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       addEdge("target-group", target.id, node.id, emptySelection())
       listItems.push(node)
     }
+    for (const host of observedHosts) {
+      if (nodes.some(node => node.kind === "target" && node.service === host.service)) continue
+      const node = addNode("target", host.service, emptySelection(), { service: host.service, discovery: host.registered ? "registered" : "unregistered" })
+      listItems.push(node)
+    }
   } else if (group && resolved.level === "group") {
     const scores = new Map<string, number>()
     const priorities = new Map<string, number>()
@@ -437,8 +471,8 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     if (revealedRoute && !visibleRoutes.includes(revealedRoute)) { visibleRoutes.push(revealedRoute); revealedNodeCount++ }
     routeCandidates = visibleRoutes
     for (const candidate of routeCandidates) addNode("route-candidate", candidate.id, { ...emptySelection(), ...candidate.selection }, { id: candidate.id, label: candidate.label, wrappedLabel: wrapOperationLabel(candidate.label) })
-    if (filters.includeSupportTraffic) {
-      const supportEvents = observedEvents.filter(event => operationGroup(event.op).id === group.id)
+    {
+      const supportEvents = observedEvents.filter(event => operationGroup(event.op).id === group.id && (filters.includeSupportTraffic || isPassiveSubdomainTraffic(event)))
       const humanWrites = new Set(supportEvents.filter(event => event.source === "human" && isWriteOperation(event.op)).map(event => event.op))
       const allSupportOps = [...new Set(supportEvents.map(event => event.op))].sort((left, right) => Number(humanWrites.has(right)) - Number(humanWrites.has(left)) || Number(isWriteOperation(right)) - Number(isWriteOperation(left)) || compareText(left, right))
       const supportOps = allSupportOps.slice(0, resolved.operationLimit)
@@ -494,6 +528,12 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     // Per-cell list entries retain identity and objectless selections, just as
     // the narrow-screen list does, without creating extra graph nodes.
     listItems = related.map(cell => ({ id: `cell:${graphCellKey(cell)}`, kind: cell.resource ? "resource" : "operation", label: cell.resource ?? operation, wrappedLabel: cell.resource ?? wrapOperationLabel(operation), verdict: cell.overall, verdictText: verdictStyles[cell.overall].text, verdictColor: verdictStyles[cell.overall].color, selection: selectionFor([cell]), ...(cell.resource ? { owner: snapshot.owners[cell.resource] ?? null } : {}) }))
+  }
+  const displayHidden = applyObservedObjects(snapshot, filters, resolved, nodes, edges, listItems, reveal)
+  hiddenObjectCount = snapshot.displayObjects === undefined ? hiddenObjectCount + displayHidden : displayHidden
+  hiddenOperationCount += applyStaticResources(snapshot, staticEntries, filters, resolved, resolveGroup, nodes, edges, listItems, reveal)
+  if (resolved.level !== "site") for (const identity of graphAccountIdentities(snapshot)) {
+    addNode("identity", identity, { ...emptySelection(), identity })
   }
   return { kind: resolved.level, view: filters.view, navigation: resolved, groups, nodes, edges, identities: nodes.filter(node => node.kind === "identity"), operations: nodes.filter(node => node.kind === "operation"), resources: nodes.filter(node => node.kind === "resource"), routeCandidates, listItems, hiddenOperationCount, hiddenObjectCount, revealedNodeCount }
 }

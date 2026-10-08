@@ -55,22 +55,25 @@ describe("cross-screen selection on the packaged sample snapshot", () => {
     const site = projectHierarchy(sample, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
     const group = site.groups.find((item) => item.operations.includes(operation))!
     const navigation: GraphNavigation = navigateHierarchy(navigateHierarchy(site.navigation, "group", group.id), "operation", group.id, operation)
-    const objectView = projectHierarchy(sample, filters, navigation)
+    const objectView = projectHierarchy(sample, { ...filters, expandedObjectGroups: sample.displayObjects?.map(object => `object-group:${object.groupKey}`) }, navigation)
     expect(objectView.kind).toBe("operation")
     let compared = 0
     for (const item of objectView.listItems) {
-      const cell = item.selection.cells[0]
-      expect(item.selection.cellKeys).toEqual([graphCellKey(cell)])
-      const authority = authorityCell(cell.idn, cell.op, cell.resource)!
-      expect(item.selection.evidenceIds).toEqual([...authority.evidenceIds].sort((a, b) => a.localeCompare(b, "en")))
-      const judgment = sample.authorizationMatrix!.objects.find((object) => object.identity === cell.idn && object.operation === cell.op && object.resource === cell.resource)
-      if (cell.resource && judgment) {
-        expect(findJudgmentItem(sample.authorizationMatrix!, judgment.id)?.evidenceIds).toEqual(authority.evidenceIds)
-        expect(judgment.evidenceIds).toEqual(authority.evidenceIds)
-        compared += 1
+      expect(new Set(item.selection.cellKeys)).toEqual(new Set(item.selection.cells.map(graphCellKey)))
+      const selectedEvidence = new Set(item.selection.cells.flatMap(cell => cell.evidenceIds))
+      for (const id of item.selection.evidenceIds) expect(selectedEvidence.has(id), `object evidence ${id} belongs to a server authority cell`).toBe(true)
+      for (const cell of item.selection.cells) {
+        const authority = authorityCell(cell.idn, cell.op, cell.resource)!
+        expect(cell.evidenceIds).toEqual(authority.evidenceIds)
+        const judgment = sample.authorizationMatrix!.objects.find((object) => object.identity === cell.idn && object.operation === cell.op && object.resource === cell.resource)
+        if (cell.resource && judgment) {
+          expect(findJudgmentItem(sample.authorizationMatrix!, judgment.id)?.evidenceIds).toEqual(authority.evidenceIds)
+          expect(judgment.evidenceIds).toEqual(authority.evidenceIds)
+          compared += 1
+        }
+        const legacy = projectMatrix(sample, "identity", false).rows.flatMap((row) => Object.values(row.membersByColumn).flat()).find((member) => member.identity === cell.idn && member.cell.op === cell.op && member.cell.resource === cell.resource)!
+        expect(legacy.cell.evidenceIds).toEqual(authority.evidenceIds)
       }
-      const legacy = projectMatrix(sample, "identity", false).rows.flatMap((row) => Object.values(row.membersByColumn).flat()).find((member) => member.identity === cell.idn && member.cell.op === cell.op && member.cell.resource === cell.resource)!
-      expect(legacy.cell.evidenceIds).toEqual(authority.evidenceIds)
     }
     expect(compared).toBeGreaterThan(0)
     for (const id of objectView.listItems.flatMap((item) => item.selection.evidenceIds)) expect(eventIds.has(id), `graph 요청 기록 ${id} is a server event`).toBe(true)

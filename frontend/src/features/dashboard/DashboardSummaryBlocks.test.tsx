@@ -15,8 +15,8 @@ it("renders observe → compare → judge as three links with source counts insi
   // 검토 필요 트래픽은 칸 링크와 따로 Evidence 검토 탭으로 바로 간다(링크 안에 링크를 넣지 않는다).
   expect(within(stage).getByRole("link", { name: "검토 필요 트래픽" })).toHaveAttribute("href", "#evidence-review")
   expect(observe.querySelector("a")).toBeNull()
-  expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toHaveAttribute("href", "#graph")
-  expect(screen.getByRole("link", { name: "판정 · 권한 매트릭스" })).toHaveAttribute("href", "#matrix")
+  expect(screen.getByRole("link", { name: "비교 · 점검 그래프" })).toHaveAttribute("href", "#graph")
+  expect(screen.getByRole("link", { name: "판정 · 판정 매트릭스" })).toHaveAttribute("href", "#matrix")
   expect(screen.queryByRole("button")).not.toBeInTheDocument()
   expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument()
 })
@@ -33,7 +33,7 @@ it("keeps absent authorization data neutral and highlights only positive candida
 
 it("moves the remaining snapshot counts into a single footnote", () => {
   render(<SnapshotFootnote trafficStats={{ captured: 21, coverage: 17, excluded: 1, dropped: 0, payloadMetadataOnly: 0 }} />)
-  expect(screen.getByLabelText("현재 snapshot 요약").querySelectorAll("dt")).toHaveLength(4)
+  expect(screen.getByLabelText("현재 요약").querySelectorAll("dt")).toHaveLength(4)
 })
 
 it("lists prioritized APIs and rule candidates with their reasons and review state", () => {
@@ -42,7 +42,7 @@ it("lists prioritized APIs and rule candidates with their reasons and review sta
   const apis = screen.getByRole("region", { name: "우선 점검 API" })
   expect(within(apis).getByText("쓰기 요청")).toBeVisible()
   expect(within(apis).getByText("미점검 6")).toBeVisible()
-  const candidates = screen.getByRole("region", { name: "인가 후보" })
+  const candidates = screen.getByRole("region", { name: "IDOR·BFLA 의심" })
   expect(within(candidates).getByText("객체 권한 우회 후보")).toBeVisible()
   expect(within(candidates).getByText("GET /api/orders/{id}")).toBeVisible()
   expect(within(candidates).getByText("검토 전")).toBeVisible()

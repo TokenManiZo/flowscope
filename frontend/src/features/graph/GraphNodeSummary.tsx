@@ -40,6 +40,20 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       list: group.operations.slice(0, 8).map(operation => [plain(operation), mostUrgent(group.cells.filter(cell => cell.op === operation))]),
     }
   }
+  if (node.staticResource) return {
+    stats: [[node.kind === "operation-group" ? "경로" : "자원", node.objectGroup?.members.length ?? 1], ["관측 기록", node.selection.evidenceIds.length]],
+    listTitle: "정적 자원 · 판정 제외", list: [],
+  }
+  if (node.kind === "resource" && node.selection.displayObjectKey) {
+    const accesses = projection.edges.filter(edge => edge.targetId === node.id)
+    const identities = [...new Set(accesses.map(edge => edge.selection.identity).filter((value): value is string => !!value))]
+    return { stats: [["접근 신원", identities.length], ["관측 기록", node.selection.evidenceIds.length]], listTitle: "접근한 신원",
+      list: identities.map(identity => [identity, "관측됨"] as [string, string]) }
+  }
+  if (node.kind === "object-group" && node.selection.displayApiKey && node.objectGroup) {
+    return { stats: [["객체", node.objectGroup.members.length], ["관측 기록", node.selection.evidenceIds.length]], listTitle: "관측 객체",
+      list: [], }
+  }
   const cells = node.selection.cells
   if (node.kind === "identity") {
     const byTarget = groupBy(cells, projection.kind === "operation" ? cell => cell.resource : cell => cell.op)
@@ -78,7 +92,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
   if (node.kind === "operation") {
     const byIdentity = groupBy(cells, cell => cell.idn)
     return {
-      stats: [["계정", byIdentity.size], ["객체", new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      stats: [["계정", byIdentity.size], ["객체", node.displayObjectCount ?? new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
       listTitle: "접근한 계정",
       // 상세 패널의 identityVerdicts 조회 키로도 쓰므로 원본 신원을 유지한다.
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity, mostUrgent(items)]),
@@ -102,7 +116,7 @@ export function GraphNodeSummary({ summary, hint, children, labelIdentity = iden
   return <section aria-label="노드 요약" className="mb-4 grid gap-3 border-b pb-4 text-sm">
     <dl className="grid grid-cols-3 gap-2">{summary.stats.map(([label, value]) => <div key={label} className="rounded-md border border-border/70 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="text-base font-semibold tabular-nums">{value}</dd></div>)}</dl>
     {children}
-    {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />HUMAN {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />SCANNER {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
+    {summary.sources && <p className="flex flex-wrap gap-x-3 text-xs"><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-human align-middle" />사람 {summary.sources.human}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-scanner align-middle" />스캐너 {summary.sources.scanner}</span><span><span aria-hidden="true" className="mr-1.5 inline-block size-1.5 rounded-full bg-observation-llm align-middle" />LLM {summary.sources.llm}</span></p>}
     {summary.list.length > 0 && (summary.objectOwners
       ? <details open className="group min-w-0">
         <summary className="mb-2 flex cursor-pointer list-none items-center gap-2 rounded-md py-2 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">

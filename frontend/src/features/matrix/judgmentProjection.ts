@@ -41,7 +41,7 @@ export function judgmentStatusDescription(status: MatrixStatus): string | undefi
 }
 
 export const expectedLabel: Record<MatrixExpected, string> = { ALLOW: "허용", DENY: "차단", UNKNOWN: "미정" }
-export const actualLabel: Record<MatrixActual, string> = { SUCCESS: "성공", DENIED: "차단", CONFLICT: "응답 갈림", AMBIGUOUS: "해석 불가", UNTESTED: "미점검" }
+export const actualLabel: Record<MatrixActual, string> = { SUCCESS: "성공", DENIED: "차단", CONFLICT: "결과 다름", AMBIGUOUS: "근거 부족", UNTESTED: "미점검" }
 
 export function judgmentTone(status: MatrixStatus): JudgmentTone {
   if (RISK.has(status)) return "risk"

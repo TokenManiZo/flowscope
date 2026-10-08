@@ -32,7 +32,7 @@ it("shows the real verification source and saves only the dirty section", async 
   const user = userEvent.setup();
   render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
 
-  expect(await screen.findByRole("tab", { name: /HUMAN\s*인증값 있음/ })).toBeInTheDocument();
+  expect(await screen.findByRole("tab", { name: /HUMAN\s*로그인 정보 있음/ })).toBeInTheDocument();
   expect(screen.queryByText(/mock adapter/i)).not.toBeInTheDocument();
   expect(screen.queryByDisplayValue(/password|cookie|authorization/i)).not.toBeInTheDocument();
   await user.clear(screen.getByLabelText("표시 이름"));

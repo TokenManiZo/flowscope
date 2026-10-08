@@ -23,7 +23,7 @@ export function RawViewer({ label, value, available }: { label: string; value: s
 const FEED_COLUMNS = "grid grid-cols-[3.5rem_4.5rem_minmax(0,1fr)_7rem_3.5rem_5rem] items-center gap-3"
 
 /** 기록된 요청을 열이 고정된 표로 보여 준다(메서드·경로·계정·상태·시각). 행을 누르면 그 기록을 Request Lab으로 연다. */
-export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, title = "기록된 요청", titleBadge, titleControl, showCount = false, showAll = false, searchLabel = "HUMAN 작업 피드 검색", view, context, showSource = false }: { items: readonly SourceFeedItem[]; onOpenRecord(eventId: string): void; description?: string; emptyHint: string; title?: string; titleBadge?: string; titleControl?: ReactNode; showCount?: boolean; showAll?: boolean; searchLabel?: string; view?: RecordView; context?: string; showSource?: boolean }) {
+export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, title = "기록된 요청", titleBadge, titleControl, showCount = false, showAll = false, searchLabel = "HUMAN 요청 목록 검색", view, context, showSource = false }: { items: readonly SourceFeedItem[]; onOpenRecord(eventId: string): void; description?: string; emptyHint: string; title?: string; titleBadge?: string; titleControl?: ReactNode; showCount?: boolean; showAll?: boolean; searchLabel?: string; view?: RecordView; context?: string; showSource?: boolean }) {
   const columns = showSource ? "grid min-w-[920px] grid-cols-[3.5rem_4.5rem_minmax(12rem,1fr)_3rem_10rem_7rem_3.5rem_5rem] items-center gap-3" : FEED_COLUMNS
   const [source, setSource] = useState("전체")
   const [query, setQuery] = useState("")
@@ -42,11 +42,11 @@ export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, 
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">{titleControl}
             <div className="relative min-w-0 flex-1 sm:w-64"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="#번호, 메서드, 경로, 계정, 상태 검색" className="pl-8" /></div>
             {view && <RecordViewButton view={view} onExpand={() => setExpanded(true)} />}
-            <Button type="button" variant="outline" size="icon" aria-label={expanded ? "작업 피드 접기" : "작업 피드 펼치기"} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp /> : <ChevronDown />}</Button>
+            <Button type="button" variant="outline" size="icon" aria-label={expanded ? "요청 목록 접기" : "요청 목록 펼치기"} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp /> : <ChevronDown />}</Button>
           </div>
         </div>
       </CardHeader>
-      {showSource && <div aria-label="수집 출처 필터" className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", ...(items.some((item) => item.sourceLabel === "스캐너") ? ["스캐너"] : []), "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
+      {showSource && <div aria-label="수집 출처 필터" className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">{["전체", "사람", "ZAP", ...(items.some((item) => item.sourceLabel === "스캐너") ? ["스캐너"] : []), "LLM", "비로그인으로 자동 재전송"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
       {expanded && <CardContent className="flex min-h-0 flex-1 flex-col overflow-x-auto p-0">
         <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <><span className="text-center">출처</span><span className="text-center">수집 방식</span></>}<span>계정</span><span>상태</span><span className="text-center">시각</span></div>
         <div data-record-list aria-label="기록된 요청 목록" className={`${showSource ? "min-w-[920px] " : ""}min-h-0 flex-1 overflow-auto`}>
@@ -55,7 +55,7 @@ export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, 
             <span className="truncate font-mono text-xs text-muted-foreground" title={item.id}>{item.ordinal ?? "—"}</span>
             <MethodBadge method={item.badge} />
             <span className="truncate font-mono text-xs" title={item.title}>{item.title}</span>
-            {showSource && <><span className="truncate text-center text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "Human" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-center text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
+            {showSource && <><span className="truncate text-center text-xs text-foreground" title={item.sourceLabel}>{item.sourceCode ?? (item.sourceLabel === "사람" ? "H" : item.sourceLabel === "ZAP" ? "S" : item.sourceLabel === "LLM" ? "L" : "—")}</span><span className="truncate text-center text-xs" title={item.sourceLabel}>{item.sourceLabel}</span></>}
             <span className={`truncate ${item.mutedDetail ? "text-muted-foreground" : ""}`} title={item.detail}>{item.detail}</span>
             <HttpStatusBadge status={item.status} />
             <span className="text-center font-mono text-xs tabular-nums text-muted-foreground">{item.time ?? ""}</span>

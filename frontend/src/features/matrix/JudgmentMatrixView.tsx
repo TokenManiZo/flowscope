@@ -81,7 +81,7 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED") }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
   const recommendation = item.recommendation
-  // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 인증에서 고른다(자동 전송 없음).
+  // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 계정에서 고른다(자동 전송 없음).
   const basisId = recommendation?.basisEvidenceIds[0] ?? item.evidenceIds[0]
   // 근거 기록을 보낼 수 없으면(원문이 일부만 남음) 같은 API에서 보낼 수 있는 기록을 대신 연다.
   const basisEvent = snapshot ? requestLabEvent(snapshot.events, item.operation, basisId, resource) : undefined

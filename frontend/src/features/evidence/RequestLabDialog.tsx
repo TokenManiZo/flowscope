@@ -223,7 +223,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     return next
   }
   /**
-   * 새 편집본의 전송 인증: 점검이 하나만 돌고 있으면 그 신원(비로그인 점검이면 비로그인, 계정은 세션을 쓸 수 있을 때만).
+   * 새 편집본의 전송 계정: 점검이 하나만 돌고 있으면 그 신원(비로그인 점검이면 비로그인, 계정은 세션을 쓸 수 있을 때만).
    * 점검이 없거나 여러 개면 어느 신원인지 알 수 없으므로 비워 두고 사용자가 고르게 한다.
    */
   function inspectedCredentials(): { mode: RequestLabCredentialMode; accountId: string } | null {
@@ -632,14 +632,14 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
             <Button type="button" variant="ghost" size="icon" className="size-[32px] shrink-0" aria-label="다음 검색 결과" title="다음 (Enter)" disabled={!matchCount} onClick={() => moveSearch(1)}><ChevronDown aria-hidden="true" /></Button>
           </div>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-3 text-[14px]">
-            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 인증</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!entry || editRejected || suspended || busy} onValueChange={value => {
+            <div className="flex items-center gap-2"><label htmlFor="request-lab-authentication">전송 계정</label><Select value={credentialsRequired || mode === "ORIGINAL" ? "" : mode === "ACCOUNT" ? `ACCOUNT:${accountId}` : mode} disabled={!entry || editRejected || suspended || busy} onValueChange={value => {
               if (!entry) return
               // 보낸 탭의 인증을 바꾸면 그 기록은 두고 새 탭에서 바꾼다.
               const target = entry.result ? forkFrom(entry) : entry
               if (target) void (value.startsWith("ACCOUNT:") ? changeCredentials("ACCOUNT", value.slice(8), target)
                 : value === "RAW" ? changeCredentials("RAW", "", target) : changeCredentials("ANONYMOUS", "", target))
             }}>
-              <SelectTrigger id="request-lab-authentication" aria-label="전송 인증" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-placeholder:text-foreground data-[size=default]:h-[36px]"><SelectValue placeholder={mode === "ACCOUNT" && !selectedAccountValid ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
+              <SelectTrigger id="request-lab-authentication" aria-label="전송 계정" className="min-w-[180px] max-w-[224px] bg-background text-[14px] data-placeholder:text-foreground data-[size=default]:h-[36px]"><SelectValue placeholder={mode === "ACCOUNT" && !selectedAccountValid ? "인증 다시 선택" : "인증 선택"} /></SelectTrigger>
               <SelectContent position="popper" align="start" className="max-h-72 min-w-[224px]">
                 <SelectItem value="ANONYMOUS">비로그인</SelectItem>
                 <SelectItem value="RAW">직접 입력</SelectItem>
@@ -647,7 +647,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
                 {accountOptions.length === 0 && <SelectItem value="NO_ACCOUNTS" disabled>등록된 계정 없음</SelectItem>}
               </SelectContent>
             </Select></div>
-            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy || originalOnly} title={originalOnly ? "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다." : undefined} onClick={toggleOriginal}>{view === "original" ? "편집으로 돌아가기" : "원문 보기"}</Button>
+            <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy || originalOnly} title={originalOnly ? "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다." : undefined} onClick={toggleOriginal}>{view === "original" ? "편집 화면으로" : "원문 보기"}</Button>
             <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
@@ -675,16 +675,16 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
           {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{originalOnly ? "처음 수집한 원문입니다. 읽기 전용입니다." : "처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다."}</p>}
-          {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 계정(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
+          {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 계정(${draft.observedIdentity})으로 보내려면 전송 계정에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
           {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "전송할 계정 또는 비로그인을 선택해 주세요."}</p>}
-          {/* 전송 인증 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
-          {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 인증으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}
+          {/* 전송 계정 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
+          {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 계정으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}
           {entry && view !== "original" && mode === "RAW" && <p className="px-3 py-1.5 text-xs text-muted-foreground">직접 입력: 요청에 쓴 인증 헤더를 바꾸지 않고 그대로 보냅니다.</p>}
           {draft && <>{!draft.rawRequestRetained
             ? <p role="status" className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2 text-xs text-amber-900 dark:text-amber-200">이 기록은 요청 원문이 저장 한도를 넘었거나 바이너리라 일부만 남아 있어 편집·재전송할 수 없습니다. 이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요.</p>
             : !draft.rawResponseRetained && <p role="status" className="rounded-md border bg-muted/40 p-2 text-xs">응답 원문은 일부만 남아 있습니다.</p>}{!draft.requestEditable && <p className="px-3 py-1.5 text-xs text-muted-foreground">{draft.message}</p>}</>}
           {legacyMasks.length > 0 && <div role="status" aria-label="이전 버전에서 가려진 값" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-900 dark:text-amber-200">
-            <p className="min-w-0 flex-1">이전 버전에서 가려진 채 저장된 값이 {legacyMasks.length}곳 남아 있습니다. 빨간 테두리로 표시한 곳은 글자 그대로 전송되니 실제 값으로 바꿔 보내세요.{legacySkipsCredentials ? " 전송 인증이 바꾸는 인증 헤더(Authorization·Cookie·CSRF)는 세지 않았습니다." : ""}</p>
+            <p className="min-w-0 flex-1">이전 버전에서 가려진 채 저장된 값이 {legacyMasks.length}곳 남아 있습니다. 빨간 테두리로 표시한 곳은 글자 그대로 전송되니 실제 값으로 바꿔 보내세요.{legacySkipsCredentials ? " 전송 계정이 바꾸는 인증 헤더(Authorization·Cookie·CSRF)는 세지 않았습니다." : ""}</p>
             <Button type="button" variant="outline" size="sm" className="h-7 shrink-0 text-xs" onClick={showNextLegacyMask}>{legacyActiveIndex < 0 ? "위치 보기" : `다음 위치 ${legacyActiveIndex + 1} / ${legacyMasks.length}`}</Button>
           </div>}
         </div>

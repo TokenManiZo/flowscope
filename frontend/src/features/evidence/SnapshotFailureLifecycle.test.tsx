@@ -64,7 +64,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "Request Lab에서 보내기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")
 
@@ -89,9 +89,9 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await waitFor(() => expect(screen.queryByText("snapshot unavailable")).not.toBeInTheDocument())
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
-  expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled()
+  expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled()
   // 복구되면 열 때 정한 비로그인 그대로 다시 보낼 수 있다.
-  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인")
+  expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인")
   expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
   await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(2))
 })

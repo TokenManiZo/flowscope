@@ -1,18 +1,14 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, Braces, FileSearch, House, LayoutDashboard, ListTree, Network, ScanSearch, ShieldAlert, Table2, UsersRound } from "lucide-react"
+import { FileSearch, House, LayoutDashboard, Network, ScanSearch, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
   | "home"
   | "dashboard"
   | "inspection"
-  | "surface"
   | "graph"
   | "matrix"
-  | "sequence"
-  | "scenarios"
   | "evidence"
   | "accounts"
-  | "runs"
 
 export interface AppRouteDefinition {
   route: AppRoute
@@ -25,18 +21,14 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "home", label: "홈", group: "overview", icon: House },
   { route: "dashboard", label: "대시보드", group: "overview", icon: LayoutDashboard },
   { route: "inspection", label: "점검 시작", group: "overview", icon: ScanSearch },
-  { route: "surface", label: "API·입력 차이", group: "analysis", icon: Braces },
-  { route: "graph", label: "점검 Gap 그래프", group: "analysis", icon: Network },
+  { route: "graph", label: "점검 그래프", group: "analysis", icon: Network },
   { route: "matrix", label: "판정 매트릭스", group: "analysis", icon: Table2 },
-  { route: "sequence", label: "흐름 순서", group: "analysis", icon: ListTree },
-  { route: "scenarios", label: "취약점 시나리오", group: "analysis", icon: ShieldAlert },
   { route: "evidence", label: "요청 기록", group: "evidence", icon: FileSearch },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
-  { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]
 
 /** 점검 흐름 순서의 직접 링크. */
-export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "matrix", "evidence", "surface"] as const satisfies readonly AppRoute[]
+export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "matrix", "evidence"] as const satisfies readonly AppRoute[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
 

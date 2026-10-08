@@ -1,4 +1,4 @@
-import { graphAccountLabel } from "./graphAccounts"
+import { graphAccountIdentities, graphAccountLabel } from "./graphAccounts"
 import type { Snapshot } from "@/lib/api/types"
 import { verdictStyles, wrapOperationLabel, type GraphView } from "./graphProjection"
 import type { GraphNavigation, HierarchyEdge, HierarchyNode, HierarchyProjection, HierarchySelection } from "./graphHierarchy"
@@ -73,6 +73,9 @@ export function projectResendGraph(snapshot: Snapshot, navigation: GraphNavigati
       addNode(`resource:${resource}`, "resource", resource, sends.filter(send => send.resource === resource), { resource }, { owner: snapshot.owners[resource] ?? null })
       edges.push(resendEdge(tool, operationId, `resource:${resource}`, resourceSends, { operation, resource }))
     }
+  }
+  for (const identity of graphAccountIdentities(snapshot)) {
+    addNode(`identity:${identity}`, "identity", graphAccountLabel(snapshot, identity), [], { identity })
   }
   const operations = nodes.filter(node => node.kind === "resend-operation")
   return {

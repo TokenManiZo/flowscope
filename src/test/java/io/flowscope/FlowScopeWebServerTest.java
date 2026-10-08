@@ -249,6 +249,29 @@ final class FlowScopeWebServerTest {
         assertEquals("https://app.example.test/", state.startedProjectScope);
         assertEquals(200, listed.statusCode());
         assertEquals(1, JSON.readTree(listed.body()).path("projects").size());
+        assertTrue(JSON.readTree(listed.body()).path("discoveredOrigins").isArray());
+    }
+
+    @Test void projectsExposesObservedOriginMetadataThroughExistingAuthenticatedApi() throws Exception {
+        state.discoveredOrigins = List.of("https://api.example.test:443");
+        start();
+        assertEquals(403, get("/api/projects", "wrong-token", null).statusCode());
+        var body = JSON.readTree(get("/api/projects", token, null).body());
+        assertEquals("https://api.example.test:443", body.path("discoveredOrigins").get(0).asText());
+        assertEquals("https://api.example.test:443", body.path("observedOrigins").get(0).asText());
+        assertEquals(state.datasetRevision(), body.path("datasetRevision").asLong());
+    }
+
+    @Test void discardsHostMetadataIfProjectDatasetChangesWhileBuildingResponse() throws Exception {
+        state.discoveredOrigins = List.of("https://old.example.test:443");
+        state.replaceDatasetDuringDiscovery = true;
+        long before = state.datasetRevision();
+        start();
+        var body = JSON.readTree(get("/api/projects", token, null).body());
+        assertEquals(before, body.path("datasetRevision").asLong());
+        assertEquals(before + 1, state.datasetRevision());
+        assertTrue(body.path("observedOrigins").isEmpty());
+        assertTrue(body.path("discoveredOrigins").isEmpty());
     }
 
     @Test
@@ -1673,6 +1696,13 @@ final class FlowScopeWebServerTest {
     }
 
     private static final class TestState implements FlowScopeWebServer.State {
+        private List<String> discoveredOrigins = List.of();
+        private boolean replaceDatasetDuringDiscovery;
+        @Override public List<String> discoveredOrigins() { return discoveredOrigins; }
+        @Override public List<String> observedOrigins() {
+            if (replaceDatasetDuringDiscovery) { datasetEpoch++; replaceDatasetDuringDiscovery = false; }
+            return discoveredOrigins;
+        }
         private final AnalysisConfig config = new AnalysisConfig();
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();

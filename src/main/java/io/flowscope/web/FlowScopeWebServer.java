@@ -159,6 +159,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("ZAP account session refresh is unavailable");
         }
         default List<String> scopeEntries() { return List.of(); }
+        default List<String> discoveredOrigins() { return List.of(); }
+        default List<String> observedOrigins() { return List.of(); }
         default ProjectWorkspace.Status projectStatus() {
             return new ProjectWorkspace.Status("", null, List.of());
         }
@@ -814,8 +816,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response projectStatus(ProjectWorkspace.Status status) throws IOException {
+        long dataset = state.datasetRevision();
+        List<String> discovered = state.discoveredOrigins();
+        List<String> observed = state.observedOrigins();
+        if (dataset != state.datasetRevision()) { discovered = List.of(); observed = List.of(); }
         ObjectNode body = json.createObjectNode();
         body.put("directory", status.directory());
+        body.set("discoveredOrigins", json.valueToTree(discovered));
+        body.set("observedOrigins", json.valueToTree(observed));
+        body.put("datasetRevision", dataset);
         body.put("saveState", status.saveState());
         body.put("lastSavedAt", status.lastSavedAt());
         body.put("saveError", status.saveError());

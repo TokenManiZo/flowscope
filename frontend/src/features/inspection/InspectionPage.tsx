@@ -21,13 +21,12 @@ import { AccountLaneTable } from "./AccountLaneTable"
 import { useRecordView } from "./RecordView"
 
 /** 점검 시작 허브의 소스 스텝. */
-export type InspectionStep = "records" | "scanner" | "llm" | "review"
+export type InspectionStep = "records" | "scanner" | "llm"
 
 const inspectionSteps: readonly { step: InspectionStep; label: string }[] = [
   { step: "records", label: "수집 기록" },
   { step: "scanner", label: "ZAP 스캔" },
   { step: "llm", label: "LLM 탐색" },
-  { step: "review", label: "결과 비교" },
 ]
 
 const RELEASES_URL = "https://github.com/TokenManiZo/flowscope/releases"
@@ -63,7 +62,7 @@ function normalizedOrigin(value: string): string {
 
 
 function displayOrigin(value: string): string {
-  try { return new URL(value).origin } catch { return value }
+  try { const url = new URL(value); return url.origin + (url.pathname === "/" ? "" : url.pathname) } catch { return value }
 }
 
 function CopyButton({ value }: { value: string }) {
@@ -163,8 +162,8 @@ export function InspectionPage() {
     const who = identityLabel(identity)
     return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
       sourceCode: event.source === "human" ? "H" : event.source === "scanner" ? "S" : event.source === "llm" ? "L" : "—",
-      sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인 자동 검증" : "자동 검증")
-        : event.source === "human" ? "Human" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
+      sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인으로 자동 재전송" : "자동 검증")
+        : event.source === "human" ? "사람" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 
@@ -271,7 +270,7 @@ export function InspectionPage() {
             feedTitle="ZAP 요청 기록"
             feedDescription={scannerStarted ? `${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : undefined}
             emptyHint="아직 기록된 ZAP 요청이 없습니다."
-            feedContent={(view) => <HumanRequestFeed view={view} onOpenRecord={openRecord} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 작업 피드 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
+            feedContent={(view) => <HumanRequestFeed view={view} onOpenRecord={openRecord} title="ZAP 요청 기록" titleBadge="ZAP 전용" showCount showAll context="이 프로젝트의 ZAP 요청" items={scannerFeedItems} searchLabel="ZAP 요청 목록 검색" description={`이 프로젝트에서 ZAP이 보낸 요청만 표시합니다.${scannerStarted ? ` ${scannerStageLabel(scanner.data?.run.stage)} · 현재 단계 ${durationLabel(scanner.data?.run.stage_elapsed_seconds)}${scanner.data?.run.stage_timeout_seconds ? ` / 최대 ${durationLabel(scanner.data.run.stage_timeout_seconds)}` : ""}` : ""}`} emptyHint="아직 기록된 ZAP 요청이 없습니다." />}
           />
         </TabsContent>
 
@@ -279,12 +278,6 @@ export function InspectionPage() {
           <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} evidenceOrdinals={snapshot.data?.evidenceOrdinals} />
         </TabsContent>
 
-        <TabsContent value="review" className="mt-2">
-          <section className="grid gap-4 rounded-xl bg-card p-5 ring-1 ring-foreground/10">
-            <div><h2 className="text-base font-semibold">결과 비교</h2><p className="mt-0.5 text-sm text-muted-foreground">Human·ZAP·LLM이 각각 찾은 API와 입력을 비교합니다.</p></div>
-            <div className="flex flex-wrap gap-2"><Button onClick={() => { window.location.hash = "#surface" }}>API·입력 차이 보기</Button></div>
-          </section>
-        </TabsContent>
       </Tabs>
 
       <AccountSettingsSheet
