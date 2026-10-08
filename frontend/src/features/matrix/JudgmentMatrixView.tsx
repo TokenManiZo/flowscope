@@ -1,5 +1,6 @@
 import { identityLabel } from "@/lib/display/identityLabel"
 import { useEffect, useMemo, useState } from "react"
+import { ArrowUpRight, ShieldCheck, UserRound } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -63,10 +64,10 @@ function PolicyAssignment({ item, requiredRole: currentRequiredRole, disabled }:
     try { setMessage((await action()).message ?? fallback) }
     catch (error) { setMessage(error instanceof Error ? error.message : "저장 실패") }
   }
-  const select = "rounded border border-border/70 bg-background px-2 py-1 text-sm"
+  const select = "h-9 min-w-0 flex-1 rounded-md border border-border/70 bg-background px-2 text-sm"
   return <section aria-label="접근 허용 기준" className="grid gap-3 border-t border-border/70 pt-4">
     <div className="flex items-center gap-1.5"><h3 className="text-sm font-semibold">접근 허용 기준</h3><InfoHint label="접근 허용 기준">이 권한 이상인 계정이 접근할 수 있어야 합니다.</InfoHint></div>
-    <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>최소 권한</span><select aria-label="최소 권한" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}><option value="" disabled>아직 정하지 않음</option>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{roleLabel[value]} ({value})</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="최소 권한 저장" disabled={disabled || !requiredRole || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "최소 권한을 저장했습니다.")}>저장</Button></div>
+    <div className="grid gap-1.5"><label htmlFor="matrix-minimum-role" className="text-xs text-muted-foreground">최소 권한</label><div className="flex gap-2"><select id="matrix-minimum-role" aria-label="최소 권한" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}><option value="" disabled>아직 정하지 않음</option>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{roleLabel[value]} ({value})</option>)}</select><Button type="button" size="sm" variant="outline" className="h-9" aria-label="최소 권한 저장" disabled={disabled || !requiredRole || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "최소 권한을 저장했습니다.")}>저장</Button></div></div>
     {message && <p role="status" className="text-xs">{message}</p>}
   </section>
 }
@@ -96,20 +97,32 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
       setMessage(error instanceof Error ? error.message : "판정 저장 실패")
     }
   }
-  return <div className="grid gap-4 p-4 text-sm">
-    <header className="grid gap-2"><div className="flex items-center gap-1.5"><h2 className="text-base font-semibold">{judgmentStatusLabel(item)}{reviewSuffix(item.reviewStatus)}</h2>{judgmentStatusDescription(item.status) && <InfoHint label={judgmentStatusLabel(item)}>{judgmentStatusDescription(item.status)}</InfoHint>}</div><p className="break-all font-mono text-xs leading-5">{withoutService(item.operation)}</p><p className="text-xs text-muted-foreground">확인 계정: {identityLabel(item.identity, item.identityLabel)}</p>{resource && <p className="break-all text-xs text-muted-foreground">대상 데이터: {withoutService(resource)}</p>}{resource && "ownerLabel" in item && <p className="text-xs text-muted-foreground">객체 소유자: {item.ownerLabel || "아직 확인되지 않음"}</p>}</header>
+  return <div className="grid content-start gap-5 p-4 text-sm">
+    <header className="grid gap-4">
+      <div className={`flex items-start gap-2 rounded-lg border px-3 py-3 ${confirmed ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(item.status)]}`}>
+        <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <h2 className="min-w-0 flex-1 text-base font-semibold leading-6">{judgmentStatusLabel(item)}{reviewSuffix(item.reviewStatus)}</h2>
+        {judgmentStatusDescription(item.status) && <InfoHint label={judgmentStatusLabel(item)}>{judgmentStatusDescription(item.status)}</InfoHint>}
+      </div>
+      <p className="break-all rounded-md border border-border/70 bg-background px-3 py-2.5 font-mono text-sm leading-6">{withoutService(item.operation)}</p>
+      <dl className="grid gap-3">
+        <div className="flex items-center justify-between gap-3"><dt className="text-xs text-muted-foreground">확인 계정</dt><dd className="flex min-w-0 items-center gap-1.5 font-medium"><UserRound className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /><span className="break-all">{identityLabel(item.identity, item.identityLabel)}</span></dd></div>
+        {resource && <div className="flex items-start justify-between gap-3"><dt className="shrink-0 pt-0.5 text-xs text-muted-foreground">대상 데이터</dt><dd className="min-w-0 break-all text-right font-mono text-xs leading-5">{withoutService(resource)}</dd></div>}
+      </dl>
+    </header>
     <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}`} item={item} requiredRole={requiredRole} disabled={disabled} />
     {resource && snapshot && <MatrixOwnerControl key={resource} resource={resource} snapshot={snapshot} disabled={disabled} />}
     <section aria-label="요청·응답 확인" className="grid gap-3 border-t border-border/70 pt-4">
-      <h3 className="text-sm font-semibold">요청·응답 확인</h3>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">요청·응답 확인</h3>{basisEvent && <span className="rounded-md border border-border/70 bg-background px-2 py-1 font-mono text-xs">HTTP {basisEvent.status}</span>}</div>
+      {basisEvent && <div className="grid gap-1.5 text-xs"><p className="break-all font-mono leading-5">{basisEvent.method} {basisEvent.path}</p><p className="text-muted-foreground">{new Date(basisEvent.timestamp).toLocaleString("ko-KR")} · {{ human: "사용자 요청", scanner: "스캐너 요청", llm: "AI 요청", unknown: "출처 미확인" }[basisEvent.source] ?? basisEvent.source}</p></div>}
       {recommendation && <p className="text-xs">열린 창에서 {recommendation.testIdentityLabel} 계정을 선택해 확인하세요.{recommendation.stateChanging ? " 데이터를 바꾸는 요청이므로 보내기 전에 내용을 확인하세요." : ""}</p>}
-      <Button type="button" size="sm" className="w-fit" disabled={disabled || !basisEvent} onClick={() => setLabOpen(true)}>Request Lab 열기</Button>
+      <Button type="button" size="sm" className="h-10 w-full justify-between" disabled={disabled || !basisEvent} onClick={() => setLabOpen(true)}>Request Lab 열기<ArrowUpRight aria-hidden="true" className="size-4" /></Button>
       {!basisEvent && <p className="text-xs text-muted-foreground">이 API의 요청 기록이 없어 Request Lab을 열 수 없습니다.</p>}
     </section>
     {labOpen && basisEvent && snapshot && <RequestLabDialog open onOpenChange={open => { if (!open) setLabOpen(false) }} event={basisEvent} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={snapshot.datasetRevision ?? snapshot.identityRevision ?? 0} snapshotRevision={snapshot.revision} suspended={disabled} />}
     <section aria-label="취약점 확인" className="grid gap-3 border-t border-border/70 pt-4">
       <h3 className="text-sm font-semibold">취약점 확인</h3>
-      <Button type="button" size="sm" variant={confirmed ? "outline" : "destructive"} className="w-fit" aria-pressed={confirmed} disabled={disabled || !reviewable || review.isPending} onClick={() => void submit(confirmed ? "UNRESOLVED" : "CONFIRMED")}>{confirmed ? "취약점 확정 취소" : "취약점으로 확정"}</Button>
+      <Button type="button" size="sm" variant={confirmed ? "outline" : "destructive"} className="h-10 w-full" aria-pressed={confirmed} disabled={disabled || !reviewable || review.isPending} onClick={() => void submit(confirmed ? "UNRESOLVED" : "CONFIRMED")}>{confirmed ? "취약점 확정 취소" : "취약점으로 확정"}</Button>
       {!reviewable && <p className="text-xs text-muted-foreground">이 결과는 취약점 확정 대상이 아닙니다.</p>}
       {message && <p role="status" className="text-xs">{message}</p>}
     </section>
