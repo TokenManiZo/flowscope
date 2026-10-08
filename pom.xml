@@ -16,17 +16,17 @@
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <montoya.version>2026.7</montoya.version>
-    <junit.version>5.11.4</junit.version>
+    <junit.version>6.1.3</junit.version>
     <jackson.version>2.22.2</jackson.version>
     <jsoup.version>1.23.1</jsoup.version>
     <sqlite.jdbc.version>3.53.1.0</sqlite.jdbc.version>
     <closure.compiler.version>v20260831</closure.compiler.version>
     <maven.clean.version>3.5.0</maven.clean.version>
-    <maven.compiler.version>3.15.0</maven.compiler.version>
-    <maven.resources.version>3.4.0</maven.resources.version>
-    <maven.surefire.version>3.5.4</maven.surefire.version>
+    <maven.compiler.version>3.16.0</maven.compiler.version>
+    <maven.resources.version>3.5.0</maven.resources.version>
+    <maven.surefire.version>3.6.0</maven.surefire.version>
     <maven.enforcer.version>3.6.3</maven.enforcer.version>
-    <maven.assembly.version>3.7.1</maven.assembly.version>
+    <maven.assembly.version>3.8.0</maven.assembly.version>
     <project.build.outputTimestamp>2026-08-24T00:00:00Z</project.build.outputTimestamp>
   </properties>
 
@@ -150,7 +150,7 @@
       <plugin>
         <groupId>com.github.eirslett</groupId>
         <artifactId>frontend-maven-plugin</artifactId>
-        <version>1.15.4</version>
+        <version>2.0.2</version>
         <configuration>
           <installDirectory>${project.build.directory}/frontend-runtime</installDirectory>
         </configuration>
@@ -208,7 +208,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
-        <version>3.5.0</version>
+        <version>3.5.1</version>
         <configuration>
           <forceCreation>true</forceCreation>
           <archive>
@@ -226,7 +226,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>3.6.0</version>
+        <version>3.6.2</version>
         <executions>
           <execution>
             <phase>package</phase>
@@ -326,7 +326,7 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
-        <version>3.5.0</version>
+        <version>3.6.3</version>
         <executions>
           <execution>
             <id>relocate-multi-release-jar</id>
