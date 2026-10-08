@@ -112,8 +112,8 @@ for (const width of [1280, 820]) test(`observed POST search opens neutral eviden
   const result = page.getByRole("option", { name: /^관측 API POST/ })
   await expect(result).toHaveAttribute("aria-disabled", "false")
   await result.click()
-  await expect(page.getByText("인가 판정에 포함되지 않은 관측 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
-  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
+  await expect(page.getByText("인가 판정에 포함되지 않은 요청 기록 1건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.")).toBeVisible()
+  await expect(page.getByRole("listitem", { name: "USER B 요청 기록 1건" })).toBeVisible()
   if (width > 900) {
     const canvas = page.getByLabel("공격면 Cytoscape 그래프", { exact: true })
     await expect.poll(() => canvas.evaluate((element, id) => {
@@ -188,7 +188,7 @@ test("B polling search preserves neutral evidence on A's API at 1280px", async (
     quiet.emit("tap")
     return quiet.data("groupState") === "closed" && cy.getElementById("identity:USER B").length === 0
   }, `quiet-group:${navigation.groupId}`)).toBe(true)
-  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
+  await expect(page.getByRole("listitem", { name: "USER B 요청 기록 1건" })).toBeVisible()
   await input.fill("USER B")
   await page.getByRole("option", { name: /^신원 USER B/ }).click()
   await expect.poll(() => canvas.evaluate(element => {
@@ -198,7 +198,7 @@ test("B polling search preserves neutral evidence on A's API at 1280px", async (
   })).toEqual({ selected: true, verdict: "UNKNOWN", connections: 1 })
   await input.fill("GET /api/orders/00")
   await page.getByRole("option", { name: /^API GET \/api\/orders\/00/ }).click()
-  await expect(page.getByRole("listitem", { name: "USER B 관측 기록 1건" })).toBeVisible()
+  await expect(page.getByRole("listitem", { name: "USER B 요청 기록 1건" })).toBeVisible()
   await expect.poll(() => canvas.evaluate((element, op) => {
     const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
     const api = cy.getElementById(`operation:${op}`)

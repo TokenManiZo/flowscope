@@ -959,7 +959,7 @@ describe("RequestLabDialog", () => {
     expect(owner.requests).toHaveLength(0)
   })
 
-  it("isolates a late send completion when the selected 관측 기록 changes", async () => {
+  it("isolates a late send completion when the selected 요청 기록 changes", async () => {
     const pending = deferredResponse()
     const owner = createMemoryOnlyRawState()
     const nextEvent = { ...event, eventId: "event-8" }

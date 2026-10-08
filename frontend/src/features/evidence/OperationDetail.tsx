@@ -13,7 +13,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { saveOwner, saveRequirement, saveTrafficOverride } from "@/lib/api/endpoints"
 import type { EventRecord, Snapshot } from "@/lib/api/types"
 import { queryKeys } from "@/lib/query/hooks"
-import { stripOrigin } from "@/lib/display/operationLabel"
+import { evidenceOrdinalLabel, stripOrigin } from "@/lib/display/operationLabel"
 import { boundedText } from "./evidenceSelectors"
 
 interface Props {
@@ -63,7 +63,7 @@ function OperationEditor({ event, snapshot, onOpenRequestLab, showMetadata = tru
   const relatedCell = snapshot.cells.find((cell) => cell.idn === event.idn && cell.op === event.op && cell.resource === event.resource)
   const relatedScenarios = snapshot.scenarios.filter((scenario) => scenario.evidenceIds.includes(event.eventId))
   const metadata: [string, string][] = [["메서드", event.method], ["경로", stripOrigin(event.path) || event.path], ["HTTP 상태", String(event.status)], ["신원 / 역할", `${identityLabel(event.idn)} / ${event.role}`], ["리소스", event.resource ?? "-"], ["분류", `${event.trafficClass} / ${event.trafficDisposition}`], ["실행", `${event.orchestrator} / ${event.tool} / ${event.phase}`]]
-  if (showEvidenceId) metadata.unshift(["기록 번호", evidenceLabel ?? event.eventId])
+  if (showEvidenceId) metadata.unshift(["요청 기록", evidenceLabel ?? evidenceOrdinalLabel(snapshot.evidenceOrdinals, event.eventId)])
 
   const policyRow = compactPolicy ? "grid grid-cols-[88px_minmax(0,1fr)_60px] items-center gap-2" : "flex flex-wrap items-end gap-2"
   const policySelect = compactPolicy ? "h-[32px] w-full min-w-0 rounded-md border bg-background px-2 text-xs" : undefined

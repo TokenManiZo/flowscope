@@ -76,7 +76,7 @@ it("keeps anonymous verdicts and evidence on one 비로그인 card after selecti
   const projection = projectHierarchy(data, filters, navigateHierarchy(site, "operation", groupId, anonymousCell.op))
   const api = projection.operations[0]
   renderWithQueryClient(<GraphInspectorPanel selection={api.selection} event={null} snapshot={data} node={api} projection={projection} />)
-  const card = screen.getByRole("listitem", { name: "비로그인 관측 기록 1건" })
+  const card = screen.getByRole("listitem", { name: "비로그인 요청 기록 1건" })
   expect(within(card).getByText("비로그인")).toBeVisible()
   expect(within(card).getByText("DENY")).toBeVisible()
   expect(screen.queryByText("anon")).not.toBeInTheDocument()

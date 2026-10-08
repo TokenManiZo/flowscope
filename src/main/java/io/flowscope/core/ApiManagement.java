@@ -101,7 +101,7 @@ public final class ApiManagement {
         Map<String, Set<String>> removedDeclarations = new HashMap<>(config.apiState().removedDeclarations());
         Set<String> removedIds = new LinkedHashSet<>(request.evidenceIds());
         Set<String> present = snapshot.records.stream().map(r -> r.evidenceId).collect(java.util.stream.Collectors.toSet());
-        if (!present.containsAll(removedIds)) throw new IllegalStateException("관측 기록이 변경되었습니다. 다시 선택해 주세요.");
+        if (!present.containsAll(removedIds)) throw new IllegalStateException("요청 기록이 바뀌었습니다. 다시 선택해 주세요.");
         if (request.marksOnly()) {
             if (targets.size() != 1) throw new IllegalArgumentException("API 하나를 선택해 주세요.");
             String op = targets.iterator().next();
@@ -116,7 +116,7 @@ public final class ApiManagement {
             config.restoreApiState(new ApiState(highlights, removedDeclarations));
             return new Change(config, rawRecords, routes, lab, new Preview(List.copyOf(targets), List.of(), 0, 0, 0), Set.of());
         }
-        if (targets.isEmpty() && removedIds.isEmpty()) throw new IllegalArgumentException("삭제할 API 또는 관측 기록을 선택해 주세요.");
+        if (targets.isEmpty() && removedIds.isEmpty()) throw new IllegalArgumentException("삭제할 API 또는 요청 기록을 선택해 주세요.");
         if (!targets.isEmpty() && !removedIds.isEmpty()) throw new IllegalArgumentException("API와 기록 삭제 대상을 함께 지정할 수 없습니다.");
         snapshot.records.stream().filter(r -> targets.contains(operation(r))).forEach(r -> removedIds.add(r.evidenceId));
         // Validation responses derived from deleted originals cannot survive as orphaned traffic.

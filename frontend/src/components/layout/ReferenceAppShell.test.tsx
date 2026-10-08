@@ -18,13 +18,13 @@ vi.mock("@/lib/query/hooks", () => ({
 }))
 
 it("uses grouped sidebar navigation with project status and the main landmark, without a top status bar", () => {
-  render(<ReferenceAppShell route="evidence"><p>관측 기록 workspace</p></ReferenceAppShell>)
+  render(<ReferenceAppShell route="evidence"><p>요청 기록 workspace</p></ReferenceAppShell>)
 
   expect(screen.queryByRole("banner", { name: "FlowScope 상단 상태" })).not.toBeInTheDocument()
   expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
   expect(within(screen.getByRole("group", { name: "현재 프로젝트" })).getByRole("button", { name: "실시간 상태" })).toBeVisible()
   expect(screen.queryByRole("navigation", { name: "주요 분석 탐색" })).not.toBeInTheDocument()
-  expect(screen.getByRole("main")).toHaveTextContent("관측 기록 workspace")
+  expect(screen.getByRole("main")).toHaveTextContent("요청 기록 workspace")
 })
 
 it("keeps route content in the main landmark", () => {
@@ -47,7 +47,7 @@ it("stays an icon rail on hover and expands only through the toggle button, push
   expect(rail).not.toHaveClass("absolute")
   expect(within(graph).getByText("점검 Gap 그래프")).toHaveClass("sr-only")
   expect(graph).toHaveAttribute("title", "점검 Gap 그래프")
-  for (const name of ["API·입력 차이", "관측 기록"]) {
+  for (const name of ["API·입력 차이", "요청 기록"]) {
     const link = within(nav).getByRole("link", { name })
     expect(link.parentElement).not.toHaveClass("sr-only")
     expect(link).toHaveAttribute("title", name)

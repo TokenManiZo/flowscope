@@ -164,7 +164,7 @@ export function InspectionPage() {
     return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
       sourceCode: event.source === "human" ? "H" : event.source === "scanner" ? "S" : event.source === "llm" ? "L" : "—",
       sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인 자동 검증" : "자동 검증")
-        : event.source === "human" ? "Human" : event.source === "scanner" ? "ZAP" : event.source === "llm" ? "LLM" : "미확인",
+        : event.source === "human" ? "Human" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 
@@ -276,7 +276,7 @@ export function InspectionPage() {
         </TabsContent>
 
         <TabsContent value="llm" className="min-h-0 flex-1">
-          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} />
+          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} evidenceOrdinals={snapshot.data?.evidenceOrdinals} />
         </TabsContent>
 
         <TabsContent value="review" className="mt-2">

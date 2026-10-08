@@ -105,7 +105,7 @@ it("navigates Site→Group and selects API and Object in the list without leavin
   expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
   await userEvent.click(screen.getByRole("button", { name: /^orders 객체 1개 펼치기/ }))
   await userEvent.click(screen.getByRole("row", { name: "orders:101" }))
-  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/관측 기록|연결된 관측 기록이 없습니다/)).toBeVisible()
+  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/요청 기록|연결된 요청 기록이 없습니다/)).toBeVisible()
   expect(screen.queryByText("cell-evidence-not-an-event")).not.toBeInTheDocument()
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
 }, 15_000)

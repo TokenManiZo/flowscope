@@ -70,7 +70,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     const byIdentity = groupBy(cells, cell => cell.idn)
     const owner = node.owner ?? null
     return {
-      stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["관측 기록", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
+      stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["요청 기록", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
       listTitle: owner ? `접근한 신원 · 소유자 ${identityLabel(owner)}` : "접근한 신원",
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identityLabel(identity)} (소유자)` : identity, mostUrgent(items)]),
     }

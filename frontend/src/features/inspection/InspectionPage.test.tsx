@@ -159,6 +159,26 @@ describe("unified inspection hub", () => {
     expect(fetchStub.mock.calls.some(([path]) => path === "/api/human-run")).toBe(false)
   })
 
+  it("labels scanner records that did not come from ZAP as 스캐너, not ZAP", async () => {
+    const user = userEvent.setup()
+    renderInspection({ humanEvents: [humanEvent,
+      { ...humanEvent, eventId: "zap", path: "/api/zap", source: "scanner", sourceDetail: "ZAP_SPIDER", tool: "ZAP" },
+      { ...humanEvent, eventId: "burp-scanner", path: "/api/burp-scanner", source: "scanner", sourceDetail: "OTHER_SCANNER", tool: "BURP" },
+    ] })
+    const list = await screen.findByLabelText("기록된 요청 목록")
+    const zapRow = await within(list).findByRole("button", { name: /api\/zap/ })
+    const scannerRow = within(list).getByRole("button", { name: /api\/burp-scanner/ })
+    expect(within(zapRow).getByText("ZAP")).toBeVisible()
+    expect(within(scannerRow).getByText("스캐너")).toBeVisible()
+    expect(within(scannerRow).queryByText("ZAP")).not.toBeInTheDocument()
+    const filters = screen.getByLabelText("수집 출처 필터")
+    await user.click(within(filters).getByRole("button", { name: "ZAP" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(1)
+    await user.click(within(filters).getByRole("button", { name: "스캐너" }))
+    expect(within(list).getAllByRole("button")).toHaveLength(1)
+    expect(within(list).getByRole("button", { name: /api\/burp-scanner/ })).toBeVisible()
+  })
+
   it("labels anonymous verification as Scanner and separates it from ZAP using saved provenance", async () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent,
@@ -378,7 +398,7 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("tab", { name: /범위/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
-    expect(screen.queryByText("범위 → HUMAN → ZAP → 관측 기록 검토 순서로 각각의 관측 기록을 분리합니다.")).not.toBeInTheDocument()
+    expect(screen.queryByText("범위 → HUMAN → ZAP → 요청 기록 검토 순서로 각각의 요청 기록을 분리합니다.")).not.toBeInTheDocument()
   })
 
   it("opens on the first records tab without a current-step button or dot", async () => {

@@ -32,6 +32,9 @@ final class RunExecutionLedgerTest {
                 Instant.parse("2026-09-03T00:00:02Z"), 30_000);
         assertEquals(RunExecutionLedger.Quality.PARTIAL_FAILURE,
                 ledger.summarize(Source.LLM, "partial").quality());
+        assertEquals(Instant.parse("2026-09-03T00:00:01Z").toEpochMilli(),
+                ledger.summarize(Source.LLM, "partial").startedAt());
+        assertEquals(0, ledger.summarize(Source.LLM, "not-started").startedAt());
 
         ledger.record(Source.LLM, "responded", null, "GET", "https://api.test/health",
                 RunExecutionLedger.Outcome.HTTP_RESPONSE, 204, "ev-fedcba9876543210",

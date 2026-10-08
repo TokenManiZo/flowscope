@@ -1738,8 +1738,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     : value == TrafficOverride.INCLUDE
                     ? "자동 보조 트래픽을 분석에 포함했습니다. discovery 신뢰 경계는 유지됩니다."
                     : value == TrafficOverride.REVIEW
-                    ? "같은 API의 관측 기록을 검토 필요로 표시했습니다. Evidence는 보존됩니다."
-                    : "기본 분석에서 숨겼습니다. Evidence는 보존됩니다.");
+                    ? "같은 API의 요청 기록을 검토 필요로 표시했습니다. 기록은 지우지 않습니다."
+                    : "기본 분석에서 숨겼습니다. 기록은 지우지 않습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 

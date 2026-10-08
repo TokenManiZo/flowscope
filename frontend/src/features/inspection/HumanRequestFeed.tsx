@@ -40,13 +40,13 @@ export function HumanRequestFeed({ items, onOpenRecord, description, emptyHint, 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><div className="flex flex-wrap items-center gap-2"><CardTitle className="text-base">{title}</CardTitle>{titleBadge && <Badge variant="outline">{titleBadge}</Badge>}{showCount && <span aria-label={`${title} 건수`} className="text-xs tabular-nums text-muted-foreground">{items.length}건</span>}</div>{view?.focused && <p className="mt-1 text-xs text-muted-foreground">{context} · {showAll ? "전체 저장 기록" : "최근 저장 기록 최대 200건"}</p>}{description && <CardDescription>{description}</CardDescription>}</div>
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-none">{titleControl}
-            <div className="relative min-w-0 flex-1 sm:w-64"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="번호·메서드·경로·계정·상태 검색" className="pl-8" /></div>
+            <div className="relative min-w-0 flex-1 sm:w-64"><Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" /><Input aria-label={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="#번호, 메서드, 경로, 계정, 상태 검색" className="pl-8" /></div>
             {view && <RecordViewButton view={view} onExpand={() => setExpanded(true)} />}
             <Button type="button" variant="outline" size="icon" aria-label={expanded ? "작업 피드 접기" : "작업 피드 펼치기"} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp /> : <ChevronDown />}</Button>
           </div>
         </div>
       </CardHeader>
-      {showSource && <div aria-label="수집 출처 필터" className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
+      {showSource && <div aria-label="수집 출처 필터" className="flex shrink-0 flex-wrap gap-1 border-b px-4 py-2">{["전체", "Human", "ZAP", ...(items.some((item) => item.sourceLabel === "스캐너") ? ["스캐너"] : []), "LLM", "비로그인 자동 검증"].map(label => <Button key={label} size="sm" variant={source === label ? "secondary" : "ghost"} aria-pressed={source === label} onClick={() => setSource(label)}>{label}</Button>)}</div>}
       {expanded && <CardContent className="flex min-h-0 flex-1 flex-col overflow-x-auto p-0">
         <div className={`${columns} bg-muted/60 px-4 py-2 text-xs text-muted-foreground`} aria-hidden="true"><span>#</span><span>Method</span><span>API</span>{showSource && <><span className="text-center">출처</span><span className="text-center">수집 방식</span></>}<span>계정</span><span>상태</span><span className="text-center">시각</span></div>
         <div data-record-list aria-label="기록된 요청 목록" className={`${showSource ? "min-w-[920px] " : ""}min-h-0 flex-1 overflow-auto`}>

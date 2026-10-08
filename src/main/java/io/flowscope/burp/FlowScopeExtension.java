@@ -2437,10 +2437,10 @@ public final class FlowScopeExtension implements BurpExtension {
      */
     private RequestRecord evidenceRecord(String evidenceId) {
         if (evidenceId == null || evidenceId.isBlank()) {
-            throw new IllegalArgumentException("Evidence ID가 필요합니다.");
+            throw new IllegalArgumentException("요청 기록을 선택해 주세요.");
         }
         return latest.records.stream().filter(value -> value.evidenceId.equals(evidenceId))
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("요청 기록을 찾을 수 없습니다."));
     }
 
     private void openDraftInRepeater(RequestRecord record, HttpRequest draft) {
@@ -2898,7 +2898,7 @@ public final class FlowScopeExtension implements BurpExtension {
             RequestRecord published = analyzedRecord(record);
             synchronized (records) {
                 if (!retainedEvidence(evidenceId) || !retainedEvidence(published.evidenceId)) {
-                    throw new IllegalStateException("관측 기록이 삭제되어 결과를 저장할 수 없습니다.");
+                    throw new IllegalStateException("요청 기록이 삭제되어 결과를 저장할 수 없습니다.");
                 }
                 executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
                         RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
@@ -3545,7 +3545,7 @@ public final class FlowScopeExtension implements BurpExtension {
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
             if ((record.originEvidenceId != null && !retainedEvidence(record.originEvidenceId))
                     || (record.replayBasisEvidenceId != null && !retainedEvidence(record.replayBasisEvidenceId))) {
-                throw new IllegalStateException("원본 관측 기록이 삭제되어 응답을 저장할 수 없습니다.");
+                throw new IllegalStateException("원본 요청 기록이 삭제되어 응답을 저장할 수 없습니다.");
             }
             records.add(record);
             retainExchange.run();
