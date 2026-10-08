@@ -60,7 +60,7 @@ function OperationLabel({ operation, width }: { operation: string; width: number
 function PolicyAssignment({ item, requiredRole: currentRequiredRole, disabled }: { item: JudgmentItem; requiredRole: string | undefined; disabled: boolean }) {
   const requirement = useRequirementMutation()
   const resourcePolicyMutation = useResourcePolicyMutation()
-  const [requiredRole, setRequiredRole] = useState<string>(currentRequiredRole && ROLE_OPTIONS.includes(currentRequiredRole as never) ? currentRequiredRole : "ADMIN")
+  const [requiredRole, setRequiredRole] = useState<string>(currentRequiredRole && ROLE_OPTIONS.includes(currentRequiredRole as never) ? currentRequiredRole : "")
   const resourceTarget = "resource" in item ? item.resource : null
   const [resourcePolicy, setResourcePolicy] = useState<string>("resourcePolicy" in item ? item.resourcePolicy ?? "UNKNOWN" : "UNKNOWN")
   const [message, setMessage] = useState<string | null>(null)
@@ -72,7 +72,7 @@ function PolicyAssignment({ item, requiredRole: currentRequiredRole, disabled }:
   const select = "rounded border border-border/70 bg-background px-2 py-1 text-sm"
   return <section aria-label="접근 허용 기준" className="grid gap-3 border-t border-border/70 pt-4">
     <h3 className="text-sm font-semibold">접근 허용 기준</h3><p className="text-xs leading-5 text-muted-foreground">이 권한 이상인 계정이 접근할 수 있어야 합니다.</p>
-    <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>최소 권한</span><select aria-label="최소 권한" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{roleLabel[value]} ({value})</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="최소 권한 저장" disabled={disabled || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "최소 권한을 저장했습니다.")}>저장</Button></div>
+    <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>최소 권한</span><select aria-label="최소 권한" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}><option value="" disabled>아직 정하지 않음</option>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{roleLabel[value]} ({value})</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="최소 권한 저장" disabled={disabled || !requiredRole || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "최소 권한을 저장했습니다.")}>저장</Button></div>
     {resourceTarget && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>이 데이터에 접근할 수 있는 계정</span><select aria-label="이 데이터에 접근할 수 있는 계정" className={select} value={resourcePolicy} disabled={disabled} onChange={(event) => setResourcePolicy(event.target.value)}>{RESOURCE_POLICY_OPTIONS.map((value) => <option key={value} value={value}>{resourcePolicyLabel[value]}</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="데이터 접근 기준 저장" disabled={disabled || resourcePolicyMutation.isPending} onClick={() => void run(() => resourcePolicyMutation.mutateAsync({ target: resourceTarget, policy: resourcePolicy }), "이 데이터에 접근할 수 있는 계정을 저장했습니다.")}>저장</Button></div>}
     {message && <p role="status" className="text-xs">{message}</p>}
   </section>

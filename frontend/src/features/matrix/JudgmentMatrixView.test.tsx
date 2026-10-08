@@ -332,6 +332,8 @@ it("sets the minimum access role without duplicating account role management", a
   expect(quiet).toHaveClass("text-muted-foreground")
   await user.click(quiet)
   const assignment = screen.getByRole("region", { name: "접근 허용 기준" })
+  expect(within(assignment).getByRole("combobox", { name: "최소 권한" })).toHaveValue("")
+  expect(within(assignment).getByRole("button", { name: "최소 권한 저장" })).toBeDisabled()
   await user.selectOptions(within(assignment).getByRole("combobox", { name: "최소 권한" }), "ADMIN")
   await user.click(within(assignment).getByRole("button", { name: "최소 권한 저장" }))
   await waitFor(() => expect(saveRequirement).toHaveBeenCalledWith(`${service} GET /api/admin/export`, "ADMIN"))
