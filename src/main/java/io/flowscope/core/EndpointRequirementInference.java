@@ -68,6 +68,6 @@ final class EndpointRequirementInference {
     }
 
     private static Requirement unknown() {
-        return new Requirement(AccessRole.UNKNOWN, Provenance.UNKNOWN, "요구 역할을 유도할 교차 관측 근거 부족");
+        return new Requirement(AccessRole.UNKNOWN, Provenance.UNKNOWN, "요구 역할을 정할 만큼 계정 간 요청 기록이 부족함");
     }
 }

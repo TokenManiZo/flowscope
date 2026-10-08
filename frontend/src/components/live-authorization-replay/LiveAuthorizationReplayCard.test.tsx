@@ -175,7 +175,7 @@ describe("LiveAuthorizationReplayCard", () => {
     await user.click(screen.getByLabelText("ADMIN"));
     await user.click(screen.getByLabelText("ZAP 기준 요청"));
     await user.click(screen.getByLabelText("LLM 기준 요청"));
-    await user.click(screen.getByLabelText("비로그인(ANON) 포함"));
+    await user.click(screen.getByLabelText("비로그인 포함"));
     await user.click(screen.getByLabelText("안전 자동 재전송을 허용합니다."));
     await user.click(screen.getByRole("button", { name: "라이브 검증 시작" }));
 

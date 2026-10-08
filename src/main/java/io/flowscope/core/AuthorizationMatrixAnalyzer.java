@@ -431,7 +431,7 @@ public final class AuthorizationMatrixAnalyzer {
                 read ? "읽기 요청에는 쓰기 상태 전제조건을 적용하지 않음"
                         : "CSRF·nonce·선행 상태 준비 여부를 자동 증명하지 않음"));
         out.add(new Gate("oracle", "결과 오라클", oracle.satisfied() ? GateState.PASS : GateState.UNKNOWN,
-                oracle.satisfied() ? oracle.requirement() : "후속 상태 또는 의미 응답 증거가 더 필요함"));
+                oracle.satisfied() ? oracle.requirement() : "후속 상태 또는 의미 있는 응답 기록이 더 필요함"));
         return List.copyOf(out);
     }
 

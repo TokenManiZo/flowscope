@@ -976,7 +976,7 @@ public final class ZapCampaign implements AutoCloseable {
                             lane.accountId(), identity.verifiedEvidenceRuntimeId());
                     if (!sessionPromoted) {
                         throw new IllegalStateException("로그인은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다. "
-                                + "ANON으로 대체하지 않고 이 로그인 lane을 중단합니다.");
+                                + "비로그인으로 대체하지 않고 이 로그인 lane을 중단합니다.");
                     }
                     authenticationVerified = true;
                     replaceZapAuthentication(index, new ZapAuthenticationResult(

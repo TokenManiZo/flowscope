@@ -108,7 +108,7 @@ public final class ApiManagement {
             switch (request.action()) {
                 case "highlight" -> { if (request.color().isEmpty()) highlights.remove(op); else { if (!ApiState.COLORS.contains(request.color())) throw new IllegalArgumentException("invalid highlight color"); highlights.put(op, request.color()); } }
                 case "register" -> {
-                    if (removedIds.isEmpty() || removedIds.size() > 20 || snapshot.records.stream().filter(r -> removedIds.contains(r.evidenceId)).anyMatch(r -> !operation(r).equals(op) || !r.hasResponse)) throw new IllegalArgumentException("해당 API의 응답이 있는 관측 근거를 선택해 주세요.");
+                    if (removedIds.isEmpty() || removedIds.size() > 20 || snapshot.records.stream().filter(r -> removedIds.contains(r.evidenceId)).anyMatch(r -> !operation(r).equals(op) || !r.hasResponse)) throw new IllegalArgumentException("해당 API의 응답이 있는 요청 기록을 선택해 주세요.");
                     config.reviewItem(reviewId(op), ReviewDecision.Status.CONFIRMED, "사용자 API 취약점 등록", List.copyOf(removedIds));
                 }
                 case "unregister" -> config.removeReview(reviewId(op));

@@ -51,7 +51,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
 
   if (node.kind === "identity") return {
     kind: "condition", badge: "계정", title: node.label, detail: "", footer: "", icon: "user",
-    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
+    accessibleLabel: `계정 ${node.label}; verdict ${node.verdictText}`,
   }
 
   if (node.kind === "operation-group" && "objectGroup" in node && node.objectGroup) {

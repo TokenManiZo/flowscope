@@ -355,10 +355,10 @@ export function LiveAuthorizationReplayCard({
                   checked={includeAnonymous}
                   onCheckedChange={(value) => setIncludeAnonymous(value === true)}
                   disabled={pending || isRunning}
-                  aria-label="비로그인(ANON) 포함"
+                  aria-label="비로그인 포함"
                 />
                 <Ban className="size-4 text-muted-foreground" aria-hidden="true" />
-                <span className="text-sm font-medium">비로그인(ANON) 포함</span>
+                <span className="text-sm font-medium">비로그인 포함</span>
               </label>
             </fieldset>
 

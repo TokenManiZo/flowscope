@@ -18,7 +18,7 @@ it("splits server verdicts into IDOR/BFLA candidates (writes first), undecided r
     cell({ op: `${svc} PUT /admin/refund`, overall: "suspicious", reasons: { llm: "기능층(BFLA) 차단 기대: USER 권한이 ADMIN 요구 엔드포인트에 성공" }, perSource: { llm: "suspicious" } }),
     cell({ op: `${svc} POST /coupon`, overall: "undecided", reasons: { human: "404/429/5xx 또는 해석 불가능한 응답" } }),
     cell({ overall: "undecided", resource: "orders:2", reasons: { human: "차단 기대 성공 응답이지만 대상 객체 포함 여부를 확인할 수 없음" } }),
-    cell({ op: `${svc} OPTIONS /orders`, overall: "undecided", reasons: { human: "OPTIONS/HEAD는 소유권 성공 증거에서 제외" } }),
+    cell({ op: `${svc} OPTIONS /orders`, overall: "undecided", reasons: { human: "OPTIONS/HEAD는 소유권 성공 기록에서 제외" } }),
   ]
   const found = scopeFindings(cells)
   expect(found.candidates.map(item => [item.method, item.type])).toEqual([["PUT", "BFLA"], ["DELETE", "IDOR"], ["GET", "IDOR"]])

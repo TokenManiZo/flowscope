@@ -266,7 +266,7 @@ public final class AuthorizationAnalyzer {
         List<RequestRecord> observed = evidence.stream().filter(r -> r.hasResponse).toList();
         if (observed.isEmpty()) return new Decision(Verdict.UNTESTED, "실제 응답이 없음", false);
         if (isMetadataMethod(observed.get(0).method)) {
-            return new Decision(Verdict.UNDECIDED, "OPTIONS/HEAD는 소유권 성공 증거에서 제외", false);
+            return new Decision(Verdict.UNDECIDED, "OPTIONS/HEAD는 소유권 성공 기록에서 제외", false);
         }
 
         List<RequestRecord> successful = observed.stream().filter(AuthorizationAnalyzer::isSuccessful).toList();
