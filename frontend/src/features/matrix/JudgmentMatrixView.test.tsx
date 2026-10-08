@@ -101,6 +101,25 @@ it("renders the compact server summary and matrix without row subtitles or P/E/O
   expect(within(summary).queryByText("Burp Repeater 확인 필요")).not.toBeInTheDocument()
 })
 
+it("resizes the API column from its boundary and keeps the width when switching matrix views", async () => {
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  const handle = screen.getByRole("separator", { name: "API 열 너비 조절" })
+  const column = screen.getByRole("table").querySelector("col")!
+  expect(column).toHaveStyle({ width: "320px" })
+  handle.focus()
+  await user.keyboard("{ArrowLeft}")
+  expect(column).toHaveStyle({ width: "304px" })
+  await user.keyboard("{Home}{ArrowLeft}")
+  expect(column).toHaveStyle({ width: "160px" })
+  await user.keyboard("{End}{ArrowRight}")
+  expect(column).toHaveStyle({ width: "640px" })
+  await user.click(screen.getByRole("tab", { name: /객체 권한/ }))
+  expect(screen.getByRole("table").querySelector("col")).toHaveStyle({ width: "640px" })
+  await user.dblClick(screen.getByRole("separator", { name: "API 열 너비 조절" }))
+  expect(screen.getByRole("table").querySelector("col")).toHaveStyle({ width: "320px" })
+})
+
 it("shows an unmatched registered account service as a warning without adding a matrix column", () => {
   const warning: MatrixConfigurationWarning = {
     code: "ACCOUNT_SERVICE_NOT_IN_MATRIX",
@@ -359,7 +378,7 @@ it("keeps the operation column unpinned and wraps long paths into two lines insi
   // 내용 폭(w-max) 표에서 퍼센트 폭 열은 표를 수만 px로 늘린다(1% 열이 내용을 담으려면 표 = 내용 ÷ 0.01).
   for (const column of within(table).getAllByRole("columnheader")) expect(column.className).not.toMatch(/w-\[\d+%\]/)
   // 폭 제한은 표 칸이 아니라 안쪽 블록에 건다.
-  const block = label.querySelector(".max-w-\\[24rem\\]")!
+  const block = label.querySelector(".font-mono.grid")!
   expect(block).not.toBeNull()
   const lines = [...block.querySelectorAll("[aria-hidden] > span")].map((line) => line.textContent)
   expect(lines).toHaveLength(2)

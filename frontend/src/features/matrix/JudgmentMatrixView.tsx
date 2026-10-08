@@ -12,6 +12,7 @@ import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
 import { useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
+import { OperationColumnResizeHandle, OPERATION_COLUMN_DEFAULT_WIDTH } from "./OperationColumnResizeHandle"
 import { requestLabEvent } from "./requestLabEvent"
 import { findJudgmentItem, isReviewable, judgmentStatusDescription, judgmentStatusLabel, judgmentTone, projectJudgmentMatrix, quietStatusLabel, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
@@ -35,18 +36,17 @@ const methodTone: Record<string, string> = {
 }
 
 /** 경로는 `/` 경계로 최대 두 줄, 넘치면 앞을 줄여 끝(자원·ID)을 남긴다. 폭 제한은 표 칸이 아니라 안쪽 블록에 건다(표 칸의 max-width는 무시된다). */
-const PATH_LINE_CHARS = 40
 
-function OperationLabel({ operation }: { operation: string }) {
+function OperationLabel({ operation, width }: { operation: string; width: number }) {
   const label = withoutService(operation)
   const separator = label.indexOf(" ")
   const method = separator > 0 ? label.slice(0, separator) : label
   const path = separator > 0 ? label.slice(separator + 1) : ""
-  const lines = path ? wrapPath(path, (line) => line.length <= PATH_LINE_CHARS) : []
+  const lines = path ? wrapPath(path, (line) => line.length <= Math.max(8, Math.floor((width - 88) / 8))) : []
   const trimmed = lines.join("") !== path
   return <span className="flex min-w-0 items-start gap-2" title={path || undefined}>
     <Badge variant="outline" className={`shrink-0 font-mono text-sm ${methodTone[method] ?? "border-border bg-muted/40 text-foreground"}`}>{method}</Badge>
-    {path && <span className="grid min-w-0 max-w-[24rem] font-mono text-sm leading-6">
+    {path && <span className="grid min-w-0 w-full font-mono text-sm leading-6">
       <span aria-hidden={trimmed || undefined} className="grid">{lines.map((line, index) => <span key={index} className="break-all">{line}</span>)}</span>
       {trimmed && <span className="sr-only">{path}</span>}
     </span>}
@@ -135,6 +135,7 @@ export function JudgmentMatrixView({ viewSwitcher }: { viewSwitcher?: ReactNode 
 }
 
 function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnType<typeof useSnapshotQuery>; viewSwitcher?: ReactNode }) {
+  const [operationWidth, setOperationWidth] = useState(OPERATION_COLUMN_DEFAULT_WIDTH)
   const [view, setView] = useState<JudgmentView>("function")
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -180,7 +181,7 @@ function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnT
         ["사용자 취약점 확정", summary.humanConfirmed],
         ["정상·기각", summary.humanDismissed],
       ].map(([label, value]) => <li key={String(label)} className="rounded-md border border-border/70 p-4"><p className="text-sm text-muted-foreground">{label}</p><p className="mt-1 text-3xl font-semibold tabular-nums">{value}</p></li>)}</ul>}
-      {projection && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="min-h-40 min-w-0 max-w-full flex-1 overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="min-w-max"><TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 text-base">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}</TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="ml-1.5 text-sm font-normal text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="whitespace-normal bg-background py-3 align-top"><OperationLabel operation={row.operation} /></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined; return <TableCell key={identity.id} className="whitespace-normal py-3 align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `grid w-full min-w-28 rounded-md border border-transparent p-3 text-left text-sm text-muted-foreground hover:bg-muted/50 ${cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `grid w-full min-w-44 rounded-md border p-3 text-left text-sm ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className={quiet ? undefined : "font-semibold"}>{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span></button> : <span className="text-sm text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 요청 기록이 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
+      {projection && (projection.rows.length ? <div role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="min-h-40 min-w-0 max-w-full flex-1 overflow-auto rounded-md border overscroll-contain"><Table containerClassName="w-max min-w-full overflow-visible" className="table-fixed min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}><colgroup><col style={{ width: operationWidth }} />{projection.identities.map(identity => <col key={identity.id} />)}</colgroup><TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{view === "function" ? "기능 · 기대 역할" : "작업 · 객체 · 소유자"}<OperationColumnResizeHandle width={operationWidth} onWidthChange={setOperationWidth} /></TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="ml-1.5 text-sm font-normal text-muted-foreground">{identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{projection.rows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="overflow-hidden whitespace-normal bg-background py-3 pr-6 align-top"><OperationLabel operation={row.operation} width={operationWidth} /></TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined; return <TableCell key={identity.id} className="whitespace-normal py-3 align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${cell.resource}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `grid w-full min-w-28 rounded-md border border-transparent p-3 text-left text-sm text-muted-foreground hover:bg-muted/50 ${cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `grid w-full min-w-44 rounded-md border p-3 text-left text-sm ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className={quiet ? undefined : "font-semibold"}>{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span></button> : <span className="text-sm text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 요청 기록이 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
     </section>
   </ReferenceAnalysisWorkspace>
 }
