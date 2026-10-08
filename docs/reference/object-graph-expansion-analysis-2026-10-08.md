@@ -4,6 +4,14 @@
 
 ## 구현 완료 결과
 
+### 1~3단계 실험 설정 (후속 요청 반영)
+
+- 스냅샷에서 사용하는 기본 `build(input)`은 4단계 응답 객체를 비활성화한다. 해당 구현과 테스트는 유지하되, 명시적 `build(input, true)` 호출에서만 응답 객체를 생성한다.
+- `id`, `orderid`, `orderId`, `page`, `pageID`는 제외하지 않는다. `session`, `token`, `secret` 등의 부분 문자열을 근거로 값을 무시하던 규칙을 제거했다. `sessionName`, `tokenCount`, `secretNumber`처럼 일반 필드도 값이 다르면 다른 객체 조합으로 처리한다.
+- 민감 값 처리는 정규화 후 정확히 일치하는 자격 증명 이름으로 한정한다: password/passwd/pwd, sessionid/jsessionid/phpsessid, authorization/cookie/setcookie, accesstoken/refreshtoken/idtoken/csrftoken, apikey, credential/credentials. 필드명은 유지하고 값만 객체 구분 자료에서 제외한다.
+- query와 요청 body는 한 건부터 표시한다. POST body도 경로의 추가 관측 조건을 받지 않는다. 경로는 기존 합의대로 서로 다른 Evidence 두 건 기준이며 신원 수를 요구하지 않는다.
+- 기존 관측 트래픽 범위, 사용자 제외 설정, 재전송·세션 설정·검증 단계 제외, 정적 파일/OPTIONS 및 파싱 크기·깊이 제한은 유지한다. 객체 필드 이름에 대한 업무 규칙을 새로 추가하지 않는다.
+
 - 표시 전용 `ObservedObjectProjection`과 스냅샷 `displayObjects`를 추가했다. 기존 operation/resource, 판정 셀, 저장 키와 Request Lab의 원본 요청 좌표를 유지한다.
 - 경로는 같은 서비스·메서드·경로 계열에서 서로 다른 Evidence가 두 건 이상 관측되어야 표시한다. 신원·출처·run ID가 달라야 한다는 조건은 없다. 같은 URL의 반복 관측도 알려진 후보 위치를 보강하며, 한 건의 경로 후보는 응답 객체로 우회하지 않는다.
 - query와 요청 body는 두 건 관측 조건을 적용하지 않는다. 필드 스키마로 접힌 그룹을 만들고 실제 관측 조합을 펼친다. JSON 키 순서는 정규화하고 배열·반복 query 값의 순서는 유지한다. 민감 값은 객체 구분 자료에서 제외한다.

@@ -7,6 +7,36 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ObservedObjectProjectionTest {
+    @Test void experimentExcludesWholeResponseObjectsByDefault() {
+        var r = record("/products", 1); r.body = "{\"items\":[{\"id\":1}]}";
+        assertTrue(ObservedObjectProjection.build(List.of(r)).isEmpty());
+        assertEquals("RESPONSE_BODY", ObservedObjectProjection.build(List.of(r), true).getFirst().kind());
+    }
+    @Test void ordinaryFieldNamesAreNeverSuppressedBySensitiveSubstrings() {
+        for (String field : List.of("id", "orderid", "orderId", "page", "pageID", "sessionName",
+                "tokenCount", "secretNumber", "authorizationStatus", "cookieCount")) {
+            var a = record("/lookup", 1); a.query = field + "=1";
+            var b = record("/lookup", 2); b.query = field + "=2";
+            var query = ObservedObjectProjection.build(List.of(a,b));
+            assertNotEquals(query.get(0).objectKey(), query.get(1).objectKey(), field);
+            a.query = null; b.query = null;
+            a.reqBody = "{\"" + field + "\":1}"; b.reqBody = "{\"" + field + "\":2}";
+            var bodies = ObservedObjectProjection.build(List.of(a,b));
+            assertNotEquals(bodies.get(0).objectKey(), bodies.get(1).objectKey(), field);
+        }
+    }
+    @Test void sessionIdValuesDoNotCreateAdditionalObjectsAndSinglePostBodyIsVisible() {
+        var a = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        a.hasResponse = true; a.evidenceId = "post-1"; a.reqBody = "{\"orderid\":1,\"sessionId\":\"one\"}";
+        Normalizer.normalizeAll(List.of(a));
+        var one = ObservedObjectProjection.build(List.of(a));
+        assertEquals(1, one.size()); assertEquals("REQUEST_BODY", one.getFirst().kind());
+        var b = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders", 200, "A");
+        b.hasResponse = true; b.evidenceId = "post-2"; b.reqBody = "{\"orderid\":1,\"sessionId\":\"two\"}";
+        Normalizer.normalizeAll(List.of(b));
+        var two = ObservedObjectProjection.build(List.of(a,b));
+        assertEquals(two.get(0).objectKey(), two.get(1).objectKey());
+    }
     private static RequestRecord record(String path, int number) {
         var r = new RequestRecord(Source.HUMAN, "https://t:443", "GET", path, 200, "A");
         r.hasResponse = true; r.evidenceId = "event-" + number; r.timestamp = number;
@@ -104,29 +134,29 @@ class ObservedObjectProjectionTest {
         var a = record("/products", 1); a.body = "{\"items\":[{\"id\":1},{\"id\":2}],\"total\":2}";
         var b = record("/products", 2); b.body = "{\"total\":2,\"items\":[{\"id\":1},{\"id\":2}]}";
         var c = record("/products", 3); c.body = "{\"items\":[{\"id\":2},{\"id\":1}],\"total\":2}";
-        var out = ObservedObjectProjection.build(List.of(a,b,c));
+        var out = ObservedObjectProjection.build(List.of(a,b,c), true);
         assertEquals(3, out.size()); assertEquals("RESPONSE_BODY", out.getFirst().kind());
         assertEquals(List.of(1,1,2), out.stream().map(ObservedObjectProjection.ObjectObservation::ordinal).toList());
-        assertEquals(1, ObservedObjectProjection.build(List.of(a)).size());
+        assertEquals(1, ObservedObjectProjection.build(List.of(a), true).size());
     }
     @Test void responseFallbackCannotBypassTheSinglePathGateOrDuplicateRequestObjects() {
         var a = record("/products/123", 1); a.body = "{\"id\":123}";
-        assertTrue(ObservedObjectProjection.build(List.of(a)).isEmpty());
+        assertTrue(ObservedObjectProjection.build(List.of(a), true).isEmpty());
         var b = record("/products", 2); b.query = "page=1"; b.body = "{\"id\":123}";
-        assertEquals(List.of("QUERY"), ObservedObjectProjection.build(List.of(b)).stream().map(ObservedObjectProjection.ObjectObservation::kind).toList());
+        assertEquals(List.of("QUERY"), ObservedObjectProjection.build(List.of(b), true).stream().map(ObservedObjectProjection.ObjectObservation::kind).toList());
         var c = record("/products", 3); c.reqBody = "{\"id\":1}"; c.body = "{\"id\":123}";
-        assertEquals(List.of("REQUEST_BODY"), ObservedObjectProjection.build(List.of(c)).stream().map(ObservedObjectProjection.ObjectObservation::kind).toList());
+        assertEquals(List.of("REQUEST_BODY"), ObservedObjectProjection.build(List.of(c), true).stream().map(ObservedObjectProjection.ObjectObservation::kind).toList());
     }
     @Test void responseXmlIsNormalizedAndExternalEntitiesHtmlAndErrorsAreRejected() {
         var a = record("/products", 1); a.responseContentType = "application/xml"; a.body = "<items><id>1</id><password>one</password></items>";
         var b = record("/products", 2); b.responseContentType = "application/xml"; b.body = "<items>\n <id>1</id><password>two</password>\n</items>";
-        var out = ObservedObjectProjection.build(List.of(a,b));
+        var out = ObservedObjectProjection.build(List.of(a,b), true);
         assertEquals(2, out.size()); assertEquals(out.get(0).objectKey(), out.get(1).objectKey());
         var evil = record("/products", 3); evil.responseContentType = "application/xml"; evil.body = "<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///etc/passwd'>]><x>&e;</x>";
-        assertTrue(ObservedObjectProjection.build(List.of(evil)).isEmpty());
+        assertTrue(ObservedObjectProjection.build(List.of(evil), true).isEmpty());
         var html = record("/products", 4); html.responseContentType = "text/html"; html.body = "<html><body>hello</body></html>";
-        assertTrue(ObservedObjectProjection.build(List.of(html)).isEmpty());
+        assertTrue(ObservedObjectProjection.build(List.of(html), true).isEmpty());
         var error = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/products", 500, "A"); error.hasResponse = true; error.evidenceId = "error"; error.body = "{\"error\":true}"; Normalizer.normalizeAll(List.of(error));
-        assertTrue(ObservedObjectProjection.build(List.of(error)).isEmpty());
+        assertTrue(ObservedObjectProjection.build(List.of(error), true).isEmpty());
     }
 }

@@ -39,6 +39,11 @@ public final class ObservedObjectProjection {
     private static boolean token(String value) { return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches(); }
 
     public static List<ObjectObservation> build(List<RequestRecord> input) {
+        // Experiment with stages 1-3 only. Whole-response objects remain opt-in.
+        return build(input, false);
+    }
+
+    public static List<ObjectObservation> build(List<RequestRecord> input, boolean includeResponseObjects) {
         // One captured event counts once, including when two rows accidentally reference it.
         Map<String, RequestRecord> unique = new LinkedHashMap<>();
         for (RequestRecord r : input) if (eligible(r)) unique.putIfAbsent(r.evidenceId, r);
@@ -93,7 +98,7 @@ public final class ObservedObjectProjection {
                     String api = pathApis.getOrDefault(r.evidenceId, r.op);
                     addQuery(out, ordinals, r, api);
                     addBody(out, ordinals, r, api);
-                    if (!pathCandidates.contains(r.evidenceId)) addResponse(out, ordinals, r, api);
+                    if (includeResponseObjects && !pathCandidates.contains(r.evidenceId)) addResponse(out, ordinals, r, api);
                 });
         return List.copyOf(out);
     }
@@ -258,10 +263,10 @@ public final class ObservedObjectProjection {
 
     private static boolean sensitive(String name) {
         String normalized = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
-        return normalized.contains("password") || normalized.contains("passwd") || normalized.contains("secret")
-                || normalized.contains("token") || normalized.contains("authorization") || normalized.contains("cookie")
-                || normalized.contains("session") || normalized.equals("pwd") || normalized.equals("apikey")
-                || normalized.equals("credential") || normalized.equals("credentials");
+        // Exact credential names only: business fields containing these words are not filtered.
+        return Set.of("password", "passwd", "pwd", "sessionid", "jsessionid", "phpsessid",
+                "authorization", "cookie", "setcookie", "accesstoken", "refreshtoken",
+                "idtoken", "csrftoken", "apikey", "credential", "credentials").contains(normalized);
     }
     private static String legacy(RequestRecord r, String channel, List<String> fields) {
         if (fields.size() != 1 || r.resource == null) return null;
