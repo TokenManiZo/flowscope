@@ -89,8 +89,8 @@ const BASIS_SOURCES: Array<{
   detail: string;
   icon: typeof UserRound;
 }> = [
-  { id: "HUMAN", label: "HUMAN", detail: "Burp", icon: UserRound },
-  { id: "SCANNER", label: "ZAP", detail: "Scanner", icon: RadioTower },
+  { id: "HUMAN", label: "사람", detail: "Burp", icon: UserRound },
+  { id: "SCANNER", label: "스캐너", detail: "Scanner", icon: RadioTower },
   { id: "LLM", label: "LLM", detail: "Explorer", icon: Cpu },
 ];
 

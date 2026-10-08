@@ -164,7 +164,7 @@ export function InspectionPage() {
     return { id: event.eventId, ordinal: evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, event.eventId), badge: event.method, title: event.path, status: String(event.status), detail: who.label, mutedDetail: who.muted,
       sourceCode: event.source === "human" ? "H" : event.source === "scanner" ? "S" : event.source === "llm" ? "L" : "—",
       sourceLabel: isAuthorizationReplay(event) ? (!identity || identity === "anon" ? "비로그인 자동 검증" : "자동 검증")
-        : event.source === "human" ? "Human" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
+        : event.source === "human" ? "사람" : event.source === "scanner" ? (isZapRequest(event) ? "ZAP" : "스캐너") : event.source === "llm" ? "LLM" : "미확인",
       time: event.timestamp ? clockTime(new Date(event.timestamp).toISOString()) : undefined }
   }
 

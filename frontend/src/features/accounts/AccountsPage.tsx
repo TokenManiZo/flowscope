@@ -86,7 +86,7 @@ export function AccountsPage() {
         const last = Math.max(...Object.values(observations.last))
         const lastRecorded = last ? clockTime(new Date(last).toISOString()) : "—"
         const lanes: Array<[string, StatusMeta | null, string]> = [
-          ["Human", { label: ending ? "종료 중" : analyzing ? "기록 분석 중" : collecting ? activeRun.paused ? "수집 일시 정지" : "수집 중" : lastEnd ? "수집 종료" : "수집 대기", tone: collecting && !activeRun.paused ? "warn" : "idle" }, `${observations.counts.human.toLocaleString("ko-KR")}건`],
+          ["사람", { label: ending ? "종료 중" : analyzing ? "기록 분석 중" : collecting ? activeRun.paused ? "수집 일시 정지" : "수집 중" : lastEnd ? "수집 종료" : "수집 대기", tone: collecting && !activeRun.paused ? "warn" : "idle" }, `${observations.counts.human.toLocaleString("ko-KR")}건`],
           ["ZAP", isAnonymous ? NOT_USED : settings ? settings.zap.enabled ? ZAP_STATUS_META[settings.zap.status] : NOT_USED : null, `${zapTotals.get(account.id)!.counts.scanner.toLocaleString("ko-KR")}건`],
           ["LLM", isAnonymous ? NOT_USED : settings ? settings.llm.enabled ? EXPLORER_STATUS_META[settings.llm.status] : NOT_USED : null, `${observations.counts.llm.toLocaleString("ko-KR")}건`],
         ]

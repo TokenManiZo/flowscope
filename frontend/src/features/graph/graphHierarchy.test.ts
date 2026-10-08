@@ -58,7 +58,7 @@ describe("API hierarchy", () => {
     expect(group.kind).toBe("group")
     expect(group.nodes.some(node => node.kind === "resource")).toBe(true)
     expect(group.edges.every(edge => edge.relation === "identity-operation" || edge.relation === "operation-resource")).toBe(true)
-    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
+    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "사람"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "스캐너"]])
     expect(group.operations.find(node => node.selection.operation === get)!.selection.cells[0].overall).toBe("undecided")
     expect(group.listItems).toEqual(group.operations)
   })
