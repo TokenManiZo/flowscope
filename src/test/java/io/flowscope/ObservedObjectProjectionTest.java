@@ -38,19 +38,50 @@ class ObservedObjectProjectionTest {
         assertEquals(two.get(0).objectKey(), two.get(1).objectKey());
     }
     private static RequestRecord record(String path, int number) {
-        var r = new RequestRecord(Source.HUMAN, "https://t:443", "GET", path, 200, "A");
+        return record(path, number, Source.HUMAN);
+    }
+    private static RequestRecord record(String path, int number, Source source) {
+        var r = new RequestRecord(source, "https://t:443", "GET", path, 200, "A");
         r.hasResponse = true; r.evidenceId = "event-" + number; r.timestamp = number;
+        r.collectionAccountId = number % 2 == 1 ? "user-a" : "user-b";
         Normalizer.normalizeAll(List.of(r));
         return r;
     }
-    @Test void requiresTwoRealPathObservationsWithoutRequiringOtherSources() {
+    @Test void requiresTwoIdentitiesOrSourcesRatherThanRepeatedRequests() {
         var a = record("/posts/12313213", 1);
         assertTrue(ObservedObjectProjection.build(List.of(a)).isEmpty());
         assertTrue(ObservedObjectProjection.build(List.of(a, a)).isEmpty());
         var b = record(a.path, 2);
+        b.idn = a.idn;
+        assertTrue(ObservedObjectProjection.build(List.of(a,b)).isEmpty());
+        b.idn = "user-b";
         var out = ObservedObjectProjection.build(List.of(a, b));
         assertEquals(2, out.size()); assertEquals(out.getFirst().objectKey(), out.getLast().objectKey());
         assertEquals(1, out.getLast().ordinal());
+    }
+    @Test void separateSourcesCorroborateTheSameIdentityButRunIdsDoNot() {
+        var a = record("/posts/100", 1);
+        var b = record("/posts/200", 2); b.idn = a.idn;
+        a.runId = "run-a"; b.runId = "run-b";
+        assertTrue(ObservedObjectProjection.build(List.of(a,b)).isEmpty());
+        for (Source source : List.of(Source.SCANNER, Source.LLM)) {
+            b = record("/posts/200", 2, source); b.idn = a.idn;
+            assertEquals(2, ObservedObjectProjection.build(List.of(a,b)).size());
+        }
+        b.executionTrust = ExecutionTrust.UNVERIFIED_RUNTIME;
+        assertTrue(ObservedObjectProjection.build(List.of(a,b)).isEmpty());
+    }
+    @Test void genuineAnonymousObservationCountsButAutomaticValidationDoesNot() {
+        var a = record("/posts/100", 1);
+        var anon = record(a.path, 2); anon.idn = Fingerprints.ANONYMOUS;
+        assertEquals(2, ObservedObjectProjection.build(List.of(a,anon)).size());
+        anon = record(a.path, 2, Source.SCANNER); anon.idn = Fingerprints.ANONYMOUS;
+        for (RunPhase phase : List.of(RunPhase.AUTHORIZATION_REPLAY, RunPhase.VALIDATION, RunPhase.COACH_PROBE)) {
+            anon.phase = phase;
+            assertTrue(ObservedObjectProjection.build(List.of(a,anon)).isEmpty());
+        }
+        anon.phase = RunPhase.UNKNOWN; anon.sourceDetail = SourceDetail.AUTHORIZATION_REPLAY;
+        assertTrue(ObservedObjectProjection.build(List.of(a,anon)).isEmpty());
     }
     @Test void crapiStringIdsBecomeThreeObjectsAndRecentStaysAnApi() {
         var a = record("/community/posts/7bLfZ8nkq40LJuVovEVVLS", 1);

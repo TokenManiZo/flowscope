@@ -3,6 +3,7 @@ package io.flowscope.core.graph;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.SourceTrustPolicy;
 import io.flowscope.core.Source;
+import io.flowscope.core.SourceDetail;
 import io.flowscope.core.RunPhase;
 import java.util.*;
 import java.util.regex.Pattern;
@@ -35,6 +36,15 @@ public final class ObservedObjectProjection {
             .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(128).maxStringLength(1_000_000).build()).build())
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private record PathRow(RequestRecord record, List<String> segments, Set<Integer> positions) {}
+    private static final class Observers {
+        final Set<String> identities = new HashSet<>();
+        final Set<Source> sources = EnumSet.noneOf(Source.class);
+        void add(RequestRecord record) {
+            if (record.idn != null && !record.idn.isBlank()) identities.add(record.idn);
+            sources.add(record.source);
+        }
+        boolean corroborated() { return identities.size() >= 2 || sources.size() >= 2; }
+    }
     private static final Pattern TOKEN = Pattern.compile("(?:\\d+|(?=[A-Za-z0-9._~-]*[A-Za-z])(?=[A-Za-z0-9._~-]*\\d)[A-Za-z0-9._~-]+)");
     private static boolean token(String value) { return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches(); }
 
@@ -70,15 +80,15 @@ public final class ObservedObjectProjection {
             if (!row.segments.get(i).isEmpty() && !strongSibling.getOrDefault(key, false)
                     && siblings.getOrDefault(key, Set.of()).size() > 1) row.positions.add(i);
         }
-        Map<String, Set<String>> counts = new HashMap<>();
+        Map<String, Observers> observers = new HashMap<>();
         for (PathRow row : rows) if (!row.positions.isEmpty()) {
-            counts.computeIfAbsent(family(row), ignored -> new HashSet<>()).add(row.record.evidenceId);
+            observers.computeIfAbsent(family(row), ignored -> new Observers()).add(row.record);
         }
         List<ObjectObservation> out = new ArrayList<>();
         Map<String, LinkedHashMap<String, Integer>> ordinals = new HashMap<>();
         rows.sort(Comparator.comparingLong((PathRow row) -> row.record.timestamp).thenComparing(row -> row.record.evidenceId));
         for (PathRow row : rows) {
-            if (row.positions.isEmpty() || counts.get(family(row)).size() < 2) continue;
+            if (row.positions.isEmpty() || !observers.get(family(row)).corroborated()) continue;
             int position = row.positions.stream().mapToInt(Integer::intValue).max().orElseThrow();
             List<String> api = new ArrayList<>(row.segments);
             api.set(position, "{id}");
@@ -303,6 +313,7 @@ public final class ObservedObjectProjection {
                 || !SourceTrustPolicy.allows(r, SourceTrustPolicy.Use.ANALYSIS_COVERAGE)
                 || !r.hasResponse || r.status < 100 || r.status > 599) return false;
         if (Set.of(RunPhase.SESSION_SETUP, RunPhase.AUTHORIZATION_REPLAY, RunPhase.COACH_PROBE, RunPhase.VALIDATION).contains(r.phase)) return false;
+        if (Set.of(SourceDetail.AUTHORIZATION_REPLAY, SourceDetail.LLM_VALIDATION, SourceDetail.LLM_COACH_PROBE).contains(r.sourceDetail)) return false;
         if (r.sourceDetail.name().contains("REPEATER") || r.sourceDetail.name().contains("INTRUDER") || r.sourceDetail.name().contains("REQUEST_LAB")) return false;
         var c = r.trafficClassification;
         return !Set.of("STATIC_ASSET", "PREFLIGHT", "DISCOVERY_METADATA").contains(c.trafficClass().name())

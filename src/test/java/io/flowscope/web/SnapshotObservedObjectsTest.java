@@ -10,6 +10,7 @@ class SnapshotObservedObjectsTest {
     @Test void addsDisplayObjectsWithoutChangingMatrixCoordinatesOrRequestLabEvidence() throws Exception {
         var a = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/posts/opaqueTokenA123456", 200, "A");
         var b = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/posts/opaqueTokenB123456", 200, "A");
+        a.collectionAccountId = "user-a"; b.collectionAccountId = "user-b";
         for (var r : List.of(a,b)) {
             r.hasResponse = true; r.reqText = "GET " + r.path + " HTTP/1.1\r\nHost: t\r\n\r\n";
             r.body = "{\"title\":\"post\"}";
