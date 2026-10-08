@@ -324,6 +324,6 @@ it("uses exact HUMAN, SCANNER, and LLM source semantics in the canvas legend", a
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
 
-  const legend = screen.getByRole("list", { name: "그래프 소스 범례" })
+  const legend = screen.getByRole("list", { name: "그래프 출처 범례" })
   expect(within(legend).getAllByRole("listitem").map((item) => item.textContent)).toEqual(["사람", "스캐너", "LLM"])
 })
