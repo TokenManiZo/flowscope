@@ -21,6 +21,17 @@ import static org.junit.jupiter.api.Assertions.*;
 final class LiveCrossIdentityReplayCoordinatorTest {
     private static final URI TARGET = URI.create("https://api.test/api/orders/19");
 
+    @Test void passiveSubdomainTrafficIsNeverQueuedForAutomaticReplay() {
+        AtomicInteger dispatched = new AtomicInteger();
+        var coordinator = coordinator((recommendations, armed) -> { dispatched.incrementAndGet(); return result(recommendations, true); });
+        coordinator.startAutomaticAnonymousGet(true);
+        var record = eligible("GET", "passive");
+        record.passiveSubdomainTraffic = true;
+        assertFalse(coordinator.acceptingCaptures(record));
+        assertFalse(coordinator.offer(record, TARGET, true));
+        assertEquals(0, dispatched.get());
+    }
+
     @Test
     void requiresExplicitArmingAndDoesNothingWhileStopped() {
         AtomicInteger dispatched = new AtomicInteger();

@@ -416,7 +416,7 @@ public final class LiveCrossIdentityReplayCoordinator {
     }
 
     private boolean basisSourceEligible(RequestRecord record) {
-        if (record == null || !basisSources.contains(record.source)) return false;
+        if (record == null || record.passiveSubdomainTraffic || !basisSources.contains(record.source)) return false;
         if (record.source == Source.HUMAN) {
             return record.executionTrust == ExecutionTrust.OBSERVED;
         }

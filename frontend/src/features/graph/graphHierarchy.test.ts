@@ -21,6 +21,60 @@ const operationNav = (): GraphNavigation => navigateHierarchy(groupNav(), "opera
 const event = (overrides: Partial<EventRecord> = {}): EventRecord => ({ eventId: "support-1", method: "GET", path: "/api/orders/poll", status: 200, fp: "", idn: "USER A", role: "USER", source: "human", op: `${service} GET /api/orders/poll`, resource: null, timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "run-1", authState: "AUTH", trafficClass: "POLLING", trafficDisposition: "EXCLUDE", coverageEligible: false, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "cluster-1", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["support-1"], objects: [], verdict: "untested", ...overrides })
 
 describe("API hierarchy", () => {
+  it("keeps v1.0.2 static resource groups alongside passive subdomain requests", () => {
+    const child = "https://api.demo.test:443"
+    const snapshot = targetSnapshot({ events: [
+      event({ op: `${child} GET /api/orders/1`, path: "/api/orders/1", trafficClass: "API", classificationReasons: ["PASSIVE_SUBDOMAIN_TRAFFIC"] }),
+      event({ eventId: "static", clusterEvidenceIds: ["static"], op: `${service} GET /assets/app.css`, path: "/assets/app.css", trafficClass: "STATIC_ASSET" }),
+    ] })
+    const hosts = [{ service: child, registered: false }]
+    const core = projectHierarchy(snapshot, filters, initial, {}, hosts)
+    expect(core.groups.map(group => group.service)).toEqual([child])
+    const broad = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial, {}, hosts)
+    expect(new Set(broad.groups.map(group => group.service))).toEqual(new Set([child, service]))
+    expect(broad.nodes.filter(node => node.kind === "target" && node.service === child)).toHaveLength(1)
+    const childGroup = broad.groups.find(group => group.service === child)!
+    const detail = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, navigateHierarchy(initial, "group", childGroup.id), {}, hosts)
+    expect(detail.nodes.some(node => node.kind === "observed-operation")).toBe(true)
+    expect(snapshot.cells).toHaveLength(0)
+  })
+  it("connects passive subdomain traffic to its own host and request group in the default view", () => {
+    const child = "https://api.demo.test:443"
+    const childEvent = event({ op: `${child} GET /api/orders/1`, path: "/api/orders/1", trafficClass: "API", classificationReasons: ["PASSIVE_SUBDOMAIN_TRAFFIC"] })
+    const snapshot = targetSnapshot({ events: [childEvent] })
+    const hosts = [{ service: child, registered: false }]
+    const site = projectHierarchy(snapshot, filters, initial, {}, hosts)
+    const group = site.groups[0]
+    expect(group).toMatchObject({ service: child, observedCount: 1, endpointCount: 0 })
+    expect(site.nodes.filter(node => node.kind === "target")).toHaveLength(1)
+    expect(site.edges[0]).toMatchObject({ sourceId: `target:${child}`, targetId: `api-group:${group.id}` })
+    const detail = projectHierarchy(snapshot, filters, navigateHierarchy(initial, "group", group.id), {}, hosts)
+    expect(detail.nodes.find(node => node.kind === "observed-operation")?.selection.evidenceIds).toContain(childEvent.eventId)
+    expect(detail.edges.some(edge => edge.targetId === `observed-operation:${childEvent.op}`)).toBe(true)
+    expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"] }, initial, {}, hosts).groups).toHaveLength(0)
+    expect(projectHierarchy(snapshot, { ...filters, identity: ["other"] }, initial, {}, hosts).groups).toHaveLength(0)
+    expect(snapshot.cells).toHaveLength(0)
+  })
+  it("automatically shows observed hosts without inventing API groups, edges, Evidence or verdicts", () => {
+    const origin = "https://ko.example.test:443"
+    const site = projectHierarchy(targetSnapshot(), filters, initial, {}, [{ service: origin, registered: false }, { service: origin, registered: false }])
+    expect(site.nodes).toHaveLength(1)
+    expect(site.nodes[0]).toMatchObject({ kind: "target", discovery: "unregistered", verdict: "unknown", selection: { evidenceIds: [], cellKeys: [], cells: [] } })
+    expect(site.listItems[0].id).toBe(`target:${origin}`)
+    expect(site.groups).toHaveLength(0)
+    expect(site.edges).toHaveLength(0)
+  })
+
+  it("merges discovered hosts with real service targets and retains registered hosts without visible APIs", () => {
+    const known = data()
+    const hosts = [{ service, registered: true }, { service: "https://other.example.test:443", registered: true }]
+    const site = projectHierarchy(known, filters, initial, {}, hosts)
+    expect(site.nodes.filter(node => node.kind === "target" && node.service === service)).toHaveLength(1)
+    expect(site.nodes.find(node => node.service === service && node.kind === "target")?.discovery).toBeUndefined()
+    expect(site.nodes.find(node => node.service === hosts[1].service)).toMatchObject({ discovery: "registered" })
+    const group = projectHierarchy(known, filters, groupNav(), {}, hosts)
+    expect(group.nodes.some(node => node.discovery)).toBe(false)
+  })
   it.each([["/api/orders/101", "orders"], ["/rest/v1/orders/101", "orders"], ["/v2/admin/users", "admin"], ["/", "root"], ["/API/REST/v1.2/Order_Items/101", "order_items"], ["/api", "api"]])("groups %s by its first stable segment", (path, key) => {
     expect(apiGroupDescriptor(service, path).key).toBe(key)
   })
@@ -58,7 +112,7 @@ describe("API hierarchy", () => {
     expect(group.kind).toBe("group")
     expect(group.nodes.some(node => node.kind === "resource")).toBe(true)
     expect(group.edges.every(edge => edge.relation === "identity-operation" || edge.relation === "operation-resource")).toBe(true)
-    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "HUMAN"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "SCANNER"]])
+    expect(group.edges.filter(edge => edge.relation === "identity-operation" && edge.selection.identity === "USER A").map(edge => [edge.source, edge.line, edge.sourceText]).sort()).toEqual([["human", "solid", "사람"], ["llm", "dotted", "LLM"], ["scanner", "dashed", "스캐너"]])
     expect(group.operations.find(node => node.selection.operation === get)!.selection.cells[0].overall).toBe("undecided")
     expect(group.listItems).toEqual(group.operations)
   })
@@ -252,7 +306,7 @@ describe("API hierarchy", () => {
     const group = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, groupNav())
     expect(group.nodes.filter(node => node.kind === "observed-operation").map(node => node.selection.operation).sort()).toEqual([`${service} GET /api/orders/include`, `${service} GET /api/orders/poll`])
     expect(group.edges.filter(edge => edge.relation === "support").map(edge => [edge.source, edge.selection.evidenceIds, edge.selection.cellKeys])).toEqual([["human", ["review-api", "support-1"], []], ["llm", ["unverified"], []]])
-    // 판정 셀·출처 집계는 그대로다. 관측 전체는 표시만 더한다.
+    // 판정 셀·출처 집계는 그대로다. 전체는 표시만 더한다.
     expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 }, observedCount: 3 })
     expect(group.nodes.filter(node => node.staticResource && node.kind === "operation-group")).toHaveLength(1)
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "observed-operation")).toBe(false)

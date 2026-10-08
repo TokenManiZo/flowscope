@@ -36,7 +36,7 @@ describe("RequestLabMetadata", () => {
 
     expect(screen.getByRole("radio", { name: "현재 세션" })).toBeDisabled()
     expect(screen.getByText("아직 저장된 최신 인증값이 없어요.")).toBeVisible()
-    expect(screen.getByText("인증값 없음")).toBeVisible()
+    expect(screen.getByText("로그인 정보 없음")).toBeVisible()
   })
 
   it("masks all but a short prefix of the observed credential", () => {

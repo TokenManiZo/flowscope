@@ -11,6 +11,23 @@ import { GraphInspectorPanel } from "@/features/graph/GraphInspectorPanel"
 vi.mock("./RequestLabDialog", () => ({ RequestLabDialog: () => null }))
 afterEach(() => vi.unstubAllGlobals())
 
+it("deletes a single-request source row without affecting another object's requests", async () => {
+  const calls = mockDeletion(), user = userEvent.setup()
+  renderWithQueryClient(<EvidenceActionList events={[first]} snapshot={data} allowDelete />)
+  const remove = screen.getByRole("button", { name: "#1 요청 삭제" })
+  expect(remove.nextElementSibling).toHaveAttribute("aria-label", "Request Lab에서 보내기")
+  await user.click(remove)
+  await screen.findByRole("button", { name: "영구 삭제" })
+  expect(calls[0]).toEqual({ action: "preview-delete", evidenceIds: ["first"], datasetRevision: 7, revision: 3 })
+  await user.click(screen.getByRole("button", { name: "영구 삭제" }))
+  await waitFor(() => expect(calls.at(-1)).toEqual({ action: "delete", evidenceIds: ["first"], expectedEvidenceIds: ["first", "linked-replay"], datasetRevision: 7, revision: 3 }))
+})
+
+it("disables single-request deletion while suspended", () => {
+  renderWithQueryClient(<EvidenceActionList events={[first]} snapshot={data} allowDelete disabled />)
+  expect(screen.getByRole("button", { name: "#1 요청 삭제" })).toBeDisabled()
+})
+
 const event = (eventId: string, extra: Partial<EventRecord> = {}): EventRecord => ({
   eventId, method: "GET", path: "/items/1", status: 200, fp: "fp", idn: "anon", role: "Anonymous", source: "human",
   op: "GET /items/{id}", resource: "items:1", timestamp: 1, sourceDetail: "BROWSER", orchestrator: "HUMAN",
@@ -62,7 +79,7 @@ it("previews the whole visible request group including repeats, then deletes onl
   const footer = bulk.closest("footer")!
   expect(within(footer).getAllByRole("button")).toHaveLength(3)
   expect(within(footer).getByRole("button", { name: "API 하이라이트" })).toBeInTheDocument()
-  expect(within(footer).getByRole("button", { name: "취약점 등록" })).toBeInTheDocument()
+  expect(within(footer).getByRole("button", { name: "취약점으로 표시" })).toBeInTheDocument()
   expect(within(screen.getByRole("region", { name: "요청 기록" })).queryByRole("button", { name: /전체 삭제/ })).not.toBeInTheDocument()
   await user.click(bulk)
   await screen.findByRole("button", { name: "영구 삭제" })

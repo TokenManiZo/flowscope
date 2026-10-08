@@ -27,7 +27,7 @@ const matchingGroups = (highlight: GraphHighlight) => {
 }
 const groupId = (service: string, name: string) => `api-group:${JSON.stringify([service, name])}`
 
-describe("Site Overview filters", () => {
+describe("전체 사이트 filters", () => {
   it("disables dimming when all filters are cleared", () => {
     expect(projectSiteHighlight(graph, events, EMPTY_HIGHLIGHT, contents)).toBeNull()
   })

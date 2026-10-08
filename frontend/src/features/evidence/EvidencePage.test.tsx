@@ -100,7 +100,7 @@ describe("EvidencePage", () => {
     const user = userEvent.setup()
     renderWithQueryClient(<EvidencePage />)
     await screen.findByRole("checkbox", { name: "event-1 기록 선택" })
-    await user.click(screen.getByRole("checkbox", { name: "스캐너 S" }))
+    await user.click(screen.getByRole("checkbox", { name: "스캐너" }))
     await user.click(screen.getByRole("checkbox", { name: "event-1 기록 선택" }))
     expect(screen.getByText("요청 기록 2건 선택")).toBeVisible()
     await user.click(screen.getByRole("checkbox", { name: "반복 요청 기록 펼치기" }))
@@ -119,12 +119,12 @@ describe("EvidencePage", () => {
 
     // 필터는 왼쪽 패널이 아니라 표 위 한 줄 도구 모음이다.
     const context = await screen.findByRole("group", { name: "요청 기록 표시 필터" })
-    expect(within(context).getByRole("checkbox", { name: "사람 H" })).toBeVisible()
+    expect(within(context).getByRole("checkbox", { name: "사람" })).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.getByRole("region", { name: "요청 기록 분석 영역" })).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "선택 상세 패널 열기" })).toBeVisible()
-    await userEvent.click(within(context).getByRole("checkbox", { name: "사람 H" }))
+    await userEvent.click(within(context).getByRole("checkbox", { name: "사람" }))
     expect(screen.queryByText("workspace-evidence")).not.toBeInTheDocument()
   })
 
@@ -166,7 +166,7 @@ describe("EvidencePage", () => {
     const reviewRow = screen.getByText("scanner-review").closest("tr") as HTMLTableRowElement
     expect(within(reviewRow).getByText("검토 필요")).toBeVisible()
     expect(within(reviewRow).getByText("API인지 판단할 근거가 부족함")).toBeVisible()
-    await user.click(screen.getByRole("checkbox", { name: "스캐너 S" }))
+    await user.click(screen.getByRole("checkbox", { name: "스캐너" }))
     expect(screen.queryByText("scanner-review")).not.toBeInTheDocument()
     expect(screen.getByText("검토할 트래픽이 없습니다.")).toBeVisible()
 
@@ -455,12 +455,12 @@ describe("EvidencePage", () => {
 
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
-    await user.click(screen.getByRole("checkbox", { name: "사람 H" }))
+    await user.click(screen.getByRole("checkbox", { name: "사람" }))
     expect(await screen.findByText("현재 필터에 맞는 요청 기록이 없습니다.")).toBeVisible()
     await user.click(inspectorTrigger)
     expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("분석 결과에서 항목을 선택하면")
     await user.click(within(screen.getByRole("dialog", { name: "선택 상세" })).getByRole("button", { name: "Close" }))
-    await user.click(screen.getByRole("checkbox", { name: "사람 H" }))
+    await user.click(screen.getByRole("checkbox", { name: "사람" }))
     const row = (await screen.findByText("compact-evidence")).closest("tr")
     expect(row).not.toBeNull()
     await user.click(within(row as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ }))

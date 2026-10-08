@@ -28,6 +28,11 @@ function evidenceFooter(node: RelationshipNode) {
 export function relationshipNodeCard(node: RelationshipNode, projection: RelationshipProjection, statuses: readonly number[] = []): ParameterNodeCardView {
   if (node.kind === "target") {
     const service = node.service ?? node.label
+    if (node.discovery) return {
+      kind: "target", badge: "HOST", title: service, detail: "브라우저에서 발견됨",
+      footer: node.discovery === "unregistered" ? "범위 미등록" : "범위 등록됨 · 표시할 API 없음", icon: "globe",
+      accessibleLabel: `발견된 호스트 ${service}; ${node.discovery === "unregistered" ? "범위 미등록" : "범위 등록됨"}`,
+    }
     const groupCount = "kind" in projection ? projection.groups.filter(group => group.service === service).length : 0
     return {
       kind: "target", badge: "TARGET", title: service, detail: "", footer: `${groupCount} API group${groupCount === 1 ? "" : "s"}`, icon: "globe",
