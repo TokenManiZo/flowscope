@@ -134,10 +134,10 @@ it("requires explicit 18-item expansion for APIs and retains group paging on Bac
   expect(screen.getByRole("row", { name: /^GET \/api\/orders\/19/ })).toBeVisible()
 })
 
-it("switches the graph between judged APIs and every observed non-static request, and resets to judged APIs", async () => {
+it("switches the graph between judged APIs and every observed request including folded static resources, and resets to judged APIs", async () => {
   window.matchMedia = vi.fn((query: string) => ({ matches: false, media: query, addEventListener: vi.fn(), removeEventListener: vi.fn() })) as unknown as typeof window.matchMedia
   const page = { ...snapshot.events[0], eventId: "php-1", clusterEvidenceIds: ["php-1"], path: "/board/list.php", op: "GET /board/list.php", resource: null, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE", coverageEligible: false }
-  const style = { ...page, eventId: "css-1", clusterEvidenceIds: ["css-1"], path: "/theme/site.css", op: "GET /theme/site.css", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW" }
+  const style = { ...page, eventId: "css-1", clusterEvidenceIds: ["css-1"], path: "/theme/site.css", op: "GET /theme/site.css", trafficClass: "STATIC_ASSET", trafficDisposition: "EXCLUDE" }
   ;(globalThis as { graphFixture?: Snapshot }).graphFixture = { ...snapshot, events: [...snapshot.events, page, style] }
   const { RelationshipGraphView: GraphPage } = await import("./RelationshipGraphView")
   render(<GraphPage />)
@@ -147,11 +147,11 @@ it("switches the graph between judged APIs and every observed non-static request
   await userEvent.click(within(rail).getByRole("button", { name: "관측 전체" }))
   expect(within(rail).getByRole("button", { name: "관측 전체" })).toHaveAttribute("aria-pressed", "true")
   await userEvent.click(within(rail).getByRole("button", { name: "보기 범위 도움말" }))
-  expect(screen.getByText(/추가로 보이는 요청은 판정에 쓰지 않습니다/)).toBeVisible()
+  expect(screen.getByText(/판정에 쓰지 않습니다/)).toBeVisible()
   await userEvent.keyboard("{Escape}")
-  // 정적 파일(/theme/site.css)은 관측 전체에서도 빠지고, 서버 렌더링 화면(/board/list.php) 묶음만 더해진다.
+  // 관측 전체에서 정적 자원 묶음과 서버 렌더링 화면이 함께 추가된다.
   expect(screen.queryAllByText("BOARD APIs").length).toBeGreaterThan(0)
-  expect(screen.queryAllByText("THEME APIs")).toHaveLength(0)
+  expect(screen.queryAllByText("THEME APIs").length).toBeGreaterThan(0)
   await userEvent.click(within(rail).getByRole("button", { name: "초기화" }))
   expect(within(rail).getByRole("button", { name: "핵심 API만" })).toHaveAttribute("aria-pressed", "true")
   expect(screen.queryAllByText("BOARD APIs")).toHaveLength(0)

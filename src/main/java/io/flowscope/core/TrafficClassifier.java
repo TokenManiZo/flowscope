@@ -13,7 +13,7 @@ import static io.flowscope.core.TrafficClassification.TrafficClass;
 
 /** 표준 요청 문맥과 저장된 Evidence만 사용하는 보수적 비파괴 분류기. */
 public final class TrafficClassifier {
-    public static final int VERSION = 9;
+    public static final int VERSION = 10;
 
     /** Reason set on HUMAN API traffic captured while no exploration pass was active (D-071). The snapshot reads it to guide a pass start (D-155). */
     public static final String HUMAN_OUTSIDE_EXPLORATION_RUN = "HUMAN_OUTSIDE_EXPLORATION_RUN";
@@ -22,9 +22,7 @@ public final class TrafficClassifier {
 
     private static final Set<String> ASSET_DESTINATIONS = Set.of(
             "audio", "font", "image", "manifest", "script", "style", "track", "video");
-    private static final Set<String> ASSET_EXTENSIONS = Set.of(
-            "js", "mjs", "css", "map", "png", "jpg", "jpeg", "gif", "svg", "ico", "webp",
-            "avif", "bmp", "woff", "woff2", "ttf", "eot", "mp3", "mp4", "webm");
+    private static final Set<String> ASSET_EXTENSIONS = StaticResourcePolicy.EXTENSIONS;
     /** 정적 자산이지만 endpoint 선언을 담을 수 있어 탐색 대상으로 남기는 확장자. */
     private static final Set<String> DISCOVERY_ASSET_EXTENSIONS = Set.of("js", "mjs", "map");
     private static final Set<String> TELEMETRY_PATHS = Set.of(
@@ -35,7 +33,7 @@ public final class TrafficClassifier {
      * JavaScript와 source map은 endpoint 선언을 담으므로 제외하지 않는다.
      */
     public static boolean looksLikeNonDiscoveryAssetPath(String path) {
-        String ext = extension(path);
+        String ext = StaticResourcePolicy.extension(path);
         return !ext.isBlank() && ASSET_EXTENSIONS.contains(ext) && !DISCOVERY_ASSET_EXTENSIONS.contains(ext);
     }
 
@@ -64,6 +62,9 @@ public final class TrafficClassifier {
         }
         if (record.phase == RunPhase.VALIDATION || record.phase == RunPhase.COACH_PROBE) {
             return result(inferredClass(record), Disposition.EXCLUDE, false, "NON_DISCOVERY_PHASE");
+        }
+        if (StaticResourcePolicy.matchesPath(record.path)) {
+            return result(TrafficClass.STATIC_ASSET, Disposition.EXCLUDE, false, "STATIC_RESOURCE_EXTENSION");
         }
         TrafficOverride override = config == null ? TrafficOverride.AUTO : config.trafficOverride(record.op);
         if (override == TrafficOverride.INCLUDE) {
@@ -115,6 +116,7 @@ public final class TrafficClassifier {
     }
 
     private static TrafficClass inferredClass(RequestRecord record) {
+        if (StaticResourcePolicy.matchesPath(record.path)) return TrafficClass.STATIC_ASSET;
         if (isPreflight(record)) return TrafficClass.PREFLIGHT;
         if (discoveryMetadataReason(record) != null) return TrafficClass.DISCOVERY_METADATA;
         if (isStaticAsset(record)) return TrafficClass.STATIC_ASSET;
@@ -175,7 +177,7 @@ public final class TrafficClassifier {
         if (!isSafe(record.method)) return false;
         String dest = lower(record.secFetchDest);
         String mime = mediaType(record.responseContentType);
-        String ext = extension(record.path);
+        String ext = StaticResourcePolicy.extension(record.path);
         if (ASSET_DESTINATIONS.contains(dest)) return mimeMatchesDestination(mime, dest)
                 || (mime.isBlank() && ASSET_EXTENSIONS.contains(ext));
         if (!ext.isBlank() && ASSET_EXTENSIONS.contains(ext)) return mimeMatchesExtension(mime, ext);
@@ -249,14 +251,6 @@ public final class TrafficClassifier {
         String lower = lower(value);
         int semicolon = lower.indexOf(';');
         return semicolon < 0 ? lower : lower.substring(0, semicolon).trim();
-    }
-
-    private static String extension(String path) {
-        String value = lower(path);
-        int slash = value.lastIndexOf('/');
-        String last = slash < 0 ? value : value.substring(slash + 1);
-        int dot = last.lastIndexOf('.');
-        return dot > 0 && dot < last.length() - 1 ? last.substring(dot + 1) : "";
     }
 
     private static String lower(String value) {

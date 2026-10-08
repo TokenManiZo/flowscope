@@ -1,13 +1,16 @@
+import { observedObjectEntries, MAX_VISIBLE_OBJECTS } from "./observedObjects"
+import { observedObjectLabel } from "./observedObjectLabel"
 import { graphAccountLabel } from "./graphAccounts"
 import type { Snapshot } from "@/lib/api/types"
 import type { GraphFilters } from "./graphProjection"
 import { graphContents, objectGroupKey, operationGroup, navigateHierarchy, type GraphNavigation, type GraphReveal, type HierarchyProjection } from "./graphHierarchy"
+import { staticResourceExtension } from "./staticResourceGraph"
 import { GRAPH_MIN_ZOOM } from "./graphLanes"
 import { operationShapeKey } from "./graphPathShape"
 
 export type SearchKind = "target" | "api-group" | "operation" | "resource" | "identity" | "operation-group" | "object-group" | "observed-operation" | "support-operation" | "route-candidate"
 export const searchKindNames: Record<SearchKind, string> = { target: "Target", "api-group": "API 그룹", operation: "API", resource: "객체", identity: "계정", "operation-group": "API 묶음", "object-group": "객체 묶음", "observed-operation": "관측 API", "support-operation": "보조 흐름", "route-candidate": "경로 후보" }
-export interface SearchContext { groupId: string; groupLabel: string; operation: string; nodeKind?: SearchKind }
+export interface SearchContext { expand?: readonly string[]; graphOnly?: boolean; staticApiId?: string; groupId: string; groupLabel: string; operation: string; nodeKind?: SearchKind }
 export interface GraphSearchEntry {
   key: string
   kind: SearchKind
@@ -23,7 +26,7 @@ export const searchKey = (kind: SearchKind, service: string, value: string) => J
 const compare = (left: string, right: string) => left.localeCompare(right, "en")
 /** 제한·접힘 전 그래프 데이터에서 식별자와 이동 문맥만 보관한다. */
 export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters): GraphSearchIndex {
-  const { cells, observedEvents, attachedEvents, routeCandidates, resolveGroup } = graphContents(snapshot, filters)
+  const { cells, observedEvents, attachedEvents, routeCandidates, resolveGroup, staticEntries } = graphContents(snapshot, filters)
   const entries = new Map<string, Omit<GraphSearchEntry, "contexts" | "name" | "text"> & { contexts: Map<string, SearchContext> }>()
   const shapes = new Map<string, { service: string; shape: string; operations: Set<string> }>()
   const add = (kind: SearchKind, service: string, value: string, title: string, context: SearchContext) => {
@@ -39,7 +42,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     add("api-group", group.service, group.id, group.label, context)
     add("operation", group.service, cell.op, cell.op.replace(/^https?:\/\/\S+\s+/i, ""), context)
     add("identity", group.service, cell.idn, graphAccountLabel(snapshot, cell.idn), context)
-    if (cell.resource) {
+    if (cell.resource && snapshot.displayObjects === undefined) {
       add("resource", group.service, cell.resource, cell.resource, context)
       const object = objectGroupKey(cell.resource)
       if (object) add("object-group", group.service, object.id, object.key, context)
@@ -71,6 +74,62 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
       const group = operationGroup(operation, resolveGroup)
       add("operation-group", bucket.service, bucket.shape, bucket.shape.replace(/^https?:\/\/\S+\s+/i, ""), { groupId: group.id, groupLabel: group.label, operation })
     }
+  }
+  const display = observedObjectEntries(snapshot, filters)
+  const families = new Map(display.filter(entry => entry.object.apiFamily).map(entry => [entry.object.apiKey, entry.object.apiFamily!]))
+  const apiMembers = new Map<string, Set<string>>()
+  for (const { object } of display) {
+    const members = apiMembers.get(object.apiKey) ?? new Set<string>(); members.add(object.operation); apiMembers.set(object.apiKey, members)
+  }
+  const representatives = new Map([...apiMembers].map(([api, members]) => [api, [...members].sort()[0]]))
+  for (const [api, members] of apiMembers) {
+    for (const member of members) {
+      const group = operationGroup(member, resolveGroup)
+      entries.delete(searchKey("operation", group.service, member))
+      entries.delete(searchKey("observed-operation", group.service, member))
+      entries.delete(searchKey("operation-group", group.service, operationShapeKey(member)))
+    }
+    const operation = representatives.get(api)!, group = operationGroup(operation, resolveGroup)
+    const family = families.get(api)
+    const context = { groupId: group.id, groupLabel: group.label, operation, ...(family ? { expand: [`operation-group:${family}`] } : {}) }
+    add("operation", group.service, family ? api : operation, api.replace(/^https?:\/\/\S+\s+/i, ""), context)
+    if (family) add("operation-group", group.service, family, family.replace(/^https?:\/\/\S+\s+/i, ""), context)
+  }
+  const visibleKeys = new Map<string, Set<string>>()
+  for (const { object } of [...display].sort((a, b) => a.object.ordinal - b.object.ordinal)) {
+    const keys = visibleKeys.get(object.groupKey) ?? new Set<string>()
+    const visible = keys.has(object.objectKey) || keys.size < MAX_VISIBLE_OBJECTS
+    if (visible) keys.add(object.objectKey)
+    visibleKeys.set(object.groupKey, keys)
+    const group = operationGroup(object.operation, resolveGroup), operation = representatives.get(object.apiKey)!
+    const family = families.get(object.apiKey)
+    const context = { groupId: group.id, groupLabel: group.label, operation, ...(family ? { expand: [`operation-group:${family}`] } : {}) }
+    const owner = object.legacyResource ? snapshot.owners[object.legacyResource] : null
+    if (visible) add("resource", group.service, object.objectKey, observedObjectLabel(object, owner ? graphAccountLabel(snapshot, owner) : null), context)
+    const label = object.kind === "PATH" ? (family?.match(/\{id_\d+\}/g)?.at(-1)?.slice(1, -1) ?? "id") : object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · ")
+    add("object-group", group.service, object.groupKey, label, context)
+  }
+  const staticObjects = new Map<string, Set<string>>()
+  for (const item of staticEntries) {
+    const keys = staticObjects.get(item.apiId) ?? new Set<string>(); keys.add(item.objectKey); staticObjects.set(item.apiId, keys)
+  }
+  const staticOrdinals = new Map<string, number>()
+  for (const keys of staticObjects.values()) [...keys].sort(compare).forEach((key, i) => staticOrdinals.set(key, i + 1))
+  for (const item of staticEntries) {
+    const group = resolveGroup(item.service, item.apiPath)
+    const context = { groupId: group.id, groupLabel: group.label, operation: item.event.op, graphOnly: true, staticApiId: item.apiId,
+      expand: [`operation-group:${item.familyId}`] }
+    add("target", item.service, item.service, item.service, context)
+    add("api-group", item.service, group.id, group.label, context)
+    add("identity", item.service, item.event.idn, graphAccountLabel(snapshot, item.event.idn), context)
+    add("operation-group", item.service, item.familyId, item.familyLabel, { ...context, expand: [] })
+    add("operation", item.service, item.apiId, item.apiLabel, context)
+    add("object-group", item.service, `static-family-objects:${item.familyId}`, `정적 자원 ${item.familyLabel}`, { ...context, expand: [] })
+    add("object-group", item.service, item.groupKey, `정적 자원 ${item.apiLabel}`, context)
+    const ordinal = staticOrdinals.get(item.objectKey)!
+    if (ordinal <= MAX_VISIBLE_OBJECTS) add("resource", item.service, item.objectKey, `${staticResourceExtension(item.event.path)} · ${item.event.path}`, {
+      ...context, expand: [...context.expand, `object-group:${item.groupKey}`],
+    })
   }
   const result = [...entries.values()].map(entry => {
     const contexts = [...entry.contexts.values()].sort((a, b) => compare(a.operation, b.operation))
@@ -132,11 +191,11 @@ export function searchDestination(entry: GraphSearchEntry, current: GraphNavigat
   let navigation = current
   if (entry.kind === "target" || entry.kind === "api-group") navigation = navigateHierarchy(current, "site")
   else if (!visible || listMode && !operationCard) {
-    const level = entry.kind === "resource" || listMode && entry.kind === "identity" && (!context.nodeKind || context.nodeKind === "operation") ? "operation" : "group"
+    const level = !context.graphOnly && (entry.kind === "resource" || listMode && entry.kind === "identity" && (!context.nodeKind || context.nodeKind === "operation")) ? "operation" : "group"
     navigation = navigateHierarchy(current, level, context.groupId, level === "operation" ? context.operation : "")
   }
   const operations = entry.kind === "operation-group" ? entry.contexts.filter(item => item.groupId === navigation.groupId).slice(0, 2).map(item => item.operation) : [context.operation]
-  return { navigation, nodeId, reveal: { operations, ...(entry.kind === "resource" ? { resource: entry.value } : {}), ...(entry.kind === "route-candidate" ? { routeCandidateId: entry.value } : {}) }, expand: entry.kind === "operation" ? [`operation-group:${operationShapeKey(entry.value)}`] : [] }
+  return { navigation, nodeId, reveal: { operations, ...(context.staticApiId ? { staticApiId: context.staticApiId } : {}), ...(entry.kind === "resource" ? { resource: entry.value } : {}), ...(entry.kind === "route-candidate" ? { routeCandidateId: entry.value } : {}) }, expand: context.expand ?? (entry.kind === "operation" ? [`operation-group:${operationShapeKey(entry.value)}`] : []) }
 }
 
 export function searchHighlights(projection: HierarchyProjection, keys: ReadonlySet<string>): ReadonlyMap<string, "direct" | "member"> {
