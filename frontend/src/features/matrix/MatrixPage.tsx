@@ -39,19 +39,9 @@ function BoundedOperation({ value }: { value: string }) {
  * 판정 매트릭스가 기본이며 파라미터 커버리지와 기존 권한 표는 다른 보기에서 연다.
  */
 export function MatrixPage() {
-  // 보조 표는 작은 보기 메뉴로 접근을 유지한다.
-  const [view, setView] = useState("judgment")
-  const [menuOpen, setMenuOpen] = useState(false)
-  const viewSwitcher = <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-    <PopoverTrigger asChild><Button type="button" variant="outline" size="sm">다른 보기</Button></PopoverTrigger>
-    <PopoverContent align="end" className="w-56 p-1" aria-label="매트릭스 보기">
-      {([["judgment", "판정 매트릭스"], ["parameters", "파라미터 커버리지"], ["legacy", "기존 권한 매트릭스"]] as const).map(([value, label]) => <Button key={value} type="button" variant={view === value ? "secondary" : "ghost"} className="justify-start" aria-pressed={view === value} onClick={() => { setView(value); setMenuOpen(false) }}>{label}</Button>)}
-    </PopoverContent>
-  </Popover>
+  // 파라미터 커버리지·기존 권한 표 보기는 UI에서 내렸다(판정 매트릭스만 노출). 함수는 재사용 대비 남겨 둔다.
   return <div className="h-full min-h-0 min-w-0 bg-[var(--flowscope-canvas)]">
-    {view === "judgment" && <JudgmentMatrixView viewSwitcher={viewSwitcher} />}
-    {view === "parameters" && <div className="h-full min-h-0 overflow-auto"><ParameterMatrixView viewSwitcher={viewSwitcher} /></div>}
-    {view === "legacy" && <LegacyMatrixView viewSwitcher={viewSwitcher} />}
+    <JudgmentMatrixView />
   </div>
 }
 
