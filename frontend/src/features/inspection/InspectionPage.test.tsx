@@ -143,7 +143,7 @@ describe("unified inspection hub", () => {
     const { fetchStub } = renderInspection({ humanPending: true, humanEvents: [humanEvent,
       { ...humanEvent, eventId: "auto", idn: "anon", source: "scanner", phase: "AUTHORIZATION_REPLAY" }] })
     expect(await screen.findByRole("tab", { name: "수집 기록" })).toHaveAttribute("aria-selected", "true")
-    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["수집 기록", "ZAP 스캔", "LLM 탐색", "결과 비교"])
+    expect(screen.getAllByRole("tab").map(tab => tab.textContent)).toEqual(["수집 기록", "ZAP 스캔", "LLM 탐색"])
     expect(screen.queryByRole("tab", { name: /직접 둘러보기/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "HUMAN pass 계정" })).not.toBeInTheDocument()
     await user.click(screen.getByRole("tab", { name: "수집 기록" }))
@@ -669,9 +669,6 @@ describe("unified inspection hub", () => {
     expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeVisible()
     expect(screen.getByLabelText("Explorer에게 추가 지시")).toBeVisible()
 
-    await user.click(screen.getByRole("tab", { name: /결과 비교/ }))
-    await user.click(screen.getByRole("button", { name: "API·입력 차이 보기" }))
-    expect(window.location.hash).toBe("#surface")
     expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
   })
 
