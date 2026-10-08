@@ -75,7 +75,7 @@ it("replaces disappeared results with an empty state and resets search on datase
   expect(screen.getByRole("combobox")).toHaveValue("")
 })
 
-it("keeps object expansion transient and folds it on background, outside selection, Lab and remount", async () => {
+it("keeps object expansion on single selection and folds it on background, Lab and remount", async () => {
   const navigation = { ...emptyGraphWorkspace.navigation, level: "group" as const, groupId: operationGroup(cells[0].op).id }
   state.workspace = { ...emptyGraphWorkspace, navigation, views: { [graphViewKey(navigation)]: { positions: {}, sizes: {}, viewport: null, expandedGroups: ["object-group:|orders"] } } }
   let view = render(<RelationshipGraphView />)
@@ -91,8 +91,7 @@ it("keeps object expansion transient and folds it on background, outside selecti
   expect(canvas()).toHaveAttribute("data-open-object", "")
   await open()
   await userEvent.click(screen.getByRole("button", { name: "select " + `operation:${cells[0].op}` }))
-  expect(canvas()).toHaveAttribute("data-open-object", "")
-  await open()
+  expect(canvas()).toHaveAttribute("data-open-object", "object-group:|orders")
   await userEvent.click(screen.getByRole("button", { name: "open lab" }))
   expect(canvas()).toHaveAttribute("data-open-object", "")
   await open()

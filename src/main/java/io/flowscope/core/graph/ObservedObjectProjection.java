@@ -1,6 +1,7 @@
 package io.flowscope.core.graph;
 
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.StaticResourcePolicy;
 import io.flowscope.core.SourceTrustPolicy;
 import io.flowscope.core.Source;
 import io.flowscope.core.SourceDetail;
@@ -30,7 +31,8 @@ import java.io.StringReader;
 public final class ObservedObjectProjection {
     private ObservedObjectProjection() {}
     public record ObjectObservation(String eventId, String operation, String apiKey, String groupKey,
-            String objectKey, String kind, List<String> fields, String legacyResource, int ordinal, String apiFamily) {}
+            String objectKey, String kind, List<String> fields, String legacyResource, int ordinal, String apiFamily,
+            String integerLabel, int displayOrdinal) {}
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(128).maxStringLength(1_000_000).build()).build())
@@ -48,7 +50,16 @@ public final class ObservedObjectProjection {
         boolean corroborated() { return paths.size() >= 2 || identities.size() >= 2 || sources.size() >= 2; }
     }
     private static final Pattern TOKEN = Pattern.compile("(?:\\d+|(?=[A-Za-z0-9._~-]*[A-Za-z])(?=[A-Za-z0-9._~-]*\\d)[A-Za-z0-9._~-]+)");
-    private static boolean token(String value) { return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches(); }
+    private static boolean token(String raw) {
+        String value = decodedSegment(raw);
+        return !value.matches("(?i)v\\d+(?:\\.\\d+)?") && TOKEN.matcher(value).matches();
+    }
+    private static String decodedSegment(String raw) {
+        try {
+            // Decode one segment after splitting the raw path; '+' remains literal.
+            return new java.net.URI("/" + raw).getPath().substring(1);
+        } catch (java.net.URISyntaxException error) { return ""; }
+    }
 
     public static List<ObjectObservation> build(List<RequestRecord> input) {
         // Experiment with stages 1-3 only. Whole-response objects remain opt-in.
@@ -59,47 +70,32 @@ public final class ObservedObjectProjection {
         // One captured event counts once, including when two rows accidentally reference it.
         Map<String, RequestRecord> unique = new LinkedHashMap<>();
         for (RequestRecord r : input) if (eligible(r)) unique.putIfAbsent(r.evidenceId, r);
+        Set<String> successfulPaths = new HashSet<>();
+        for (RequestRecord r : unique.values()) if (successful(r)) {
+            successfulPaths.add(key(r.service, r.method, r.path));
+        }
         List<PathRow> rows = new ArrayList<>();
-        Map<String, Set<String>> siblings = new HashMap<>();
-        Map<String, Boolean> strongSibling = new HashMap<>();
-        Map<String, Map<String, Set<String>>> postSchemas = new HashMap<>();
         for (RequestRecord r : unique.values()) {
             List<String> segments = Arrays.asList(r.path.split("/", -1));
             if (segments.size() > 128 || r.path.length() > 8192) continue;
             Set<Integer> positions = new TreeSet<>();
-            for (int i = 2; i < segments.size(); i++) if (token(segments.get(i))) positions.add(i);
-            PathRow row = new PathRow(r, segments, positions);
-            rows.add(row);
-            String schema = "POST".equals(r.method) ? requestSchema(r) : null;
-            for (int i = 2; i < segments.size(); i++) {
-                if (segments.get(i).isEmpty()) continue;
-                String key = siblingKey(row, i);
-                siblings.computeIfAbsent(key, ignored -> new HashSet<>()).add(segments.get(i));
-                if (token(segments.get(i))) strongSibling.put(key, true);
-                if (schema != null) postSchemas.computeIfAbsent(key, ignored -> new HashMap<>())
-                        .computeIfAbsent(segments.get(i), ignored -> new HashSet<>()).add(schema);
-            }
-        }
-        // Infer string slots from structure, not a numeric/hex admission filter.
-        for (PathRow row : rows) for (int i = 2; i < row.segments.size(); i++) {
-            String key = siblingKey(row, i);
-            if (!row.segments.get(i).isEmpty() && !strongSibling.getOrDefault(key, false)
-                    && (!"POST".equals(row.record.method) || sharedSchema(postSchemas.get(key)))
-                    && siblings.getOrDefault(key, Set.of()).size() > 1) row.positions.add(i);
+            for (int i = 1; i < segments.size(); i++) if (token(segments.get(i))) positions.add(i);
+            rows.add(new PathRow(r, segments, positions));
         }
         Map<String, Observers> observers = new HashMap<>();
-        for (PathRow row : rows) if (!row.positions.isEmpty()) {
-            observers.computeIfAbsent(family(row), ignored -> new Observers()).add(row.record);
+        for (PathRow row : rows) if (!row.positions.isEmpty()
+                && successfulPaths.contains(key(row.record.service, row.record.method, row.record.path))) {
+            observers.computeIfAbsent(pathApi(row), ignored -> new Observers()).add(row.record);
         }
         List<ObjectObservation> out = new ArrayList<>();
         Map<String, LinkedHashMap<String, Integer>> ordinals = new HashMap<>();
         rows.sort(Comparator.comparingLong((PathRow row) -> row.record.timestamp).thenComparing(row -> row.record.evidenceId));
         for (PathRow row : rows) {
-            if (row.positions.isEmpty() || !observers.get(family(row)).corroborated()) continue;
+            if (row.positions.isEmpty()
+                    || !successfulPaths.contains(key(row.record.service, row.record.method, row.record.path))
+                    || !observers.get(pathApi(row)).corroborated()) continue;
             int position = row.positions.stream().mapToInt(Integer::intValue).max().orElseThrow();
-            List<String> api = new ArrayList<>(row.segments);
-            api.set(position, row.positions.size() > 1 ? "{id_" + (row.positions.size() - 1) + "}" : "{id}");
-            String apiKey = row.record.service + " " + row.record.method + " " + String.join("/", api);
+            String apiKey = pathApi(row);
             String group = key("PATH", apiKey);
             // Actual parent scope and coordinate survive future family refinement.
             String object = key("PATH", row.record.service, row.record.method, row.record.path, Integer.toString(position));
@@ -108,7 +104,8 @@ public final class ObservedObjectProjection {
             int slot = 0;
             for (int at : row.positions) familyPath.set(at, "{id_" + slot++ + "}");
             String apiFamily = row.positions.size() > 1 ? row.record.service + " " + row.record.method + " " + String.join("/", familyPath) : null;
-            add(out, ordinals, row.record, apiKey, group, object, "PATH", List.of("/segments/" + (position - 1)), legacy, apiFamily);
+            add(out, ordinals, row.record, apiKey, group, object, "PATH", List.of("/segments/" + (position - 1)), legacy, apiFamily,
+                    integerLabel(decodedSegment(row.segments.get(position))));
         }
         Set<String> pathCandidates = new HashSet<>();
         for (PathRow row : rows) if (!row.positions.isEmpty()) pathCandidates.add(row.record.evidenceId);
@@ -116,12 +113,28 @@ public final class ObservedObjectProjection {
         for (ObjectObservation object : out) pathApis.put(object.eventId(), object.apiKey());
         unique.values().stream().sorted(Comparator.comparingLong((RequestRecord r) -> r.timestamp).thenComparing(r -> r.evidenceId))
                 .forEach(r -> {
-                    String api = pathApis.getOrDefault(r.evidenceId, r.op);
+                    String api = pathApis.getOrDefault(r.evidenceId, r.service + " " + r.method + " " + r.path);
                     addQuery(out, ordinals, r, api);
                     addBody(out, ordinals, r, api);
                     if (includeResponseObjects && !pathCandidates.contains(r.evidenceId)) addResponse(out, ordinals, r, api);
                 });
-        return List.copyOf(out);
+        Set<String> successfulObjects = new HashSet<>();
+        for (ObjectObservation object : out) if (successful(unique.get(object.eventId()))) {
+            successfulObjects.add(object.objectKey());
+        }
+        // Keep denied access to a confirmed object; denied-only values cannot create objects.
+        ordinals.clear();
+        Map<String, LinkedHashMap<String, Integer>> displayOrdinals = new HashMap<>();
+        return out.stream().filter(object -> successfulObjects.contains(object.objectKey())).map(object -> {
+            var members = ordinals.computeIfAbsent(object.groupKey(), ignored -> new LinkedHashMap<>());
+            int ordinal = members.computeIfAbsent(object.objectKey(), ignored -> members.size() + 1);
+            var labels = displayOrdinals.computeIfAbsent(object.groupKey(), ignored -> new LinkedHashMap<>());
+            int displayOrdinal = object.integerLabel() == null
+                    ? labels.computeIfAbsent(object.objectKey(), ignored -> labels.size() + 1) : 0;
+            return new ObjectObservation(object.eventId(), object.operation(), object.apiKey(), object.groupKey(),
+                    object.objectKey(), object.kind(), object.fields(), object.legacyResource(), ordinal, object.apiFamily(),
+                    object.integerLabel(), displayOrdinal);
+        }).toList();
     }
 
     private static void addQuery(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
@@ -144,7 +157,10 @@ public final class ObservedObjectProjection {
             List<String> fields = values.keySet().stream().map(name -> "/" + name.replace("~", "~0").replace("/", "~1")).toList();
             String group = key("QUERY", api, JSON.writeValueAsString(fields));
             String object = key("QUERY", api, JSON.writeValueAsString(values));
-            add(out, ordinals, r, api, group, object, "QUERY", fields, legacy(r, "QUERY", fields));
+            List<String> single = values.size() == 1 ? values.values().iterator().next() : List.of();
+            String integer = single.size() == 1 && single.getFirst().startsWith("value:")
+                    ? integerLabel(single.getFirst().substring(6)) : null;
+            add(out, ordinals, r, api, group, object, "QUERY", fields, legacy(r, "QUERY", fields), null, integer);
         } catch (Exception ignored) { /* malformed percent encoding is not interpreted as a different value */ }
     }
     private static void addBody(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
@@ -156,10 +172,13 @@ public final class ObservedObjectProjection {
         try {
             SortedSet<String> fields = new TreeSet<>();
             String canonical;
+            String integer = null;
             if (contentType.contains("json") || body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) {
                 JsonNode root = JSON.readTree(body);
                 if (root == null) return;
-                canonical = JSON.writeValueAsString(normalizeJson(root, "", fields, new int[]{0}));
+                JsonNode normalized = normalizeJson(root, "", fields, new int[]{0});
+                canonical = JSON.writeValueAsString(normalized);
+                if (fields.size() == 1) integer = singleJsonInteger(normalized);
             } else {
                 // Reuse the bounded form/multipart/XML parser on body-only metadata, not retained raw messages.
                 var probe = new RequestRecord(r.source, r.service, r.method, "/", r.status, r.fp);
@@ -168,22 +187,36 @@ public final class ObservedObjectProjection {
                 var extraction = ParameterExtractor.extract(probe);
                 if (!extraction.parsedCompletely()) return;
                 Map<String, List<String>> material = new TreeMap<>();
+                String candidate = null;
                 for (var observation : extraction.observations()) {
                     if (observation.key().location() == ParameterObservation.Location.PATH || observation.key().location() == ParameterObservation.Location.QUERY) continue;
                     String path = observation.key().canonicalPath();
                     fields.add(path);
                     boolean hidden = Arrays.stream(path.split("/")).anyMatch(ObservedObjectProjection::sensitive);
                     var value = observation.value();
+                    if (!hidden && observation.shape() == ParameterObservation.Shape.SCALAR && !path.contains("/*")
+                            && value != null && value.preview() != null
+                            && value.byteLength() == value.preview().getBytes(StandardCharsets.UTF_8).length) {
+                        candidate = integerLabel(value.preview());
+                    }
                     material.put(observation.key().location() + ":" + path, hidden ? List.of("[sensitive]", observation.shape().name())
                             : List.of(observation.shape().name(), value == null ? "container" : value.type().name(), value == null ? "" : value.digest()));
                 }
                 if (material.isEmpty()) return;
                 canonical = JSON.writeValueAsString(material);
+                if (material.size() == 1) integer = candidate;
             }
             List<String> schema = List.copyOf(fields);
             String group = key("REQUEST_BODY", api, JSON.writeValueAsString(schema));
-            add(out, ordinals, r, api, group, key("REQUEST_BODY", api, canonical), "REQUEST_BODY", schema, legacy(r, "BODY", schema));
+            add(out, ordinals, r, api, group, key("REQUEST_BODY", api, canonical), "REQUEST_BODY", schema, legacy(r, "BODY", schema), null, integer);
         } catch (Exception ignored) { /* invalid, incomplete or over-limit bodies do not claim content equality */ }
+    }
+    private static String integerLabel(String value) {
+        return value != null && value.length() <= 8192 && value.matches("-?\\d+") ? value : null;
+    }
+    private static String singleJsonInteger(JsonNode node) {
+        while (node.isObject() && node.size() == 1) node = node.elements().next();
+        return node.isIntegralNumber() || node.isTextual() ? integerLabel(node.asText()) : null;
     }
     private static JsonNode normalizeJson(JsonNode node, String path, SortedSet<String> fields, int[] visited) {
         if (++visited[0] > 100_000 || path.length() > 8192) throw new IllegalArgumentException("object projection limit");
@@ -295,50 +328,11 @@ public final class ObservedObjectProjection {
         return references.size() == 1 && r.resource.equals(references.getFirst().resource()) ? r.resource : null;
     }
 
-    private static String siblingKey(PathRow row, int position) {
-        List<String> shaped = new ArrayList<>(row.segments);
-        row.positions.forEach(i -> shaped.set(i, "{id}"));
-        shaped.set(position, "{id}");
-        return row.record.service + "\0" + row.record.method + "\0" + position + "\0" + String.join("/", shaped);
-    }
-    private static boolean sharedSchema(Map<String, Set<String>> byValue) {
-        if (byValue == null || byValue.size() < 2) return false;
-        Set<String> shared = null;
-        for (Set<String> schemas : byValue.values()) {
-            if (shared == null) shared = new HashSet<>(schemas); else shared.retainAll(schemas);
-        }
-        return shared != null && !shared.isEmpty();
-    }
-    private static String requestSchema(RequestRecord r) {
-        try {
-            SortedSet<String> fields = new TreeSet<>();
-            if (r.query != null) {
-                if (r.query.length() > 1_000_000) return null;
-                String[] pairs = r.query.split("&");
-                if (pairs.length > 10_000) return null;
-                for (String pair : pairs) if (!pair.isEmpty()) fields.add("QUERY:" + URLDecoder.decode(pair.split("=", 2)[0], StandardCharsets.UTF_8));
-            }
-            String body = r.requestBodyForAnalysis();
-            if (body != null && !body.isBlank()) {
-                if (body.length() > 1_000_000 || r.requestPayload != null && !r.requestPayload.retained()) return null;
-                if (body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) {
-                    SortedSet<String> bodyFields = new TreeSet<>();
-                    normalizeJson(JSON.readTree(body), "", bodyFields, new int[]{0});
-                    bodyFields.forEach(field -> fields.add("BODY:" + field));
-                } else {
-                    var extracted = ParameterExtractor.extract(r);
-                    if (!extracted.parsedCompletely()) return null;
-                    extracted.observations().stream().filter(o -> o.key().location() != ParameterObservation.Location.PATH)
-                            .forEach(o -> fields.add(o.key().location() + ":" + o.key().canonicalPath()));
-                }
-            }
-            return fields.isEmpty() ? null : JSON.writeValueAsString(fields);
-        } catch (Exception ignored) { return null; }
-    }
-    private static String family(PathRow row) {
-        List<String> shaped = new ArrayList<>(row.segments);
-        row.positions.forEach(i -> shaped.set(i, "{id}"));
-        return row.record.service + "\0" + row.record.method + "\0" + String.join("/", shaped);
+    private static String pathApi(PathRow row) {
+        int position = row.positions.stream().mapToInt(Integer::intValue).max().orElseThrow();
+        List<String> api = new ArrayList<>(row.segments);
+        api.set(position, row.positions.size() > 1 ? "{id_" + (row.positions.size() - 1) + "}" : "{id}");
+        return row.record.service + " " + row.record.method + " " + String.join("/", api);
     }
     private static void add(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
             RequestRecord r, String api, String group, String object, String kind, List<String> fields, String legacy) {
@@ -346,9 +340,14 @@ public final class ObservedObjectProjection {
     }
     private static void add(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
             RequestRecord r, String api, String group, String object, String kind, List<String> fields, String legacy, String apiFamily) {
+        add(out, ordinals, r, api, group, object, kind, fields, legacy, apiFamily, null);
+    }
+    private static void add(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
+            RequestRecord r, String api, String group, String object, String kind, List<String> fields, String legacy,
+            String apiFamily, String integerLabel) {
         var members = ordinals.computeIfAbsent(group, ignored -> new LinkedHashMap<>());
         int number = members.computeIfAbsent(object, ignored -> members.size() + 1);
-        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily));
+        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily, integerLabel, number));
     }
     private static String key(String... parts) {
         StringBuilder framed = new StringBuilder();
@@ -367,6 +366,9 @@ public final class ObservedObjectProjection {
         var c = r.trafficClassification;
         return !Set.of("STATIC_ASSET", "PREFLIGHT", "DISCOVERY_METADATA").contains(c.trafficClass().name())
                 && !c.reasons().contains("USER_EXCLUDE") && !(c.userOverride() && c.disposition().name().equals("EXCLUDE"))
-                && !r.path.matches("(?i).*\\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|mp3|mp4|webm)$");
+                && !StaticResourcePolicy.matchesPath(r.path);
+    }
+    private static boolean successful(RequestRecord r) {
+        return r.status >= 200 && r.status < 300;
     }
 }

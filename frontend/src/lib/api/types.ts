@@ -24,6 +24,8 @@ export interface DisplayObject {
   fields: readonly string[]
   legacyResource: string | null
   ordinal: number
+  integerLabel?: string | null
+  displayOrdinal?: number
 }
 
 export interface EventObject {

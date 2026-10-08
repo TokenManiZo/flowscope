@@ -52,6 +52,7 @@ public final class AuthorizationMatrixAnalyzer {
         Map<String, ValidationDecision> validationByCell = validationsByCell(result.analysis, history);
         Set<String> operations = new LinkedHashSet<>(policy.endpointRequirements().keySet());
         result.analysis.cells().forEach(cell -> operations.add(cell.key().operation()));
+        operations.removeIf(StaticResourcePolicy::matchesOperation);
         Map<String, Set<String>> identityServices = identityServices(result, policy);
         Set<String> matrixServices = operations.stream().map(AuthorizationMatrixAnalyzer::operationService)
                 .filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));

@@ -36,4 +36,46 @@ class SnapshotObservedObjectsTest {
             assertEquals(ops.get(i), first.path("events").get(i).path("op").asText());
         }
     }
+    @Test void staticResourcesAreAbsentFromMatrixObjectsAndRoutesButKeepEvidence() throws Exception {
+        var image = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/images/123/photo.avif", 403, "anon");
+        image.hasResponse = true; image.reqBody = "{\"itemId\":123}";
+        image.requestContentType = "application/json";
+        image.reqText = "POST /images/123/photo.avif HTTP/1.1\r\nHost: t\r\n\r\n" + image.reqBody;
+        var result = Pipeline.run(List.of(image));
+        var provenance = List.of(new RouteCandidate.Provenance(RouteCandidate.ProvenanceType.HTML_LINK, "fixture", Source.HUMAN, "run", "browser"));
+        var asset = new RouteCandidate("https://t:443", "GET", "/assets/font.otf", false, provenance, RouteCandidate.Applicability.REVIEW, "fixture");
+        var api = new RouteCandidate("https://t:443", "GET", "/api/items.json", false, provenance, RouteCandidate.Applicability.REVIEW, "fixture");
+        var routes = List.of(asset, api);
+        var writer = new SnapshotJsonWriter();
+        var json = new ObjectMapper();
+        var first = json.readTree(writer.write(1, result, new AnalysisConfig(), List.of(), List.of(), List.of(), routes));
+        var second = json.readTree(writer.write(2, result, new AnalysisConfig(), List.of(), List.of(), List.of(), routes));
+        assertEquals(1, first.path("events").size());
+        assertEquals("STATIC_ASSET", first.path("events").get(0).path("trafficClass").asText());
+        assertEquals(0, first.path("cells").size());
+        assertEquals(0, first.path("displayObjects").size());
+        assertEquals(0, first.path("graphFacts").size());
+        assertEquals(0, first.path("authorizationMatrix").path("functions").size());
+        assertEquals(0, first.path("authorizationMatrix").path("objects").size());
+        assertEquals(1, first.path("routeCandidates").size());
+        assertEquals("/api/items.json", first.path("routeCandidates").get(0).path("pathTemplate").asText());
+        assertEquals(first.path("routeCandidates"), second.path("routeCandidates"));
+        assertEquals(image.reqText, result.records.getFirst().requestTextForEvidence());
+        assertEquals(2, routes.size());
+    }
+
+    @Test void configuredStaticEndpointCannotReappearInMatrix() throws Exception {
+        var config = new AnalysisConfig()
+                .upsertAccount(new AccountProfile("user-a", "User A", "https://t:443", AccessRole.USER))
+                .withEndpointRequirement("https://t:443 GET /assets/app.js", AccessRole.USER)
+                .withEndpointRequirement("https://t:443 GET /api/items.json", AccessRole.USER);
+        var result = Pipeline.run(List.of(), config);
+        var matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
+        assertTrue(matrix.functions().stream().noneMatch(cell -> cell.operation().endsWith("/assets/app.js")));
+        assertTrue(matrix.functions().stream().anyMatch(cell -> cell.operation().endsWith("/api/items.json")));
+        assertTrue(StaticResourcePolicy.matchesOperation("GET /assets/app.js"));
+        assertTrue(StaticResourcePolicy.matchesOperation("https://t:443 POST /assets/app.css?x=1"));
+        assertFalse(StaticResourcePolicy.matchesOperation("https://t:443 GET /api/items.json"));
+    }
+
 }

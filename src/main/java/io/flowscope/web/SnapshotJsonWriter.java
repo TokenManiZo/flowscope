@@ -43,8 +43,23 @@ public final class SnapshotJsonWriter {
     private Pipeline.Result surfaceResult;
     private List<RouteCandidate> surfaceCandidates;
     private SurfaceAnalysis cachedSurface;
+    private List<RouteCandidate> staticPolicySource;
+    private List<RouteCandidate> staticPolicyVisible;
     private Pipeline.Result objectResult;
     private List<io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation> objectProjection;
+
+    /** Keep list identity stable so repeated polls do not invalidate the surface cache. */
+    private synchronized List<RouteCandidate> visibleRouteCandidates(List<RouteCandidate> source) {
+        if (staticPolicySource != source) {
+            staticPolicyVisible = source.stream()
+                    .filter(candidate -> !io.flowscope.core.StaticResourcePolicy.matchesPath(candidate.pathTemplate()))
+                    .toList();
+            staticPolicyVisible = staticPolicyVisible.size() == source.size() ? source
+                    : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(staticPolicyVisible));
+            staticPolicySource = source;
+        }
+        return staticPolicyVisible;
+    }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
                         List<LegacyAssessment> assessments,
@@ -117,6 +132,7 @@ public final class SnapshotJsonWriter {
         root.put("sampleMode", !result.records.isEmpty() && result.records.stream().allMatch(record ->
                 "https://demo.flowscope.test:443".equals(record.service)
                         && record.runId != null && record.runId.startsWith("demo-")));
+        routeCandidates = visibleRouteCandidates(routeCandidates);
         var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
         root.set("events", events(result, rawAvailable, collectionAccount));

@@ -43,10 +43,25 @@ it("keeps same-named cards and their server decisions separate", () => {
     ],
   })
   const identities = projectHierarchy(graph, filters, groupOf(graph)).nodes.filter(node => node.kind === "identity")
-  expect(identities.map(node => node.id).sort()).toEqual(["identity:a", "identity:b"])
-  expect(identities.map(node => node.label)).toEqual(["내 계정", "내 계정"])
+  expect(identities.map(node => node.id).sort()).toEqual(["identity:a", "identity:anon", "identity:b"])
+  expect(identities.filter(node => node.id !== "identity:anon").map(node => node.label)).toEqual(["내 계정", "내 계정"])
   expect(identities.find(node => node.id === "identity:a")?.selection.evidenceIds).toEqual(["e1"])
   expect(identities.find(node => node.id === "identity:b")?.selection.evidenceIds).toEqual(["e2"])
   expect(graphCellKey(graph.cells[0])).not.toBe(graphCellKey(graph.cells[1]))
   expect(graphAccountLabel(graph, "a")).toBe("내 계정")
+})
+
+it.each(["group", "operation"] as const)("keeps unvisited accounts visible in %s without inventing evidence or edges", level => {
+ const snapshot = targetSnapshot({ accounts: ["user-a", "user-b"].map(id => ({ id, label: id, role: "USER", target: "", color: "", authArtifactCount: 0 })), events: [event()], cells: [cell] })
+ const navigation = { ...groupOf(snapshot), level, operation: level === "operation" ? op : "" }
+ const graph = projectHierarchy(snapshot, filters, navigation)
+ expect(graph.identities.map(node => node.id).sort()).toEqual(["identity:anon", "identity:user-a", "identity:user-b"])
+ for (const id of ["identity:user-a", "identity:user-b"]) {
+  const node = graph.identities.find(node => node.id === id)!
+  expect(node.selection.evidenceIds).toEqual([])
+  expect(node.selection.cells).toEqual([])
+  expect(node.verdict).toBe("unknown")
+  expect(graph.edges.some(edge => edge.sourceId === id || edge.targetId === id)).toBe(false)
+ }
+ expect(projectHierarchy(snapshot, filters, site).identities).toEqual([])
 })

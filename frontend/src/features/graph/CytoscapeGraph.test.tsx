@@ -136,6 +136,16 @@ it("updates search rings without recreating graph elements", () => {
   expect(remove).not.toHaveBeenCalled()
 })
 
+it("keeps model coordinates unchanged when selection changes on a single click", () => {
+  const props = { projection, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
+  const { rerender } = render(<CytoscapeGraph {...props} />)
+  node.position.mockClear()
+  const point = { ...modelPosition }
+  rerender(<CytoscapeGraph {...props} selectedElementId="identity:alice" />)
+  expect(modelPosition).toEqual(point)
+  expect(node.position.mock.calls.filter(args => args[0] !== undefined)).toHaveLength(0)
+})
+
 it("reveals a search selection with a viewport change while preserving model coordinates", () => {
   const done = vi.fn()
   const props = { projection, locked: true, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn(), onRevealed: done }
@@ -254,6 +264,8 @@ it("renders a graph-first canvas with dark compact node styling", () => {
       expect.objectContaining({ selector: "node", style: expect.objectContaining({ "background-image": "data(cardImage)", width: "data(width)", height: "data(height)" }) }),
       expect.objectContaining({ selector: 'node[confirmed = "yes"]', style: expect.objectContaining({ "border-color": "#ef4444" }) }),
       expect.objectContaining({ selector: "node:selected" }),
+      expect.objectContaining({ selector: 'node[focused = "no"]', style: expect.objectContaining({ opacity: 0.35 }) }),
+      expect.objectContaining({ selector: 'edge[focused = "no"]', style: expect.objectContaining({ opacity: 0.15 }) }),
       expect.objectContaining({ selector: "edge", style: expect.objectContaining({ label: "data(label)", "text-rotation": "autorotate" }) }),
     ]),
   }))
@@ -890,10 +902,10 @@ it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout throug
   const cell = { idn: "USER A", op: "GET /api/orders/{id}", resource: "orders:101", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["a"] }
   const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell, { ...cell, idn: "USER B", resource: "orders:202", evidenceIds: ["b"] }, { ...cell, idn: "USER C", op: "GET /api/orders/profile", resource: "user-profile:1", evidenceIds: ["c"] }] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: false, expanded: false, expandedObjectGroups: ["object-group:|orders"] }, { level: "group", groupId: '["Target","orders"]', operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
   const group = hierarchy.nodes.find(node => node.kind === "object-group" && node.objectGroup?.key === "orders")!
-  const focus = graphFocusStates(hierarchy, "resource:orders:101", group.id)
+  const focus = graphFocusStates(hierarchy, group.id, group.id)
   expect(focus.node("resource:orders:101")).toBe("yes")
   expect(focus.node("resource:orders:202")).toBe("yes")
-  for (const identity of hierarchy.identities) expect(focus.node(identity.id)).toBe(identity.selection.identity === "USER C" ? "no" : "yes")
+  for (const identity of hierarchy.identities) expect(focus.node(identity.id)).toBe(["USER A", "USER B"].includes(identity.selection.identity ?? "") ? "yes" : "no")
   for (const edge of hierarchy.edges) expect(focus.edge(edge.id)).toBe(edge.selection.identity === "USER C" ? "no" : "yes")
   expect(hierarchy.edges.some(edge => edge.relation === "identity-operation")).toBe(true)
   expect(hierarchy.edges.some(edge => edge.relation === "operation-resource")).toBe(true)
@@ -901,7 +913,7 @@ it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout throug
   const pan = { x: 81, y: -40 }
   currentZoom = 0.7
   vi.mocked(core.pan).mockReturnValue(pan)
-  const props = { projection: hierarchy, selectedElementId: "resource:orders:101", openObjectGroupId: group.id, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
+  const props = { projection: hierarchy, selectedElementId: group.id, openObjectGroupId: group.id, locked: false, fitVersion: 0, onSelect: vi.fn(), onPreferencesChange: vi.fn() }
   const { rerender } = render(<CytoscapeGraph {...props} />)
   modelPosition = { x: 1400, y: 500 }
   const expectThemeFocus = (cardColor: string) => {
@@ -932,13 +944,13 @@ it("keeps the expanded ID → API → OBJ focus, theme canvas, and layout throug
 /** 레인 노드 사이 세로 간격(CytoscapeGraph의 LANE_NODE_GAP)과 테스트 카드 높이. */
 const GAP = 20, CARD = 40
 
-function movableCore(specs: Array<{ id: string; kind: string; memberOf?: string; groupState?: string }>) {
+function movableCore(specs: Array<{ id: string; kind: string; memberOf?: string; groupState?: string; temporaryObjectPosition?: string }>) {
   const nodes = specs.map((spec) => {
     let point = { x: 0, y: 0 }
-    const data: Record<string, unknown> = { kind: spec.kind, height: CARD, memberOf: spec.memberOf, groupState: spec.groupState }
-    return { id: () => spec.id, data: (key: string) => data[key], position: (next?: { x: number; y: number }) => { if (next) point = { ...next }; return point }, locked: () => false }
+    const data: Record<string, unknown> = { kind: spec.kind, height: CARD, memberOf: spec.memberOf, groupState: spec.groupState, temporaryObjectPosition: spec.temporaryObjectPosition }
+    return { id: () => spec.id, data: (key: string, value?: unknown) => { if (value !== undefined) data[key] = value; return data[key] }, position: (next?: { x: number; y: number }) => { if (next) point = { ...next }; return point }, locked: () => false, empty: () => false }
   })
-  const core = { nodes: () => ({ forEach: (visit: (node: typeof nodes[number]) => void) => nodes.forEach(visit) }) }
+  const core = { nodes: () => ({ forEach: (visit: (node: typeof nodes[number]) => void) => nodes.forEach(visit) }), getElementById: (id: string) => nodes.find(node => node.id() === id), zoom: () => 1, pan: () => ({ x: 0, y: 0 }) }
   return { core: core as unknown as Parameters<typeof positionInLanes>[0], at: (id: string) => nodes.find(node => node.id() === id)!.position() }
 }
 
@@ -957,6 +969,28 @@ it("stacks newly opened group members right under their group node and pushes th
   expect(at("resource:other")).toEqual({ x: 900, y: 160 + 2 * (CARD + GAP) })
 })
 
+it("inserts temporary OBJ members below their group and restores the folded layout", () => {
+  const base = [
+    { id: "identity:a", kind: "identity" },
+    { id: "api:a", kind: "operation" },
+    { id: "object-group:a", kind: "object-group", groupState: "open" },
+    { id: "object-group:other", kind: "object-group" },
+  ]
+  const saved = { "identity:a": { x: 170, y: 300 }, "api:a": { x: 540, y: 300 },
+    "object-group:a": { x: 900, y: 100 }, "object-group:other": { x: 900, y: 160 } }
+  const opened = movableCore([...base,
+    { id: "resource:a:1", kind: "resource", memberOf: "object-group:a", temporaryObjectPosition: "yes" },
+    { id: "resource:a:2", kind: "resource", memberOf: "object-group:a", temporaryObjectPosition: "yes" },
+  ])
+  positionInLanes(opened.core, 620, saved, 3)
+  for (const [id, point] of Object.entries(saved)) expect(opened.at(id)).toEqual(id === "object-group:other" ? { ...point, y: point.y + 2 * (CARD + GAP) } : point)
+  expect(opened.at("resource:a:1")).toEqual(saved["object-group:other"])
+  expect(opened.at("resource:a:2").y).toBeGreaterThan(opened.at("resource:a:1").y)
+  const folded = movableCore(base)
+  positionInLanes(folded.core, 620, saved, 3)
+  for (const [id, point] of Object.entries(saved)) expect(folded.at(id)).toEqual(point)
+})
+
 it("moves open group members by the same distance as their dragged group node", () => {
   const { core, at } = movableCore([
     { id: "object-group:a", kind: "object-group", groupState: "open" },
@@ -966,7 +1000,7 @@ it("moves open group members by the same distance as their dragged group node", 
   positionInLanes(core, 620, { "object-group:a": { x: 900, y: 100 }, "resource:a:1": { x: 900, y: 160 }, "resource:other": { x: 900, y: 220 } }, 3)
   moveGroupMembers(core, "object-group:a", 30, -20)
   expect(at("resource:a:1")).toEqual({ x: 930, y: 140 })
-  expect(at("resource:other")).toEqual({ x: 900, y: 220 })
+  expect(at("resource:other")).toEqual({ x: 900, y: 280 })
 })
 
 it("opens the selected resource in Request Lab on double tap without navigating", () => {
@@ -978,4 +1012,19 @@ it("opens the selected resource in Request Lab on double tap without navigating"
   act(() => listeners.get("dbltap:node")?.({ target: { ...node, id: vi.fn(() => resource.id) } }))
   expect(open).toHaveBeenCalledWith(resource)
   expect(navigate).not.toHaveBeenCalled()
+})
+
+it("renders saved highlights and vulnerability badges on folded static API groups", () => {
+  const original = "https://static.test:443 GET /images/{id}/{id}"
+  const cell = { idn: "alice", op: original, resource: "image:1", perSource: { human: "allow" as const }, reasons: {}, overall: "allow" as const, conflict: false, missedSources: [], evidenceIds: ["e1"] }
+  const hierarchy = projectHierarchy(targetSnapshot({ cells: [cell] }), { source: ["human"], identity: [], view: "source", includeRouteCandidates: false, includeSupportTraffic: true, expanded: false }, { level: "operation", groupId: operationGroup(original).id, operation: original, operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
+  const template = hierarchy.nodes.find(item => item.kind === "operation")!
+  const group = { ...template, id: "operation-group:static", kind: "operation-group" as const, staticResource: true, displayOperations: [original], selection: { ...template.selection, operation: null } }
+  render(<CytoscapeGraph projection={{ ...hierarchy, nodes: [group], edges: [] }} apiMarks={{ [original]: { color: "purple", registered: true, evidenceIds: ["e1"] } }} locked={false} fitVersion={0} onSelect={vi.fn()} onPreferencesChange={vi.fn()} />)
+  const added = vi.mocked(core.add).mock.calls.at(-1)?.[0] as Array<{ data: { id: string; cardImage: string; confirmed: string } }>
+  const card = added.find(item => item.data.id === group.id)!.data
+  expect(card.confirmed).toBe("yes")
+  const svg = decodeURIComponent(card.cardImage.split(",")[1])
+  expect(svg).toContain("#a855f7")
+  expect(svg).toContain("취약점")
 })

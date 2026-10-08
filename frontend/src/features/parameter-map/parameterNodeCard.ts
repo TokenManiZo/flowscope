@@ -14,6 +14,8 @@ export interface ParameterNodeCardView {
   footer: string
   icon: "user" | "none" | "box" | "globe" | "network"
   accessibleLabel: string
+  /** Reserve a consistent title area for comparable cards and cap wrapping. */
+  titleLineLimit?: number
   /** 이 노드에 접근한 탐지 주체. 있으면 배지 옆에 주체별 아이콘을 그리고 상세 줄은 빼서 카드를 낮춘다(API·Object 노드). */
   sources?: readonly CardSource[]
   /** 관측된 응답 코드(API 노드). 카드 아래에 코드만 뱃지로 그린다. 개수는 그리지 않는다. */
@@ -247,14 +249,14 @@ export function renderParameterNodeCardSvg(card: ParameterNodeCardView, compact 
   const titleX = card.icon === "none" ? 14 : 38
   const titleWidth = width - titleX - 14
   // 기본 높이: 관계 그래프(compact)는 실제 제목 줄 수에 맞추고, 점검 우선순위 카드는 두 줄 자리를 고정해 모두 같은 크기로 둔다.
-  const titleSlots = compact ? titleLines(card.title, titleWidth).length : 2
+  const titleSlots = card.titleLineLimit ?? (compact ? titleLines(card.title, titleWidth).length : 2)
   const lastTitleBaseline = TITLE_BASELINE + LINE_GAP * (titleSlots - 1)
   const defaultHeight = (rows.length ? lastTitleBaseline + ROW_GAP * rows.length : lastTitleBaseline) + statusRow + BOTTOM_PADDING
   const height = Math.max(defaultHeight, size?.height ?? 0)
   // 보조 줄과 응답 코드 뱃지 줄은 카드 아래에 붙이고, 그 위 공간에 들어가는 만큼 제목 줄을 쓴다(사용자가 키운 카드는 더 많은 줄).
   const rowBaseline = (index: number) => height - BOTTOM_PADDING - statusRow - ROW_GAP * (rows.length - 1 - index)
   const titleLimit = rows.length ? rowBaseline(0) - ROW_GAP : height - BOTTOM_PADDING - statusRow
-  const maxTitleLines = Math.max(titleSlots, Math.floor((titleLimit - TITLE_BASELINE) / LINE_GAP) + 1)
+  const maxTitleLines = card.titleLineLimit ?? Math.max(titleSlots, Math.floor((titleLimit - TITLE_BASELINE) / LINE_GAP) + 1)
   const lines = titleLines(card.title, titleWidth, maxTitleLines)
   // 두 줄 자리를 고정한 카드에서 한 줄 제목은 그 자리의 세로 가운데에 둔다.
   const titleOffset = !compact && lines.length === 1 ? LINE_GAP / 2 : 0

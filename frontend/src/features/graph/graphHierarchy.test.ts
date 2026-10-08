@@ -245,7 +245,7 @@ describe("API hierarchy", () => {
       event({ eventId: "elsewhere", clusterEvidenceIds: ["elsewhere"], op: `${service} GET /api/users/poll` }),
       event({ eventId: "unverified", clusterEvidenceIds: ["unverified"], op: `${service} GET /api/orders/include`, trafficDisposition: "INCLUDE", source: "llm" }),
       event({ eventId: "h-101", clusterEvidenceIds: ["h-101"], op: get, trafficClass: "NAVIGATION" }),
-      event({ eventId: "style", clusterEvidenceIds: ["style"], op: `${service} GET /api/orders/app.css`, path: "/api/orders/app.css?v=2", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW" }),
+      event({ eventId: "style", clusterEvidenceIds: ["style"], op: `${service} GET /api/orders/app.css`, path: "/api/orders/app.css?v=2", trafficClass: "STATIC_ASSET", trafficDisposition: "EXCLUDE" }),
       event({ eventId: "preflight", clusterEvidenceIds: ["preflight"], op: `${service} OPTIONS /api/orders/preflight`, trafficClass: "PREFLIGHT" }),
     ] }
     expect(projectHierarchy(snapshot, filters, groupNav()).nodes.some(node => node.kind === "observed-operation")).toBe(false)
@@ -253,7 +253,8 @@ describe("API hierarchy", () => {
     expect(group.nodes.filter(node => node.kind === "observed-operation").map(node => node.selection.operation).sort()).toEqual([`${service} GET /api/orders/include`, `${service} GET /api/orders/poll`])
     expect(group.edges.filter(edge => edge.relation === "support").map(edge => [edge.source, edge.selection.evidenceIds, edge.selection.cellKeys])).toEqual([["human", ["review-api", "support-1"], []], ["llm", ["unverified"], []]])
     // 판정 셀·출처 집계는 그대로다. 관측 전체는 표시만 더한다.
-    expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 }, observedCount: 2 })
+    expect(group.groups[0]).toMatchObject({ endpointCount: 2, sourceCounts: { human: 2, scanner: 1, llm: 1 }, observedCount: 3 })
+    expect(group.nodes.filter(node => node.staticResource && node.kind === "operation-group")).toHaveLength(1)
     expect(projectHierarchy(snapshot, { ...filters, source: ["scanner"], includeSupportTraffic: true }, groupNav()).nodes.some(node => node.kind === "observed-operation")).toBe(false)
   })
 
@@ -298,14 +299,14 @@ describe("API hierarchy", () => {
     const page = (eventId: string, op: string) => event({ eventId, clusterEvidenceIds: [eventId], op, path: op.split(" ").pop()!, trafficClass: "NAVIGATION", trafficDisposition: "EXCLUDE" })
     const snapshot = { ...data(), events: [
       page("p1", `${php} GET /board_list.php`), page("p2", `${php} GET /login.php`), page("p3", `${php} POST /login.php`), page("p4", `${php} GET /admin/user_list.php`),
-      page("f1", `${flask} GET /dashboard`), page("f2", `${flask} GET /orders`), page("f3", `${flask} GET /orders/{id}`), page("f4", `${flask} GET /theme.css`),
+      page("f1", `${flask} GET /dashboard`), page("f2", `${flask} GET /orders`), page("f3", `${flask} GET /orders/{id}`), { ...page("f4", `${flask} GET /theme.css`), trafficClass: "STATIC_ASSET" as const },
     ] }
     const observed = Object.fromEntries(projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, initial).groups.map(group => [group.id, group.observedCount]))
     // 서버마다 ROOT가 따로 생기고, 같은 파일의 GET·POST는 함께 ROOT에 들어간다. 정적 파일은 묶음 판단에도 쓰지 않는다.
     expect(observed).toEqual({
       [groupId]: 0,
       [JSON.stringify([php, "root"])]: 3, [JSON.stringify([php, "admin"])]: 1,
-      [JSON.stringify([flask, "root"])]: 1, [JSON.stringify([flask, "orders"])]: 2,
+      [JSON.stringify([flask, "root"])]: 2, [JSON.stringify([flask, "orders"])]: 2,
     })
   })
 
@@ -339,7 +340,7 @@ describe("API hierarchy", () => {
   it("keeps functions worth checking on the first page when many quiet functions exist", () => {
     const op = (method: string, path: string) => `${service} ${method} ${path}`
     // 허용만 있는 기능은 기록이 많아 점수가 더 높다. 그래도 쓰기 기능이 18개 밖으로 밀려나면 안 된다.
-    const quiet = Array.from({ length: GRAPH_PAGE_SIZE }, (_, index) => cell({ op: op("GET", `/api/orders/quiet-${index}`), resource: null, evidenceIds: [`q${index}-1`, `q${index}-2`, `q${index}-3`] }))
+    const quiet = Array.from({ length: GRAPH_PAGE_SIZE }, (_, index) => cell({ op: op("GET", `/api/orders/quiet-${String.fromCharCode(97 + index)}`), resource: null, evidenceIds: [`q${index}-1`, `q${index}-2`, `q${index}-3`] }))
     const write = op("POST", "/api/orders/write")
     const snapshot = targetSnapshot({ activeSources: ["human"], cells: [...quiet, cell({ op: write, resource: null, evidenceIds: ["w"] })] })
     const graph = projectHierarchy(snapshot, filters, groupNav())

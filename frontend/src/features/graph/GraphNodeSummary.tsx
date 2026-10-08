@@ -40,6 +40,10 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       list: group.operations.slice(0, 8).map(operation => [plain(operation), mostUrgent(group.cells.filter(cell => cell.op === operation))]),
     }
   }
+  if (node.staticResource) return {
+    stats: [[node.kind === "operation-group" ? "경로" : "자원", node.objectGroup?.members.length ?? 1], ["관측 기록", node.selection.evidenceIds.length]],
+    listTitle: "정적 자원 · 판정 제외", list: [],
+  }
   if (node.kind === "resource" && node.selection.displayObjectKey) {
     const accesses = projection.edges.filter(edge => edge.targetId === node.id)
     const identities = [...new Set(accesses.map(edge => edge.selection.identity).filter((value): value is string => !!value))]

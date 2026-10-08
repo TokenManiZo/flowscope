@@ -4,6 +4,7 @@ import { targetSnapshot } from "@/test/fixtures"
 import { apiGroupDescriptor, projectHierarchy, type GraphNavigation } from "./graphHierarchy"
 import { buildGraphSearchIndex, searchDestination } from "./graphSearch"
 import type { GraphFilters } from "./graphProjection"
+import { graphFocusStates } from "./CytoscapeGraph"
 import { graphNodeSummary } from "./GraphNodeSummary"
 import { relationshipNodeCard } from "./relationshipNodeCard"
 
@@ -17,6 +18,17 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("uses the same integer and opaque labels in graph and search without changing object order", () => {
+    const snapshot = data()
+    snapshot.displayObjects = snapshot.displayObjects!.map((object, i) => ({ ...object,
+      integerLabel: i === 0 ? "9007199254740993123456789" : null, displayOrdinal: i === 0 ? 0 : i,
+    }))
+    const graph = projectHierarchy(snapshot, filters, nav)
+    expect(graph.resources.map(node => node.label)).toEqual(["9007199254740993123456789", "OBJ 1", "OBJ 2"])
+    expect(graph.resources.map(node => node.id)).toEqual(["resource:object-1", "resource:object-2", "resource:object-3"])
+    const index = buildGraphSearchIndex(snapshot, filters)
+    for (const object of graph.resources) expect(index.entries.find(entry => entry.value === object.selection.displayObjectKey)?.title).toBe(object.label)
+  })
   it("opens a multi-path API family before opening each parent's final objects", () => {
     const snapshot = data()
     const operation = `${service} GET /api/{id}/detail/{id}`
@@ -36,6 +48,9 @@ describe("observed display objects", () => {
     expect(new Set(parents.operations.map(node => node.id)).size).toBe(2)
     expect(parents.nodes.filter(node => node.kind === "object-group")).toHaveLength(2)
     expect(parents.resources).toHaveLength(0)
+    const apiFamilyNode = parents.nodes.find(node => node.kind === "operation-group")!
+    const focus = graphFocusStates(parents, apiFamilyNode.id)
+    for (const api of parents.operations) expect(focus.node(api.id)).toBe("yes")
     const children = projectHierarchy(snapshot, { ...opened, expandedObjectGroups: [...opened.expandedObjectGroups, "object-group:parent-101"] }, navigation)
     expect(children.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 2"])
     expect(children.resources.flatMap(node => node.selection.evidenceIds)).toEqual(["ev-1", "ev-2"])
@@ -45,6 +60,49 @@ describe("observed display objects", () => {
     expect(destination.expand).toContain(`operation-group:${family}`)
     const searched = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: destination.expand }, destination.navigation, destination.reveal)
     expect(searched.nodes.some(node => node.id === destination.nodeId)).toBe(true)
+  })
+  it("highlights only a path object and its left ancestors, even when a query shares the same evidence", () => {
+    const snapshot = data()
+    snapshot.displayObjects = [...snapshot.displayObjects!, ...snapshot.displayObjects!.map(object => ({
+      ...object, kind: "QUERY" as const, groupKey: "query-group", objectKey: `query-${object.ordinal}`, fields: ["/report_id"],
+    }))]
+    const graph = projectHierarchy(snapshot, filters, nav)
+    const path = graph.nodes.find(node => node.id === "object-group:path-group")!
+    const query = graph.nodes.find(node => node.id === "object-group:query-group")!
+    const opened = graphFocusStates(graph, path.id, path.id)
+    expect(opened.node(path.id)).toBe("yes")
+    expect(opened.node(query.id)).toBe("no")
+    for (const api of graph.operations) expect(opened.node(api.id)).toBe("yes")
+    for (const identity of graph.identities) expect(opened.node(identity.id)).toBe(graph.edges.some(edge => edge.sourceId === identity.id) ? "yes" : "no")
+    for (const object of graph.resources) expect(opened.node(object.id)).toBe("yes")
+    for (const edge of graph.edges.filter(edge => edge.targetId === query.id)) expect(opened.edge(edge.id)).toBe("no")
+    const selected = graphFocusStates(graph, graph.resources[0].id)
+    expect(selected.node(graph.resources[0].id)).toBe("yes")
+    expect(selected.node(graph.resources[1].id)).toBe("no")
+    expect(selected.node(query.id)).toBe("no")
+  })
+  it("shows only the selected API or identity and its connected branches", () => {
+    const snapshot = data(), base = snapshot.events[0]
+    const other = { ...base, eventId: "other", idn: "user-b", op: `${service} GET /posts/recent`, path: "/posts/recent" }
+    snapshot.events = [...snapshot.events, other]
+    snapshot.cells = [...snapshot.cells, { ...snapshot.cells[0], idn: other.idn, op: other.op, evidenceIds: [other.eventId] }]
+    snapshot.displayObjects = [...snapshot.displayObjects!, { ...snapshot.displayObjects![0], eventId: other.eventId, operation: other.op,
+      apiKey: other.op, kind: "QUERY", groupKey: "other-query", objectKey: "other-query-1", fields: ["/limit"], ordinal: 1 }]
+    const graph = projectHierarchy(snapshot, filters, nav)
+    const api = graph.operations.find(node => node.selection.displayApiKey?.includes("/posts/{id}"))!
+    const otherApi = graph.operations.find(node => node.id !== api.id)!
+    const identity = graph.identities.find(node => node.selection.identity === "user-a")!
+    const otherIdentity = graph.identities.find(node => node.selection.identity === "user-b")!
+    const apiFocus = graphFocusStates(graph, api.id)
+    expect(apiFocus.node(api.id)).toBe("yes")
+    expect(apiFocus.node(identity.id)).toBe("yes")
+    expect(apiFocus.node(otherApi.id)).toBe("no")
+    expect(apiFocus.node(otherIdentity.id)).toBe("no")
+    expect(apiFocus.node("object-group:other-query")).toBe("no")
+    const identityFocus = graphFocusStates(graph, identity.id)
+    expect(identityFocus.node(api.id)).toBe("yes")
+    expect(identityFocus.node(otherIdentity.id)).toBe("no")
+    expect(identityFocus.node(otherApi.id)).toBe("no")
   })
   it("folds path objects and labels their parameter location", () => {
     const graph = projectHierarchy(data(), { ...filters, expandedObjectGroups: [] }, nav)

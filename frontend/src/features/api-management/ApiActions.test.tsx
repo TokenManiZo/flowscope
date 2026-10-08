@@ -117,3 +117,17 @@ it("applies acknowledged marks and revision without refetching the whole snapsho
   expect(invalidate).not.toHaveBeenCalled()
   expect(fetch).toHaveBeenCalledTimes(1)
 })
+
+it("uses the chosen original API key for actions on a displayed API bundle", async () => {
+  const calls = mockAction(), user = userEvent.setup(), second = op + "/{id}"
+  renderWithQueryClient(<ApiActions snapshot={snapshot} operations={[op + "#variant", op, second]} />)
+  const picker = screen.getByRole("combobox", { name: "조작할 API" })
+  expect(within(picker).getAllByRole("option")).toHaveLength(2)
+  await user.selectOptions(picker, second)
+  await user.click(screen.getByRole("button", { name: "API 하이라이트" }))
+  await user.click(screen.getByRole("button", { name: "보라 하이라이트" }))
+  await waitFor(() => expect(calls.at(-1)).toMatchObject({ action: "highlight", operations: [second] }))
+  await user.click(screen.getByRole("button", { name: "API 하이라이트" }))
+  await user.click(screen.getByRole("button", { name: "API 삭제" }))
+  await waitFor(() => expect(calls.at(-1)).toMatchObject({ action: "preview-delete", operations: [second] }))
+})
