@@ -163,7 +163,7 @@ describe("RequestLabDialog", () => {
     const fetch = installTransport()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />, clientInspecting(run))
     await screen.findByRole("button", { name: /^작성 중 · / })
-    // 고를 신원이 없으면 어떤 인증도 미리 적용하지 않는다.
+    // 고를 계정이 없으면 어떤 인증도 미리 적용하지 않는다.
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab/credentials")).toBe(false)
     expect(screen.getByRole("button", { name: "작성 중 · 인증 선택 전" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(/인증 선택/)
@@ -241,7 +241,7 @@ describe("RequestLabDialog", () => {
     const capturing: ManagedSession = { ...activeSession, status: "CAPTURING", capturing: true, replayReady: true }
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[capturing]} />)
     await openDraft()
-    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 신원(alice)으로 보내려면 전송 인증에서 alice을(를) 고르세요.")
+    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 계정(alice)으로 보내려면 전송 인증에서 alice을(를) 고르세요.")
     await chooseAuthentication(user, "ACCOUNT:acct-1")
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("관리자"))
     await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
@@ -959,7 +959,7 @@ describe("RequestLabDialog", () => {
     expect(owner.requests).toHaveLength(0)
   })
 
-  it("isolates a late send completion when the selected 관측 기록 changes", async () => {
+  it("isolates a late send completion when the selected 요청 기록 changes", async () => {
     const pending = deferredResponse()
     const owner = createMemoryOnlyRawState()
     const nextEvent = { ...event, eventId: "event-8" }

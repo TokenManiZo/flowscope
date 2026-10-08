@@ -74,7 +74,7 @@ export function isPublicRead(snapshot: Snapshot, operation: string, resource: st
 
 /** "관측 전체" 보기에서도 빼는 요청: 정적 파일과 CORS 사전 요청. 판정과 무관한 표시 전용 기준이다. */
 const hiddenTrafficClasses = new Set(["STATIC_ASSET", "PREFLIGHT", "DISCOVERY_METADATA"])
-/** 탐색 중 그대로 관측한 요청이 아닌 단계: 로그인 확인, 교차 신원 재전송, LLM 확인 요청, Request Lab 같은 수동 재전송. */
+/** 탐색 중 그대로 관측한 요청이 아닌 단계: 로그인 확인, 교차 계정 재전송, LLM 확인 요청, Request Lab 같은 수동 재전송. */
 const nonCollectionPhases = new Set(["SESSION_SETUP", "AUTHORIZATION_REPLAY", "COACH_PROBE", "VALIDATION"])
 const staticExtension = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|bmp|woff2?|ttf|eot|mp3|mp4|webm)$/i
 
@@ -146,7 +146,7 @@ export function navigateHierarchy(current: GraphNavigation, level: GraphLevel, g
   return { level, groupId, operation, operationLimit: level === "group" && current.groupId === groupId ? current.operationLimit : GRAPH_PAGE_SIZE, objectLimit: GRAPH_PAGE_SIZE, focusCandidateKey: "" }
 }
 
-/** 노드를 여는(더블클릭·Enter) 방향. 오른쪽 레인 노드는 한 단계 안으로, 왼쪽 신원 노드는 한 단계 위로 간다. */
+/** 노드를 여는(더블클릭·Enter) 방향. 오른쪽 레인 노드는 한 단계 안으로, 왼쪽 계정 노드는 한 단계 위로 간다. */
 /** 객체 묶음 기준: 객체 ID에서 서비스 주소를 뺀 뒤 ":" 앞부분. ":"이 없으면 묶지 않는다(예: "https://a.test orders:13" → orders). */
 export function objectGroupKey(resource: string): { id: string; key: string } | null {
   const space = resource.lastIndexOf(" ")
@@ -362,7 +362,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
 
   // 같은 경로 형식(숫자·UUID·긴 토큰 → {id})의 API가 둘 이상이면 객체 묶음처럼 API 묶음 노드로 접는다(API 목록 표와 같은 기준).
   // 묶음 노드는 첫 멤버 자리에 두고 멤버를 바로 아래로 모은다. 접힌 묶음은 멤버 API 노드를 그래프에서만 숨기고(목록·선택 상세에는
-  // 남는다) 신원→API·API→객체 엣지를 묶음 노드로 모아 같은 출처·신원 엣지를 하나로 합친다.
+  // 남는다) 계정→API·API→객체 엣지를 묶음 노드로 모아 같은 출처·계정 엣지를 하나로 합친다.
   const groupOperations = (visible: readonly string[], related: readonly Cell[]) => {
     const shapes = new Map<string, string[]>()
     for (const op of visible) { const shape = operationShapeKey(op); shapes.set(shape, [...(shapes.get(shape) ?? []), op]) }
@@ -420,7 +420,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
     for (const identity of new Set(related.map(cell => cell.idn))) addNode("identity", identity, selectionFor(related.filter(cell => cell.idn === identity)))
     listItems = visible.map(op => addNode("operation", op, selectionFor(related.filter(cell => cell.op === op))))
     addAccess(related)
-    // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 신원 → API → 객체를 한 화면에서 보되,
+    // 그룹 레벨에서도 객체(자원)를 세 번째 레인에 함께 그린다. 옛 그래프처럼 계정 → API → 객체를 한 화면에서 보되,
     // 객체가 많으면 objectLimit로 접고 "더 보기"로 펼친다(오퍼레이션 레벨과 같은 접기/펼치기).
     const resourceScores = new Map<string, number>()
     for (const cell of related) if (cell.resource) resourceScores.set(cell.resource, (resourceScores.get(cell.resource) ?? 0) + (cell.overall === "suspicious" ? 100 : cell.conflict ? 60 : 1))
@@ -449,7 +449,7 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
         const events = supportEvents.filter(event => event.op === op)
         listItems.push(addNode("observed-operation", op, { ...emptySelection(), operation: op, evidenceIds: [...new Set(events.flatMap(supportEvidence))].sort(compareText) }))
       }
-      // 같은 신원·기능·출처의 반복 관측은 엣지 하나로 합친다. 개별 관측 기록은 선택 상세의 Evidence 목록에 모두 남는다.
+      // 같은 계정·기능·출처의 반복 관측은 엣지 하나로 합친다. 개별 요청 기록은 선택 상세의 Evidence 목록에 모두 남는다.
       const buckets = new Map<string, Snapshot["events"][number][]>()
       for (const event of supportEvents.filter(event => supportOps.includes(event.op))) {
         const key = JSON.stringify([event.idn, event.op, event.source])

@@ -18,7 +18,7 @@ export function operationParts(value: string): { method: string; path: string } 
 const candidateCount = (cells: readonly { overall: string }[]) => cells.filter(cell => cell.overall === "suspicious").length
 
 function evidenceFooter(node: RelationshipNode) {
-  return `관측 기록 ${node.selection.evidenceIds.length}건`
+  return `요청 기록 ${node.selection.evidenceIds.length}건`
 }
 
 /**

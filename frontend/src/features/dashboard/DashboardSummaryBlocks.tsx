@@ -52,7 +52,7 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
   const candidates = (auth?.bolaIdorCandidates ?? 0) + (auth?.bflaCandidates ?? 0)
   const zero = (value: number): Row["tone"] => value === 0 ? "zero" : undefined
   return <section aria-label="점검 흐름" className="grid overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-3">
-    <Stage step="관측" href="#evidence" go="관측 기록" value={values.trafficStats.captured} unit="건 수집" rows={[
+    <Stage step="관측" href="#evidence" go="요청 기록" value={values.trafficStats.captured} unit="건 수집" rows={[
       { name: "사람", label: sourceDot("bg-observation-human", "사람"), value: format(values.sourceCounts.human) },
       { name: "스캐너", label: sourceDot("bg-observation-scanner", "스캐너"), value: format(values.sourceCounts.scanner) },
       { name: "LLM", label: sourceDot("bg-observation-llm", "LLM"), value: format(values.sourceCounts.llm) },
@@ -131,7 +131,7 @@ const sourceShort: Record<string, string> = { human: "H", scanner: "S", llm: "L"
 const sourceColor: Record<string, string> = { human: "text-observation-human", scanner: "text-observation-scanner", llm: "text-observation-llm" }
 
 export function RecentEventList({ events, ordinals }: { events: readonly EventRecord[]; ordinals?: Readonly<Record<string, number>> }) {
-  return <ListCard title="최근 관측" href="#evidence" linkLabel="관측 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
+  return <ListCard title="최근 관측" href="#evidence" linkLabel="요청 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
     <span className={cn("text-center text-xs font-semibold", sourceColor[event.source] ?? "text-muted-foreground")}>{sourceShort[event.source] ?? "?"}</span>
     <span className="min-w-0"><span className="block truncate font-mono text-xs">{event.method} {event.path} <span className="text-muted-foreground">({event.status})</span></span><span className="block truncate text-[11px] text-muted-foreground">{evidenceOrdinalLabel(ordinals, event.eventId)} · {identityLabel(event.idn)}</span></span>
     <span className="text-[11px] tabular-nums text-muted-foreground">{observedTimeLabel(event.lastSeen, event.lastSeen)}</span>

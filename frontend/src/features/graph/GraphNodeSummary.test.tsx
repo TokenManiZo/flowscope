@@ -50,8 +50,8 @@ it("lists who accessed an object, marking the owner", () => {
   const object = projection.resources.find(node => node.selection.resource === "orders:101")!
   renderWithQueryClient(<GraphInspectorPanel selection={object.selection} event={null} snapshot={withOwner} node={object} projection={projection} />)
   const summary = screen.getByRole("region", { name: "노드 요약" })
-  expect(within(summary).getByText("접근 신원").nextElementSibling).toHaveTextContent("1")
-  expect(within(summary).getByText(/접근한 신원/)).toBeVisible()
+  expect(within(summary).getByText("접근 계정").nextElementSibling).toHaveTextContent("1")
+  expect(within(summary).getByText(/접근한 계정/)).toBeVisible()
   expect(within(summary).getByText("SUSPICIOUS")).toBeVisible()
 })
 
@@ -62,7 +62,7 @@ it("shows a publicly readable object as 공개 instead of naming an owner", () =
   const object = projection.resources.find(node => node.selection.resource === "orders:101")!
   renderWithQueryClient(<GraphInspectorPanel selection={object.selection} event={null} snapshot={publicSnapshot} node={object} projection={projection} />)
   const summary = screen.getByRole("region", { name: "노드 요약" })
-  expect(within(summary).getByText("접근한 신원 · 조회 공개")).toBeVisible()
+  expect(within(summary).getByText("접근한 계정 · 조회 공개")).toBeVisible()
   expect(within(summary).queryByText(/소유자 USER A|\(소유자\)/)).not.toBeInTheDocument()
 })
 
@@ -76,7 +76,7 @@ it("keeps anonymous verdicts and evidence on one 비로그인 card after selecti
   const projection = projectHierarchy(data, filters, navigateHierarchy(site, "operation", groupId, anonymousCell.op))
   const api = projection.operations[0]
   renderWithQueryClient(<GraphInspectorPanel selection={api.selection} event={null} snapshot={data} node={api} projection={projection} />)
-  const card = screen.getByRole("listitem", { name: "비로그인 관측 기록 1건" })
+  const card = screen.getByRole("listitem", { name: "비로그인 요청 기록 1건" })
   expect(within(card).getByText("비로그인")).toBeVisible()
   expect(within(card).getByText("DENY")).toBeVisible()
   expect(screen.queryByText("anon")).not.toBeInTheDocument()

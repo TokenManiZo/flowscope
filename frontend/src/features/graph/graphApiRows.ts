@@ -4,7 +4,7 @@ import { objectGroupKey } from "./graphHierarchy"
 import { pathShape } from "./graphPathShape"
 import { operationParts } from "./relationshipNodeCard"
 
-/** API 목록 표 한 줄의 관측 요약. 응답 코드·출처·신원·객체는 노드의 Evidence에 묶인 요청에서 모은다. */
+/** API 목록 표 한 줄의 관측 요약. 응답 코드·출처·계정·객체는 노드의 Evidence에 묶인 요청에서 모은다. */
 export interface ApiRowStats {
   codes: readonly number[]
   sources: ReadonlySet<Source>
@@ -72,7 +72,7 @@ export interface ObjectRow {
 
 /**
  * 한 API(또는 묶음)의 한 객체 종류에 대한 객체 목록. 소유자는 서버 추정값(snapshot.owners)을 쓰고,
- * IDOR 후보는 화면에서 다시 판단하지 않고 서버 셀 판정이 suspicious인 신원에만 붙인다.
+ * IDOR 후보는 화면에서 다시 판단하지 않고 서버 셀 판정이 suspicious인 계정에만 붙인다.
  */
 export function objectRows(operations: readonly string[], type: string, snapshot: Pick<Snapshot, "events" | "cells" | "owners">): ObjectRow[] {
   const ops = new Set(operations)

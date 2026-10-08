@@ -12,7 +12,7 @@ describe("parameter map projection over snapshot.surface", () => {
     expect(node("condition").card.accessibleLabel).toContain("role USER")
     expect(node("condition").card.accessibleLabel).toContain("7 observations")
     expect(node("operation").card).toMatchObject({ kind: "operation", badge: "PATCH", title: "/orders/{id}", detail: "", footer: "", icon: "none" })
-    expect(node("operation").card.accessibleLabel).toContain("HTTP 200 × 1; 관측 기록 1건")
+    expect(node("operation").card.accessibleLabel).toContain("HTTP 200 × 1; 요청 기록 1건")
     expect(node("operation").card.accessibleLabel).toContain("PATCH /orders/{id}")
     expect(node("operation").card.accessibleLabel).not.toContain("https://")
     expect(node("input").card).toMatchObject({ kind: "input", badge: "JSON", title: "status", detail: "", footer: "", icon: "none" })
@@ -38,11 +38,11 @@ describe("parameter map projection over snapshot.surface", () => {
     const card = projectParameterMap(snapshot).nodes.find(node => node.lane === "operation")!.card
     // HTTP 결과 요약은 카드 면이 아니라 접근 이름(마우스를 올리면 보이는 설명)에 남는다.
     expect(card).toMatchObject({ title: "/orders/{id}", detail: "", footer: "" })
-    expect(card.accessibleLabel).toContain("HTTP 200 × 2 · 403 × 1; 관측 기록 3건")
+    expect(card.accessibleLabel).toContain("HTTP 200 × 2 · 403 × 1; 요청 기록 3건")
     expect(JSON.stringify(snapshot)).toBe(before)
     const unknown = projectParameterMap(surfaceSnapshot({ gaps: [parameterGap("gap")], events: [actualEvent({ status: 0 }), actualEvent({ eventId: "invalid", status: 900 })] }))
     expect(unknown.nodes.find(node => node.lane === "operation")?.card).toMatchObject({ detail: "", footer: "" })
-    expect(unknown.nodes.find(node => node.lane === "operation")?.card.accessibleLabel).toContain("HTTP UNKNOWN × 2; 관측 기록 2건")
+    expect(unknown.nodes.find(node => node.lane === "operation")?.card.accessibleLabel).toContain("HTTP UNKNOWN × 2; 요청 기록 2건")
   })
 
   it("keeps a missing parameter fact UNKNOWN and a declared-only fact NOT_OBSERVED without inventing observations", () => {

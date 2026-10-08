@@ -246,7 +246,7 @@ export function projectRouteCandidate(candidate: RouteCandidate, enabledSources:
   return { ...candidate, id, label: `${candidate.method} ${candidate.pathTemplate}`, observedText: candidate.observed && candidate.method !== "UNKNOWN" ? "관측됨" : "미관측 후보", selection: { operation: `${candidate.method} ${candidate.pathTemplate}`, resource: null, identity: null, source: normalizedSource(selectedProvenance?.source), evidenceIds: [...candidate.provenanceEvidenceIds].sort(compareText), routeCandidate: detail } }
 }
 
-/** 현재 필터가 허용하는 경로 후보만 투영한다: 표시 옵션이 켜져 있고, 신원 필터가 없으며, provenance source가 활성 source에 포함될 때. */
+/** 현재 필터가 허용하는 경로 후보만 투영한다: 표시 옵션이 켜져 있고, 계정 필터가 없으며, provenance source가 활성 source에 포함될 때. */
 export function projectRouteCandidates(snapshot: Snapshot, filters: GraphFilters): readonly GraphRouteCandidate[] {
   if (!filters.includeRouteCandidates || filters.identity.length > 0) return []
   const enabledSources = new Set(filters.source.map(normalizedSource))

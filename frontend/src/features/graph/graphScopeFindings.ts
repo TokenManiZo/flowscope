@@ -11,7 +11,7 @@ export type UndecidedReason = "object" | "server" | "options" | "other"
 
 export interface ScopeCandidate { key: string; op: string; method: string; path: string; resource: string | null; idn: string; type: CandidateType }
 export interface ScopeUndecided { key: string; op: string; method: string; path: string; resource: string | null; idn: string; reason: UndecidedReason }
-/** 신원별 요약. counts는 API마다 그 신원의 가장 급한 판정 하나로 센 값이라, 모두 더하면 apis와 같다. */
+/** 계정별 요약. counts는 API마다 그 계정의 가장 급한 판정 하나로 센 값이라, 모두 더하면 apis와 같다. */
 export interface ScopeIdentity { idn: string; sources: readonly Source[]; apis: number; counts: Readonly<Partial<Record<Verdict, number>>> }
 
 
@@ -39,7 +39,7 @@ export const UNDECIDED_REASON_LABEL: Record<UndecidedReason, string> = {
 }
 export const UNDECIDED_REASON_ORDER: readonly UndecidedReason[] = ["object", "server", "options", "other"]
 
-/** 셀 목록에서 후보·확인 필요·신원별 요약을 만든다. 후보는 상태를 바꾸는 요청이 먼저 오도록 정렬한다. */
+/** 셀 목록에서 후보·확인 필요·계정별 요약을 만든다. 후보는 상태를 바꾸는 요청이 먼저 오도록 정렬한다. */
 export function scopeFindings(cells: readonly Cell[]) {
   const candidates: ScopeCandidate[] = [], undecided: ScopeUndecided[] = []
   const identities = new Map<string, { sources: Set<Source>; apis: Map<string, Verdict[]> }>()

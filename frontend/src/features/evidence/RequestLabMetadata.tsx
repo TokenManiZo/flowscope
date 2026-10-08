@@ -45,7 +45,7 @@ interface Props {
   observedCredential: string | null
   requestRetained: boolean
   responseRetained: boolean
-  /** 지금 수집 중이거나 가장 최근에 기록된 신원의 세션. 없으면 "현재 세션"을 고를 수 없다. */
+  /** 지금 수집 중이거나 가장 최근에 기록된 계정의 세션. 없으면 "현재 세션"을 고를 수 없다. */
   currentSession: { label: string; credential: string | null } | null
   credentialMode: RequestLabCredentialMode
   disabled?: boolean
@@ -61,7 +61,7 @@ export function RequestLabMetadata({ service, identity, observedCredential, requ
       {(!requestRetained || !responseRetained) && <dd className="text-xs text-muted-foreground">요청 {requestRetained ? "보존" : "미보존"} · 응답 {responseRetained ? "보존" : "미보존"}</dd>}
     </dl>
     <div className="grid gap-2">
-      <IdentityBox title="트래픽 신원" info="이 요청을 보낸 계정의 당시 인증값이에요." name={identityLabel(identity)} detail={observedCredential ?? "인증값 없음"} />
+      <IdentityBox title="트래픽 계정" info="이 요청을 보낸 계정의 당시 인증값이에요." name={identityLabel(identity)} detail={observedCredential ?? "인증값 없음"} />
       <IdentityBox title="현재 세션" info="지금 수집 중인 계정의 최신 인증값이에요."
         name={currentSession?.label ?? "없음"}
         detail={currentSession ? currentSession.credential ?? "확인 중" : "아직 저장된 최신 인증값이 없어요."} />

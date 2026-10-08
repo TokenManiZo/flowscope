@@ -16,7 +16,7 @@ it("keeps selected 기록 번호 bounded in ordinary sheet body content until ex
     />
   )
 
-  expect(screen.getByText("시나리오 관측 기록 선택").closest("section")).not.toHaveTextContent(longEvidenceId)
+  expect(screen.getByText("시나리오 요청 기록 선택").closest("section")).not.toHaveTextContent(longEvidenceId)
   expect(screen.getByRole("button", { name: "기록 번호 더 보기" })).toBeVisible()
   expect(screen.getByText("기록 번호 (1)").closest("div")?.querySelector("textarea")).toBeNull()
 
@@ -36,7 +36,7 @@ it("renders the same detail body inline when the shared workspace owns the Sheet
     />
   )
 
-  expect(screen.getByText("시나리오 관측 기록 선택")).toBeVisible()
+  expect(screen.getByText("시나리오 요청 기록 선택")).toBeVisible()
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
 })
 
@@ -52,7 +52,7 @@ it("keeps an inline contained inspector fixed while only its detail body scrolls
     />
   )
 
-  const detail = screen.getByLabelText("관측 기록 상세")
+  const detail = screen.getByLabelText("요청 기록 상세")
   expect(detail).toHaveClass("overflow-hidden")
   expect(detail.lastElementChild).toHaveClass("overflow-y-auto")
 })

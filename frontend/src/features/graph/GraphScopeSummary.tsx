@@ -57,7 +57,7 @@ function More({ hidden, open, onToggle, noun }: { hidden: number; open: boolean;
 
 /**
  * 사이트·API 그룹을 골랐을 때(또는 그 화면에서 아무것도 고르지 않았을 때)의 요약.
- * 순서: 숫자 → IDOR·BFLA 후보 → 확인 필요(이유별) → (사이트) API 그룹 → 신원별 접근 → (그룹) 나머지 API·그룹 열기.
+ * 순서: 숫자 → IDOR·BFLA 후보 → 확인 필요(이유별) → (사이트) API 그룹 → 계정별 접근 → (그룹) 나머지 API·그룹 열기.
  * 후보·확인 필요가 많아도 기본 화면은 후보 3줄과 이유 몇 줄로 짧게 유지한다.
  */
 export function GraphScopeSummary({ scope, groups, owners = {}, labelIdentity = identityLabel, onRevealOperation, onSelectGroup, onOpenGroup }: Props) {
@@ -138,8 +138,8 @@ export function GraphScopeSummary({ scope, groups, owners = {}, labelIdentity = 
     </div>}
 
     {identities.length > 0 && <div>
-      <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">신원별 접근</h3>
-      <ul className="grid gap-2" aria-label="신원별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${labelIdentity(identity.idn)} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+      <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">계정별 접근</h3>
+      <ul className="grid gap-2" aria-label="계정별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${labelIdentity(identity.idn)} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[15px] font-semibold">{labelIdentity(identity.idn)}</span>
           <span className="ms-auto flex shrink-0 gap-1">{identity.sources.map(source => { const mark = SOURCE_MARK[source]; return <span key={source} role="img" aria-label={mark.label} title={mark.label} className={`inline-flex size-6 items-center justify-center rounded-full border ${mark.className}`}><mark.Icon className="size-3.5" aria-hidden="true" /></span> })}</span>

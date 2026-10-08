@@ -19,7 +19,7 @@ export type EvidenceFiltersState = {
   dispositions: Record<"INCLUDE" | "REVIEW" | "EXCLUDE", boolean>
   trafficClasses: Record<string, boolean>
   expandRepeats: boolean
-  /** 경로·메서드·신원 부분 일치 검색. 비어 있으면 거르지 않는다. */
+  /** 경로·메서드·계정 부분 일치 검색. 비어 있으면 거르지 않는다. */
   query?: string
 }
 

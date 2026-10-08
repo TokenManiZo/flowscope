@@ -223,8 +223,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     return next
   }
   /**
-   * 새 편집본의 전송 인증: 점검이 하나만 돌고 있으면 그 신원(비로그인 점검이면 비로그인, 계정은 세션을 쓸 수 있을 때만).
-   * 점검이 없거나 여러 개면 어느 신원인지 알 수 없으므로 비워 두고 사용자가 고르게 한다.
+   * 새 편집본의 전송 인증: 점검이 하나만 돌고 있으면 그 계정(비로그인 점검이면 비로그인, 계정은 세션을 쓸 수 있을 때만).
+   * 점검이 없거나 여러 개면 어느 계정인지 알 수 없으므로 비워 두고 사용자가 고르게 한다.
    */
   function inspectedCredentials(): { mode: RequestLabCredentialMode; accountId: string } | null {
     const runs = inspection?.runs?.length ? inspection.runs : inspection?.active ? [inspection] : []
@@ -234,7 +234,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     if (!accountId) return { mode: "ANONYMOUS", accountId: "" }
     return accountOptions.some(option => option.account.id === accountId && option.ready) ? { mode: "ACCOUNT", accountId } : null
   }
-  /** 원본에서 새 편집본을 만들고 점검 중인 신원의 인증을 적용한다. 열 때와 탭을 모두 지웠을 때 쓴다. */
+  /** 원본에서 새 편집본을 만들고 점검 중인 계정의 인증을 적용한다. 열 때와 탭을 모두 지웠을 때 쓴다. */
   function startDraft() {
     if (!draft?.requestEditable || busy || suspended) return
     const next = createDraft(raw.current.originalRequest, "ORIGINAL", "")
@@ -348,7 +348,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
     return () => controller.abort()
   }, [open, event.eventId, snapshotRevision, suspended])
 
-  // 열자마자 보낼 수 있게 한다: 아직 보내지 않은 탭이 있으면 그 탭을, 없으면 원본에서 점검 중인 신원으로 편집본을 만들어 고른다.
+  // 열자마자 보낼 수 있게 한다: 아직 보내지 않은 탭이 있으면 그 탭을, 없으면 원본에서 점검 중인 계정으로 편집본을 만들어 고른다.
   useEffect(() => {
     if (!open || !draft || prepared.current || loading || busy || suspended) return
     prepared.current = true
@@ -675,7 +675,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
           {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{originalOnly ? "처음 수집한 원문입니다. 읽기 전용입니다." : "처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다."}</p>}
-          {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 신원(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
+          {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 계정(${draft.observedIdentity})으로 보내려면 전송 인증에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
           {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "전송할 계정 또는 비로그인을 선택해 주세요."}</p>}
           {/* 전송 인증 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
           {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 인증으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}

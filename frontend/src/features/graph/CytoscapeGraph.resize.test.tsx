@@ -139,7 +139,7 @@ it("retains card sizes on single-lane sorting and supports Shift+Arrow resizing"
   expect(Number(core.getElementById("identity:alice").data("width"))).toBe(300)
 
   act(() => { canvas().focus() })
-  // 정렬 후 신원 카드는 이웃 레인과 가까워 확대가 제한된다. API 카드에서 키보드 크기 조절을 확인한다.
+  // 정렬 후 계정 카드는 이웃 레인과 가까워 확대가 제한된다. API 카드에서 키보드 크기 조절을 확인한다.
   fireEvent.keyDown(canvas(), { key: "ArrowRight" })
   const focused = core.nodes(".keyboard-focus")[0]
   expect(focused.id()).toBe("operation:GET /orders")

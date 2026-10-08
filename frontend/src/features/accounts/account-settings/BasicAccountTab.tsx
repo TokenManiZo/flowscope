@@ -17,7 +17,7 @@ export function RoleSegment({ value, onChange, disabled = false, labelledBy }: {
   </div>;
 }
 
-/** 이름·역할·대상 서비스. 수집 중 트래픽은 연결한 계정으로 바로 인식하므로 사후 신원 병합은 두지 않는다. */
+/** 이름·역할·대상 서비스. 수집 중 트래픽은 연결한 계정으로 바로 인식하므로 사후 계정 병합은 두지 않는다. */
 export function BasicAccountTab({ settings, draft, patch, targetError, pending }: {
   settings: AccountSettings; draft: AccountSettingsDraft;
   patch: (value: Partial<AccountSettingsDraft>) => void; targetError: string | null;

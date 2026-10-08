@@ -36,7 +36,7 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
         ...snapshotFixture,
         events: options.humanEvents ?? [],
         accounts: options.accounts ?? [{ id: "active-account", label: "활성 계정", role: "USER", target, color: "", authArtifactCount: 1 }],
-        sessions: [{ fingerprint: "observed-secret", idn: "관측 신원", accountId: null, artifactKind: "COOKIE", evidence: "e-1", confidence: "LOW", firstSeen: 0, lastSeen: 0, registered: false, service: target }],
+        sessions: [{ fingerprint: "observed-secret", idn: "관측 계정", accountId: null, artifactKind: "COOKIE", evidence: "e-1", confidence: "LOW", firstSeen: 0, lastSeen: 0, registered: false, service: target }],
         managedSessions: options.managedSessions ?? [
           { handle: "active", accountId: "active-account", accountLabel: "활성 계정", service: target, status: "ACTIVE", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
           { handle: "expired", accountId: "expired-account", accountLabel: "만료 계정", service: target, status: "EXPIRED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false },
@@ -51,7 +51,7 @@ function installTransport(options: { human?: PollResponse; humanPending?: boolea
     if (path.startsWith("/api/request-lab?")) return Promise.resolve(response(options.requestDraft ?? {
       eventId: "event-human-1", service: target, request: null, response: null,
       rawRequestRetained: false, rawResponseRetained: false, requestEditable: false,
-      requestCharset: null, responseCharset: null, observedIdentity: "관측 신원",
+      requestCharset: null, responseCharset: null, observedIdentity: "관측 계정",
       reusableSession: "", message: "원문 보존 안 됨",
     }))
     if (path === "/api/zap-status") return Promise.resolve(response(options.zap ?? { connected: true, state: "READY", message: "ZAP 연결됨" }))
@@ -295,7 +295,7 @@ describe("unified inspection hub", () => {
     const user = userEvent.setup()
     const { fetchStub } = renderInspection({ humanEvents: [humanEvent, { ...humanEvent, eventId: "event-human-2", method: "GET", path: "/api/profile", status: 403, idn: "bob" }, { ...humanEvent, eventId: "event-human-3", method: "GET", path: "/api/me", status: 200, idn: "active-account" }] })
     await user.click(await screen.findByRole("tab", { name: "수집 기록" }))
-    // 등록 계정은 표시 이름으로, 연결되지 않은 서버 임시 신원은 "미등록 로그인 N"으로 보인다.
+    // 등록 계정은 표시 이름으로, 연결되지 않은 서버 임시 계정은 "미등록 로그인 N"으로 보인다.
     expect(await screen.findByRole("button", { name: /GET \/api\/me 활성 계정 HTTP 200 Request Lab에서 열기/ })).toBeVisible()
     await screen.findByRole("button", { name: /POST \/api\/orders 미등록 로그인 1 HTTP 201 Request Lab에서 열기/ })
     expect(fetchStub.mock.calls.some(([path]) => String(path).startsWith("/api/request-lab?"))).toBe(false)
@@ -378,7 +378,7 @@ describe("unified inspection hub", () => {
     expect(screen.queryByRole("tab", { name: /범위/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
-    expect(screen.queryByText("범위 → HUMAN → ZAP → 관측 기록 검토 순서로 각각의 관측 기록을 분리합니다.")).not.toBeInTheDocument()
+    expect(screen.queryByText("범위 → HUMAN → ZAP → 요청 기록 검토 순서로 각각의 요청 기록을 분리합니다.")).not.toBeInTheDocument()
   })
 
   it("opens on the first records tab without a current-step button or dot", async () => {

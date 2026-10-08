@@ -3,7 +3,7 @@ import type { Snapshot } from "@/lib/api/types"
 import { verdictStyles, wrapOperationLabel, type GraphView } from "./graphProjection"
 import type { GraphNavigation, HierarchyEdge, HierarchyNode, HierarchyProjection, HierarchySelection } from "./graphHierarchy"
 
-/** 재전송 그래프에 그릴 도구. Intruder는 대량 전송이라 그리지 않고 관측 기록에만 남긴다. */
+/** 재전송 그래프에 그릴 도구. Intruder는 대량 전송이라 그리지 않고 요청 기록에만 남긴다. */
 export type ResendTool = "lab" | "repeater"
 export const resendToolNames: Record<ResendTool, string> = { lab: "Request Lab", repeater: "Repeater" }
 export const resendToolColors: Record<ResendTool, string> = { lab: "#7F77DD", repeater: "#D85A30" }
@@ -37,7 +37,7 @@ const selection = (sends: readonly ResendSend[], extra: Partial<HierarchySelecti
 })
 
 /**
- * 재전송만 따로 그린 그래프. 보낸 신원 → 재전송한 API(도구별) → 객체. 판정 셀을 만들거나 바꾸지 않는다.
+ * 재전송만 따로 그린 그래프. 보낸 계정 → 재전송한 API(도구별) → 객체. 판정 셀을 만들거나 바꾸지 않는다.
  * 수집 그래프의 계층 이동(사이트·묶음)과 섞이지 않도록 한 화면에 모두 그린다.
  */
 export function projectResendGraph(snapshot: Snapshot, navigation: GraphNavigation, view: GraphView, tools: readonly ResendTool[]): HierarchyProjection {

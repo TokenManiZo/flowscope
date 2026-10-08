@@ -147,7 +147,7 @@ export function InspectionPage() {
     ? { error: zap.error, hasLastSuccess: zap.data !== undefined }
     : scanner.isError ? { error: scanner.error, hasLastSuccess: scanner.data !== undefined } : undefined
 
-  // 신원 표시: 등록 계정은 표시 이름, 비로그인은 그대로, 어느 계정에도 연결되지 않은 서버 임시 신원(user-c 등)은
+  // 계정 표시: 등록 계정은 표시 이름, 비로그인은 그대로, 어느 계정에도 연결되지 않은 서버 임시 계정(user-c 등)은
   // 등록 계정 ID와 헷갈리지 않게 "미등록 로그인 N"으로 바꾼다.
   const identityLabel = useMemo(() => {
     const labels = new Map((snapshot.data?.accounts ?? []).map((account) => [account.id, account.label]))

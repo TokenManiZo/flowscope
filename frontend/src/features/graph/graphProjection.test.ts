@@ -18,7 +18,7 @@ function snapshot(events: readonly EventRecord[], routeCandidates: Snapshot["rou
 }
 
 describe("projectGraph", () => {
-  it("preserves canonical cell keys and all 관측 기록 when collapsing different resources", () => {
+  it("preserves canonical cell keys and all 요청 기록 when collapsing different resources", () => {
     const first = snapshot([]).cells[0]
     const second = { ...first, resource: null, evidenceIds: ["objectless", "ev-human-1"] }
     expect(graphCellKey(first)).toBe('["alice","GET /orders/{id}","order:101"]')
@@ -56,7 +56,7 @@ describe("projectGraph", () => {
     expect(graphRouteCandidateId(first)).not.toBe(graphRouteCandidateId(delimiterCollision))
   })
 
-  it("keeps INCLUDE identity-resource-operation paths, preserves source semantics, verdict text, repeat labels, and exact 관측 기록 selection", () => {
+  it("keeps INCLUDE identity-resource-operation paths, preserves source semantics, verdict text, repeat labels, and exact 요청 기록 selection", () => {
     const data = snapshot([
       event({ eventId: "ev-human-1", source: "human", repeatCount: 2, clusterEvidenceIds: ["ev-human-1", "ev-human-2"] }),
       event({ eventId: "ev-scanner-1", source: "scanner", idn: "alice", verdict: "deny", repeatCount: 1 }),

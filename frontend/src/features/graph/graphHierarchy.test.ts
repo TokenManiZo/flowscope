@@ -119,7 +119,7 @@ describe("API hierarchy", () => {
     expect(operation.edges.filter(item => item.relation === "operation-resource" && item.selection.resource === "orders:101" && item.source === "human").map(item => item.selection.identity).sort()).toEqual(["USER A", "USER B"])
   })
 
-  it("pages 18 APIs/Objects and keeps all access 관측 기록 when Object nodes are hidden", () => {
+  it("pages 18 APIs/Objects and keeps all access 요청 기록 when Object nodes are hidden", () => {
     const operations = targetSnapshot({ cells: Array.from({ length: 19 }, (_, index) => cell({ op: `${service} GET /api/orders/${index}`, evidenceIds: [`ev-${index}`] })) })
     expect(projectHierarchy(operations, filters, groupNav()).operations).toHaveLength(18)
     expect(projectHierarchy(operations, filters, groupNav()).hiddenOperationCount).toBe(1)
@@ -133,7 +133,7 @@ describe("API hierarchy", () => {
     expect(projectHierarchy(objects, { ...filters, expanded: true }, operationNav()).resources).toHaveLength(18)
   })
 
-  it("prioritizes suspicious, conflict, partial, then 관측 기록 count without changing verdicts", () => {
+  it("prioritizes suspicious, conflict, partial, then 요청 기록 count without changing verdicts", () => {
     const snapshot = targetSnapshot({ cells: [cell({ op: `${service} GET /api/orders/a` }), cell({ op: `${service} GET /api/orders/z`, overall: "suspicious" }), cell({ op: `${service} GET /api/orders/y`, conflict: true }), cell({ op: `${service} GET /api/orders/x`, missedSources: ["scanner"] })] })
     expect(projectHierarchy(snapshot, filters, groupNav()).operations.map(node => node.selection.operation)).toEqual([`${service} GET /api/orders/z`, `${service} GET /api/orders/y`, `${service} GET /api/orders/x`, `${service} GET /api/orders/a`])
   })
@@ -181,7 +181,7 @@ describe("API hierarchy", () => {
     expect(projectHierarchy(snapshot, { ...filters, includeRouteCandidates: true, identity: ["USER A"] }, initial).groups.map(group => group.id)).not.toContain('["https://other.test:443","root"]')
   })
 
-  it("uses server UNCROSSED gaps for focused unobserved paths without inventing 관측 기록 or verdicts", () => {
+  it("uses server UNCROSSED gaps for focused unobserved paths without inventing 요청 기록 or verdicts", () => {
     const snapshot = data()
     snapshot.gaps = [{ id: "gap-b", type: "UNCROSSED", risk: 2, idn: "USER B", op: get, resource: "orders:303", missedSources: ["human", "scanner", "llm"], summary: "unobserved combination" }]
     const focusCandidateKey = '["USER B","https://demo.test:443 GET /api/orders/{id}","orders:303"]'
@@ -219,7 +219,7 @@ describe("API hierarchy", () => {
     expect(JSON.stringify(snapshot.gaps)).toBe(originalGaps)
   })
 
-  it("counts 관측 기록 by server event source without merging H/S/L or inflating by repeat metadata", () => {
+  it("counts 요청 기록 by server event source without merging H/S/L or inflating by repeat metadata", () => {
     const snapshot = targetSnapshot({ cells: [cell({ perSource: { human: "allow", scanner: "allow" }, evidenceIds: ["h-1", "h-2", "s-1"] })], events: [event({ eventId: "h-1", op: get, clusterEvidenceIds: ["h-1", "h-2"], repeatCount: 99 }), event({ eventId: "s-1", op: get, source: "scanner", clusterEvidenceIds: ["s-1"] })] })
     const group = projectHierarchy(snapshot, { ...filters, source: ["human"] }, groupNav())
     expect(group.groups[0].sourceCounts).toEqual({ human: 2, scanner: 1, llm: 0 })
@@ -265,7 +265,7 @@ describe("API hierarchy", () => {
     expect(site.groups.find(group => group.key === "board")).toMatchObject({ endpointCount: 0, observedCount: 2, gapCount: 0 })
     const board = projectHierarchy(snapshot, { ...filters, includeSupportTraffic: true }, navigateHierarchy(initial, "group", JSON.stringify([service, "board"])))
     expect(board.kind).toBe("group")
-    // 같은 신원·기능·출처의 반복 관측은 엣지 하나로 합치고 관측 기록은 모두 남긴다.
+    // 같은 계정·기능·출처의 반복 관측은 엣지 하나로 합치고 요청 기록은 모두 남긴다.
     expect(board.edges.filter(edge => edge.relation === "support").map(edge => [edge.selection.identity, edge.selection.operation, edge.source, edge.count, edge.selection.evidenceIds])).toEqual([
       ["USER A", `${service} GET /board/list.php`, "human", 2, ["p1", "p4"]],
       ["USER A", `${service} GET /board/view.php`, "human", 1, ["p2"]],

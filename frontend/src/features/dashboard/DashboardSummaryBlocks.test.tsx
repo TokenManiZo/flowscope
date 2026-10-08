@@ -8,7 +8,7 @@ const counts: PipelineCounts = { openGaps: 32, priorityApis: 4, authVariants: 32
 
 it("renders observe → compare → judge as three links with source counts inside the observe stage", () => {
   render(<DashboardPipeline values={{ ...EMPTY_DASHBOARD_SUMMARY, trafficStats: { ...EMPTY_DASHBOARD_SUMMARY.trafficStats, captured: 21 }, sourceCounts: { human: 12, scanner: 8, llm: 3 } }} counts={counts} />)
-  const observe = screen.getByRole("link", { name: "관측 · 관측 기록" })
+  const observe = screen.getByRole("link", { name: "관측 · 요청 기록" })
   expect(observe).toHaveAttribute("href", "#evidence")
   const stage = observe.parentElement as HTMLElement
   for (const [label, value] of [["사람", "12"], ["스캐너", "8"], ["LLM", "3"]]) expect(within(within(stage).getByRole("group", { name: label })).getByText(value)).toBeVisible()

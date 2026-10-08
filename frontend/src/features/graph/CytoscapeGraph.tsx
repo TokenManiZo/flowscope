@@ -43,7 +43,7 @@ interface Props {
   onInteraction?(): void
   onSelect(selection: GraphSelection, elementId: string): void
   onNavigate?(node: HierarchyNode): void
-  /** 왼쪽 신원 노드를 열면(더블클릭·Enter) 한 단계 위 View로 간다. */
+  /** 왼쪽 계정 노드를 열면(더블클릭·Enter) 한 단계 위 View로 간다. */
   onStepBack?(): void
   /** 빈 캔버스를 누르거나 Esc를 누르면 선택과 강조를 푼다. */
   onClearSelection?(): void
@@ -96,8 +96,8 @@ export function graphFocusStates(projection: GraphProjection | HierarchyProjecti
   const hierarchy = "kind" in projection ? projection : null
   const focus = deriveGraphFocus(hierarchy, selectedElementId)
   const edges = projection.edges.map(edge => ({ id: edge.id, ...edgeEndpoints(edge), focused: focus.edgeState(edge.id) as FocusState }))
-  // 신원·엣지 강조가 없을 때 노드를 고르면 그 노드에 닿은 엣지와, 같은 서버 셀(신원·API·객체)을 가진 엣지를 강조한다.
-  // 그래서 객체를 누르면 API↔객체 선뿐 아니라 그 객체에 접근한 신원→API 선까지 이어져 보인다.
+  // 계정·엣지 강조가 없을 때 노드를 고르면 그 노드에 닿은 엣지와, 같은 서버 셀(계정·API·객체)을 가진 엣지를 강조한다.
+  // 그래서 객체를 누르면 API↔객체 선뿐 아니라 그 객체에 접근한 계정→API 선까지 이어져 보인다.
   const selectedNode = hierarchy && (openObjectGroupId || selectedElementId) ? hierarchy.nodes.find(node => node.id === (openObjectGroupId || selectedElementId)) : undefined
   if (hierarchy && selectedNode && (openObjectGroupId || edges.every(edge => edge.focused === "none"))) {
     const keys = new Set(selectedNode.selection.cellKeys)

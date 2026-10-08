@@ -24,7 +24,7 @@ export function statusClass(status: number): StatusClass {
 /** 평소 엣지는 무채색이고, 강조된 엣지에만 아래 색을 쓴다. */
 export const STATUS_CLASS_COLOR: Record<StatusClass, string> = { "2xx": "#34d399", "3xx": "#60a5fa", "4xx": "#fbbf24", "5xx": "#f87171", other: "#94a3b8" }
 export const HIGHLIGHT_SOURCE_COLOR: Record<Source, string> = { human: "#60a5fa", scanner: "#f87171", llm: "#facc15", unknown: "#94a3b8" }
-/** 신원에는 고유 색이 없어 한 가지 강조색만 쓴다(신원마다 색을 주면 다시 색이 많아진다). */
+/** 계정에는 고유 색이 없어 한 가지 강조색만 쓴다(계정마다 색을 주면 다시 색이 많아진다). */
 export const HIGHLIGHT_IDENTITY_COLOR = "#34d39a"
 
 export function highlightActive(highlight: GraphHighlight): boolean {
@@ -67,8 +67,8 @@ export function indexEventsByEvidence(events: readonly EventRecord[]): ReadonlyM
 }
 
 /**
- * 엣지에 속한 요청의 응답 코드별 개수. 엣지의 Evidence ID는 셀 전체 기준이라 다른 출처·신원의 요청도 섞여 있으므로,
- * 엣지의 출처와 신원으로 한 번 더 거른다.
+ * 엣지에 속한 요청의 응답 코드별 개수. 엣지의 Evidence ID는 셀 전체 기준이라 다른 출처·계정의 요청도 섞여 있으므로,
+ * 엣지의 출처와 계정으로 한 번 더 거른다.
  */
 export function edgeStatusCounts(edge: HighlightEdge, index: ReadonlyMap<string, readonly EventRecord[]>, identities: readonly string[] = []): Map<number, number> {
   const events = new Set<EventRecord>()
@@ -85,7 +85,7 @@ export function edgeStatusCounts(edge: HighlightEdge, index: ReadonlyMap<string,
 
 /**
  * 강조할 엣지와 그 색. 필터가 비어 있으면 null(모두 평소 무채색).
- * 색 우선순위: 응답 코드를 골랐으면 고른 코드 중 그 엣지에서 가장 많은 코드의 계열 색, 출처만 골랐으면 출처 색, 신원만 골랐으면 강조색.
+ * 색 우선순위: 응답 코드를 골랐으면 고른 코드 중 그 엣지에서 가장 많은 코드의 계열 색, 출처만 골랐으면 출처 색, 계정만 골랐으면 강조색.
  */
 export function projectHighlight(edges: readonly HighlightEdge[], events: readonly EventRecord[], highlight: GraphHighlight): ReadonlyMap<string, string> | null {
   if (!highlightActive(highlight)) return null
@@ -115,7 +115,7 @@ export function projectHighlight(edges: readonly HighlightEdge[], events: readon
   return matched
 }
 
-/** Site Overview의 구조 엣지는 API 묶음의 셀·표시 가능한 관측 기록으로 판정하고 기존 색을 유지한다. */
+/** Site Overview의 구조 엣지는 API 묶음의 셀·표시 가능한 요청 기록으로 판정하고 기존 색을 유지한다. */
 export function projectSiteHighlight(graph: HierarchyProjection, events: readonly EventRecord[], highlight: GraphHighlight, contents: ReturnType<typeof graphContents>): ReadonlyMap<string, string> | null {
   if (!highlightActive(highlight)) return null
   const index = highlight.statuses.length ? indexEventsByEvidence(events) : null
@@ -123,7 +123,7 @@ export function projectSiteHighlight(graph: HierarchyProjection, events: readonl
     if (highlight.identities.length && !highlight.identities.includes(cell.idn)) return false
     const sources = (Object.keys(cell.perSource) as Source[]).filter(source => cell.perSource[source] !== undefined && (!highlight.sources.length || highlight.sources.includes(source)))
     if (!sources.length) return false
-    // 상태 코드는 같은 신원·출처의 요청에서 확인한다. 서로 다른 요청의 조건을 섞어 일치시키지 않는다.
+    // 상태 코드는 같은 계정·출처의 요청에서 확인한다. 서로 다른 요청의 조건을 섞어 일치시키지 않는다.
     return !index || cell.evidenceIds.some(id => (index.get(id) ?? []).some(event => event.idn === cell.idn && sources.includes(event.source) && highlight.statuses.includes(event.status)))
   })).map(group => group.id))
   // 판정 전 관측·보조 요청도 같은 요청 안에서 모든 조건을 만족해야 한다.
@@ -137,7 +137,7 @@ export function projectSiteHighlight(graph: HierarchyProjection, events: readonl
   return new Map(graph.edges.filter(edge => edge.relation === "target-group" && nodes.has(edge.targetId)).map(edge => [edge.id, edge.color]))
 }
 
-/** API 노드별 관측 응답 코드(오름차순). 노드는 여러 출처·신원을 합친 것이라 Evidence 전체의 코드를 모은다. */
+/** API 노드별 관측 응답 코드(오름차순). 노드는 여러 출처·계정을 합친 것이라 Evidence 전체의 코드를 모은다. */
 export function nodeStatusCodes(nodes: readonly { id: string; kind: string; selection: { evidenceIds: readonly string[] } }[], events: readonly EventRecord[]): ReadonlyMap<string, readonly number[]> {
   const index = indexEventsByEvidence(events)
   const codes = new Map<string, readonly number[]>()

@@ -149,7 +149,7 @@ describe("dashboard shell", () => {
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
       ["판정 매트릭스", "matrix", null],
-      ["API·입력 차이", "surface", null], ["관측 기록", "evidence", null],
+      ["API·입력 차이", "surface", null], ["요청 기록", "evidence", null],
     ] as const
 
     for (const [label, route] of routes) {
@@ -185,7 +185,7 @@ describe("dashboard shell", () => {
       expect(screen.getByLabelText("HUMAN 상태")).toHaveTextContent("확인 불가")
       expect(screen.getByLabelText("SCANNER 상태")).toHaveTextContent("확인 불가")
     }, { timeout: 3_000 })
-    expect(screen.queryByText("미실행")).not.toBeInTheDocument()
+    expect(screen.queryByText("미점검")).not.toBeInTheDocument()
   })
 
   it("keeps onboarding on Home and lets a new project start only after its scope is entered", async () => {

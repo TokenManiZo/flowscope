@@ -44,7 +44,7 @@ export function ScenariosPage() {
   const context = (
     <section className="grid gap-3 p-3">
       <h2 className="font-semibold">규칙 후보 검토</h2>
-      <p className="text-sm text-muted-foreground">현재 관측 기록과 역할·소유자 정책에서 계산한 후보입니다. 원 요청·응답을 확인하고 사람 검토를 기록하세요.</p>
+      <p className="text-sm text-muted-foreground">현재 요청 기록과 역할·소유자 정책에서 계산한 후보입니다. 원 요청·응답을 확인하고 사람 검토를 기록하세요.</p>
       <p className="text-sm">후보 {scenarios.length}개</p>
     </section>
   )
@@ -107,7 +107,7 @@ export function ScenariosPage() {
                         <div className="flex flex-wrap items-center gap-2" key={id + index}>
                           <span className="break-all font-mono">{id}</span>
                           {open
-                            ? <Button size="sm" variant="outline" onClick={open}>관측 기록 열기</Button>
+                            ? <Button size="sm" variant="outline" onClick={open}>요청 기록 열기</Button>
                             : <span>현재 데이터에 없음</span>}
                         </div>
                       )

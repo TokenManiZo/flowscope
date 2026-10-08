@@ -31,11 +31,11 @@ function stubFetch(body = draft()) {
 
 afterEach(() => vi.unstubAllGlobals())
 
-it("shows only the selected operation and its 관측 기록 rows, without verdict panels or raw event ids", () => {
+it("shows only the selected operation and its 요청 기록 rows, without verdict panels or raw event ids", () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
   const panel = screen.getByRole("complementary", { name: "선택 작업" })
   expect(panel).toHaveTextContent("GET /orders/{id}")
-  const row = within(panel).getByRole("listitem", { name: "alice 관측 기록 1건" })
+  const row = within(panel).getByRole("listitem", { name: "alice 요청 기록 1건" })
   expect(row).toHaveTextContent("alice")
   expect(row).toHaveTextContent("200")
   expect(within(row).getByRole("img", { name: "사람" })).toBeInTheDocument()
@@ -59,7 +59,7 @@ it("opens Request Lab ready to send without logging in, and sends nothing until 
   expect(fetch.mock.calls.filter(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toEqual([])
 })
 
-it("locks 관측 기록 actions while the snapshot is suspended", () => {
+it("locks 요청 기록 actions while the snapshot is suspended", () => {
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} suspended />)
   expect(screen.getByRole("button", { name: "Request Lab에서 보내기" })).toBeDisabled()
 })
@@ -74,7 +74,7 @@ it("links Request Lab POST replay status to its original node without adding a v
   expect(panel).not.toHaveTextContent("취약점 확정")
 })
 
-it("groups 관측 기록 into one card per identity with a row per source, acting on each row's latest request", async () => {
+it("groups 요청 기록 into one card per identity with a row per source, acting on each row's latest request", async () => {
   const fetch = stubFetch()
   const events = [
     { ...event, eventId: "ev-1", timestamp: 1 },
@@ -84,21 +84,21 @@ it("groups 관측 기록 into one card per identity with a row per source, actin
   ]
   const verdicts = new Map([["alice", "allow"], ["bob", "deny"], ["carol", "deny"]] as const)
   renderWithQueryClient(<EvidenceActionList events={events} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 1, "ev-2": 2, "ev-3": 3, "ev-4": 4 } }} identityVerdicts={verdicts} />)
-  const section = screen.getByRole("region", { name: "관측 기록" })
-  expect(within(section).getByRole("heading", { name: "관측 기록" })).toBeVisible()
-  // 신원마다 카드 하나. 요청 기록이 없어도 판정이 있는 신원(carol)은 카드로 남는다.
-  expect(within(section).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["alice 관측 기록 3건", "bob 관측 기록 1건", "carol 관측 기록 0건"])
-  const alice = within(section).getByRole("listitem", { name: "alice 관측 기록 3건" })
+  const section = screen.getByRole("region", { name: "요청 기록" })
+  expect(within(section).getByRole("heading", { name: "요청 기록" })).toBeVisible()
+  // 계정마다 카드 하나. 요청 기록이 없어도 판정이 있는 계정(carol)은 카드로 남는다.
+  expect(within(section).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["alice 요청 기록 3건", "bob 요청 기록 1건", "carol 요청 기록 0건"])
+  const alice = within(section).getByRole("listitem", { name: "alice 요청 기록 3건" })
   expect(within(alice).getByText("ALLOW")).toBeVisible()
   expect(within(alice).getAllByRole("group").map(group => group.getAttribute("aria-label"))).toEqual(["alice · 사람 2건", "alice · LLM 1건"])
   const human = within(alice).getByRole("group", { name: "alice · 사람 2건" })
   expect(within(human).getByRole("img", { name: "사람" })).toBeInTheDocument()
   expect(within(human).getByText("404")).toBeVisible()
-  expect(within(screen.getByRole("listitem", { name: "carol 관측 기록 0건" })).getByText("연결된 요청 기록이 없습니다.")).toBeVisible()
+  expect(within(screen.getByRole("listitem", { name: "carol 요청 기록 0건" })).getByText("연결된 요청 기록이 없습니다.")).toBeVisible()
 
   await userEvent.click(within(human).getByRole("button", { name: "요청 2건 펼치기" }))
   const requests = within(human).getByRole("list", { name: "alice · 사람 요청 목록" })
-  expect(within(requests).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["관측 기록 #2", "관측 기록 #1"])
+  expect(within(requests).getAllByRole("listitem").map(item => item.getAttribute("aria-label"))).toEqual(["요청 기록 #2", "요청 기록 #1"])
   expect(within(requests).getByRole("button", { name: "#1 Request Lab에서 보내기" })).toBeVisible()
 
   // 줄의 보내기 버튼은 그 출처의 가장 최근 요청(ev-2)을 Request Lab으로 연다.
@@ -115,9 +115,9 @@ it.each(["UNKNOWN", "POLLING"])("preserves unjudged account records without assi
   const graph = projectHierarchy(data, filters, navigateHierarchy(navigation, "operation", site.groups[0].id, event.op))
   const node = graph.nodes.find(node => node.kind === "operation")!
   renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
-  const alice = screen.getByRole("listitem", { name: "alice 관측 기록 1건" })
+  const alice = screen.getByRole("listitem", { name: "alice 요청 기록 1건" })
   expect(alice).toHaveTextContent("ALLOW")
-  const bobRecord = screen.getByRole("listitem", { name: "bob 관측 기록 1건" })
+  const bobRecord = screen.getByRole("listitem", { name: "bob 요청 기록 1건" })
   expect(bobRecord).not.toHaveTextContent("ALLOW")
   expect(node.selection.cells).toEqual(snapshot.cells)
   expect(graph.edges.find(edge => edge.selection.identity === "bob")?.selection.cells).toEqual([])
@@ -137,7 +137,7 @@ it.each(["UNKNOWN", "POLLING"])("shows B's neutral evidence in the API card deta
   expect(node.selection.cells).toEqual(snapshot.cells)
   expect(node.selection.evidenceIds).toEqual(["bob-quiet", "ev-1"])
   renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
-  expect(screen.getByRole("listitem", { name: "alice 관측 기록 1건" })).toBeVisible()
-  expect(screen.getByRole("listitem", { name: "bob 관측 기록 1건" })).not.toHaveTextContent("ALLOW")
-  expect(screen.getByText(/인가 판정에 포함되지 않은 관측 기록 1건/)).toBeVisible()
+  expect(screen.getByRole("listitem", { name: "alice 요청 기록 1건" })).toBeVisible()
+  expect(screen.getByRole("listitem", { name: "bob 요청 기록 1건" })).not.toHaveTextContent("ALLOW")
+  expect(screen.getByText(/인가 판정에 포함되지 않은 요청 기록 1건/)).toBeVisible()
 })

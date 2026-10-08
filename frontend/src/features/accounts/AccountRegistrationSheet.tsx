@@ -11,7 +11,7 @@ import { validateTarget, type AccountRole } from "./account-settings/types"
 
 export interface NewAccountValues { id: string; label: string; role: string; target: string }
 
-/** 계정 등록은 이름·역할·대상 서비스만 받는다. 관측 신원 연결과 로그인 설정은 등록 후 관리 창에서 한다. */
+/** 계정 등록은 이름·역할·대상 서비스만 받는다. 관측 계정 연결과 로그인 설정은 등록 후 관리 창에서 한다. */
 export function AccountRegistrationSheet({ open, defaultTarget = "", pending, saveError, onOpenChange, onSave, onCreated }: {
   open: boolean
   defaultTarget?: string
