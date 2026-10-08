@@ -148,8 +148,7 @@ describe("dashboard shell", () => {
     expect(screen.queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
-      ["판정 매트릭스", "matrix", null],
-      ["API·입력 차이", "surface", null], ["요청 기록", "evidence", null],
+      ["판정 매트릭스", "matrix", null], ["요청 기록", "evidence", null],
     ] as const
 
     for (const [label, route] of routes) {
@@ -170,7 +169,7 @@ describe("dashboard shell", () => {
     }
     window.history.pushState(null, "", "#runs")
     window.dispatchEvent(new PopStateEvent("popstate"))
-    await waitFor(() => expect(screen.getByRole("heading", { name: "실행 상태" })).toBeVisible())
+    await waitFor(() => expect(window.location.hash).toBe("#home"))
     window.history.pushState(null, "", "#dashboard")
     window.dispatchEvent(new PopStateEvent("popstate"))
     await waitFor(() => expect(screen.getByRole("heading", { name: "보안 점검 대시보드" })).toBeVisible())

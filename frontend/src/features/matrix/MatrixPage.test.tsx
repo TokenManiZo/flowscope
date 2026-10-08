@@ -77,29 +77,13 @@ it("removes only a leading HTTP origin from displayed operation labels", () => {
   expect(operationDisplay("CUSTOM OPERATION")).toEqual({ method: "CUSTOM", path: "OPERATION" })
 })
 
-it("defaults to the judgment matrix and keeps the legacy cell matrix behind its own tab", async () => {
+it("renders only the judgment matrix with no switcher to parameter or legacy tables", () => {
   current = { ...matrixSnapshot(), authorizationMatrix: { summary: { policyConfirmed: 0, policyReview: 0, bflaCandidates: 0, bolaIdorCandidates: 0, coverageGaps: 0, invalidExperiments: 0, bflaTestRecommendations: 0, bolaIdorTestRecommendations: 0, manualReviewPending: 0, humanConfirmed: 0, humanDismissed: 0 }, identities: [], functions: [], objects: [], evidence: [], policyLegend: [], evidenceLegend: [], ownershipLegend: [] } }
   renderPage(<MatrixPage />)
-  expect(screen.queryByRole("tab", { name: "판정 매트릭스" })).not.toBeInTheDocument()
   expect(screen.getByRole("heading", { name: "판정 매트릭스" })).toBeVisible()
   expect(screen.queryByRole("region", { name: "권한 매트릭스 표" })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "다른 보기" }))
-  await userEvent.click(screen.getByRole("button", { name: "기존 권한 매트릭스" }))
-  expect(await screen.findByRole("region", { name: "권한 매트릭스 표" })).toBeVisible()
-  expect(screen.getByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
-})
-
-it("keeps parameter coverage and the legacy matrix behind their own tabs", async () => {
-  current = parameterSnapshot()
-  renderPage(<MatrixPage />)
-  expect(screen.queryByRole("tab", { name: "판정 매트릭스" })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "다른 보기" }))
-  await userEvent.click(screen.getByRole("button", { name: "파라미터 커버리지" }))
-  expect(await screen.findByRole("region", { name: "파라미터 커버리지 표" })).toBeVisible()
-  expect(screen.getByRole("heading", { name: "파라미터 커버리지" })).toBeVisible()
-  await userEvent.click(screen.getByRole("button", { name: "다른 보기" }))
-  await userEvent.click(screen.getByRole("button", { name: "기존 권한 매트릭스" }))
-  expect(await screen.findByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
+  expect(screen.queryByRole("button", { name: "다른 보기" })).not.toBeInTheDocument()
+  for (const name of ["파라미터 커버리지", "기존 권한 매트릭스"]) expect(screen.queryByRole("button", { name })).not.toBeInTheDocument()
 })
 
 it("uses the shared parameter cell semantics and clears its 요청 기록 selection when the server cell disappears", async () => {
