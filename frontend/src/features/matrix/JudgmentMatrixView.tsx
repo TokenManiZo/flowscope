@@ -5,12 +5,11 @@ import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysi
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
-import { useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useRoleMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useRequirementMutation, useResourcePolicyMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { OperationColumnResizeHandle, OPERATION_COLUMN_DEFAULT_WIDTH } from "./OperationColumnResizeHandle"
 import { requestLabEvent } from "./requestLabEvent"
@@ -54,42 +53,37 @@ function OperationLabel({ operation, width }: { operation: string; width: number
 }
 
 /**
- * 역할·정책 지정. 역할은 토큰이나 경로에서 추정하지 않고 사용자가 지정한다(D-018). 기존 /api/requirement·/api/role·객체 정책 API만 호출하며
+ * 접근 정책. 역할은 토큰이나 경로에서 추정하지 않고 사용자가 지정한다(D-018). 계정 역할은 계정·세션에서 관리한다. /api/requirement·객체 정책 API만 호출하며
  * 판정은 서버가 다시 계산한다. 모든 셀에서 같은 자리에 두고 현재 값을 미리 채운다.
  */
-function PolicyAssignment({ item, requiredRole: currentRequiredRole, identityKind, identityRole, disabled }: { item: JudgmentItem; requiredRole: string | undefined; identityKind: string | undefined; identityRole: string | undefined; disabled: boolean }) {
+function PolicyAssignment({ item, requiredRole: currentRequiredRole, disabled }: { item: JudgmentItem; requiredRole: string | undefined; disabled: boolean }) {
   const requirement = useRequirementMutation()
   const resourcePolicyMutation = useResourcePolicyMutation()
-  const roleMutation = useRoleMutation()
   const [requiredRole, setRequiredRole] = useState<string>(currentRequiredRole && ROLE_OPTIONS.includes(currentRequiredRole as never) ? currentRequiredRole : "ADMIN")
-  const [role, setRole] = useState<string>(identityRole && identityRole !== "Unknown" && ROLE_OPTIONS.includes(identityRole as never) ? identityRole : "USER")
   const resourceTarget = "resource" in item ? item.resource : null
   const [resourcePolicy, setResourcePolicy] = useState<string>("resourcePolicy" in item ? item.resourcePolicy ?? "UNKNOWN" : "UNKNOWN")
   const [message, setMessage] = useState<string | null>(null)
-  const roleEditable = identityKind === "REGISTERED" || identityKind === "OBSERVED"
   const run = async (action: () => Promise<{ message?: string }>, fallback: string) => {
     setMessage(null)
     try { setMessage((await action()).message ?? fallback) }
     catch (error) { setMessage(error instanceof Error ? error.message : "저장 실패") }
   }
   const select = "rounded border border-border/70 bg-background px-2 py-1 text-sm"
-  return <section aria-label="정책·역할 지정" className="grid gap-3 rounded-md border border-border/70 p-3">
-    <h3 className="text-sm font-semibold">역할·정책 지정</h3>
-    <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>필수 역할</span><select aria-label="필수 역할" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="필수 역할 저장" disabled={disabled || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "필수 역할을 저장했습니다.")}>저장</Button></div>
-    {roleEditable && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>{identityLabel(item.identity, item.identityLabel)} 역할</span><select aria-label="계정 역할" className={select} value={role} disabled={disabled} onChange={(event) => setRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="계정 역할 저장" disabled={disabled || roleMutation.isPending} onClick={() => void run(() => roleMutation.mutateAsync({ identity: item.identity, role }), "계정 역할을 저장했습니다.")}>저장</Button></div>}
+  return <section aria-label="접근 정책" className="grid gap-3 rounded-md border border-border/70 p-3">
+    <h3 className="text-sm font-semibold">접근 정책</h3>
+    <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>접근 가능한 최소 역할</span><select aria-label="접근 가능한 최소 역할" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="접근 가능한 최소 역할 저장" disabled={disabled || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "접근 가능한 최소 역할을 저장했습니다.")}>저장</Button></div>
     {resourceTarget && <div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs"><span>객체 접근 정책</span><select aria-label="객체 접근 정책" className={select} value={resourcePolicy} disabled={disabled} onChange={(event) => setResourcePolicy(event.target.value)}>{RESOURCE_POLICY_OPTIONS.map((value) => <option key={value} value={value}>{resourcePolicyLabel[value]}</option>)}</select></label><Button type="button" size="sm" variant="outline" aria-label="객체 정책 저장" disabled={disabled || resourcePolicyMutation.isPending} onClick={() => void run(() => resourcePolicyMutation.mutateAsync({ target: resourceTarget, policy: resourcePolicy }), "객체 접근 정책을 저장했습니다.")}>저장</Button></div>}
     {message && <p role="status" className="text-xs">{message}</p>}
   </section>
 }
 
-function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { item: JudgmentItem; requiredRole: string | undefined; identity: { kind: string; role: string } | undefined; disabled: boolean; snapshot: Snapshot | undefined }) {
+function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: JudgmentItem; requiredRole: string | undefined; disabled: boolean; snapshot: Snapshot | undefined }) {
   const review = useReviewMutation()
   const [labOpen, setLabOpen] = useState(false)
   const [confirmed, setConfirmed] = useState(item.reviewStatus === "CONFIRMED")
-  const [note, setNote] = useState(item.reviewNote)
   const [message, setMessage] = useState<string | null>(null)
   // 같은 cell·검토 Evidence 안에서 저장된 서버 값을 반영한다. 선택 문맥이 바뀌면 부모 key가 폼과 진행 중 응답을 분리한다.
-  useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
+  useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED") }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
   const recommendation = item.recommendation
   // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 인증에서 고른다(자동 전송 없음).
@@ -101,7 +95,8 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
   const submit = async (status: ReviewStatus) => {
     setMessage(null)
     try {
-      const result = await review.mutateAsync({ itemId: item.id, status, note })
+      const result = await review.mutateAsync({ itemId: item.id, status, note: item.reviewNote })
+      setConfirmed(status === "CONFIRMED")
       setMessage(result.message ?? "판정을 저장했습니다.")
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "판정 저장 실패")
@@ -110,7 +105,7 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
   return <div className="grid gap-4 p-4 text-sm">
     <header><h2 className="text-base font-semibold">{judgmentStatusLabel(item)}{reviewSuffix(item.reviewStatus)}</h2><p className="break-all text-xs text-muted-foreground">{identityLabel(item.identity, item.identityLabel)} · {withoutService(item.operation)}{resource ? ` · ${resource}` : ""}</p></header>
     {judgmentStatusDescription(item.status) && <p className="rounded-md border border-border/70 bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">{judgmentStatusDescription(item.status)}</p>}
-    <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}:${"resourcePolicy" in item ? item.resourcePolicy : ""}:${identity?.role ?? ""}`} item={item} requiredRole={requiredRole} identityKind={identity?.kind} identityRole={identity?.role} disabled={disabled} />
+    <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}:${"resourcePolicy" in item ? item.resourcePolicy : ""}`} item={item} requiredRole={requiredRole} disabled={disabled} />
     <section aria-label="Request Lab 전송" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">Request Lab 전송</h3>
       {recommendation && <p className="text-xs">{recommendation.basisIdentityLabel} → {recommendation.testIdentityLabel}: Request Lab의 전송 인증에서 {recommendation.testIdentityLabel}을(를) 고르세요.{recommendation.stateChanging ? " 상태를 바꾸는 요청이니 직접 확인한 뒤 보내세요." : ""}</p>}
@@ -120,9 +115,7 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
     {labOpen && basisEvent && snapshot && <RequestLabDialog open onOpenChange={open => { if (!open) setLabOpen(false) }} event={basisEvent} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={snapshot.datasetRevision ?? snapshot.identityRevision ?? 0} snapshotRevision={snapshot.revision} suspended={disabled} />}
     <section aria-label="사람 최종 판정" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">사람 최종 판정</h3>
-      <label className="flex items-start gap-2 text-xs"><Checkbox className="mt-0.5" checked={confirmed} disabled={disabled || !reviewable} onCheckedChange={(checked) => setConfirmed(checked === true)} /><span>취약점으로 확정</span></label>
-      <label className="grid gap-1 text-xs"><span>검증 메모</span><input aria-label="검증 메모" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" maxLength={2000} value={note} disabled={disabled || !reviewable} onChange={(event) => setNote(event.target.value)} /></label>
-      <div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={disabled || !reviewable || review.isPending} onClick={() => void submit(confirmed ? "CONFIRMED" : "UNRESOLVED")}>판정 저장</Button><Button type="button" size="sm" variant="outline" disabled={disabled || !reviewable || review.isPending} onClick={() => void submit("DISMISSED")}>정상·기각</Button></div>
+      <Button type="button" size="sm" variant={confirmed ? "outline" : "destructive"} className="w-fit" aria-pressed={confirmed} disabled={disabled || !reviewable || review.isPending} onClick={() => void submit(confirmed ? "UNRESOLVED" : "CONFIRMED")}>{confirmed ? "취약점 확정 취소" : "취약점으로 확정"}</Button>
       {!reviewable && <p className="text-xs text-muted-foreground">검토할 추천이 없는 셀입니다.</p>}
       {message && <p role="status" className="text-xs">{message}</p>}
     </section>
@@ -155,7 +148,7 @@ function JudgmentMatrixWorkspace({ snapshot, viewSwitcher }: { snapshot: ReturnT
       <Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-8 gap-3 px-2 py-1" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">주의 항목만</span><span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-4" : "translate-x-0"}`} /></span></Button>
     </div>
   </div>
-  const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} requiredRole={snapshot.data?.requiredRoles[selected.operation]} identity={matrix.identities.find((identity) => identity.id === selected.identity)} disabled={disabled} snapshot={snapshot.data} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하세요.</p>
+  const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} requiredRole={snapshot.data?.requiredRoles[selected.operation]} disabled={disabled} snapshot={snapshot.data} /> : <p className="p-4 text-sm text-muted-foreground">판정 셀을 선택하세요.</p>
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={null} contentOverflow="hidden" inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-4" aria-labelledby="judgment-title">
