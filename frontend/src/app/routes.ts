@@ -30,7 +30,7 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "matrix", label: "판정 매트릭스", group: "analysis", icon: Table2 },
   { route: "sequence", label: "흐름 순서", group: "analysis", icon: ListTree },
   { route: "scenarios", label: "취약점 시나리오", group: "analysis", icon: ShieldAlert },
-  { route: "evidence", label: "관측 기록", group: "evidence", icon: FileSearch },
+  { route: "evidence", label: "요청 기록", group: "evidence", icon: FileSearch },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
   { route: "runs", label: "실행 상태", group: "operations", icon: Activity },
 ]

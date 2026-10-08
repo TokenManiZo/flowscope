@@ -52,17 +52,17 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
   const candidates = (auth?.bolaIdorCandidates ?? 0) + (auth?.bflaCandidates ?? 0)
   const zero = (value: number): Row["tone"] => value === 0 ? "zero" : undefined
   return <section aria-label="점검 흐름" className="grid overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-3">
-    <Stage step="관측" href="#evidence" go="관측 기록" value={values.trafficStats.captured} unit="건 수집" rows={[
+    <Stage step="관측" href="#evidence" go="요청 기록" value={values.trafficStats.captured} unit="건 수집" rows={[
       { name: "HUMAN", label: sourceDot("bg-observation-human", "HUMAN"), value: format(values.sourceCounts.human) },
       { name: "SCANNER", label: sourceDot("bg-observation-scanner", "SCANNER"), value: format(values.sourceCounts.scanner) },
       { name: "LLM", label: sourceDot("bg-observation-llm", "LLM"), value: format(values.sourceCounts.llm) },
       "divider",
       { name: "검토 필요 트래픽", label: "검토 필요 트래픽", value: format(counts.review), tone: zero(counts.review), href: counts.review > 0 ? "#evidence-review" : undefined },
     ]} />
-    <Stage notch step="비교" href="#graph" go="Gap 그래프" value={counts.openGaps} unit="열린 Gap" rows={[
+    <Stage notch step="비교" href="#graph" go="Gap 그래프" value={counts.openGaps} unit="미점검" rows={[
       { name: "우선 점검 API", label: "우선 점검 API", value: format(counts.priorityApis), tone: zero(counts.priorityApis) },
-      { name: "권한 변형 미검증", label: "권한 변형 미검증", value: format(counts.authVariants), tone: zero(counts.authVariants) },
-      { name: "미관측 파라미터", label: "미관측 파라미터", value: format(counts.unobserved), tone: zero(counts.unobserved) },
+      { name: "권한 변형 미점검", label: "권한 변형 미점검", value: format(counts.authVariants), tone: zero(counts.authVariants) },
+      { name: "미점검 파라미터", label: "미점검 파라미터", value: format(counts.unobserved), tone: zero(counts.unobserved) },
     ]} />
     <Stage notch step="판정" href="#matrix" go="권한 매트릭스" value={candidates} unit="인가 후보" hot={candidates > 0} rows={[
       { name: "BOLA/IDOR 후보", label: "BOLA/IDOR 후보", value: format(auth?.bolaIdorCandidates ?? 0), tone: (auth?.bolaIdorCandidates ?? 0) > 0 ? "candidate" : "zero" },
@@ -80,7 +80,7 @@ export function SnapshotFootnote({ trafficStats }: Pick<DashboardSummaryValues, 
 }
 
 const reasonLabels: Record<string, string> = {
-  WRITE_METHOD: "쓰기 요청", AUTH_VARIANT_UNTESTED: "권한 변형 미검증", SOURCE_DISCREPANCY: "소스 불일치", HUMAN_REVIEW_REQUIRED: "사람 검토 필요",
+  WRITE_METHOD: "쓰기 요청", AUTH_VARIANT_UNTESTED: "권한 변형 미점검", SOURCE_DISCREPANCY: "소스 불일치", HUMAN_REVIEW_REQUIRED: "사람 검토 필요",
 }
 const methodTone: Record<string, string> = { GET: "text-observation-human", POST: "text-observation-scanner" }
 
@@ -92,10 +92,10 @@ function ListCard({ title, href, linkLabel, empty, children }: { title: string; 
 }
 
 export function PriorityApiList({ rows }: { rows: readonly PriorityApiRow[] }) {
-  return <ListCard title="우선 점검 API" href="#graph" linkLabel="Gap 그래프에서 모두 보기" empty="우선순위 근거가 있는 열린 Gap이 없습니다.">{rows.map(row => <li key={row.key} className="border-t border-border first:border-t-0"><a href="#graph" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
+  return <ListCard title="우선 점검 API" href="#graph" linkLabel="Gap 그래프에서 모두 보기" empty="우선순위 근거가 있는 미점검 항목이 없습니다.">{rows.map(row => <li key={row.key} className="border-t border-border first:border-t-0"><a href="#graph" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
     <span className={cn("rounded border border-border px-1.5 text-center font-mono text-[11px]", methodTone[row.method] ?? "text-muted-foreground")}>{row.method}</span>
     <span className="flex min-w-0 flex-wrap items-center gap-1.5"><span className="break-all font-mono text-xs">{row.path}</span>{row.reasons.filter(reason => reasonLabels[reason]).map(reason => <span key={reason} className="rounded border border-border px-1.5 text-[11px] text-muted-foreground">{reasonLabels[reason]}</span>)}</span>
-    <span className="text-xs tabular-nums text-muted-foreground">Gap {format(row.gapCount)}</span>
+    <span className="text-xs tabular-nums text-muted-foreground">미점검 {format(row.gapCount)}</span>
   </a></li>)}</ListCard>
 }
 
@@ -131,7 +131,7 @@ const sourceShort: Record<string, string> = { human: "H", scanner: "S", llm: "L"
 const sourceColor: Record<string, string> = { human: "text-observation-human", scanner: "text-observation-scanner", llm: "text-observation-llm" }
 
 export function RecentEventList({ events, ordinals }: { events: readonly EventRecord[]; ordinals?: Readonly<Record<string, number>> }) {
-  return <ListCard title="최근 관측" href="#evidence" linkLabel="관측 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
+  return <ListCard title="최근 관측" href="#evidence" linkLabel="요청 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
     <span className={cn("text-center text-xs font-semibold", sourceColor[event.source] ?? "text-muted-foreground")}>{sourceShort[event.source] ?? "?"}</span>
     <span className="min-w-0"><span className="block truncate font-mono text-xs">{event.method} {event.path} <span className="text-muted-foreground">({event.status})</span></span><span className="block truncate text-[11px] text-muted-foreground">{evidenceOrdinalLabel(ordinals, event.eventId)} · {identityLabel(event.idn)}</span></span>
     <span className="text-[11px] tabular-nums text-muted-foreground">{observedTimeLabel(event.lastSeen, event.lastSeen)}</span>

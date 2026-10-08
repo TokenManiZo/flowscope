@@ -8,7 +8,7 @@ const counts: PipelineCounts = { openGaps: 32, priorityApis: 4, authVariants: 32
 
 it("renders observe → compare → judge as three links with source counts inside the observe stage", () => {
   render(<DashboardPipeline values={{ ...EMPTY_DASHBOARD_SUMMARY, trafficStats: { ...EMPTY_DASHBOARD_SUMMARY.trafficStats, captured: 21 }, sourceCounts: { human: 12, scanner: 8, llm: 3 } }} counts={counts} />)
-  const observe = screen.getByRole("link", { name: "관측 · 관측 기록" })
+  const observe = screen.getByRole("link", { name: "관측 · 요청 기록" })
   expect(observe).toHaveAttribute("href", "#evidence")
   const stage = observe.parentElement as HTMLElement
   for (const [label, value] of [["HUMAN", "12"], ["SCANNER", "8"], ["LLM", "3"]]) expect(within(within(stage).getByRole("group", { name: label })).getByText(value)).toBeVisible()
@@ -41,7 +41,7 @@ it("lists prioritized APIs and rule candidates with their reasons and review sta
   render(<><PriorityApiList rows={[{ key: "k", method: "PATCH", path: "/api/orders/{id}", gapCount: 6, reasons: ["CONFIRMED_AUTH_BOUNDARY", "WRITE_METHOD"] }]} /><CandidateList scenarios={[scenario]} /></>)
   const apis = screen.getByRole("region", { name: "우선 점검 API" })
   expect(within(apis).getByText("쓰기 요청")).toBeVisible()
-  expect(within(apis).getByText("Gap 6")).toBeVisible()
+  expect(within(apis).getByText("미점검 6")).toBeVisible()
   const candidates = screen.getByRole("region", { name: "인가 후보" })
   expect(within(candidates).getByText("객체 권한 우회 후보")).toBeVisible()
   expect(within(candidates).getByText("GET /api/orders/{id}")).toBeVisible()

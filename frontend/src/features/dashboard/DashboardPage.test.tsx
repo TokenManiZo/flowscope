@@ -125,7 +125,7 @@ describe("dashboard shell", () => {
     renderDashboard()
     // 목록은 데이터가 온 뒤에만 그려진다(흐름 칸은 로딩 중에도 0으로 보인다).
     await screen.findByRole("region", { name: "우선 점검 API" })
-    for (const [label, value] of [["우선 점검 API", "1"], ["미관측 파라미터", "1"], ["권한 변형 미검증", "1"], ["검토 필요 트래픽", "3"]] as const) {
+    for (const [label, value] of [["우선 점검 API", "1"], ["미점검 파라미터", "1"], ["권한 변형 미점검", "1"], ["검토 필요 트래픽", "3"]] as const) {
       expect(within(screen.getByRole("group", { name: label })).getByText(value)).toBeVisible()
     }
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
@@ -149,7 +149,7 @@ describe("dashboard shell", () => {
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
       ["판정 매트릭스", "matrix", null],
-      ["API·입력 차이", "surface", null], ["관측 기록", "evidence", null],
+      ["API·입력 차이", "surface", null], ["요청 기록", "evidence", null],
     ] as const
 
     for (const [label, route] of routes) {

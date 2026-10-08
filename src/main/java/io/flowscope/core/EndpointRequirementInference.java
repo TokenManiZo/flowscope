@@ -63,11 +63,11 @@ final class EndpointRequirementInference {
         long successfulIdentities = atLeast.stream().map(Observation::identity).distinct().count();
         long deniedIdentities = lower.stream().map(Observation::identity).distinct().count();
         return new Requirement(minimumSuccessful, Provenance.OBSERVED_DISTRIBUTION,
-                "대상 신원 제외 관측 분포: " + minimumSuccessful.label() + " 이상 성공 "
-                        + successfulIdentities + "개 신원 · 하위 역할 차단 " + deniedIdentities + "개 신원");
+                "대상 계정 제외 관측 분포: " + minimumSuccessful.label() + " 이상 성공 "
+                        + successfulIdentities + "개 계정 · 하위 역할 차단 " + deniedIdentities + "개 계정");
     }
 
     private static Requirement unknown() {
-        return new Requirement(AccessRole.UNKNOWN, Provenance.UNKNOWN, "요구 역할을 유도할 교차 관측 근거 부족");
+        return new Requirement(AccessRole.UNKNOWN, Provenance.UNKNOWN, "요구 역할을 정할 만큼 계정 간 요청 기록이 부족함");
     }
 }

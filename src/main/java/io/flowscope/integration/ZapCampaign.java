@@ -127,6 +127,8 @@ public final class ZapCampaign implements AutoCloseable {
     private volatile String ownedSpiderScanId = "";
     private volatile String zapCapabilityRunId = "";
     private volatile String zapCapabilityRule = "";
+    /** 주입 인증 헤더를 크롤 요청마다 붙이는 Replacer 규칙 이름. lane이 끝나거나 취소되면 모두 지운다. */
+    private final List<String> injectedHeaderRules = new ArrayList<>();
 
     private record ZapBaselineRun(String runId, String target, String status, String stage,
                                   String scanId, String warning, long capturedRecords,
@@ -199,6 +201,10 @@ public final class ZapCampaign implements AutoCloseable {
         if (future != null) future.cancel(true);
         RuntimeException cleanupFailure = stopAndAwaitOwnedCrawlers();
         state.scannerDirectAuthentication(current.runId(), false);
+        RuntimeException headerFailure = removeInjectedHeaders();
+        if (headerFailure != null) {
+            cleanupFailure = mergeFailure(cleanupFailure, "injected header rule cleanup failed", headerFailure);
+        }
         RuntimeException capabilityFailure = removeScannerCapability(current.runId());
         if (capabilityFailure != null) {
             cleanupFailure = mergeFailure(cleanupFailure, "scanner capability cleanup failed", capabilityFailure);
@@ -305,7 +311,7 @@ public final class ZapCampaign implements AutoCloseable {
             ownedSpiderScanId = "";
             recordZapProgress("전체", "INITIALIZING", "INFO", authenticationOnly
                     ? "독립 로그인 세션 갱신 대기열 생성"
-                    : lanes.size() + "개 신원 격리 검사 대기열 생성");
+                    : lanes.size() + "개 계정 격리 검사 대기열 생성");
             zapWorkflowActive = true;
             FutureTask<Void> task = new FutureTask<>(() -> {
                 if (authenticationOnly) runAuthenticationOnlySafely(runId, target, lanes.getFirst());
@@ -374,7 +380,7 @@ public final class ZapCampaign implements AutoCloseable {
                 throw new IllegalStateException("인증은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다.");
             }
             state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                    "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다.");
+                    "ZAP 인증 기록을 독립 계정 세션으로 연결했습니다.");
             replaceZapAuthentication(0, new ZapAuthenticationResult(
                     "VERIFIED_BY_ZAP", identity.browser(), "독립 계정 세션 갱신 완료"));
             RuntimeException cleanup = cleanupZapIdentity(identity, contextName, contextCreated);
@@ -506,6 +512,11 @@ public final class ZapCampaign implements AutoCloseable {
                         staleCleanup);
             }
         }
+        // 지난 실행에서 지우지 못한 주입 인증 헤더가 남아 있으면 이번 실행의 다른 신원(비로그인 등) 요청에 실린다.
+        RuntimeException staleHeaders = removeInjectedHeaders();
+        if (staleHeaders != null) {
+            throw new IllegalStateException("previous injected header rule cleanup is still failing", staleHeaders);
+        }
         String capability = randomToken();
         String description = "flowscope-capability-" + runId + "-" + Long.toUnsignedString(System.nanoTime(), 36);
         // 8081은 스캐너 레인의 모든 in-scope 요청에 capability를 요구한다. target 하위에만 헤더를 붙이면
@@ -602,7 +613,7 @@ public final class ZapCampaign implements AutoCloseable {
             replaceZapLane(blocked, new ZapLaneResult(pending.accountId(), pending.accountLabel(),
                     "NOT_RUN", "BLOCKED_BY_ISOLATION", 0, 0, 0, 0,
                     false, false, -1, "",
-                    "이전 신원의 ZAP background 작업을 격리 종료하지 못해 시작하지 않음"));
+                    "이전 계정의 ZAP background 작업을 격리 종료하지 못해 시작하지 않음"));
         }
     }
 
@@ -779,6 +790,59 @@ public final class ZapCampaign implements AutoCloseable {
         }
     }
 
+    /** 이 이름의 헤더는 전송·격리에 쓰이므로 주입 값으로 덮어쓰지 않는다. */
+    private static final Set<String> NON_INJECTABLE_HEADERS = Set.of("host", "content-length", "transfer-encoding",
+            "connection", "proxy-authorization", "proxy-connection", "x-flowscope-scanner-capability");
+    private static final java.util.regex.Pattern HEADER_NAME = java.util.regex.Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]+");
+
+    /**
+     * 헤더 기반 세션관리는 ZAP user로 보낼 때만 적용되는데 주입 lane은 user를 만들지 않는다. 그래서 Client Spider·Spider
+     * 요청에 주입 헤더가 실리지 않았다. scanner capability와 같은 범위·initiator의 Replacer 규칙으로 요청마다 붙인다.
+     */
+    private void installInjectedHeaders(String runId, String target, char[] headers) {
+        List<String> coverage = new ArrayList<>(state.scope().entries());
+        if (!coverage.contains(target)) coverage.add(target);
+        String urlRegex = ZapClient.exactSubtreeRegex(coverage);
+        int index = 0;
+        try {
+            for (String line : new String(headers).split("\n")) {
+                String header = line.strip();
+                int colon = header.indexOf(':');
+                if (colon <= 0) continue;
+                String name = header.substring(0, colon).strip();
+                String value = header.substring(colon + 1).strip();
+                if (value.isEmpty() || !HEADER_NAME.matcher(name).matches()
+                        || NON_INJECTABLE_HEADERS.contains(name.toLowerCase(java.util.Locale.ROOT))) continue;
+                String description = "flowscope-inject-" + runId + "-" + (index++) + "-"
+                        + Long.toUnsignedString(System.nanoTime(), 36);
+                requireZapOk(state.zap().addRequestHeaderRule(description, urlRegex, name, value,
+                        CAPABILITY_INITIATORS, true), "주입 인증 헤더 규칙 설치");
+                synchronized (this) { injectedHeaderRules.add(description); }
+            }
+        } catch (RuntimeException error) {
+            RuntimeException cleanup = removeInjectedHeaders();
+            if (cleanup != null) error.addSuppressed(cleanup);
+            throw error;
+        }
+    }
+
+    /** 설치한 주입 헤더 규칙을 모두 지운다. 실패한 규칙은 남겨 두고 다음 정리에서 다시 지운다. */
+    private RuntimeException removeInjectedHeaders() {
+        List<String> rules;
+        synchronized (this) { rules = List.copyOf(injectedHeaderRules); }
+        RuntimeException failure = null;
+        for (String rule : rules) {
+            try {
+                requireZapOk(state.zap().removeReplacerRule(rule), "주입 인증 헤더 규칙 제거");
+                synchronized (this) { injectedHeaderRules.remove(rule); }
+            } catch (RuntimeException error) {
+                if (failure == null) failure = error;
+                else failure.addSuppressed(error);
+            }
+        }
+        return failure;
+    }
+
     private void runZapLane(String runId, String target, ZapLane lane, int index,
                             List<ZapDefinition> definitions, ArrayNode collectedAlerts) {
         String warning = "";
@@ -852,8 +916,8 @@ public final class ZapCampaign implements AutoCloseable {
                                     + definitions.size() + " 응답 수신");
                         } catch (RuntimeException importError) {
                             ensureScannerCapabilityIntact(runId);
-                            warning = appendWarning(warning, definition.type() + " definition import failed: "
-                                    + importError.getMessage());
+                            warning = appendWarning(warning, "API 명세를 읽지 못해 건너뛰었습니다: "
+                                    + definitionLabel(definition) + " (" + importError.getMessage() + ")");
                         }
                     }
                 } finally {
@@ -881,6 +945,7 @@ public final class ZapCampaign implements AutoCloseable {
                             "주입 인증값으로 ZAP 세션 구성");
                     state.zapAccounts().withSecret(lane.accountId(), secret -> {
                         applyInjectedSession(finalContextId, target, secret);
+                        installInjectedHeaders(runId, target, secret.headers());
                         return null;
                     });
                     ensureScannerCapabilityIntact(runId);
@@ -906,19 +971,19 @@ public final class ZapCampaign implements AutoCloseable {
                         authenticationHeartbeat.cancel(false);
                     }
                     state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                            "ZAP 인증 성공과 재사용 가능한 인증 Evidence를 확인했습니다.");
+                            "ZAP 인증 성공과 재사용 가능한 인증 기록을 확인했습니다.");
                     boolean sessionPromoted = state.promoteAuthenticatedSession(
                             lane.accountId(), identity.verifiedEvidenceRuntimeId());
                     if (!sessionPromoted) {
                         throw new IllegalStateException("로그인은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다. "
-                                + "ANON으로 대체하지 않고 이 로그인 lane을 중단합니다.");
+                                + "비로그인으로 대체하지 않고 이 로그인 lane을 중단합니다.");
                     }
                     authenticationVerified = true;
                     replaceZapAuthentication(index, new ZapAuthenticationResult(
                             "VERIFIED_BY_ZAP", identity.browser(),
-                            "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."));
+                            "ZAP 인증 기록을 독립 계정 세션으로 연결했습니다."));
                     recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
-                            "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
+                            "ZAP 인증 응답 기록 확인 · 계정 크롤링 시작");
                 }
             }
             SeedResult firstSeeds = routeSeeds(target, warning);
@@ -974,15 +1039,19 @@ public final class ZapCampaign implements AutoCloseable {
             }
             if (!passiveComplete && !resetPassiveQueueForNextIdentity(runId, index)) {
                 throw new ZapIsolationException("ZAP Passive Scan background 작업을 격리 종료하지 못했습니다; "
-                        + "다음 신원은 시작하지 않았습니다");
+                        + "다음 계정은 시작하지 않았습니다");
             }
             if (!passiveComplete) {
                 warning = appendWarning(warning,
-                        "다음 신원과 섞이지 않도록 미처리 Passive queue를 정리함");
+                        "다음 계정과 섞이지 않도록 미처리 Passive queue를 정리함");
             }
             RuntimeException identityCleanup = cleanupZapIdentity(identity, contextName, contextCreated);
             identity = null;
             contextCreated = false;
+            RuntimeException headerCleanup = removeInjectedHeaders();
+            if (headerCleanup != null) {
+                identityCleanup = mergeFailure(identityCleanup, "injected header rule cleanup failed", headerCleanup);
+            }
             if (identityCleanup != null) {
                 throw new ZapIsolationException("ZAP 로그인 사용자·Context 정리 실패: "
                         + identityCleanup.getMessage());
@@ -995,6 +1064,10 @@ public final class ZapCampaign implements AutoCloseable {
             boolean interrupted = Thread.interrupted();
             RuntimeException identityCleanup = cleanupZapIdentity(identity, contextName, contextCreated);
             contextCreated = false;
+            RuntimeException headerCleanup = removeInjectedHeaders();
+            if (headerCleanup != null) {
+                identityCleanup = mergeFailure(identityCleanup, "injected header rule cleanup failed", headerCleanup);
+            }
             if (interrupted) Thread.currentThread().interrupt();
             if (identityCleanup != null) {
                 ZapIsolationException isolation = new ZapIsolationException(
@@ -1154,6 +1227,12 @@ public final class ZapCampaign implements AutoCloseable {
         try { URI.create(value); }
         catch (RuntimeException error) { throw new IllegalArgumentException(label + " is not a valid URL"); }
         if (!state.scope().allows(value)) throw new IllegalArgumentException(label + " is outside configured scope");
+    }
+
+    private static String definitionLabel(ZapDefinition definition) {
+        return definition.type() == ZapDefinitionType.GRAPHQL ? "GRAPHQL " + definition.endpoint()
+                : definition.type() == ZapDefinitionType.OPENAPI ? definition.url()
+                : definition.type() + " " + definition.url();
     }
 
     private void importZapDefinition(ZapDefinition definition, String target, String contextId) {
@@ -1574,9 +1653,9 @@ public final class ZapCampaign implements AutoCloseable {
             String message = switch (value.status()) {
                 case "FAILED" -> zapStageLabel(value.stage()) + " 실패"
                         + (value.error().isBlank() ? "" : " · " + value.error());
-                case "NOT_RUN" -> "CANCELLED".equals(value.stage()) ? "사용자 취소로 실행하지 않음" : "이전 신원 격리 실패로 실행하지 않음";
-                case "CANCELLED" -> "사용자 요청으로 신원 검사 취소";
-                case "COMPLETED", "COMPLETED_WITH_WARNINGS" -> "신원 검사 종료 · 수집 "
+                case "NOT_RUN" -> "CANCELLED".equals(value.stage()) ? "사용자 취소로 실행하지 않음" : "이전 계정 격리 실패로 실행하지 않음";
+                case "CANCELLED" -> "사용자 요청으로 계정 검사 취소";
+                case "COMPLETED", "COMPLETED_WITH_WARNINGS" -> "계정 검사 종료 · 수집 "
                         + value.capturedRecords() + "건 · Alert " + value.alertCount() + "건";
                 default -> zapStageLabel(value.stage()) + " 시작";
             };
@@ -1676,7 +1755,7 @@ public final class ZapCampaign implements AutoCloseable {
     private boolean resetPassiveQueueForNextIdentity(String runId, int laneIndex) {
         String accountLabel = zapAccountLabel(laneIndex);
         recordZapProgress(accountLabel, "ISOLATION_CLEANUP", "WARN",
-                "다음 신원 전환 전 Passive queue 정리 시작");
+                "다음 계정 전환 전 Passive queue 정리 시작");
         requireZapOk(state.zap().clearPassiveQueue(), "clear the abandoned passive scan queue");
         long deadline = System.currentTimeMillis() + passiveCleanupTimeoutMillis();
         int consecutiveErrors = 0;

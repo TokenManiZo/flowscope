@@ -61,7 +61,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
     <div className="relative">
       <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden="true" />
       <Input ref={input} role="combobox" aria-label="프로젝트 전체 노드 검색" aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? `${id}-results` : undefined}
-        aria-activedescendant={expanded && active >= 0 ? `${id}-result-${active}` : undefined} value={query} placeholder="서비스, API, 객체 ID, 신원 검색" className="h-9 bg-[var(--flowscope-pane)] pl-8 pr-8 text-sm"
+        aria-activedescendant={expanded && active >= 0 ? `${id}-result-${active}` : undefined} value={query} placeholder="서비스, API, 객체 ID, 계정 검색" className="h-9 bg-[var(--flowscope-pane)] pl-8 pr-8 text-sm"
         onFocus={() => setOpen(true)} onChange={event => { onQuery(event.target.value); setActiveKey(null); setOpen(true) }}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return

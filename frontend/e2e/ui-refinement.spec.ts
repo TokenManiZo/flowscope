@@ -69,7 +69,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1920, height: 108
     await progress.press("Escape")
     await expect(page.getByRole("heading", { name: "점검 시작" })).toBeVisible()
     await page.goto(`${baseURL}#evidence`)
-    const search = page.getByRole("searchbox", { name: "번호·경로·계정 검색" })
+    const search = page.getByRole("searchbox", { name: "#번호, 경로, 계정 검색" })
     await search.fill("#37")
     await expect(page.getByRole("row").filter({ hasText: "#37" })).toHaveCount(1)
     await expect(page.getByRole("row").filter({ hasText: "#36" })).toHaveCount(0)

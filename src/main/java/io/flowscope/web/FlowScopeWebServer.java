@@ -519,7 +519,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             body.put("durationMs", result.durationMs());
             body.put("requestBytes", result.requestBytes());
             body.put("responseBytes", result.responseBytes());
-            body.put("message", "응답을 받았으며 HUMAN 검증 Evidence로 분리 기록했습니다.");
+            body.put("message", "응답을 받았으며 HUMAN 검증 요청 기록으로 따로 저장했습니다.");
             return json(200, body);
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
@@ -612,7 +612,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("message", result.sent() > 0
-                    ? "안전 재전송 응답을 CONTROLLED Evidence로 기록했습니다."
+                    ? "안전 재전송 응답을 CONTROLLED 요청 기록으로 저장했습니다."
                     : result.drafted() > 0
                     ? "상태 변경 요청을 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다."
                     : "자동 전송 없이 재전송 런을 종료했습니다.");
@@ -1079,7 +1079,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             bindReviewPolicy(itemId, evidenceIds);
             state.config().attachReviewValidation(itemId, validationIds);
             state.rebuild();
-            return success("Evidence에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
+            return success("요청 기록에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
@@ -1113,11 +1113,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private List<String> reviewValidation(String itemId, List<String> basisIds, String requested) {
         if (requested.isBlank()) return List.of();
         List<String> ids = requested.lines().filter(id -> !id.isBlank()).distinct().toList();
-        if (ids.size() > 20) throw new IllegalArgumentException("검증 Evidence는 최대 20건까지 연결할 수 있습니다.");
+        if (ids.size() > 20) throw new IllegalArgumentException("검증 요청 기록은 최대 20건까지 연결할 수 있습니다.");
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
         for (String id : ids) {
             RequestRecord record = state.snapshot().records.stream().filter(value -> id.equals(value.evidenceId))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 Evidence가 아닙니다."));
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 요청 기록이 아닙니다."));
             boolean target = matrix.functions().stream().anyMatch(cell -> cell.id().equals(itemId)
                     && cell.identity().equals(record.idn) && cell.operation().equals(record.op))
                     || matrix.objects().stream().anyMatch(cell -> cell.id().equals(itemId)
@@ -1139,7 +1139,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         try {
             String from = required(form, "from");
             String into = required(form, "into");
-            if (from.equals(into)) throw new IllegalArgumentException("서로 다른 두 신원을 선택하세요.");
+            if (from.equals(into)) throw new IllegalArgumentException("서로 다른 두 계정을 선택하세요.");
             AccountProfile target = state.config().account(into)
                     .orElseThrow(() -> new IllegalArgumentException("유지할 대상을 먼저 테스트 계정으로 등록하세요."));
             List<RequestRecord> matching = state.snapshot().records.stream().filter(r -> from.equals(r.idn))
@@ -1449,6 +1449,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (line.isBlank()) continue;
             if (definitions.size() >= 20) throw new IllegalArgumentException("API 정의는 최대 20개까지 입력할 수 있습니다.");
             String[] parts = line.split("\\s+", 3);
+            // 형식 이름 없이 주소만 적은 줄은 OpenAPI 명세로 본다. 다른 형식은 앞에 이름을 붙인다.
+            String first = parts[0].toLowerCase(Locale.ROOT);
+            if (parts.length == 1 && (first.startsWith("http://") || first.startsWith("https://"))) {
+                definitions.add(new ZapCampaign.ZapDefinition(ZapCampaign.ZapDefinitionType.OPENAPI, parts[0], ""));
+                continue;
+            }
             ZapCampaign.ZapDefinitionType type;
             try { type = ZapCampaign.ZapDefinitionType.valueOf(parts[0].toUpperCase(Locale.ROOT)); }
             catch (RuntimeException error) {
@@ -1663,7 +1669,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (state.sessions() != null) state.sessions().close();
         state.config().clearSessionBindings();
         state.rebuild();
-        return success("계정 카드와 Evidence는 유지하고 메모리 세션과 신원 매핑만 초기화했습니다.");
+        return success("계정 카드와 요청 기록은 유지하고 메모리 세션과 계정 연결만 초기화했습니다.");
     }
 
     private LoopbackHttpServer.Response importXml(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -1718,7 +1724,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         || state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
                                 && target.service.equals(record.service)
                                 && record.authState == io.flowscope.core.AuthState.ACCOUNT_BOUND);
-                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정·신원을 선택하세요.");
+                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정을 선택하세요.");
             }
             state.config().withResourceOwner(resource, identity);
             state.rebuild();
@@ -1738,8 +1744,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     : value == TrafficOverride.INCLUDE
                     ? "자동 보조 트래픽을 분석에 포함했습니다. discovery 신뢰 경계는 유지됩니다."
                     : value == TrafficOverride.REVIEW
-                    ? "같은 API의 관측 기록을 검토 필요로 표시했습니다. Evidence는 보존됩니다."
-                    : "기본 분석에서 숨겼습니다. Evidence는 보존됩니다.");
+                    ? "같은 API의 요청 기록을 검토 필요로 표시했습니다. 기록은 지우지 않습니다."
+                    : "기본 분석에서 숨겼습니다. 기록은 지우지 않습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
