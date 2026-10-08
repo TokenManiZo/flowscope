@@ -18,6 +18,12 @@ import com.fasterxml.jackson.core.StreamReadConstraints;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import io.flowscope.core.parameter.ParameterExtractor;
 import io.flowscope.core.parameter.ParameterObservation;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Node;
+import org.w3c.dom.Element;
+import org.xml.sax.InputSource;
+import java.io.StringReader;
 
 /** Display-only observations. Never changes operation/resource, authorization or replay targets. */
 public final class ObservedObjectProjection {
@@ -78,6 +84,8 @@ public final class ObservedObjectProjection {
             String legacy = row.record.resource;
             add(out, ordinals, row.record, apiKey, group, object, "PATH", List.of("/segments/" + (position - 1)), legacy);
         }
+        Set<String> pathCandidates = new HashSet<>();
+        for (PathRow row : rows) if (!row.positions.isEmpty()) pathCandidates.add(row.record.evidenceId);
         Map<String, String> pathApis = new HashMap<>();
         for (ObjectObservation object : out) pathApis.put(object.eventId(), object.apiKey());
         unique.values().stream().sorted(Comparator.comparingLong((RequestRecord r) -> r.timestamp).thenComparing(r -> r.evidenceId))
@@ -85,6 +93,7 @@ public final class ObservedObjectProjection {
                     String api = pathApis.getOrDefault(r.evidenceId, r.op);
                     addQuery(out, ordinals, r, api);
                     addBody(out, ordinals, r, api);
+                    if (!pathCandidates.contains(r.evidenceId)) addResponse(out, ordinals, r, api);
                 });
         return List.copyOf(out);
     }
@@ -174,6 +183,77 @@ public final class ObservedObjectProjection {
         }
         fields.add(path.isEmpty() ? "/" : path);
         return node;
+    }
+
+    private static void addResponse(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
+                                    RequestRecord r, String api) {
+        if (!"GET".equalsIgnoreCase(r.method) || r.status < 200 || r.status >= 300
+                || r.query != null && !r.query.isBlank()
+                || r.requestBodyForAnalysis() != null && !r.requestBodyForAnalysis().isBlank()
+                || r.responsePayload != null && !r.responsePayload.retained()) return;
+        String body = r.responseBodyForAnalysis();
+        if (body == null || body.isBlank() || body.length() > 1_000_000) return;
+        String type = r.responseContentType == null ? "" : r.responseContentType.toLowerCase(Locale.ROOT);
+        if (type.contains("html")) return;
+        try {
+            String canonical;
+            if (type.contains("json") || body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) {
+                JsonNode root = JSON.readTree(body);
+                if (root == null) return;
+                canonical = "json:" + JSON.writeValueAsString(normalizeJson(root, "", new TreeSet<>(), new int[]{0}));
+            } else if (type.contains("xml") || type.isBlank() && body.stripLeading().startsWith("<")) {
+                var factory = DocumentBuilderFactory.newInstance();
+                factory.setNamespaceAware(true);
+                factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+                factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+                factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+                factory.setXIncludeAware(false); factory.setExpandEntityReferences(false);
+                factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+                factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+                var builder = factory.newDocumentBuilder();
+                builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler() {
+                    @Override public void error(org.xml.sax.SAXParseException e) throws org.xml.sax.SAXException { throw e; }
+                    @Override public void fatalError(org.xml.sax.SAXParseException e) throws org.xml.sax.SAXException { throw e; }
+                });
+                Element root = builder.parse(new InputSource(new StringReader(body))).getDocumentElement();
+                if (root == null || "html".equalsIgnoreCase(root.getLocalName())) return;
+                canonical = "xml:" + JSON.writeValueAsString(normalizeXml(root, 0, new int[]{0}));
+            } else return;
+            String group = key("RESPONSE_BODY", api);
+            add(out, ordinals, r, api, group, key("RESPONSE_BODY", api, canonical), "RESPONSE_BODY", List.of(), null);
+        } catch (Exception ignored) { /* empty, invalid, DTD or over-limit documents remain ordinary Evidence */ }
+    }
+    private static Object normalizeXml(Element element, int depth, int[] visited) {
+        if (depth > 128 || ++visited[0] > 100_000) throw new IllegalArgumentException("XML projection limit");
+        Map<String, Object> out = new TreeMap<>();
+        out.put("name", element.getNodeName());
+        out.put("namespace", element.getNamespaceURI() == null ? "" : element.getNamespaceURI());
+        if (sensitive(element.getLocalName() == null ? element.getNodeName() : element.getLocalName())) {
+            out.put("value", "[sensitive]"); return out;
+        }
+        Map<String, String> attributes = new TreeMap<>();
+        var names = element.getAttributes();
+        for (int i = 0; i < names.getLength(); i++) {
+            if (++visited[0] > 100_000) throw new IllegalArgumentException("XML projection limit");
+            Node attribute = names.item(i);
+            attributes.put(attribute.getNodeName(), sensitive(attribute.getNodeName()) ? "[sensitive]" : attribute.getNodeValue());
+        }
+        out.put("attributes", attributes);
+        List<Object> children = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        boolean hasElements = false;
+        for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) if (child instanceof Element) { hasElements = true; break; }
+        for (Node child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (++visited[0] > 100_000) throw new IllegalArgumentException("XML projection limit");
+            if (child instanceof Element nested) {
+                if (!text.isEmpty()) { children.add(text.toString()); text.setLength(0); }
+                children.add(normalizeXml(nested, depth + 1, visited));
+            } else if ((child.getNodeType() == Node.TEXT_NODE || child.getNodeType() == Node.CDATA_SECTION_NODE)
+                    && (!hasElements || !child.getNodeValue().isBlank())) text.append(child.getNodeValue());
+        }
+        if (!text.isEmpty()) children.add(text.toString());
+        out.put("children", children);
+        return out;
     }
 
     private static boolean sensitive(String name) {

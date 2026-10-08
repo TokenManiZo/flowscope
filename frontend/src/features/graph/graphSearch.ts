@@ -74,18 +74,24 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     }
   }
   const display = observedObjectEntries(snapshot, filters)
-  const apiMembers = new Map<string, string[]>()
-  for (const { object } of display) apiMembers.set(object.apiKey, [...new Set([...(apiMembers.get(object.apiKey) ?? []), object.operation])].sort())
+  const apiMembers = new Map<string, Set<string>>()
   for (const { object } of display) {
-    const group = operationGroup(object.operation, resolveGroup)
-    const operation = apiMembers.get(object.apiKey)![0]
-    const context = { groupId: group.id, groupLabel: group.label, operation }
-    for (const member of apiMembers.get(object.apiKey)!) {
+    const members = apiMembers.get(object.apiKey) ?? new Set<string>(); members.add(object.operation); apiMembers.set(object.apiKey, members)
+  }
+  const representatives = new Map([...apiMembers].map(([api, members]) => [api, [...members].sort()[0]]))
+  for (const [api, members] of apiMembers) {
+    for (const member of members) {
+      const group = operationGroup(member, resolveGroup)
       entries.delete(searchKey("operation", group.service, member))
       entries.delete(searchKey("observed-operation", group.service, member))
       entries.delete(searchKey("operation-group", group.service, operationShapeKey(member)))
     }
-    add("operation", group.service, operation, object.apiKey.replace(/^https?:\/\/\S+\s+/i, ""), context)
+    const operation = representatives.get(api)!, group = operationGroup(operation, resolveGroup)
+    add("operation", group.service, operation, api.replace(/^https?:\/\/\S+\s+/i, ""), { groupId: group.id, groupLabel: group.label, operation })
+  }
+  for (const { object } of display) {
+    const group = operationGroup(object.operation, resolveGroup), operation = representatives.get(object.apiKey)!
+    const context = { groupId: group.id, groupLabel: group.label, operation }
     const owner = object.legacyResource ? snapshot.owners[object.legacyResource] : null
     add("resource", group.service, object.objectKey, `OBJ ${object.ordinal}${owner ? ` - ${graphAccountLabel(snapshot, owner)}` : ""}`, context)
     if (object.kind !== "PATH") add("object-group", group.service, object.groupKey, object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · "), context)

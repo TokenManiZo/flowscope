@@ -40,6 +40,16 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
       list: group.operations.slice(0, 8).map(operation => [plain(operation), mostUrgent(group.cells.filter(cell => cell.op === operation))]),
     }
   }
+  if (node.kind === "resource" && node.selection.displayObjectKey) {
+    const accesses = projection.edges.filter(edge => edge.targetId === node.id)
+    const identities = [...new Set(accesses.map(edge => edge.selection.identity).filter((value): value is string => !!value))]
+    return { stats: [["접근 신원", identities.length], ["관측 기록", node.selection.evidenceIds.length]], listTitle: "접근한 신원",
+      list: identities.map(identity => [identity, "관측됨"] as [string, string]) }
+  }
+  if (node.kind === "object-group" && node.selection.displayApiKey && node.objectGroup) {
+    return { stats: [["객체", node.objectGroup.members.length], ["관측 기록", node.selection.evidenceIds.length]], listTitle: "관측 객체",
+      list: [], }
+  }
   const cells = node.selection.cells
   if (node.kind === "identity") {
     const byTarget = groupBy(cells, projection.kind === "operation" ? cell => cell.resource : cell => cell.op)
@@ -78,7 +88,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
   if (node.kind === "operation") {
     const byIdentity = groupBy(cells, cell => cell.idn)
     return {
-      stats: [["신원", byIdentity.size], ["객체", new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      stats: [["신원", byIdentity.size], ["객체", node.displayObjectCount ?? new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
       listTitle: "접근한 신원",
       // 상세 패널의 identityVerdicts 조회 키로도 쓰므로 원본 신원을 유지한다.
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity, mostUrgent(items)]),

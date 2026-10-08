@@ -47,7 +47,10 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
   }
   const edge = (relation: HierarchyEdge["relation"], from: string, to: string, items: readonly ObjectEntry[], isObject = false) => {
     const buckets = new Map<string, ObjectEntry[]>()
-    for (const item of items) { const key = JSON.stringify([item.event.source, item.event.idn]); buckets.set(key, [...(buckets.get(key) ?? []), item]) }
+    for (const item of items) {
+      const key = JSON.stringify([item.event.source, item.event.idn])
+      const bucket = buckets.get(key) ?? []; bucket.push(item); buckets.set(key, bucket)
+    }
     for (const bucket of buckets.values()) {
       const source = bucket[0].event.source, selection = select(bucket, source, isObject)
       const count = new Set(bucket.map(item => item.event.eventId)).size
@@ -56,21 +59,27 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
     }
   }
   const byApi = new Map<string, ObjectEntry[]>()
-  for (const entry of entries) byApi.set(entry.object.apiKey, [...(byApi.get(entry.object.apiKey) ?? []), entry])
+  for (const entry of entries) {
+    const bucket = byApi.get(entry.object.apiKey) ?? []; bucket.push(entry); byApi.set(entry.object.apiKey, bucket)
+  }
   let hidden = 0
   for (const [api, items] of byApi) {
     const operations = [...new Set(items.map(item => item.object.operation))].sort()
-    const apiNode = node("operation", operations[0], api, { ...select(items), displayApiKey: api }, { displayOperations: operations })
+    const apiNode = node("operation", operations[0], api, { ...select(items), displayApiKey: api }, { displayOperations: operations, displayObjectCount: new Set(items.map(item => item.object.objectKey)).size })
     if (navigation.level === "group") list.push(apiNode)
     for (const identity of new Set(items.map(item => item.event.idn))) {
       if (!nodes.some(n => n.id === `identity:${identity}`)) node("identity", identity, graphAccountLabel(snapshot, identity), { ...select(items.filter(item => item.event.idn === identity)), identity })
       edge("identity-operation", `identity:${identity}`, apiNode.id, items.filter(item => item.event.idn === identity))
     }
     const groups = new Map<string, ObjectEntry[]>()
-    for (const item of items) groups.set(item.object.groupKey, [...(groups.get(item.object.groupKey) ?? []), item])
+    for (const item of items) {
+      const bucket = groups.get(item.object.groupKey) ?? []; bucket.push(item); groups.set(item.object.groupKey, bucket)
+    }
     for (const [groupKey, members] of groups) {
       const objects = new Map<string, ObjectEntry[]>()
-      for (const item of members) objects.set(item.object.objectKey, [...(objects.get(item.object.objectKey) ?? []), item])
+      for (const item of members) {
+        const bucket = objects.get(item.object.objectKey) ?? []; bucket.push(item); objects.set(item.object.objectKey, bucket)
+      }
       const first = members[0].object, grouped = first.kind !== "PATH", expanded = !grouped || (filters.expandedObjectGroups ?? []).includes(`object-group:${groupKey}`)
       let groupNode: HierarchyNode | null = null
       if (grouped) {

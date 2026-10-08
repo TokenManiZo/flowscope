@@ -35,6 +35,7 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   selection: HierarchySelection
   groupId?: string
   service?: string
+  displayObjectCount?: number
   displayOperations?: readonly string[]
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */

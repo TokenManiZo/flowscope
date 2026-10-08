@@ -100,4 +100,33 @@ class ObservedObjectProjectionTest {
         assertEquals(Set.of("PATH","QUERY","REQUEST_BODY"), new HashSet<>(out.stream().filter(o -> o.eventId().equals(a.evidenceId)).map(ObservedObjectProjection.ObjectObservation::kind).toList()));
         assertEquals(original, a.op + "\0" + a.resource);
     }
+    @Test void parameterlessGetUsesWholeResponseRatherThanSplittingArrayItems() {
+        var a = record("/products", 1); a.body = "{\"items\":[{\"id\":1},{\"id\":2}],\"total\":2}";
+        var b = record("/products", 2); b.body = "{\"total\":2,\"items\":[{\"id\":1},{\"id\":2}]}";
+        var c = record("/products", 3); c.body = "{\"items\":[{\"id\":2},{\"id\":1}],\"total\":2}";
+        var out = ObservedObjectProjection.build(List.of(a,b,c));
+        assertEquals(3, out.size()); assertEquals("RESPONSE_BODY", out.getFirst().kind());
+        assertEquals(List.of(1,1,2), out.stream().map(ObservedObjectProjection.ObjectObservation::ordinal).toList());
+        assertEquals(1, ObservedObjectProjection.build(List.of(a)).size());
+    }
+    @Test void responseFallbackCannotBypassTheSinglePathGateOrDuplicateRequestObjects() {
+        var a = record("/products/123", 1); a.body = "{\"id\":123}";
+        assertTrue(ObservedObjectProjection.build(List.of(a)).isEmpty());
+        var b = record("/products", 2); b.query = "page=1"; b.body = "{\"id\":123}";
+        assertEquals(List.of("QUERY"), ObservedObjectProjection.build(List.of(b)).stream().map(ObservedObjectProjection.ObjectObservation::kind).toList());
+        var c = record("/products", 3); c.reqBody = "{\"id\":1}"; c.body = "{\"id\":123}";
+        assertEquals(List.of("REQUEST_BODY"), ObservedObjectProjection.build(List.of(c)).stream().map(ObservedObjectProjection.ObjectObservation::kind).toList());
+    }
+    @Test void responseXmlIsNormalizedAndExternalEntitiesHtmlAndErrorsAreRejected() {
+        var a = record("/products", 1); a.responseContentType = "application/xml"; a.body = "<items><id>1</id><password>one</password></items>";
+        var b = record("/products", 2); b.responseContentType = "application/xml"; b.body = "<items>\n <id>1</id><password>two</password>\n</items>";
+        var out = ObservedObjectProjection.build(List.of(a,b));
+        assertEquals(2, out.size()); assertEquals(out.get(0).objectKey(), out.get(1).objectKey());
+        var evil = record("/products", 3); evil.responseContentType = "application/xml"; evil.body = "<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///etc/passwd'>]><x>&e;</x>";
+        assertTrue(ObservedObjectProjection.build(List.of(evil)).isEmpty());
+        var html = record("/products", 4); html.responseContentType = "text/html"; html.body = "<html><body>hello</body></html>";
+        assertTrue(ObservedObjectProjection.build(List.of(html)).isEmpty());
+        var error = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/products", 500, "A"); error.hasResponse = true; error.evidenceId = "error"; error.body = "{\"error\":true}"; Normalizer.normalizeAll(List.of(error));
+        assertTrue(ObservedObjectProjection.build(List.of(error)).isEmpty());
+    }
 }

@@ -4,6 +4,7 @@ import { targetSnapshot } from "@/test/fixtures"
 import { apiGroupDescriptor, projectHierarchy, type GraphNavigation } from "./graphHierarchy"
 import { buildGraphSearchIndex, searchDestination } from "./graphSearch"
 import type { GraphFilters } from "./graphProjection"
+import { graphNodeSummary } from "./GraphNodeSummary"
 import { relationshipNodeCard } from "./relationshipNodeCard"
 
 const service = "https://t:443"
@@ -27,6 +28,8 @@ describe("observed display objects", () => {
     expect(graph.resources.map(node => node.selection.evidenceIds)).toEqual([["ev-1"],["ev-2"],["ev-3"]])
     expect(JSON.stringify(snapshot.cells)).toBe(original)
     expect(graph.edges.filter(edge => edge.relation === "operation-resource")).toHaveLength(3)
+    expect(graphNodeSummary(graph.operations[0], graph)?.stats).toContainEqual(["객체", 3])
+    expect(graphNodeSummary(graph.resources[0], graph)?.stats).toContainEqual(["관측 기록", 1])
   })
   it("does not resurrect a single path through legacy resources", () => {
     const snapshot = data(); snapshot.displayObjects = []
@@ -79,5 +82,15 @@ describe("observed display objects", () => {
     expect(graph.nodes.filter(node => node.kind === "object-group").map(node => node.label)).toEqual(["userID", "password · userID"])
     expect(graph.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 1"])
     expect(graph.resources.every(node => node.selection.evidenceIds.includes("ev-1"))).toBe(true)
+  })
+  it("shows whole GET responses under a collapsed OBJ group and leaves Request Lab event keys intact", () => {
+    const snapshot = data()
+    snapshot.displayObjects = snapshot.displayObjects!.map(object => ({ ...object, kind: "RESPONSE_BODY", groupKey: "response", fields: [] }))
+    const before = JSON.stringify(snapshot.events)
+    const collapsed = projectHierarchy(snapshot, filters, nav)
+    expect(collapsed.nodes.find(node => node.kind === "object-group")?.label).toBe("OBJ")
+    const expanded = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: ["object-group:response"] }, nav)
+    expect(expanded.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 2", "OBJ 3"])
+    expect(JSON.stringify(snapshot.events)).toBe(before)
   })
 })
