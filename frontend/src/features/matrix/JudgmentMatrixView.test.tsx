@@ -226,7 +226,7 @@ it("keeps the same sections on non-reviewable observed cells, locks review, and 
 it("filters attention rows with a separate switch and clears a selection whose server item disappears", async () => {
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
-  const attention = screen.getByRole("switch", { name: "주의 항목만" })
+  const attention = screen.getByRole("switch", { name: "확인 필요한 결과만" })
   expect(attention).toHaveAttribute("aria-checked", "false")
   await user.click(attention)
   expect(attention).toHaveAttribute("aria-checked", "true")
