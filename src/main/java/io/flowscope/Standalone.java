@@ -201,13 +201,6 @@ public final class Standalone {
             rebuild();
             saveActive();
         }
-        @Override public synchronized BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
-            BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
-            records.addAll(parsed.records);
-            rebuild();
-            saveActive();
-            return parsed;
-        }
         @Override public synchronized BurpXmlParser.ParseResult importHar(byte[] har) {
             BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
             records.addAll(parsed.records);

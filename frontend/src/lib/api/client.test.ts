@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest"
 
 import { ApiError, apiFetch, postForm } from "./client"
-import { cancelScannerRun, importXml, startScannerRun } from "./endpoints"
+import { cancelScannerRun, startScannerRun } from "./endpoints"
 import type { ScannerRun } from "./types"
 
 const capability = "a".repeat(64)
@@ -90,23 +90,6 @@ describe("FlowScope API transport", () => {
 
     expect((fetchStub.mock.calls[0]?.[1] as RequestInit).body?.toString()).toContain("definitions=OPENAPI+")
     expect((fetchStub.mock.calls[1]?.[1] as RequestInit).body?.toString()).toBe("action=cancel")
-  })
-
-  it("uses the exact XML media type without converting the raw document into a form", async () => {
-    const meta = document.createElement("meta")
-    meta.name = "flowscope-capability"
-    meta.content = capability
-    document.head.append(meta)
-    const fetchStub = vi.fn().mockResolvedValue(jsonResponse({ success: true, imported: 1, candidates: 0, failed: 0 }))
-    vi.stubGlobal("fetch", fetchStub)
-    const xml = "<?xml version=\"1.0\"?><items><item>한글</item></items>"
-
-    await importXml("human", "fixture.xml", xml)
-
-    const [path, init] = fetchStub.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe("/api/import-xml?source=human&name=fixture.xml")
-    expect(init.body).toBe(xml)
-    expect(new Headers(init.headers).get("Content-Type")).toBe("application/xml;charset=UTF-8")
   })
 
   it("preserves HTTP status and server messages for JSON, malformed, and non-JSON failures", async () => {

@@ -14,16 +14,14 @@ import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysi
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { importXml } from "@/lib/api/endpoints"
 import type { EventRecord } from "@/lib/api/types"
-import { queryKeys, useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutation } from "@/lib/query/hooks"
+import { useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutation } from "@/lib/query/hooks"
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { trafficClassLabel, trafficReasonLabel } from "@/lib/display/traffic"
 import { cn } from "@/lib/utils"
 import { openSurfaceSelection, takePageSelection } from "./evidenceNavigation"
 import { EvidenceHttpViewer } from "./EvidenceHttpViewer"
 import { EvidenceFilters } from "./EvidenceFilters"
-import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, dispositionCounts, hiddenEvidenceCount, tabDispositions, visibleEvidence, repeatEvidenceIds, type EvidenceTab } from "./evidenceSelectors"
 
 const sourceTone: Record<string, string> = { human: "text-observation-human", scanner: "text-observation-scanner", llm: "text-observation-llm" }
@@ -174,7 +172,7 @@ export function EvidencePage() {
   return (
     <ReferenceAnalysisWorkspace compactMediaQuery="(max-width: 767px)" ariaLabel="요청 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={Math.max(600, Math.round(window.innerWidth / 2))} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
       <section className="grid min-w-0 gap-3 p-4" aria-labelledby="evidence-title">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">요청 기록</h1><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">요청 기록</h1></div>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>요청 기록을 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
       <div role="tablist" aria-label="요청 기록 판정" className="flex gap-5 border-b">{tabs.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} aria-label={`${label} ${counts[key]}`} onClick={() => selectTab(key)}
         className={cn("-mb-px flex items-center gap-1.5 border-b-2 py-2 text-sm", tab === key ? "border-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground")}>

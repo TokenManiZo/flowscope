@@ -95,7 +95,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default long otherHumanListenerRequests(String runId) { return 0; }
         void rebuild();
         void loadSample();
-        BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
         BurpXmlParser.ParseResult importHar(byte[] har) throws Exception;
         RequestRecord openInRepeater(String evidenceId, String request,
                                      CredentialMode credentialMode, String accountId);
@@ -353,7 +352,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/explorer-models" -> explorerModels(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
             case "/api/identity-reset" -> identityReset(request);
-            case "/api/import-xml" -> importXml(request, target);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
             default -> error(404, "Not found");
@@ -1670,26 +1668,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
         state.config().clearSessionBindings();
         state.rebuild();
         return success("계정 카드와 요청 기록은 유지하고 메모리 세션과 계정 연결만 초기화했습니다.");
-    }
-
-    private LoopbackHttpServer.Response importXml(LoopbackHttpServer.Request request, URI target) throws IOException {
-        if (!request.method().equals("POST")) return method("POST");
-        try {
-            Map<String, String> query = form(target.getRawQuery());
-            Source source = switch (query.getOrDefault("source", "").toLowerCase(Locale.ROOT)) {
-                case "human" -> Source.HUMAN;
-                case "scanner" -> Source.SCANNER;
-                case "llm" -> Source.LLM;
-                default -> throw new IllegalArgumentException("Human, Scanner, LLM 소스 중 하나를 선택하세요.");
-            };
-            BurpXmlParser.ParseResult result = state.importXml(request.body(), source);
-            ObjectNode body = json.createObjectNode();
-            body.put("success", true);
-            body.put("imported", result.records.size());
-            body.put("candidates", result.records.stream().filter(record -> !record.hasResponse).count());
-            body.put("failed", result.skipped.size());
-            return json(200, body);
-        } catch (Exception error) { return error(400, error.getMessage()); }
     }
 
     private LoopbackHttpServer.Response importHar(LoopbackHttpServer.Request request, URI target) throws IOException {

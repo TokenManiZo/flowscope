@@ -2258,32 +2258,6 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public void loadSample() {
                 runProjectTask(() -> { loadSampleProject(); return null; });
             }
-            @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
-                BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
-                BurpXmlParser.retainInScope(parsed, scope);
-                parsed.records.forEach(record -> {
-                    record.requestPayload = internPayload(record.requestPayload);
-                    record.responsePayload = internPayload(record.responsePayload);
-                });
-                int parsedCount = parsed.records.size();
-                int duplicateCount;
-                synchronized (records) {
-                    int room = Math.max(0, MAX_RECORDS - records.size());
-                    List<RequestRecord> missing = RecordMerge.missing(records, parsed.records, parsed.records.size());
-                    duplicateCount = parsed.records.size() - missing.size();
-                    List<RequestRecord> added = missing.subList(0, Math.min(room, missing.size()));
-                    records.addAll(added);
-                    droppedRecords.addAndGet(Math.max(0, missing.size() - room));
-                    parsed.records.clear();
-                    parsed.records.addAll(added);
-                    capacityWarned = records.size() >= MAX_RECORDS;
-                }
-                scheduleRebuild();
-                api.logging().logToOutput("FlowScope Web XML 가져오기: " + parsed.records.size()
-                        + "/" + parsedCount + "건 추가 · 기존 중복 " + duplicateCount
-                        + "건 · 건너뜀 " + parsed.skipped.size() + "건");
-                return parsed;
-            }
             @Override public BurpXmlParser.ParseResult importHar(byte[] har) throws Exception {
                 BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
                 BurpXmlParser.retainInScope(parsed, scope);

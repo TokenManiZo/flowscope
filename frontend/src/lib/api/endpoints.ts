@@ -6,7 +6,6 @@ import type {
   EvidencePage,
   HumanRun,
   LiveAuthorizationReplayEnvelope,
-  ImportXmlResult,
   ManualAttempt,
   ReplayResult,
   AuthorizationReplayResult,
@@ -129,11 +128,4 @@ export const completeExplorerBrowserLogin = (id: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-complete", id })
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
-export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
-  apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/xml;charset=UTF-8" },
-    body: xml,
-    ...formSignal(signal),
-  })
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })
