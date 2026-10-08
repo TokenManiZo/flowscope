@@ -6,7 +6,7 @@ import { GRAPH_MIN_ZOOM } from "./graphLanes"
 import { operationShapeKey } from "./graphPathShape"
 
 export type SearchKind = "target" | "api-group" | "operation" | "resource" | "identity" | "operation-group" | "object-group" | "observed-operation" | "support-operation" | "route-candidate"
-export const searchKindNames: Record<SearchKind, string> = { target: "Target", "api-group": "API 그룹", operation: "API", resource: "객체", identity: "신원", "operation-group": "API 묶음", "object-group": "객체 묶음", "observed-operation": "관측 API", "support-operation": "보조 흐름", "route-candidate": "경로 후보" }
+export const searchKindNames: Record<SearchKind, string> = { target: "Target", "api-group": "API 그룹", operation: "API", resource: "객체", identity: "계정", "operation-group": "API 묶음", "object-group": "객체 묶음", "observed-operation": "관측 API", "support-operation": "보조 흐름", "route-candidate": "경로 후보" }
 export interface SearchContext { groupId: string; groupLabel: string; operation: string; nodeKind?: SearchKind }
 export interface GraphSearchEntry {
   key: string

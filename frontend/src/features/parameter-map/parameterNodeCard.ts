@@ -82,7 +82,7 @@ export function conditionNodeCard(gap: SurfaceParameterGap, parameter: SurfacePa
   const identity = identityLabel(gap.identity ?? "UNKNOWN"), role = gap.role ?? "UNKNOWN"
   const observations = gap.identity ? parameter?.profile?.identityCounts[gap.identity] ?? 0 : 0
   return {
-    kind: "condition", badge: "IDENTITY", title: identity, detail: "", footer: "", icon: "user",
+    kind: "condition", badge: "계정", title: identity, detail: "", footer: "", icon: "user",
     accessibleLabel: `Condition identity ${identity}; role ${role}; ${observations} observations`,
   }
 }
@@ -96,7 +96,7 @@ export function operationNodeCard(key: ParameterMapKey, statuses: readonly numbe
   const result = statuses.length ? `HTTP ${[...counts].sort(([left], [right]) => (left || 600) - (right || 600)).map(([status, count]) => `${status || "UNKNOWN"} × ${count}`).join(" · ")}` : "HTTP UNKNOWN · no observations"
   return {
     kind: "operation", badge: key.method, title: stripOrigin(key.pathTemplate) || key.pathTemplate, detail: "", footer: "", icon: "none",
-    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; 관측 기록 ${statuses.length}건`,
+    accessibleLabel: `Operation ${stripOrigin(key.operation) || key.operation}; ${result}; 요청 기록 ${statuses.length}건`,
   }
 }
 

@@ -33,7 +33,7 @@ it("renders each projected link as an ordered producer, masked value, and consum
   expect(within(timeline).getAllByText("2. 전달 값")).toHaveLength(2)
   expect(within(timeline).getAllByText("3. 소비")).toHaveLength(2)
 
-  await userEvent.click(within(rows[1]).getByRole("button", { name: "흐름 링크 관측 기록 열기" }))
+  await userEvent.click(within(rows[1]).getByRole("button", { name: "흐름 링크 요청 기록 열기" }))
   expect(onSelect).toHaveBeenCalledWith(group.links[1])
 })
 
@@ -49,7 +49,7 @@ it("keeps a long identity bounded in ordinary body text and out of accessible at
     expect(element.getAttribute("title") ?? "").not.toContain(identity)
     if (element.hasAttribute("aria-live")) expect(element.textContent).not.toContain(identity)
   }
-  await userEvent.click(screen.getByRole("button", { name: "신원 더 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "계정 더 보기" }))
   expect(document.body.textContent).toContain(identity)
   expect(screen.queryByRole("identity")).not.toBeInTheDocument()
 })

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { EvidenceSheet, type ScenarioEvidenceSelection } from "@/components/layout/EvidenceSheet"
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { useSnapshotQuery } from "@/lib/query/hooks"
+import { evidenceOrdinalLabel, hasEvidenceOrdinal } from "@/lib/display/operationLabel"
 import { ScenarioWorkspace } from "./ScenarioWorkspace"
 
 export function ScenariosPage() {
@@ -40,11 +41,11 @@ export function ScenariosPage() {
   const historicalEntries = [
     ...(history?.assessments ?? []).map((item) => ({ key: "assessment:" + item.id, title: item.title, id: item.id, verdict: item.verdict, reason: item.reason, at: item.createdAt, evidenceIds: item.evidenceIds })),
     ...(history?.validations ?? []).map((item, index) => ({ key: "validation:" + item.candidateId + ":" + index, title: "과거 판정", id: item.candidateId + " · " + item.runId, verdict: item.verdict, reason: item.reason, at: item.decidedAt, evidenceIds: [...item.originalEvidenceIds, ...item.validationEvidenceIds, ...item.controlEvidenceIds] })),
-  ]
+  ].map((entry) => ({ ...entry, present: [...new Set(entry.evidenceIds)].filter((id) => hasEvidenceOrdinal(snapshot.data?.evidenceOrdinals, id)) }))
   const context = (
     <section className="grid gap-3 p-3">
       <h2 className="font-semibold">규칙 후보 검토</h2>
-      <p className="text-sm text-muted-foreground">현재 관측 기록과 역할·소유자 정책에서 계산한 후보입니다. 원 요청·응답을 확인하고 사람 검토를 기록하세요.</p>
+      <p className="text-sm text-muted-foreground">현재 요청 기록과 역할·소유자 정책에서 계산한 후보입니다. 원 요청·응답을 확인하고 사람 검토를 기록하세요.</p>
       <p className="text-sm">후보 {scenarios.length}개</p>
     </section>
   )
@@ -97,22 +98,20 @@ export function ScenariosPage() {
               {historicalEntries.slice(0, historyLimit).map((entry) => (
                 <article key={entry.key} className="grid gap-2 rounded-md border p-3 text-sm">
                   <h3 className="font-medium break-words">{entry.title} · {entry.verdict}</h3>
-                  <p className="font-mono break-all">{entry.id} · {entry.at}</p>
+                  <p className="break-all text-muted-foreground" title={entry.id}>{entry.at}</p>
                   <p className="whitespace-pre-wrap break-words">{entry.reason}</p>
-                  <details>
-                    <summary>저장된 기록 번호</summary>
-                    {entry.evidenceIds.map((id, index) => {
+                  {entry.present.length > 0 && <details>
+                    <summary>요청 기록 {entry.present.length}건</summary>
+                    {entry.present.map((id) => {
                       const open = evidenceAction(entry.evidenceIds, id)
                       return (
-                        <div className="flex flex-wrap items-center gap-2" key={id + index}>
-                          <span className="break-all font-mono">{id}</span>
-                          {open
-                            ? <Button size="sm" variant="outline" onClick={open}>관측 기록 열기</Button>
-                            : <span>현재 데이터에 없음</span>}
+                        <div className="flex flex-wrap items-center gap-2" key={id}>
+                          <span className="font-mono">{evidenceOrdinalLabel(snapshot.data?.evidenceOrdinals, id)}</span>
+                          {open && <Button size="sm" variant="outline" onClick={open}>요청 기록 열기</Button>}
                         </div>
                       )
                     })}
-                  </details>
+                  </details>}
                 </article>
               ))}
             </div>

@@ -33,7 +33,7 @@ describe("relationship graph node cards", () => {
     expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "", footer: "1 API group", icon: "globe" })
     // 그룹에 미요청 경로 후보(routeCandidateCount 1)가 있으면 API 수 옆에 함께 표시한다.
     expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs · 미요청 1", footer: "", icon: "network" })
-    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
+    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "계정", title: "USER A", detail: "", footer: "", icon: "user" })
     expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "", footer: "", icon: "none" })
     expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "", footer: "owner: USER B", icon: "box" })
     expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "OBSERVED", title: "GET /api/session/poll", detail: "관측만 · 판정 제외", footer: "", icon: "none" })

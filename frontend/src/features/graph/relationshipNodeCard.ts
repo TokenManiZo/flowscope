@@ -18,7 +18,7 @@ export function operationParts(value: string): { method: string; path: string } 
 const candidateCount = (cells: readonly { overall: string }[]) => cells.filter(cell => cell.overall === "suspicious").length
 
 function evidenceFooter(node: RelationshipNode) {
-  return `관측 기록 ${node.selection.evidenceIds.length}건`
+  return `요청 기록 ${node.selection.evidenceIds.length}건`
 }
 
 /**
@@ -50,8 +50,8 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "identity") return {
-    kind: "condition", badge: "IDENTITY", title: node.label, detail: "", footer: "", icon: "user",
-    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
+    kind: "condition", badge: "계정", title: node.label, detail: "", footer: "", icon: "user",
+    accessibleLabel: `계정 ${node.label}; verdict ${node.verdictText}`,
   }
 
   if (node.kind === "operation-group" && "objectGroup" in node && node.objectGroup) {

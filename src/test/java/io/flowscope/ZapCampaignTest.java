@@ -436,7 +436,7 @@ final class ZapCampaignTest {
             JsonNode terminal = awaitTerminal(campaign);
 
             assertEquals("FAILED", terminal.path("status").asText(), terminal.toString());
-            assertTrue(terminal.path("error").asText().contains("ANON으로 대체하지 않고"), terminal.toString());
+            assertTrue(terminal.path("error").asText().contains("비로그인으로 대체하지 않고"), terminal.toString());
             assertEquals("FAILED", terminal.at("/lanes/0/status").asText(), terminal.toString());
             assertEquals(1L, fixture.started.getCount(), "client spider must not start with an unbound session");
         }

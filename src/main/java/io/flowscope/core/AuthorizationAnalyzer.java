@@ -172,7 +172,7 @@ public final class AuthorizationAnalyzer {
             } else if (collectionMembers.getOrDefault(resource, Set.of()).size() == 1) {
                 String identity = collectionMembers.get(resource).iterator().next();
                 result.put(resource, new OwnerInfo(resource, identity, COLLECTION_MEMBERSHIP_CONFIDENCE,
-                        "단일 신원 컬렉션 멤버십(교차 확인)", false));
+                        "단일 계정 컬렉션 멤버십(교차 확인)", false));
             } else if (collectionMembers.getOrDefault(resource, Set.of()).size() > 1) {
                 result.put(resource, new OwnerInfo(resource, null, 0,
                         "컬렉션 멤버십 공유/공개: " + collectionMembers.get(resource), false));
@@ -266,7 +266,7 @@ public final class AuthorizationAnalyzer {
         List<RequestRecord> observed = evidence.stream().filter(r -> r.hasResponse).toList();
         if (observed.isEmpty()) return new Decision(Verdict.UNTESTED, "실제 응답이 없음", false);
         if (isMetadataMethod(observed.get(0).method)) {
-            return new Decision(Verdict.UNDECIDED, "OPTIONS/HEAD는 소유권 성공 증거에서 제외", false);
+            return new Decision(Verdict.UNDECIDED, "OPTIONS/HEAD는 소유권 성공 기록에서 제외", false);
         }
 
         List<RequestRecord> successful = observed.stream().filter(AuthorizationAnalyzer::isSuccessful).toList();
@@ -344,7 +344,7 @@ public final class AuthorizationAnalyzer {
                 int risk = isWrite(operationMethod(operation)) ? 100 : 70;
                 gaps.add(new Gap(gapId(GapType.UNCROSSED, key), GapType.UNCROSSED,
                         identity, operation, resource, Set.of(), risk,
-                        "O2/O3 소유자가 아닌 관측 신원이 아직 시도하지 않은 조합"));
+                        "O2/O3 소유자가 아닌 요청한 계정이 아직 시도하지 않은 조합"));
             }
         }
     }
