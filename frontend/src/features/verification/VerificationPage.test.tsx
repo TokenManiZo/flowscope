@@ -30,13 +30,13 @@ describe("cross-identity verification route", () => {
     expect(routeFromHash("#verification")).toBe("home")
     expect(canonicalHash("#verification")).toBe("#home")
     expect(primaryNavigationRoutes).not.toContain("verification")
-    expect(appRoutes.some((entry) => entry.label === "교차 신원 검증")).toBe(false)
+    expect(appRoutes.some((entry) => entry.label === "교차 계정 검증")).toBe(false)
   })
 
   it("renders the real live replay card with registered accounts", async () => {
     renderVerification()
 
-    expect(await screen.findByRole("heading", { name: "교차 신원 검증" })).toBeVisible()
+    expect(await screen.findByRole("heading", { name: "교차 계정 검증" })).toBeVisible()
     expect(await screen.findByText("계정 A")).toBeVisible()
   })
 })

@@ -16,6 +16,8 @@ export interface GraphFilters {
 }
 
 export interface GraphSelection {
+  displayObjectKey?: string
+  displayApiKey?: string
   operation: string | null
   resource: string | null
   identity: string | null

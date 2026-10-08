@@ -133,6 +133,12 @@ export function projectSiteHighlight(graph: HierarchyProjection, events: readonl
     if (highlight.statuses.length && !highlight.statuses.includes(event.status)) continue
     groups.add(operationGroup(event.op, contents.resolveGroup).id)
   }
+  for (const { event, service, apiPath } of contents.staticEntries) {
+    if (highlight.identities.length && !highlight.identities.includes(event.idn)) continue
+    if (highlight.sources.length && !highlight.sources.includes(event.source)) continue
+    if (highlight.statuses.length && !highlight.statuses.includes(event.status)) continue
+    groups.add(contents.resolveGroup(service, apiPath).id)
+  }
   const nodes = new Set(graph.nodes.filter(node => node.kind === "api-group" && node.groupId && groups.has(node.groupId)).map(node => node.id))
   return new Map(graph.edges.filter(edge => edge.relation === "target-group" && nodes.has(edge.targetId)).map(edge => [edge.id, edge.color]))
 }

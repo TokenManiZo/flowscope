@@ -38,7 +38,7 @@ describe("relationship graph node cards", () => {
     expect(relationshipNodeCard(target, graph)).toMatchObject({ badge: "TARGET", title: service, detail: "", footer: "1 API group", icon: "globe" })
     // 그룹에 미요청 경로 후보(routeCandidateCount 1)가 있으면 API 수 옆에 함께 표시한다.
     expect(relationshipNodeCard(group, graph)).toMatchObject({ badge: "API GROUP", title: "ORDERS APIs", detail: "4 APIs · 미요청 1", footer: "", icon: "network" })
-    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
+    expect(relationshipNodeCard(identity, graph)).toMatchObject({ badge: "계정", title: "USER A", detail: "", footer: "", icon: "user" })
     expect(relationshipNodeCard(api, graph)).toMatchObject({ badge: "PATCH", title: "/api/orders/{id}", detail: "", footer: "", icon: "none" })
     expect(relationshipNodeCard(resource, graph)).toMatchObject({ badge: "RESOURCE", title: "orders:101", detail: "", footer: "owner: USER B", icon: "box" })
     expect(relationshipNodeCard(support, graph)).toMatchObject({ badge: "OBSERVED", title: "GET /api/session/poll", detail: "관측만 · 판정 제외", footer: "", icon: "none" })
@@ -84,14 +84,14 @@ describe("relationship graph node cards", () => {
     }
 
     expect(relationshipRouteCandidateCard(candidate)).toEqual({
-      kind: "operation", badge: "CANDIDATE", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
+      kind: "operation", badge: "미요청", title: "POST /api/orders/search", detail: "미관측 후보 · REVIEW", footer: "정적 참조",
       icon: "none", accessibleLabel: `Route candidate ${service} POST /api/orders/search; 미관측 후보; applicability REVIEW; 정적 참조`,
     })
   })
 
   it("labels APIs found in JavaScript code but never requested", () => {
     const base = { id: "route-candidate:otp", service, method: "POST", pathTemplate: "/identity/api/auth/v3/check-otp", observed: false, applicability: "REVIEW", provenance: [], provenanceTypes: ["JAVASCRIPT_LITERAL"], provenanceEvidenceIds: ["js-1"], priorityReasons: [], reviewReason: "", label: `${service} POST /identity/api/auth/v3/check-otp`, observedText: "미관측 후보" as const, selection: { operation: null, resource: null, identity: null, source: null, evidenceIds: [] } }
-    expect(relationshipRouteCandidateCard(base)).toMatchObject({ badge: "CANDIDATE", detail: "미요청 · JS에서 발견" })
+    expect(relationshipRouteCandidateCard(base)).toMatchObject({ badge: "미요청", detail: "미요청 · JS에서 발견" })
     expect(relationshipRouteCandidateCard({ ...base, observed: true, observedText: "관측됨" })).toMatchObject({ detail: "관측됨 · REVIEW" })
   })
 })

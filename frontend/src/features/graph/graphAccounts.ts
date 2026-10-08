@@ -9,3 +9,8 @@ export function collectionIdentity(event: EventRecord): string {
 export function graphAccountLabel(snapshot: Pick<Snapshot, "accounts">, identity: string): string {
   return identityLabel(identity, snapshot.accounts.find(account => account.id === identity)?.label ?? identity)
 }
+
+/** Registered identities remain visible even without access observations in the current graph. */
+export function graphAccountIdentities(snapshot: Pick<Snapshot, "accounts" | "roles">): readonly string[] {
+  return [...new Set([...snapshot.accounts.map(account => account.id), ...Object.keys(snapshot.roles), "anon"])].filter(Boolean)
+}

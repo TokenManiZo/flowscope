@@ -84,19 +84,19 @@ class TrafficClassifierTest {
     }
 
     @Test
-    void 확장자만_정적처럼_보이면_버리지_않는다() {
+    void 정적확장자는_JSON_응답이어도_제외한다() {
         RequestRecord api = classified(record("GET", "/api/report.js", null, "application/json"));
-        assertEquals(TrafficClassification.TrafficClass.API, api.trafficClassification.trafficClass());
-        assertTrue(api.trafficClassification.coverageEligible());
+        assertEquals(TrafficClassification.TrafficClass.STATIC_ASSET, api.trafficClassification.trafficClass());
+        assertFalse(api.trafficClassification.coverageEligible());
     }
 
     @Test
-    void 객체가_있는_private_image_API는_보존한다() {
+    void 객체신호가_있는_private_image도_정적확장자로_제외한다() {
         RequestRecord image = record("GET", "/api/users/7/avatar.png", null, "image/png");
         image.secFetchDest = "image";
         RequestRecord result = classified(image);
         assertNotNull(result.resource);
-        assertEquals(TrafficClassification.Disposition.INCLUDE, result.trafficClassification.disposition());
+        assertEquals(TrafficClassification.Disposition.EXCLUDE, result.trafficClassification.disposition());
     }
 
     @Test
@@ -119,14 +119,14 @@ class TrafficClassifierTest {
     }
 
     @Test
-    void 사용자의_operation_override가_자동판정보다_우선한다() {
+    void 정적확장자_제외는_사용자의_include보다_우선한다() {
         RequestRecord asset = record("GET", "/static/app.js", null, "application/javascript");
         asset.secFetchDest = "script";
         Normalizer.normalizeAll(List.of(asset));
         AnalysisConfig config = new AnalysisConfig().withTrafficOverride(asset.op, TrafficOverride.INCLUDE);
         Pipeline.Result result = Pipeline.run(List.of(asset), config);
-        assertTrue(result.records.getFirst().trafficClassification.userOverride());
-        assertEquals(1, result.coverageRecords.size());
+        assertFalse(result.records.getFirst().trafficClassification.userOverride());
+        assertEquals(0, result.coverageRecords.size());
     }
 
     @Test
@@ -307,7 +307,7 @@ class TrafficClassifierTest {
         assertEquals(2, result.records.size());
         assertTrue(result.coverageRecords.isEmpty());
         assertTrue(result.records.stream().allMatch(record -> record.trafficClassification.trafficClass()
-                == TrafficClassification.TrafficClass.DISCOVERY_METADATA));
+                == TrafficClassification.TrafficClass.STATIC_ASSET));
     }
 
     @Test

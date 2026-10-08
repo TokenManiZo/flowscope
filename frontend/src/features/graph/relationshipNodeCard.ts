@@ -18,7 +18,7 @@ export function operationParts(value: string): { method: string; path: string } 
 const candidateCount = (cells: readonly { overall: string }[]) => cells.filter(cell => cell.overall === "suspicious").length
 
 function evidenceFooter(node: RelationshipNode) {
-  return `관측 기록 ${node.selection.evidenceIds.length}건`
+  return `요청 기록 ${node.selection.evidenceIds.length}건`
 }
 
 /**
@@ -55,8 +55,8 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "identity") return {
-    kind: "condition", badge: "IDENTITY", title: node.label, detail: "", footer: "", icon: "user",
-    accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
+    kind: "condition", badge: "계정", title: node.label, detail: "", footer: "", icon: "user",
+    accessibleLabel: `계정 ${node.label}; verdict ${node.verdictText}`,
   }
 
   if (node.kind === "operation-group" && "objectGroup" in node && node.objectGroup) {
@@ -65,7 +65,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     const shape = operationParts(node.label)
     const candidates = candidateCount(node.selection.cells ?? [])
     return {
-      kind: "operation", badge: shape.method, title: `${expanded ? "▾" : "▸"} ${pathAfterGroup(shape.path)}`, detail: "", footer: `${members.length}개`, icon: "none",
+      kind: "operation", badge: shape.method, title: `${expanded ? "▾" : "▸"} ${pathAfterGroup(shape.path)}`, detail: "staticResource" in node && node.staticResource ? "정적 자원 · 판정 제외" : "", footer: `${members.length}개`, icon: "none",
       accessibleLabel: `${node.label} API 묶음; ${members.length}개; ${expanded ? "펼침" : "접힘"}${candidates ? `; IDOR·BFLA 후보 ${candidates}` : ""}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
       ...(statuses.length ? { statuses } : {}),
       ...(candidates ? { candidates } : {}),
@@ -74,22 +74,34 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
 
   if (node.kind === "object-group" && "objectGroup" in node && node.objectGroup) {
     const { key, members, expanded } = node.objectGroup
+    const isStatic = node.staticResource
+    const badge = isStatic ? "STATIC RESOURCE" : "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind) : "OBJECTS"
+    const fieldCount = "displayObjectFieldCount" in node ? node.displayObjectFieldCount : undefined
+    const footer = `${isStatic ? "자원" : "객체"} ${members.length}개${fieldCount ? ` · 필드 총 ${fieldCount}개` : ""}${members.length > 10 && (isStatic && !node.expandGroupId || "displayObjectKind" in node && node.displayObjectKind) ? " · 최대 10개 표시" : ""}`
     return {
-      kind: "target", badge: "OBJECTS", title: `${expanded ? "▾" : "▸"} ${key}`, detail: "", footer: `${members.length}개`, icon: "box",
-      accessibleLabel: `${key} 객체 묶음; ${members.length}개; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
+      kind: "target", badge, title: `${expanded ? "▾" : "▸"} ${key}`, titleLineLimit: 2, detail: "", footer, icon: "box",
+      accessibleLabel: `${key} 객체 묶음; ${footer}; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
     }
   }
 
   if (node.kind === "resource") {
+    if ("staticResource" in node && node.staticResource) return {
+      kind: "target", badge: "STATIC RESOURCE", title: node.label, detail: "", footer: evidenceFooter(node), icon: "box",
+      accessibleLabel: `${node.label}; 정적 자원; 판정 제외; ${evidenceFooter(node)}; 더블클릭하거나 Enter로 Request Lab 열기`,
+    }
     const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? identityLabel(node.owner ?? "UNKNOWN") : "UNKNOWN"
     return {
       // 자원 키 앞의 서비스 오리진("http://host:port ")은 카드에서 뺀다. 전체 키는 접근 이름에 남는다.
-      kind: "target", badge: "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: `owner: ${owner}`, icon: "box",
+      kind: "target", badge: "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind) : "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: node.selection.displayObjectKey ? evidenceFooter(node) : `owner: ${owner}`, icon: "box",
       accessibleLabel: `${node.label}; Resource; verdict ${node.verdictText}; owner: ${owner}; ${evidenceFooter(node)}`,
     }
   }
 
   const operation = operationParts(node.label)
+  if ("staticResource" in node && node.staticResource) return {
+    kind: "operation", badge: operation.method, title: operation.path, detail: "정적 자원 · 판정 제외", footer: "", icon: "none",
+    accessibleLabel: `${node.label}; 정적 자원 경로; 판정 제외`, ...(statuses.length ? { statuses } : {}),
+  }
   if (node.kind === "resend-operation" && "resend" in node && node.resend) {
     // 재전송 카드: Request Lab은 원본 기록과 응답 코드를 비교하고, Repeater는 원본을 알 수 없어 응답 코드만 보인다.
     const { tool, count, status, originalStatus } = node.resend
@@ -120,7 +132,11 @@ export function relationshipRouteCandidateCard(candidate: GraphRouteCandidate): 
   const detail = isJavascriptHiddenApi(candidate) ? "미요청 · JS에서 발견" : `${candidate.observedText} · ${candidate.applicability}`
   const footer = candidate.reviewReason || "정의 근거 확인"
   return {
-    kind: "operation", badge: "CANDIDATE", title, detail, footer, icon: "none",
+    kind: "operation", badge: "미요청", title, detail, footer, icon: "none",
     accessibleLabel: `Route candidate ${candidate.service} ${title}; ${candidate.observedText}; applicability ${candidate.applicability}; ${footer}`,
   }
+}
+
+function objectKindBadge(kind?: string): string {
+  return ({ PATH: "PATH PARAM", QUERY: "QUERY PARAM", REQUEST_BODY: "REQUEST BODY", RESPONSE_BODY: "RESPONSE BODY" } as Record<string, string>)[kind ?? ""] ?? "OBJECTS"
 }

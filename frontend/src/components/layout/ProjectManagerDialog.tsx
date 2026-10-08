@@ -178,7 +178,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
                 <AlertDialog>
                   <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={!active || busy}><RotateCcw className="me-1 size-3.5" aria-hidden="true" />기록 비우기</Button></AlertDialogTrigger>
                   <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>현재 트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 관측 기록과 실행 기록은 복구할 수 없습니다. 프로젝트, 점검 범위, 계정과 정책은 유지됩니다.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogHeader><AlertDialogTitle>현재 트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 요청 기록과 실행 기록은 복구할 수 없습니다. 프로젝트, 점검 범위, 계정과 정책은 유지됩니다.</AlertDialogDescription></AlertDialogHeader>
                     <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetTraffic.mutate(undefined, { onSuccess: () => setNotice(`"${active?.name}" 프로젝트의 기록을 비웠습니다.`) })}>기록 비우기</AlertDialogAction></AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -236,7 +236,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>{active.name} 프로젝트를 삭제할까요?</AlertDialogTitle>
-                      <AlertDialogDescription>프로젝트 DB와 관측 기록이 영구 삭제되며 복구할 수 없습니다. 열려 있는 프로젝트는 지울 수 없어, 아래 프로젝트로 먼저 전환한 뒤 삭제합니다.</AlertDialogDescription>
+                      <AlertDialogDescription>프로젝트 DB와 요청 기록이 영구 삭제되며 복구할 수 없습니다. 열려 있는 프로젝트는 지울 수 없어, 아래 프로젝트로 먼저 전환한 뒤 삭제합니다.</AlertDialogDescription>
                     </AlertDialogHeader>
                     {others.length ? <select aria-label="삭제 후 열 프로젝트" className={selectClass} value={fallbackId} onChange={event => setFallbackId(event.target.value)}>
                       {others.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -285,7 +285,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
             </ul> : <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">{needle ? "검색과 일치하는 프로젝트가 없습니다." : "다른 프로젝트가 없습니다. \"새 프로젝트\" 탭에서 만들 수 있습니다."}</p>}
             <AlertDialog open={Boolean(deleteTarget)} onOpenChange={next => { if (!next) setDeleteId(null) }}>
               <AlertDialogContent>
-                <AlertDialogHeader><AlertDialogTitle>{deleteTarget?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 관측 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogHeader><AlertDialogTitle>{deleteTarget?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 요청 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
                 <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { const target = deleteTarget; if (target) deleteProject.mutate(target.id, { onSuccess: () => setNotice(`"${target.name}" 프로젝트를 삭제했습니다.`) }) }}>프로젝트 삭제</AlertDialogAction></AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

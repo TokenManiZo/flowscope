@@ -14,9 +14,9 @@ export function dashboardCounts(snapshot: Snapshot) {
   const unobserved = new Set(open.filter(gap => gap.type !== "AUTH_VARIANT_UNTESTED").map(gap => gapParameterKey(gap).stableKey))
   const authorization = new Set(open.filter(gap => gap.type === "AUTH_VARIANT_UNTESTED").map(gap => gap.id))
   return [
-    { label: "우선 점검 API", value: apis.size, caption: "우선순위 근거가 있는 열린 Gap의 API · 서비스·메서드·경로 중복 제외" },
-    { label: "미관측 파라미터", value: unobserved.size, caption: "주체·신원·정의·조건·타입 미관측 Gap의 입력 · 중복 제외" },
-    { label: "권한 변형 미검증", value: authorization.size, caption: "열린 권한 변형 Gap 수 · 같은 Gap 중복 제외" },
+    { label: "우선 점검 API", value: apis.size, caption: "우선순위 근거가 있는 미점검 API · 서비스·메서드·경로 중복 제외" },
+    { label: "미점검 파라미터", value: unobserved.size, caption: "주체·계정·정의·조건·타입별로 아직 점검하지 않은 입력 · 중복 제외" },
+    { label: "권한 변형 미점검", value: authorization.size, caption: "아직 점검하지 않은 권한 변형 수 · 같은 항목 중복 제외" },
     { label: "검토 필요", value: snapshot.trafficStats.review, caption: "서버가 REVIEW로 분류한 트래픽 수" },
   ] as const
 }

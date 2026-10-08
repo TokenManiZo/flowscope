@@ -75,7 +75,7 @@ it("does not invalidate the new policy editor when an old-context save succeeds 
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
 })
 
-it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same 관측 기록 in another dataset", async kind => {
+it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same 요청 기록 in another dataset", async kind => {
   let finish!: (response: Response) => void
   const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/requirement"
     ? new Promise<Response>(resolve => { finish = resolve })
