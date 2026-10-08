@@ -50,7 +50,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   }
 
   if (node.kind === "identity") return {
-    kind: "condition", badge: "IDENTITY", title: node.label, detail: "", footer: "", icon: "user",
+    kind: "condition", badge: "계정", title: node.label, detail: "", footer: "", icon: "user",
     accessibleLabel: `Identity ${node.label}; verdict ${node.verdictText}`,
   }
 

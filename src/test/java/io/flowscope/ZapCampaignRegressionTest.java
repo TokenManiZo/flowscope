@@ -591,7 +591,7 @@ final class ZapCampaignRegressionTest {
             assertTrue(status.at("/events").toString()
                     .contains("Passive background 작업이 제한시간 안에 종료되지 않음"));
             assertTrue(status.at("/events").toString()
-                    .contains("이전 신원 격리 실패로 실행하지 않음"));
+                    .contains("이전 계정 격리 실패로 실행하지 않음"));
             assertEquals(1, clientStarts.get(), "the account lane must not start with dirty passive work");
             assertFalse(contexts.completedExplorations().contains(Source.SCANNER));
         } finally {

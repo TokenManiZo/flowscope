@@ -49,7 +49,7 @@ it("keeps a long identity bounded in ordinary body text and out of accessible at
     expect(element.getAttribute("title") ?? "").not.toContain(identity)
     if (element.hasAttribute("aria-live")) expect(element.textContent).not.toContain(identity)
   }
-  await userEvent.click(screen.getByRole("button", { name: "신원 더 보기" }))
+  await userEvent.click(screen.getByRole("button", { name: "계정 더 보기" }))
   expect(document.body.textContent).toContain(identity)
   expect(screen.queryByRole("identity")).not.toBeInTheDocument()
 })

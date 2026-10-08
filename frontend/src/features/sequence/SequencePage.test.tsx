@@ -255,7 +255,7 @@ it.each([900, 600])("keeps sequence context filtering and selected-link inspecti
   const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
   await user.click(contextTrigger)
   const context = screen.getByRole("dialog", { name: "분석 필터" })
-  await user.selectOptions(within(context).getByRole("combobox", { name: "신원 필터" }), "bob")
+  await user.selectOptions(within(context).getByRole("combobox", { name: "계정 필터" }), "bob")
   await user.click(within(context).getByRole("button", { name: "Close" }))
   expect(contextTrigger).toHaveFocus()
   expect(screen.queryByText("alice")).not.toBeInTheDocument()

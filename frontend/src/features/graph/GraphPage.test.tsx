@@ -166,7 +166,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   render(<GraphPage />)
   expect(screen.getByRole("complementary", { name: "분석 필터" })).toBeVisible()
   const rail = screen.getByRole("complementary", { name: "분석 필터" })
-  for (const section of ["보기 범위", "출처", "신원", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
+  for (const section of ["보기 범위", "출처", "계정", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
   // 판정·Gap 목록·역할 개수·보기 전환은 그래프 필터에서 뺐다(판정은 매트릭스, 색 기준은 강조 필터가 맡는다).
   for (const removed of ["Verdict", "Gap", "Role · policy", "View options", "고급", "경로 후보 표시", "인증·화면·반복 보조 흐름 표시", "그래프 입력 방식"]) expect(within(rail).queryByText(removed)).not.toBeInTheDocument()
   expect(screen.getAllByText("TARGET")).toHaveLength(1)

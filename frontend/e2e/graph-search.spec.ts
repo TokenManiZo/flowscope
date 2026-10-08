@@ -190,7 +190,7 @@ test("B polling search preserves neutral evidence on A's API at 1280px", async (
   }, `quiet-group:${navigation.groupId}`)).toBe(true)
   await expect(page.getByRole("listitem", { name: "USER B 요청 기록 1건" })).toBeVisible()
   await input.fill("USER B")
-  await page.getByRole("option", { name: /^신원 USER B/ }).click()
+  await page.getByRole("option", { name: /^계정 USER B/ }).click()
   await expect.poll(() => canvas.evaluate(element => {
     const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy
     const b = cy.getElementById("identity:USER B")

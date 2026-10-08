@@ -1139,7 +1139,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         try {
             String from = required(form, "from");
             String into = required(form, "into");
-            if (from.equals(into)) throw new IllegalArgumentException("서로 다른 두 신원을 선택하세요.");
+            if (from.equals(into)) throw new IllegalArgumentException("서로 다른 두 계정을 선택하세요.");
             AccountProfile target = state.config().account(into)
                     .orElseThrow(() -> new IllegalArgumentException("유지할 대상을 먼저 테스트 계정으로 등록하세요."));
             List<RequestRecord> matching = state.snapshot().records.stream().filter(r -> from.equals(r.idn))
@@ -1663,7 +1663,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (state.sessions() != null) state.sessions().close();
         state.config().clearSessionBindings();
         state.rebuild();
-        return success("계정 카드와 Evidence는 유지하고 메모리 세션과 신원 매핑만 초기화했습니다.");
+        return success("계정 카드와 요청 기록은 유지하고 메모리 세션과 계정 연결만 초기화했습니다.");
     }
 
     private LoopbackHttpServer.Response importXml(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -1718,7 +1718,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         || state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
                                 && target.service.equals(record.service)
                                 && record.authState == io.flowscope.core.AuthState.ACCOUNT_BOUND);
-                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정·신원을 선택하세요.");
+                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정을 선택하세요.");
             }
             state.config().withResourceOwner(resource, identity);
             state.rebuild();

@@ -1326,7 +1326,7 @@ public final class SurfaceAnalyzer {
         for (Map.Entry<String, List<Row>> entry : byIdentity.entrySet()) {
             if (!knownIdentityRows.isEmpty() && !observedIdentities.contains(entry.getKey())) {
                 result.add(gap(endpoint, parameter, observed.size(), SurfaceAnalysis.GapType.IDENTITY_MISSED, entry.getKey(), null, null, "",
-                        "이 discovery 신원의 완전한 요청에서 입력이 관측되지 않았다. 인가 결론은 아니다.",
+                        "이 discovery 계정의 완전한 요청에서 입력이 관측되지 않았다. 인가 결론은 아니다.",
                         List.of(knownIdentityRows.getFirst().evidenceId(), entry.getValue().getFirst().evidenceId()), false));
             }
         }

@@ -38,7 +38,7 @@ export function judgmentStatusDescription(status: MatrixStatus): string | undefi
 }
 
 export const expectedLabel: Record<MatrixExpected, string> = { ALLOW: "허용", DENY: "차단", UNKNOWN: "미정" }
-export const actualLabel: Record<MatrixActual, string> = { SUCCESS: "성공", DENIED: "차단", CONFLICT: "응답 갈림", AMBIGUOUS: "해석 불가", UNTESTED: "미실행" }
+export const actualLabel: Record<MatrixActual, string> = { SUCCESS: "성공", DENIED: "차단", CONFLICT: "응답 갈림", AMBIGUOUS: "해석 불가", UNTESTED: "미점검" }
 
 export function judgmentTone(status: MatrixStatus): JudgmentTone {
   if (RISK.has(status)) return "risk"
@@ -49,7 +49,7 @@ export function judgmentTone(status: MatrixStatus): JudgmentTone {
 }
 
 /** 판단할 것이 없는 흔한 상태는 칸에 짧은 회색 글자로만 둔다(전체 문구는 aria-label·툴팁·상세에 유지). */
-export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 정책 확인 필요", COVERAGE_GAP: "공백", UNTESTED: "미검증" }
+export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 정책 확인 필요", COVERAGE_GAP: "미점검", UNTESTED: "미검증" }
 
 export function reviewSuffix(status: ReviewStatus): string {
   return status === "CONFIRMED" ? " · 사용자 확정" : status === "DISMISSED" ? " · 정상/기각" : ""

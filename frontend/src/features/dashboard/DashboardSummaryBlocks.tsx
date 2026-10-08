@@ -59,10 +59,10 @@ export function DashboardPipeline({ values, counts }: { values: DashboardSummary
       "divider",
       { name: "검토 필요 트래픽", label: "검토 필요 트래픽", value: format(counts.review), tone: zero(counts.review), href: counts.review > 0 ? "#evidence-review" : undefined },
     ]} />
-    <Stage notch step="비교" href="#graph" go="Gap 그래프" value={counts.openGaps} unit="열린 Gap" rows={[
+    <Stage notch step="비교" href="#graph" go="Gap 그래프" value={counts.openGaps} unit="미점검" rows={[
       { name: "우선 점검 API", label: "우선 점검 API", value: format(counts.priorityApis), tone: zero(counts.priorityApis) },
-      { name: "권한 변형 미검증", label: "권한 변형 미검증", value: format(counts.authVariants), tone: zero(counts.authVariants) },
-      { name: "미관측 파라미터", label: "미관측 파라미터", value: format(counts.unobserved), tone: zero(counts.unobserved) },
+      { name: "권한 변형 미점검", label: "권한 변형 미점검", value: format(counts.authVariants), tone: zero(counts.authVariants) },
+      { name: "미점검 파라미터", label: "미점검 파라미터", value: format(counts.unobserved), tone: zero(counts.unobserved) },
     ]} />
     <Stage notch step="판정" href="#matrix" go="권한 매트릭스" value={candidates} unit="인가 후보" hot={candidates > 0} rows={[
       { name: "BOLA/IDOR 후보", label: "BOLA/IDOR 후보", value: format(auth?.bolaIdorCandidates ?? 0), tone: (auth?.bolaIdorCandidates ?? 0) > 0 ? "candidate" : "zero" },
@@ -80,7 +80,7 @@ export function SnapshotFootnote({ trafficStats }: Pick<DashboardSummaryValues, 
 }
 
 const reasonLabels: Record<string, string> = {
-  WRITE_METHOD: "쓰기 요청", AUTH_VARIANT_UNTESTED: "권한 변형 미검증", SOURCE_DISCREPANCY: "소스 불일치", HUMAN_REVIEW_REQUIRED: "사람 검토 필요",
+  WRITE_METHOD: "쓰기 요청", AUTH_VARIANT_UNTESTED: "권한 변형 미점검", SOURCE_DISCREPANCY: "소스 불일치", HUMAN_REVIEW_REQUIRED: "사람 검토 필요",
 }
 const methodTone: Record<string, string> = { GET: "text-observation-human", POST: "text-observation-scanner" }
 
@@ -92,10 +92,10 @@ function ListCard({ title, href, linkLabel, empty, children }: { title: string; 
 }
 
 export function PriorityApiList({ rows }: { rows: readonly PriorityApiRow[] }) {
-  return <ListCard title="우선 점검 API" href="#graph" linkLabel="Gap 그래프에서 모두 보기" empty="우선순위 근거가 있는 열린 Gap이 없습니다.">{rows.map(row => <li key={row.key} className="border-t border-border first:border-t-0"><a href="#graph" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
+  return <ListCard title="우선 점검 API" href="#graph" linkLabel="Gap 그래프에서 모두 보기" empty="우선순위 근거가 있는 미점검 항목이 없습니다.">{rows.map(row => <li key={row.key} className="border-t border-border first:border-t-0"><a href="#graph" className="grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
     <span className={cn("rounded border border-border px-1.5 text-center font-mono text-[11px]", methodTone[row.method] ?? "text-muted-foreground")}>{row.method}</span>
     <span className="flex min-w-0 flex-wrap items-center gap-1.5"><span className="break-all font-mono text-xs">{row.path}</span>{row.reasons.filter(reason => reasonLabels[reason]).map(reason => <span key={reason} className="rounded border border-border px-1.5 text-[11px] text-muted-foreground">{reasonLabels[reason]}</span>)}</span>
-    <span className="text-xs tabular-nums text-muted-foreground">Gap {format(row.gapCount)}</span>
+    <span className="text-xs tabular-nums text-muted-foreground">미점검 {format(row.gapCount)}</span>
   </a></li>)}</ListCard>
 }
 

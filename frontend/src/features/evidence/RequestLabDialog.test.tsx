@@ -241,7 +241,7 @@ describe("RequestLabDialog", () => {
     const capturing: ManagedSession = { ...activeSession, status: "CAPTURING", capturing: true, replayReady: true }
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[capturing]} />)
     await openDraft()
-    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 신원(alice)으로 보내려면 전송 인증에서 alice을(를) 고르세요.")
+    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 계정(alice)으로 보내려면 전송 인증에서 alice을(를) 고르세요.")
     await chooseAuthentication(user, "ACCOUNT:acct-1")
     await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("관리자"))
     await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())

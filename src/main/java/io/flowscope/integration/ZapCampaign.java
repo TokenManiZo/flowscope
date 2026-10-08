@@ -311,7 +311,7 @@ public final class ZapCampaign implements AutoCloseable {
             ownedSpiderScanId = "";
             recordZapProgress("전체", "INITIALIZING", "INFO", authenticationOnly
                     ? "독립 로그인 세션 갱신 대기열 생성"
-                    : lanes.size() + "개 신원 격리 검사 대기열 생성");
+                    : lanes.size() + "개 계정 격리 검사 대기열 생성");
             zapWorkflowActive = true;
             FutureTask<Void> task = new FutureTask<>(() -> {
                 if (authenticationOnly) runAuthenticationOnlySafely(runId, target, lanes.getFirst());
@@ -613,7 +613,7 @@ public final class ZapCampaign implements AutoCloseable {
             replaceZapLane(blocked, new ZapLaneResult(pending.accountId(), pending.accountLabel(),
                     "NOT_RUN", "BLOCKED_BY_ISOLATION", 0, 0, 0, 0,
                     false, false, -1, "",
-                    "이전 신원의 ZAP background 작업을 격리 종료하지 못해 시작하지 않음"));
+                    "이전 계정의 ZAP background 작업을 격리 종료하지 못해 시작하지 않음"));
         }
     }
 
@@ -1039,11 +1039,11 @@ public final class ZapCampaign implements AutoCloseable {
             }
             if (!passiveComplete && !resetPassiveQueueForNextIdentity(runId, index)) {
                 throw new ZapIsolationException("ZAP Passive Scan background 작업을 격리 종료하지 못했습니다; "
-                        + "다음 신원은 시작하지 않았습니다");
+                        + "다음 계정은 시작하지 않았습니다");
             }
             if (!passiveComplete) {
                 warning = appendWarning(warning,
-                        "다음 신원과 섞이지 않도록 미처리 Passive queue를 정리함");
+                        "다음 계정과 섞이지 않도록 미처리 Passive queue를 정리함");
             }
             RuntimeException identityCleanup = cleanupZapIdentity(identity, contextName, contextCreated);
             identity = null;
@@ -1647,9 +1647,9 @@ public final class ZapCampaign implements AutoCloseable {
             String message = switch (value.status()) {
                 case "FAILED" -> zapStageLabel(value.stage()) + " 실패"
                         + (value.error().isBlank() ? "" : " · " + value.error());
-                case "NOT_RUN" -> "CANCELLED".equals(value.stage()) ? "사용자 취소로 실행하지 않음" : "이전 신원 격리 실패로 실행하지 않음";
-                case "CANCELLED" -> "사용자 요청으로 신원 검사 취소";
-                case "COMPLETED", "COMPLETED_WITH_WARNINGS" -> "신원 검사 종료 · 수집 "
+                case "NOT_RUN" -> "CANCELLED".equals(value.stage()) ? "사용자 취소로 실행하지 않음" : "이전 계정 격리 실패로 실행하지 않음";
+                case "CANCELLED" -> "사용자 요청으로 계정 검사 취소";
+                case "COMPLETED", "COMPLETED_WITH_WARNINGS" -> "계정 검사 종료 · 수집 "
                         + value.capturedRecords() + "건 · Alert " + value.alertCount() + "건";
                 default -> zapStageLabel(value.stage()) + " 시작";
             };
@@ -1749,7 +1749,7 @@ public final class ZapCampaign implements AutoCloseable {
     private boolean resetPassiveQueueForNextIdentity(String runId, int laneIndex) {
         String accountLabel = zapAccountLabel(laneIndex);
         recordZapProgress(accountLabel, "ISOLATION_CLEANUP", "WARN",
-                "다음 신원 전환 전 Passive queue 정리 시작");
+                "다음 계정 전환 전 Passive queue 정리 시작");
         requireZapOk(state.zap().clearPassiveQueue(), "clear the abandoned passive scan queue");
         long deadline = System.currentTimeMillis() + passiveCleanupTimeoutMillis();
         int consecutiveErrors = 0;

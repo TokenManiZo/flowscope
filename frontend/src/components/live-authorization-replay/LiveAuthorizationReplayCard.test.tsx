@@ -90,10 +90,10 @@ describe("LiveAuthorizationReplayCard", () => {
       />,
     );
 
-    expect(await screen.findByText("라이브 교차 신원 검증")).toBeTruthy();
+    expect(await screen.findByText("라이브 교차 계정 검증")).toBeTruthy();
     expect(
       screen.getByText(
-        "HUMAN·ZAP·LLM에서 관측한 요청을 선택한 신원으로 안전하게 교차 검증합니다.",
+        "HUMAN·ZAP·LLM에서 관측한 요청을 선택한 계정으로 안전하게 교차 검증합니다.",
       ),
     ).toBeTruthy();
     expect(
@@ -226,7 +226,7 @@ describe("unavailable identities and start guidance", () => {
     expect(screen.queryByText("UNVERIFIED")).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: "계정·세션에서 세션 캡처 →" })).toHaveAttribute("href", "#accounts")
     expect(screen.getByText(/사용 가능 2 \/ 5/)).toBeVisible()
-    expect(screen.getByText("대상 신원을 1개 이상 선택하세요.")).toBeVisible()
+    expect(screen.getByText("대상 계정을 1개 이상 선택하세요.")).toBeVisible()
     await userEvent.click(screen.getByRole("checkbox", { name: "USER B" }))
     expect(screen.getByText("3번 안전 재전송을 허용하세요.")).toBeVisible()
     await userEvent.click(screen.getByRole("checkbox", { name: "안전 자동 재전송을 허용합니다." }))

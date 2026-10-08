@@ -1023,14 +1023,14 @@ public final class FlowScopeExtension implements BurpExtension {
         if (accountId != null && !"anon".equals(fp) && !directZapAccount && accountId.equals(humanCaptureAccountId)) {
             // The operator's running capture overrides an older (possibly mistaken) binding of the same credentials.
             try { analysisConfig.rebindSession(rec.service, fp, accountId); }
-            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
+            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 계정 연결 실패", error); }
         } else if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
             catch (AnalysisConfig.SessionBindingConflictException error) {
                 sessionBroker.markCredentialConflict(accountId);
                 api.logging().logToError("FlowScope 중복 인증 세션 차단: " + error.getMessage());
             }
-            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
+            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 계정 연결 실패", error); }
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
         String capturedRequestText = capturedRequest.text();
@@ -3000,7 +3000,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     recommendation.target(), scope, java.time.Instant.now());
         }
         openCrossIdentityReplayDraftAnyMethod(recommendation, credentialHeaders);
-        return "교차 실행 요청을 대상 신원 자격으로 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.";
+        return "교차 실행 요청을 대상 계정 자격으로 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.";
     }
 
     private CrossIdentityReplayOrchestrator.Recommendation crossIdentityDraftRecommendation(String itemId) {
@@ -3055,7 +3055,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         if (basisIdentity == null) {
-            throw new IllegalStateException("같은 대상에서 다른 신원이 관측한 요청이 없어 Burp Repeater 초안을 만들 수 없습니다.");
+            throw new IllegalStateException("같은 대상에서 다른 계정이 관측한 요청이 없어 Burp Repeater 초안을 만들 수 없습니다.");
         }
         RequestRecord seed = basisEvidence.stream()
                 .map(id -> latest.records.stream().filter(record -> id.equals(record.evidenceId)).findFirst().orElse(null))

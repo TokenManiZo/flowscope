@@ -155,7 +155,7 @@ export function InspectionPage() {
     return (idn: string): { label: string; muted: boolean } => {
       if (!idn || idn === "anon") return { label: "비로그인", muted: true }
       const label = labels.get(idn)
-      return label ? { label, muted: false } : { label: `미등록 로그인 ${unregistered.indexOf(idn) + 1}`, muted: true }
+      return label ? { label, muted: false } : { label: `등록 안 된 계정 ${unregistered.indexOf(idn) + 1}`, muted: true }
     }
   }, [snapshot.data?.accounts, events])
   const feedItem = (event: (typeof events)[number]): SourceFeedItem => {

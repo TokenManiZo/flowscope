@@ -82,7 +82,7 @@ export function conditionNodeCard(gap: SurfaceParameterGap, parameter: SurfacePa
   const identity = identityLabel(gap.identity ?? "UNKNOWN"), role = gap.role ?? "UNKNOWN"
   const observations = gap.identity ? parameter?.profile?.identityCounts[gap.identity] ?? 0 : 0
   return {
-    kind: "condition", badge: "IDENTITY", title: identity, detail: "", footer: "", icon: "user",
+    kind: "condition", badge: "계정", title: identity, detail: "", footer: "", icon: "user",
     accessibleLabel: `Condition identity ${identity}; role ${role}; ${observations} observations`,
   }
 }

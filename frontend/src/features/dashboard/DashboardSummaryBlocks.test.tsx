@@ -41,7 +41,7 @@ it("lists prioritized APIs and rule candidates with their reasons and review sta
   render(<><PriorityApiList rows={[{ key: "k", method: "PATCH", path: "/api/orders/{id}", gapCount: 6, reasons: ["CONFIRMED_AUTH_BOUNDARY", "WRITE_METHOD"] }]} /><CandidateList scenarios={[scenario]} /></>)
   const apis = screen.getByRole("region", { name: "우선 점검 API" })
   expect(within(apis).getByText("쓰기 요청")).toBeVisible()
-  expect(within(apis).getByText("Gap 6")).toBeVisible()
+  expect(within(apis).getByText("미점검 6")).toBeVisible()
   const candidates = screen.getByRole("region", { name: "인가 후보" })
   expect(within(candidates).getByText("객체 권한 우회 후보")).toBeVisible()
   expect(within(candidates).getByText("GET /api/orders/{id}")).toBeVisible()

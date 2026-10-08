@@ -7,7 +7,7 @@ describe("parameter map projection over snapshot.surface", () => {
     const snapshot = surfaceSnapshot({ endpoints: [demoEndpoint()], gaps: [parameterGap("auth", { type: "AUTH_VARIANT_UNTESTED" })], events: [actualEvent()], owners: { [demoResource]: "USER B" } })
     const graph = projectParameterMap(snapshot, defaultParameterFilters, "auth")
     const node = (lane: string) => graph.nodes.find(item => item.lane === lane && item.focused)!
-    expect(node("condition").card).toMatchObject({ kind: "condition", badge: "IDENTITY", title: "USER A", detail: "", footer: "", icon: "user" })
+    expect(node("condition").card).toMatchObject({ kind: "condition", badge: "계정", title: "USER A", detail: "", footer: "", icon: "user" })
     // 점검 우선순위 카드는 배지·제목만 그리고 역할·Gap 종류·owner는 접근 이름(마우스 설명)에 남긴다.
     expect(node("condition").card.accessibleLabel).toContain("role USER")
     expect(node("condition").card.accessibleLabel).toContain("7 observations")

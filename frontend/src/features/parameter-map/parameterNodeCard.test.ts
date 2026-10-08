@@ -7,7 +7,7 @@ describe("parameter node card SVG", () => {
   const documentFor = (value: ParameterNodeCardView) => new DOMParser().parseFromString(decodeURIComponent(renderParameterNodeCardSvg(value).uri.replace("data:image/svg+xml,", "")), "image/svg+xml")
 
   it("draws user and resource icons from inline SVG geometry", () => {
-    const user = documentFor(card({ kind: "condition", badge: "IDENTITY", icon: "user" }))
+    const user = documentFor(card({ kind: "condition", badge: "계정", icon: "user" }))
     const box = documentFor(card({ kind: "target", badge: "RESOURCE", icon: "box" }))
     expect(user.querySelector("g circle")).not.toBeNull()
     expect(user.querySelector("g path")).not.toBeNull()
