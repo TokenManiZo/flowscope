@@ -916,8 +916,8 @@ public final class ZapCampaign implements AutoCloseable {
                                     + definitions.size() + " 응답 수신");
                         } catch (RuntimeException importError) {
                             ensureScannerCapabilityIntact(runId);
-                            warning = appendWarning(warning, definition.type() + " definition import failed: "
-                                    + importError.getMessage());
+                            warning = appendWarning(warning, "API 명세를 읽지 못해 건너뛰었습니다: "
+                                    + definitionLabel(definition) + " (" + importError.getMessage() + ")");
                         }
                     }
                 } finally {
@@ -1227,6 +1227,12 @@ public final class ZapCampaign implements AutoCloseable {
         try { URI.create(value); }
         catch (RuntimeException error) { throw new IllegalArgumentException(label + " is not a valid URL"); }
         if (!state.scope().allows(value)) throw new IllegalArgumentException(label + " is outside configured scope");
+    }
+
+    private static String definitionLabel(ZapDefinition definition) {
+        return definition.type() == ZapDefinitionType.GRAPHQL ? "GRAPHQL " + definition.endpoint()
+                : definition.type() == ZapDefinitionType.OPENAPI ? definition.url()
+                : definition.type() + " " + definition.url();
     }
 
     private void importZapDefinition(ZapDefinition definition, String target, String contextId) {

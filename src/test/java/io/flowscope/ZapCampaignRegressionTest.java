@@ -387,6 +387,63 @@ final class ZapCampaignRegressionTest {
     }
 
     @Test
+    void unreadableApiDefinitionIsSkippedWithAKoreanWarningAndTheScanContinues() throws Exception {
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicReference<List<RequestRecord>> records = new AtomicReference<>(new ArrayList<>(List.of(
+                laneMarker(Source.HUMAN), laneMarker(Source.LLM))));
+        Pipeline.Result initial = Pipeline.run(records.get());
+        complete(contexts, Source.HUMAN, SourceDetail.BROWSER, "completed-human", initial);
+        complete(contexts, Source.LLM, SourceDetail.LLM_EXPLORER, "completed-llm", initial);
+        HttpServer zapServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        registerSafeZapEnvironment(zapServer, 0);
+        zapServer.createContext("/JSON/core/action/newSession/", exchange -> zapReply(exchange, "{\"Result\":\"OK\"}"));
+        zapServer.createContext("/JSON/openapi/action/importUrl/", exchange -> zapReply(exchange,
+                "{\"code\":\"bad_external_data\",\"message\":\"Failed to parse definition\"}"));
+        zapServer.createContext("/JSON/clientSpider/action/scan/", exchange -> {
+            RunContextRegistry.Context context = contexts.current(Source.SCANNER);
+            List<RequestRecord> copy = new ArrayList<>(records.get());
+            copy.add(observation(Source.SCANNER, "anon", 200, "{}",
+                    SourceDetail.ZAP_CLIENT_SPIDER, RunPhase.EXPLORATION, context.runId()));
+            records.set(copy);
+            zapReply(exchange, "{\"scan\":\"2\"}");
+        });
+        zapServer.createContext("/JSON/clientSpider/view/status/", exchange -> zapReply(exchange,
+                "{\"status\":{\"state\":\"COMPLETED\"}}"));
+        zapServer.createContext("/JSON/pscan/view/recordsToScan/", exchange -> zapReply(exchange,
+                "{\"recordsToScan\":\"0\"}"));
+        zapServer.createContext("/JSON/alert/view/alerts/", exchange -> zapReply(exchange, "{\"alerts\":[]}"));
+        zapServer.start();
+        try {
+            ZapClient zap = new ZapClient("http://127.0.0.1:" + zapServer.getAddress().getPort(), "");
+            server = new ZapCampaign(new ZapCampaign.State() {
+                @Override public Pipeline.Result snapshot() { return Pipeline.run(records.get()); }
+                @Override public ScopePolicy scope() { return ScopePolicy.parse("http://127.0.0.1:8888/"); }
+                @Override public ZapClient zap() { return zap; }
+                @Override public RunContextRegistry contexts() { return contexts; }
+                @Override public boolean approve(String action, String target) {
+                    return action.contains("API 정의");
+                }
+            });
+
+            startBaseline("{\"target\":\"http://127.0.0.1:8888/\",\"run_id\":\"zap-baseline-1\","
+                    + "\"definitions\":[{\"type\":\"OPENAPI\","
+                    + "\"url\":\"http://127.0.0.1:8888/not-a-spec.html\"}]}");
+
+            JsonNode status = awaitBaselineState(current ->
+                    !"RUNNING".equals(current.path("status").asText()));
+            assertNotNull(status);
+            assertEquals("COMPLETED_WITH_WARNINGS", status.at("/status").asText(), status.toString());
+            assertEquals(0, status.at("/lanes/0/definition_imports").asInt());
+            assertTrue(status.toString().contains(
+                    "API 명세를 읽지 못해 건너뛰었습니다: http://127.0.0.1:8888/not-a-spec.html (Failed to parse definition)"),
+                    status.toString());
+            assertFalse(status.toString().contains("definition import failed"), status.toString());
+        } finally {
+            zapServer.stop(0);
+        }
+    }
+
+    @Test
     void deterministicZapBaselineFailsWhenTheOnlyCrawlerCapturesNoTraffic() throws Exception {
         String target = "http://127.0.0.1:8888/";
         RunContextRegistry contexts = new RunContextRegistry();

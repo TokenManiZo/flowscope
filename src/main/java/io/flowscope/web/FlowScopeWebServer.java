@@ -1449,6 +1449,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (line.isBlank()) continue;
             if (definitions.size() >= 20) throw new IllegalArgumentException("API 정의는 최대 20개까지 입력할 수 있습니다.");
             String[] parts = line.split("\\s+", 3);
+            // 형식 이름 없이 주소만 적은 줄은 OpenAPI 명세로 본다. 다른 형식은 앞에 이름을 붙인다.
+            String first = parts[0].toLowerCase(Locale.ROOT);
+            if (parts.length == 1 && (first.startsWith("http://") || first.startsWith("https://"))) {
+                definitions.add(new ZapCampaign.ZapDefinition(ZapCampaign.ZapDefinitionType.OPENAPI, parts[0], ""));
+                continue;
+            }
             ZapCampaign.ZapDefinitionType type;
             try { type = ZapCampaign.ZapDefinitionType.valueOf(parts[0].toUpperCase(Locale.ROOT)); }
             catch (RuntimeException error) {
