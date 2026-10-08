@@ -150,8 +150,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   expect(within(table).getByText("orders:101 · 객체 소유자 A")).toBeVisible()
   await user.click(within(table).getByRole("button", { name: `다른 계정으로 확인 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
-  // 상세는 역할·정책 지정, 요청·응답 확인, 취약점 확인 세 칸뿐이다.
-  expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["접근 허용 기준", "요청·응답 확인", "취약점 확인"])
+  expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["접근 허용 기준", "객체 소유자", "요청·응답 확인", "취약점 확인"])
   expect(within(inspector).getByRole("region", { name: "요청·응답 확인" })).toHaveTextContent("열린 창에서 B 계정을 선택해 확인하세요.")
   expect(inspector).not.toHaveTextContent("ev-a")
   expect(within(inspector).queryByRole("region", { name: "독립 신뢰도 축" })).not.toBeInTheDocument()

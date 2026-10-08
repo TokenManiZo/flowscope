@@ -12,6 +12,7 @@ import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
 import { useRequirementMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
+import { MatrixOwnerControl } from "./MatrixOwnerControl"
 import { OperationColumnResizeHandle, OPERATION_COLUMN_DEFAULT_WIDTH } from "./OperationColumnResizeHandle"
 import { latestOperationEvent, requestLabEvent } from "./requestLabEvent"
 import { findJudgmentItem, isReviewable, judgmentStatusDescription, judgmentStatusLabel, judgmentTone, projectJudgmentMatrix, quietStatusLabel, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
@@ -98,6 +99,7 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
   return <div className="grid gap-4 p-4 text-sm">
     <header className="grid gap-2"><div className="flex items-center gap-1.5"><h2 className="text-base font-semibold">{judgmentStatusLabel(item)}{reviewSuffix(item.reviewStatus)}</h2>{judgmentStatusDescription(item.status) && <InfoHint label={judgmentStatusLabel(item)}>{judgmentStatusDescription(item.status)}</InfoHint>}</div><p className="break-all font-mono text-xs leading-5">{withoutService(item.operation)}</p><p className="text-xs text-muted-foreground">확인 계정: {identityLabel(item.identity, item.identityLabel)}</p>{resource && <p className="break-all text-xs text-muted-foreground">대상 데이터: {withoutService(resource)}</p>}{resource && "ownerLabel" in item && <p className="text-xs text-muted-foreground">객체 소유자: {item.ownerLabel || "아직 확인되지 않음"}</p>}</header>
     <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}`} item={item} requiredRole={requiredRole} disabled={disabled} />
+    {resource && snapshot && <MatrixOwnerControl key={resource} resource={resource} snapshot={snapshot} disabled={disabled} />}
     <section aria-label="요청·응답 확인" className="grid gap-3 border-t border-border/70 pt-4">
       <h3 className="text-sm font-semibold">요청·응답 확인</h3>
       {recommendation && <p className="text-xs">열린 창에서 {recommendation.testIdentityLabel} 계정을 선택해 확인하세요.{recommendation.stateChanging ? " 데이터를 바꾸는 요청이므로 보내기 전에 내용을 확인하세요." : ""}</p>}
