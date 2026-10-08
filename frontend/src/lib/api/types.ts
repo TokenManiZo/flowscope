@@ -486,6 +486,8 @@ export interface RunExecutionSummary {
   failures: number
   quality: "NOT_ATTEMPTED" | "ALL_FAILED" | "PARTIAL_FAILURE" | "RESPONSES_OBSERVED"
   outcomes: Readonly<Record<string, number>>
+  /** 첫 시도 시각(epoch ms). 시도가 없거나 이전 서버면 0·없음. */
+  startedAt?: number
 }
 
 export interface LegacyLlm {

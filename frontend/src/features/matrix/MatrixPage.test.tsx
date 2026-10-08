@@ -54,6 +54,7 @@ function matrixSnapshot(): Snapshot {
   return {
     ...snapshotFixture,
     revision: 4,
+    evidenceOrdinals: { "exact-human": 1, "bob-evidence": 2, "charlie-evidence": 3 },
     roles: { alice: "USER", bob: "USER", charlie: "ADMIN" },
     owners: { "order:1": "alice" },
     requiredRoles: { "GET /orders/{id}": "USER", "DELETE /orders/{id}": "ADMIN" },
@@ -101,29 +102,29 @@ it("keeps parameter coverage and the legacy matrix behind their own tabs", async
   expect(await screen.findByRole("heading", { name: "권한 매트릭스" })).toBeVisible()
 })
 
-it("uses the shared parameter cell semantics and clears its 관측 기록 selection when the server cell disappears", async () => {
+it("uses the shared parameter cell semantics and clears its 요청 기록 selection when the server cell disappears", async () => {
   current = parameterSnapshot()
   const { rerender } = renderPage(<ParameterMatrixView />)
   const matrix = screen.getByRole("region", { name: "파라미터 커버리지 표" })
-  expect(matrix).not.toHaveTextContent("실행 관측 기록")
+  expect(matrix).not.toHaveTextContent("실행 요청 기록")
   expect(matrix).not.toHaveTextContent("좌표 근거")
   expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("/orders/{id}")
   expect(screen.getByRole("heading", { level: 2 })).not.toHaveTextContent("https://demo.test:443")
-  const select = within(matrix).getByRole("button", { name: "UNTESTED · 미검증 상세 보기" })
+  const select = within(matrix).getByRole("button", { name: "UNTESTED · 미점검 상세 보기" })
   select.focus()
   await userEvent.keyboard("{Enter}")
-  expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
-  expect(screen.getByRole("region", { name: "검증 좌표 상세" })).toHaveTextContent("실행 관측 기록: 0건")
+  expect(screen.getByRole("dialog", { name: "요청 기록 상세" })).toBeVisible()
+  expect(screen.getByRole("region", { name: "검증 좌표 상세" })).toHaveTextContent("실행 요청 기록: 0건")
   expect(screen.getByRole("region", { name: "검증 좌표 상세" })).toHaveTextContent("좌표 근거: 50건")
   expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
   current = { ...current, revision: current.revision + 1, surface: { ...current.surface!, validationCells: [] } }
   rerender(<ParameterMatrixView />)
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "관측 기록 상세" })).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "요청 기록 상세" })).not.toBeInTheDocument())
   current = parameterSnapshot()
   rerender(<ParameterMatrixView />)
-  expect(screen.queryByRole("dialog", { name: "관측 기록 상세" })).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미검증 상세 보기" }))
-  expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
+  expect(screen.queryByRole("dialog", { name: "요청 기록 상세" })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미점검 상세 보기" }))
+  expect(screen.getByRole("dialog", { name: "요청 기록 상세" })).toBeVisible()
 })
 
 it("shows only error and retry guidance for an initial parameter snapshot failure", async () => {
@@ -138,14 +139,14 @@ it("shows only error and retry guidance for an initial parameter snapshot failur
   expect(refetch).toHaveBeenCalledOnce()
 })
 
-it("retains parameter 관측 기록 detail while disabling actions after a refresh failure", async () => {
+it("retains parameter 요청 기록 detail while disabling actions after a refresh failure", async () => {
   current = parameterSnapshot()
   const { rerender } = renderPage(<ParameterMatrixView />)
-  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미검증 상세 보기" }))
-  expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
+  await userEvent.click(screen.getByRole("button", { name: "UNTESTED · 미점검 상세 보기" }))
+  expect(screen.getByRole("dialog", { name: "요청 기록 상세" })).toBeVisible()
   queryError = true
   rerender(<ParameterMatrixView />)
-  expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
+  expect(screen.getByRole("dialog", { name: "요청 기록 상세" })).toBeVisible()
   const banner = screen.getByRole("alert")
   expect(banner).toHaveTextContent("마지막으로 불러온 데이터를 표시하고 있습니다.")
   expect(banner.querySelector("time")).toHaveAttribute("dateTime", new Date(lastUpdated).toISOString())
@@ -158,27 +159,27 @@ it("retains parameter 관측 기록 detail while disabling actions after a refre
   queryError = false
   rerender(<ParameterMatrixView />)
   expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-  expect(screen.getByRole("dialog", { name: "관측 기록 상세" })).toBeVisible()
+  expect(screen.getByRole("dialog", { name: "요청 기록 상세" })).toBeVisible()
 })
 
-it("also retains failed legacy selection while disabling its 관측 기록 actions", async () => {
+it("also retains failed legacy selection while disabling its 요청 기록 actions", async () => {
   current = matrixSnapshot()
   const { rerender } = renderPage(<LegacyMatrixView />)
-  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
+  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
   queryError = true
   rerender(<LegacyMatrixView />)
   expect(screen.getByRole("alert")).toHaveTextContent("마지막으로 불러온 데이터를 표시하고 있습니다.")
-  for (const button of screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })) expect(button).toBeDisabled()
-  expect(screen.getByText("관측 기록 상세")).toBeVisible()
+  for (const button of screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })) expect(button).toBeDisabled()
+  expect(screen.getByText("요청 기록 상세")).toBeVisible()
   expect(screen.getByLabelText("필수 역할")).toBeDisabled()
   queryError = false
   current = { ...snapshotFixture }
   rerender(<LegacyMatrixView />)
-  await waitFor(() => expect(screen.queryByText("관측 기록 상세")).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText("요청 기록 상세")).not.toBeInTheDocument())
   expect(screen.getByText("표시할 서버 권한 셀이 없습니다.")).toBeVisible()
 })
 
-it("projects server identity cells with requirement, owner, source text, miss, conflict, gap, and exact 관측 기록 selection", async () => {
+it("projects server identity cells with requirement, owner, source text, miss, conflict, gap, and exact 요청 기록 selection", async () => {
   current = matrixSnapshot()
   renderPage(<LegacyMatrixView />)
 
@@ -187,7 +188,7 @@ it("projects server identity cells with requirement, owner, source text, miss, c
   expect(viewport).toHaveAttribute("data-testid", "matrix-scroll-viewport")
   expect(viewport).toHaveClass("overflow-auto")
   expect(viewport.querySelector('[data-slot="table-container"]')).toHaveClass("overflow-visible")
-  expect(screen.getByRole("columnheader", { name: /신원 \/ 역할/ })).toHaveClass("sticky", "top-0", "left-0", "z-40")
+  expect(screen.getByRole("columnheader", { name: /계정 \/ 역할/ })).toHaveClass("sticky", "top-0", "left-0", "z-40")
   expect(screen.getAllByRole("columnheader")[1]).toHaveClass("sticky", "top-0", "z-30")
   expect(screen.queryByText("필수 역할: USER")).not.toBeInTheDocument()
   expect(screen.queryByText("소유자: alice")).not.toBeInTheDocument()
@@ -199,16 +200,17 @@ it("projects server identity cells with requirement, owner, source text, miss, c
   expect(screen.queryByText("<strong>server reason</strong>")).not.toBeInTheDocument()
   expect(screen.queryByRole("strong")).not.toBeInTheDocument()
 
-  const cell = screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0]
+  const cell = screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0]
   expect(cell).not.toHaveAccessibleName(/exact-human/)
   await userEvent.click(cell)
   const detail = screen.getByRole("region", { name: "권한 셀 상세" })
   expect(detail).toHaveTextContent("필수 역할: USER")
   expect(detail).toHaveTextContent("소유자: alice")
-  expect(detail).toHaveTextContent("충돌 · 갭")
+  expect(detail).toHaveTextContent("충돌 · 미점검")
   expect(detail).toHaveTextContent("<strong>server reason</strong>")
-  expect((await screen.findAllByText(/exact-human/)).length).toBeGreaterThan(0)
-  expect(document.querySelector("[aria-live='polite']")?.textContent ?? "").not.toContain("exact-human")
+  expect((await screen.findAllByText(/#1/)).length).toBeGreaterThan(0)
+  expect(document.body).not.toHaveTextContent("exact-human")
+  expect(document.querySelector("[aria-live='polite']")?.textContent ?? "").not.toContain("#1")
 })
 
 it("groups existing server cells by server role without inventing a role verdict, filters gaps only, and retains selection across the filter", async () => {
@@ -221,10 +223,10 @@ it("groups existing server cells by server role without inventing a role verdict
   expect(screen.getByText("bob")).toBeVisible()
   expect(screen.getByText(/전체 판정: allow/)).toBeVisible()
   expect(screen.getByText(/전체 판정: deny/)).toBeVisible()
-  await user.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
-  await user.click(screen.getByRole("checkbox", { name: "갭만 표시" }))
-  expect(screen.queryByText("bob-evidence")).not.toBeInTheDocument()
-  expect(screen.getAllByText(/exact-human/)[0]).toBeVisible()
+  await user.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
+  await user.click(screen.getByRole("checkbox", { name: "미점검만 표시" }))
+  expect(screen.queryByText("#2")).not.toBeInTheDocument()
+  expect(screen.getAllByText(/#1/)[0]).toBeVisible()
 })
 
 it("uses collision-safe null-aware coordinate keys and clears selected cell only after its server cell disappears", async () => {
@@ -232,10 +234,10 @@ it("uses collision-safe null-aware coordinate keys and clears selected cell only
   expect(matrixCellKey("identity", "alice", "GET /orders", null)).not.toBe(matrixCellKey("identity", "alice", "GET /orders", "null"))
   current = matrixSnapshot()
   const { rerender } = renderPage(<LegacyMatrixView />)
-  await userEvent.click((await screen.findAllByRole("button", { name: "권한 셀 관측 기록 열기" }))[0])
+  await userEvent.click((await screen.findAllByRole("button", { name: "권한 셀 요청 기록 열기" }))[0])
   current = { ...matrixSnapshot(), revision: 5, cells: matrixSnapshot().cells.slice(1) }
   rerender(<LegacyMatrixView />)
-  await waitFor(() => expect(screen.queryByText("관측 기록 상세")).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText("요청 기록 상세")).not.toBeInTheDocument())
 })
 
 it("states loading and empty snapshot outcomes without issuing a page-local request", async () => {
@@ -257,7 +259,7 @@ it("keeps matrix controls and the bounded server matrix inside one reference wor
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole("button", { name: "선택 상세 패널 열기" }))
   expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveClass("overflow-hidden")
-  expect(screen.getByRole("checkbox", { name: "갭만 표시" })).toBeVisible()
+  expect(screen.getByRole("checkbox", { name: "미점검만 표시" })).toBeVisible()
   expect(screen.getByTestId("matrix-scroll-viewport")).toHaveClass("overflow-auto")
 })
 
@@ -283,33 +285,35 @@ it("keeps retained stale snapshot data usable and bounds escaped long server tex
   expect(screen.getByRole("button", { name: "작업 더 보기" })).toBeVisible()
   await userEvent.click(screen.getByRole("button", { name: "작업 더 보기" }))
   expect(document.body.textContent).toContain(longOperation)
-  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
-  expect(screen.getByText("관측 기록 상세")).toBeVisible()
+  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
+  expect(screen.getByText("요청 기록 상세")).toBeVisible()
   expect(screen.getAllByRole("button", { name: "선택 상세 더 보기" }).length).toBeGreaterThan(0)
   queryStale = false
 })
 
-it("keeps a matching long matrix 기록 번호 out of the entire Sheet until explicit expansion", async () => {
-  const ids = Array.from({ length: 6 }, (_, index) => `<img-${index}>${"x".repeat(220)}`)
+it("shows a matrix cell's records as #N, hides unnumbered ones, and expands past ten", async () => {
+  const ids = Array.from({ length: 13 }, (_, index) => `<img-${index}>${"x".repeat(220)}`)
   const value = matrixSnapshot()
   current = {
     ...value,
+    evidenceOrdinals: Object.fromEntries(ids.slice(0, 12).map((id, index) => [id, index + 1])),
     events: [{ ...value.events[0], eventId: ids[0], clusterEvidenceIds: [ids[0]] }],
     cells: [{ ...value.cells[0], evidenceIds: ids }],
   }
   renderPage(<LegacyMatrixView />)
-  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
+  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
   const sheet = await screen.findByRole("complementary", { name: "선택 상세" })
-  expect(await screen.findByRole("button", { name: "기록 번호 더 보기" })).toBeVisible()
-  expectCompleteValuesAbsent(sheet, [ids[0]])
+  expect(await screen.findByRole("button", { name: "요청 기록 더 보기" })).toBeVisible()
+  expect(sheet).toHaveTextContent("요청 기록 12건")
+  expect(sheet).not.toHaveTextContent("#11")
+  expectCompleteValuesAbsent(sheet, [ids[0], ids[12]])
   expect(screen.queryByRole("img")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "기록 번호 더 보기" }))
-  expect(screen.getByRole("button", { name: "기록 번호 접기" })).toBeVisible()
-  expect(sheet.textContent).toContain(ids[0])
-  expect(document.body.textContent).toContain(ids[5])
-  expect(screen.queryByRole("img-0")).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole("button", { name: "기록 번호 접기" }))
-  expectCompleteValuesAbsent(sheet, [ids[0]])
+  await userEvent.click(screen.getByRole("button", { name: "요청 기록 더 보기" }))
+  expect(screen.getByRole("button", { name: "요청 기록 접기" })).toBeVisible()
+  expect(sheet).toHaveTextContent("#12")
+  expectCompleteValuesAbsent(sheet, [ids[0], ids[12]])
+  await userEvent.click(screen.getByRole("button", { name: "요청 기록 접기" }))
+  expect(sheet).not.toHaveTextContent("#11")
 })
 
 it("bounds selected long matrix context until the operator explicitly expands escaped text", async () => {
@@ -317,7 +321,7 @@ it("bounds selected long matrix context until the operator explicitly expands es
   const value = matrixSnapshot()
   current = { ...value, cells: [{ ...value.cells[0], op: longOperation }] }
   renderPage(<LegacyMatrixView />)
-  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
+  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
   expect(document.body.textContent).not.toContain(longOperation)
   expect(await screen.findByRole("button", { name: "선택 상세 더 보기" })).toBeVisible()
   expect(screen.queryByRole("matrix-op")).not.toBeInTheDocument()
@@ -332,7 +336,7 @@ it("bounds every selected matrix coordinate field until the operator expands esc
   const value = matrixSnapshot()
   current = { ...value, cells: [{ ...value.cells[0], idn: longIdentity, resource: longResource }] }
   renderPage(<LegacyMatrixView />)
-  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
+  await userEvent.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
   const detail = screen.getByText("매트릭스 선택 좌표").closest("section")
   expect(detail?.textContent).not.toContain(longIdentity)
   expect(detail?.textContent).not.toContain(longResource)
@@ -363,7 +367,7 @@ it.each([900, 600])("keeps matrix context and inspector journeys functional at c
   expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("분석 결과에서 항목을 선택하면")
   await user.click(within(screen.getByRole("dialog", { name: "선택 상세" })).getByRole("button", { name: "Close" }))
   expect(inspectorTrigger).toHaveFocus()
-  await user.click(screen.getAllByRole("button", { name: "권한 셀 관측 기록 열기" })[0])
+  await user.click(screen.getAllByRole("button", { name: "권한 셀 요청 기록 열기" })[0])
   const inspector = await screen.findByRole("dialog", { name: "선택 상세" })
   expect(within(inspector).getByText("매트릭스 선택 좌표")).toBeVisible()
   await user.click(within(inspector).getByRole("button", { name: "Close" }))

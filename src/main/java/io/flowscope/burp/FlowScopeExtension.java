@@ -1023,14 +1023,14 @@ public final class FlowScopeExtension implements BurpExtension {
         if (accountId != null && !"anon".equals(fp) && !directZapAccount && accountId.equals(humanCaptureAccountId)) {
             // The operator's running capture overrides an older (possibly mistaken) binding of the same credentials.
             try { analysisConfig.rebindSession(rec.service, fp, accountId); }
-            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
+            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 계정 연결 실패", error); }
         } else if (accountId != null && !"anon".equals(fp) && !directZapAccount) {
             try { analysisConfig.bindSession(rec.service, fp, accountId); }
             catch (AnalysisConfig.SessionBindingConflictException error) {
                 sessionBroker.markCredentialConflict(accountId);
                 api.logging().logToError("FlowScope 중복 인증 세션 차단: " + error.getMessage());
             }
-            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 신원 연결 실패", error); }
+            catch (RuntimeException error) { api.logging().logToError("FlowScope 세션 계정 연결 실패", error); }
         }
         // 명세가 입력으로 요구하는 데이터 (F-06 쿼리·본문 / F-09 ID·시각 / F-18·22 원요청).
         String capturedRequestText = capturedRequest.text();
@@ -2437,10 +2437,10 @@ public final class FlowScopeExtension implements BurpExtension {
      */
     private RequestRecord evidenceRecord(String evidenceId) {
         if (evidenceId == null || evidenceId.isBlank()) {
-            throw new IllegalArgumentException("Evidence ID가 필요합니다.");
+            throw new IllegalArgumentException("요청 기록을 선택해 주세요.");
         }
         return latest.records.stream().filter(value -> value.evidenceId.equals(evidenceId))
-                .findFirst().orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Evidence ID입니다."));
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("요청 기록을 찾을 수 없습니다."));
     }
 
     private void openDraftInRepeater(RequestRecord record, HttpRequest draft) {
@@ -2681,10 +2681,10 @@ public final class FlowScopeExtension implements BurpExtension {
             synchronized (records) {
                 record = records.stream().filter(value -> value.runtimeId() == evidenceRuntimeId)
                         .findFirst().orElseThrow(() ->
-                                new IllegalStateException("ZAP 로그인 Evidence 원문을 찾을 수 없습니다."));
+                                new IllegalStateException("ZAP 로그인 요청 기록의 원문을 찾을 수 없습니다."));
             }
             TransientExchangeVault.Exchange raw = rawExchanges.get(record).orElseThrow(() ->
-                    new IllegalStateException("ZAP 로그인 Evidence 원문이 메모리 상한으로 폐기됐습니다."));
+                    new IllegalStateException("ZAP 로그인 요청 기록의 원문이 메모리 상한으로 폐기됐습니다."));
             if (!raw.requestRetained()) {
                 throw new IllegalStateException("ZAP 로그인 요청 원문이 메모리 상한으로 폐기됐습니다.");
             }
@@ -2861,7 +2861,7 @@ public final class FlowScopeExtension implements BurpExtension {
         try {
             synchronized (records) {
                 if (shuttingDown.get() || records.size() >= MAX_RECORDS) {
-                    throw new IllegalStateException("전송 전 차단: 종료 중이거나 Evidence 저장 상한에 도달했습니다.");
+                    throw new IllegalStateException("전송 전 차단: 종료 중이거나 요청 기록 저장 상한에 도달했습니다.");
                 }
             }
             request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
@@ -2898,7 +2898,7 @@ public final class FlowScopeExtension implements BurpExtension {
             RequestRecord published = analyzedRecord(record);
             synchronized (records) {
                 if (!retainedEvidence(evidenceId) || !retainedEvidence(published.evidenceId)) {
-                    throw new IllegalStateException("관측 기록이 삭제되어 결과를 저장할 수 없습니다.");
+                    throw new IllegalStateException("요청 기록이 삭제되어 결과를 저장할 수 없습니다.");
                 }
                 executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
                         RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
@@ -2908,7 +2908,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             int requestBytes = exchange.request().toByteArray().length();
             String displayResponse = responseBytes <= RAW_RESPONSE_LIMIT_BYTES ? responseText
-                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 요약만 보존했습니다.";
+                    : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. 요청 기록에는 요약만 남겼습니다.";
             return new FlowScopeWebServer.RequestLabResult(published.evidenceId, published.status, displayResponse,
                     durationMs, requestBytes, responseBytes);
         } catch (RuntimeException error) {
@@ -2924,7 +2924,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 revision.incrementAndGet();
                 scheduleDatabaseSave();
             }
-            throw new IllegalStateException(received ? "응답 수신 · Evidence 기록 실패. 결과를 확인한 후 재전송을 판단하세요."
+            throw new IllegalStateException(received ? "응답 수신 · 요청 기록 저장 실패. 결과를 확인한 후 재전송을 판단하세요."
                     : sent ? "응답 미확인 · " + outcome + ". 대상 처리 여부는 확인되지 않았습니다."
                     : "전송 전 차단 · " + error.getMessage(), error);
         }
@@ -2975,7 +2975,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 .filter(record -> expectedOperation.equals(record.op))
                 .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("현재 추천과 일치하는 기준 Evidence를 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalStateException("현재 추천과 일치하는 기준 요청 기록을 찾을 수 없습니다."));
         HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
                 FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
         return new CrossIdentityReplayOrchestrator.Recommendation(operation, selected.testIdentity(),
@@ -3000,7 +3000,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     recommendation.target(), scope, java.time.Instant.now());
         }
         openCrossIdentityReplayDraftAnyMethod(recommendation, credentialHeaders);
-        return "교차 실행 요청을 대상 신원 자격으로 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.";
+        return "교차 실행 요청을 대상 계정 자격으로 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다.";
     }
 
     private CrossIdentityReplayOrchestrator.Recommendation crossIdentityDraftRecommendation(String itemId) {
@@ -3055,7 +3055,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         if (basisIdentity == null) {
-            throw new IllegalStateException("같은 대상에서 다른 신원이 관측한 요청이 없어 Burp Repeater 초안을 만들 수 없습니다.");
+            throw new IllegalStateException("같은 대상에서 다른 계정이 관측한 요청이 없어 Burp Repeater 초안을 만들 수 없습니다.");
         }
         RequestRecord seed = basisEvidence.stream()
                 .map(id -> latest.records.stream().filter(record -> id.equals(record.evidenceId)).findFirst().orElse(null))
@@ -3063,7 +3063,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 .filter(record -> expectedOperation.equals(record.op))
                 .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("기준 Evidence 원문을 찾을 수 없습니다."));
+                .orElseThrow(() -> new IllegalStateException("기준 요청 기록의 원문을 찾을 수 없습니다."));
         HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
                 FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
         return new CrossIdentityReplayOrchestrator.Recommendation(operation, testIdentity,
@@ -3076,7 +3076,7 @@ public final class FlowScopeExtension implements BurpExtension {
         RequestRecord seed = replayBasisRecord(recommendation);
         HttpRequest request = prepareReplayRequest(seed, replayRequestText(seed), credentialHeaders);
         if (!URI.create(request.url()).equals(recommendation.target())) {
-            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+            throw new IllegalArgumentException("추천 대상과 기준 요청 기록의 대상이 일치하지 않습니다.");
         }
         openDraftInRepeater(seed, request);
     }
@@ -3155,7 +3155,7 @@ public final class FlowScopeExtension implements BurpExtension {
             rebuildImmediately();
             published = latest.records.stream()
                     .filter(value -> value.runtimeId() == record.runtimeId()).findFirst()
-                    .orElseThrow(() -> new IllegalStateException("재전송 Evidence 게시에 실패했습니다."));
+                    .orElseThrow(() -> new IllegalStateException("재전송 요청 기록 저장에 실패했습니다."));
         } catch (RuntimeException error) {
             throw replayFailure("EVIDENCE_RECORDING_FAILED", error);
         }
@@ -3164,7 +3164,7 @@ public final class FlowScopeExtension implements BurpExtension {
         String responseText = responseBytes <= RAW_RESPONSE_LIMIT_BYTES
                 ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
                 response.headerValue("Content-Type")).text()
-                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. Evidence에는 요약만 보존했습니다.";
+                : "응답이 " + responseBytes + "바이트로 웹 표시 상한을 초과했습니다. 요청 기록에는 요약만 남겼습니다.";
         FlowScopeWebServer.RequestLabResult result = new FlowScopeWebServer.RequestLabResult(
                 published.evidenceId, response.statusCode(), responseText, durationMs, requestBytes, responseBytes);
         List<String> setCookies = response.headers().stream()
@@ -3200,7 +3200,7 @@ public final class FlowScopeExtension implements BurpExtension {
             throw new IllegalArgumentException("파괴적 요청 초안은 POST/PUT/PATCH/DELETE만 지원합니다.");
         }
         if (!URI.create(request.url()).equals(recommendation.target())) {
-            throw new IllegalArgumentException("추천 대상과 기준 Evidence 요청 대상이 일치하지 않습니다.");
+            throw new IllegalArgumentException("추천 대상과 기준 요청 기록의 대상이 일치하지 않습니다.");
         }
         openDraftInRepeater(seed, request);
     }
@@ -3371,7 +3371,7 @@ public final class FlowScopeExtension implements BurpExtension {
             appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
             RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())
-                    .findFirst().orElseThrow(() -> new IllegalStateException("Explorer Evidence 게시에 실패했습니다."));
+                    .findFirst().orElseThrow(() -> new IllegalStateException("Explorer 요청 기록 저장에 실패했습니다."));
             executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
                     input.url(), RunExecutionLedger.Outcome.HTTP_RESPONSE, response.statusCode(),
                     published.evidenceId, attemptedAt, duration);
@@ -3528,7 +3528,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     RequestRecord analyzedRecord(RequestRecord record) {
         return rebuildImmediately().records.stream().filter(value -> value.runtimeId() == record.runtimeId())
-                .findFirst().orElseThrow(() -> new IllegalStateException("검증 Evidence를 분석 결과에서 찾지 못했습니다."));
+                .findFirst().orElseThrow(() -> new IllegalStateException("검증 요청 기록을 분석 결과에서 찾지 못했습니다."));
     }
 
     /** Called under records lock: a publication may still contain a just-deleted record. */
@@ -3540,12 +3540,12 @@ public final class FlowScopeExtension implements BurpExtension {
     void appendControlledToolRecord(RequestRecord record, Runnable retainExchange) {
         synchronized (records) {
             if (shuttingDown.get()) {
-                throw new IllegalStateException("FlowScope 종료 중에는 새 Evidence를 기록할 수 없습니다.");
+                throw new IllegalStateException("FlowScope 종료 중에는 새 요청 기록을 저장할 수 없습니다.");
             }
             if (records.size() >= MAX_RECORDS) throw new IllegalStateException("레코드 상한에 도달했습니다.");
             if ((record.originEvidenceId != null && !retainedEvidence(record.originEvidenceId))
                     || (record.replayBasisEvidenceId != null && !retainedEvidence(record.replayBasisEvidenceId))) {
-                throw new IllegalStateException("원본 관측 기록이 삭제되어 응답을 저장할 수 없습니다.");
+                throw new IllegalStateException("원본 요청 기록이 삭제되어 응답을 저장할 수 없습니다.");
             }
             records.add(record);
             retainExchange.run();

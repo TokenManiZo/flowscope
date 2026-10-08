@@ -107,7 +107,7 @@ it("assigns equal-signature links distinct occurrence keys that survive unrelate
   expect(new Set(before).size).toBe(2)
 })
 
-it("renders only server flow links with source/operation/masked values, auxiliary notice, and exact structured 관측 기록 selection", async () => {
+it("renders only server flow links with source/operation/masked values, auxiliary notice, and exact structured 요청 기록 selection", async () => {
   current = sequenceSnapshot()
   renderPage(<SequencePage />)
   expect(await screen.findByText("데이터 의존 링크는 참고용입니다.")).toBeVisible()
@@ -123,7 +123,7 @@ it("renders only server flow links with source/operation/masked values, auxiliar
   expect(screen.getByText(/token=\*{3}/)).toBeVisible()
   expect(screen.queryByText("must-not-render")).not.toBeInTheDocument()
   expect(screen.queryByText("이전 snapshot을 표시 중입니다.")).not.toBeInTheDocument()
-  const link = screen.getAllByRole("button", { name: "흐름 링크 관측 기록 열기" })[0]
+  const link = screen.getAllByRole("button", { name: "흐름 링크 요청 기록 열기" })[0]
   expect(link).not.toHaveAccessibleName(/early-from|unknown-to/)
   await userEvent.click(link)
   expect(await screen.findByText("from: early-from · to: unknown-to")).toBeVisible()
@@ -132,19 +132,19 @@ it("renders only server flow links with source/operation/masked values, auxiliar
 it("keeps a selected server link through presentation rerender and clears it when either endpoint or the link disappears", async () => {
   current = sequenceSnapshot()
   const { rerender } = renderPage(<SequencePage />)
-  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 관측 기록 열기" }))[0])
+  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 요청 기록 열기" }))[0])
   current = { ...sequenceSnapshot(), revision: 8 }
   rerender(<SequencePage />)
   expect(await screen.findByText("from: early-from · to: unknown-to")).toBeVisible()
   current = { ...sequenceSnapshot(), revision: 9, events: sequenceSnapshot().events.filter((item) => item.eventId !== "unknown-to") }
   rerender(<SequencePage />)
-  await waitFor(() => expect(screen.queryByText("관측 기록 상세")).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText("요청 기록 상세")).not.toBeInTheDocument())
 })
 
 it("retains an open link detail but suspends its actions during a refresh failure", async () => {
   current = sequenceSnapshot()
   const { rerender } = renderPage(<SequencePage />)
-  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 관측 기록 열기" }))[0])
+  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 요청 기록 열기" }))[0])
   queryError = true
   rerender(<SequencePage />)
   expect(screen.getByText("from: early-from · to: unknown-to")).toBeVisible()
@@ -154,7 +154,7 @@ it("retains an open link detail but suspends its actions during a refresh failur
 it("retains a selected link when an unrelated earlier link is inserted and only uses an occurrence among equal link signatures", async () => {
   current = sequenceSnapshot()
   const { rerender } = renderPage(<SequencePage />)
-  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 관측 기록 열기" }))[0])
+  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 요청 기록 열기" }))[0])
   const extraFrom = event("extra-from", "alice", 5)
   const extraTo = event("extra-to", "alice", 6)
   current = { ...sequenceSnapshot(), revision: 10, events: [extraFrom, extraTo, ...sequenceSnapshot().events], flowLinks: [{ fromEventId: "extra-from", toEventId: "extra-to", fromOp: "GET /extra", toOp: "POST /extra", idn: "alice", source: "human", values: "extra" }, ...sequenceSnapshot().flowLinks] }
@@ -165,7 +165,7 @@ it("retains a selected link when an unrelated earlier link is inserted and only 
 it("retains a selected link when unrelated links are reordered", async () => {
   current = sequenceSnapshot()
   const { rerender } = renderPage(<SequencePage />)
-  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 관측 기록 열기" }))[0])
+  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 요청 기록 열기" }))[0])
   const value = sequenceSnapshot()
   current = { ...value, revision: 11, flowLinks: [value.flowLinks[3], value.flowLinks[2], value.flowLinks[0], value.flowLinks[1]] }
   rerender(<SequencePage />)
@@ -190,7 +190,7 @@ it("bounds selected long sequence context until the operator explicitly expands 
   const value = sequenceSnapshot()
   current = { ...value, flowLinks: [{ ...value.flowLinks[1], fromOp: longFrom, toOp: longTo }] }
   renderPage(<SequencePage />)
-  await userEvent.click(await screen.findByRole("button", { name: "흐름 링크 관측 기록 열기" }))
+  await userEvent.click(await screen.findByRole("button", { name: "흐름 링크 요청 기록 열기" }))
   expect(document.body.textContent).not.toContain(longFrom)
   expect(await screen.findByRole("button", { name: "선택 상세 더 보기" })).toBeVisible()
   expect(screen.queryByRole("sequence-from")).not.toBeInTheDocument()
@@ -204,7 +204,7 @@ it("bounds every selected sequence coordinate field until the operator expands e
   const value = sequenceSnapshot()
   current = { ...value, flowLinks: [{ ...value.flowLinks[1], idn: longIdentity }] }
   renderPage(<SequencePage />)
-  await userEvent.click(await screen.findByRole("button", { name: "흐름 링크 관측 기록 열기" }))
+  await userEvent.click(await screen.findByRole("button", { name: "흐름 링크 요청 기록 열기" }))
   const detail = screen.getByText("흐름 링크 선택").closest("section")
   expect(detail?.textContent).not.toContain(longIdentity)
   expect(screen.queryByRole("sequence-identity")).not.toBeInTheDocument()
@@ -224,7 +224,7 @@ it("keeps long markup-like endpoint IDs private across the entire Sheet until ex
     flowLinks: [{ fromEventId: longFrom, toEventId: longTo, fromOp: fromEvent.op, toOp: toEvent.op, idn: "alice", source: "human", values: "masked=***" }],
   }
   renderPage(<SequencePage />)
-  await userEvent.click(await screen.findByRole("button", { name: "흐름 링크 관측 기록 열기" }))
+  await userEvent.click(await screen.findByRole("button", { name: "흐름 링크 요청 기록 열기" }))
 
   const sheet = await screen.findByRole("complementary", { name: "선택 상세" })
   expectCompleteValuesAbsent(sheet, [longFrom, longTo])
@@ -255,7 +255,7 @@ it.each([900, 600])("keeps sequence context filtering and selected-link inspecti
   const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
   await user.click(contextTrigger)
   const context = screen.getByRole("dialog", { name: "분석 필터" })
-  await user.selectOptions(within(context).getByRole("combobox", { name: "신원 필터" }), "bob")
+  await user.selectOptions(within(context).getByRole("combobox", { name: "계정 필터" }), "bob")
   await user.click(within(context).getByRole("button", { name: "Close" }))
   expect(contextTrigger).toHaveFocus()
   expect(screen.queryByText("alice")).not.toBeInTheDocument()
@@ -265,7 +265,7 @@ it.each([900, 600])("keeps sequence context filtering and selected-link inspecti
   expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("분석 결과에서 항목을 선택하면")
   await user.click(within(screen.getByRole("dialog", { name: "선택 상세" })).getByRole("button", { name: "Close" }))
   expect(inspectorTrigger).toHaveFocus()
-  await user.click(screen.getByRole("button", { name: "흐름 링크 관측 기록 열기" }))
+  await user.click(screen.getByRole("button", { name: "흐름 링크 요청 기록 열기" }))
   const inspector = await screen.findByRole("dialog", { name: "선택 상세" })
   expect(within(inspector).getByText("흐름 링크 선택")).toBeVisible()
   await user.click(within(inspector).getByRole("button", { name: "Close" }))
@@ -280,7 +280,7 @@ it("retains a selected equal-signature occurrence through unrelated reordering a
   const selectedDuplicate = { ...value.flowLinks[0] }
   current = { ...value, flowLinks: [firstDuplicate, selectedDuplicate, value.flowLinks[1], value.flowLinks[3]] }
   const { rerender } = renderPage(<SequencePage />)
-  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 관측 기록 열기" }))[2])
+  await userEvent.click((await screen.findAllByRole("button", { name: "흐름 링크 요청 기록 열기" }))[2])
   expect(await screen.findByText("from: late-from · to: known-to")).toBeVisible()
   const extraFrom = event("extra-from", "alice", 5)
   const extraTo = event("extra-to", "alice", 6)
@@ -289,7 +289,7 @@ it("retains a selected equal-signature occurrence through unrelated reordering a
   expect(await screen.findByText("from: late-from · to: known-to")).toBeVisible()
   current = { ...current, revision: 13, flowLinks: current.flowLinks.filter((link) => link !== selectedDuplicate) }
   rerender(<SequencePage />)
-  await waitFor(() => expect(screen.queryByText("관측 기록 상세")).not.toBeInTheDocument())
+  await waitFor(() => expect(screen.queryByText("요청 기록 상세")).not.toBeInTheDocument())
 })
 
 it("states loading and empty server link outcomes", async () => {

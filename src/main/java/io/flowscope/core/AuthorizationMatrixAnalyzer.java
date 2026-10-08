@@ -267,8 +267,8 @@ public final class AuthorizationMatrixAnalyzer {
                 .map(basis -> {
                     String basisId = basis.cell().key().identity();
                     String reason = strongPolicyMismatch
-                            ? "명시된 요구 역할보다 낮은 신원의 실행 결과를 확인해야 합니다."
-                            : "상위 역할에서 관측된 기능이 이 신원에서는 충분히 비교되지 않았습니다.";
+                            ? "명시된 요구 역할보다 낮은 계정의 실행 결과를 확인해야 합니다."
+                            : "상위 역할에서 관측된 기능이 이 계정에서는 충분히 비교되지 않았습니다.";
                     return new TestRecommendation("BFLA", basisId, config.identityLabel(basisId),
                             target.id(), target.label(), reason,
                             target.label() + " 세션으로 같은 기능 요청을 Burp Repeater에서 수동 실행하세요.",
@@ -306,8 +306,8 @@ public final class AuthorizationMatrixAnalyzer {
                             AuthorizationMatrixAnalyzer::hasDirectObjectReference);
                     String type = direct ? "BOLA/IDOR" : "BOLA";
                     String reason = config.resourceOwner(row.resource()) != null
-                            ? "다른 신원에 연결된 객체를 교차 접근하는 조합입니다."
-                            : "이 객체의 최초 관측 신원을 소유자 가설로 두고 교차 접근을 확인해야 합니다.";
+                            ? "다른 계정에 연결된 객체를 교차 접근하는 조합입니다."
+                            : "이 객체를 처음 요청한 계정을 소유자로 가정하고 교차 접근을 확인해야 합니다.";
                     return new TestRecommendation(type, basisId, config.identityLabel(basisId),
                             target.id(), target.label(), reason,
                             target.label() + " 세션으로 객체 " + row.resource()
@@ -410,7 +410,7 @@ public final class AuthorizationMatrixAnalyzer {
     private static Confidence evidenceConfidence(AuthorizationAnalysis.CoverageCell cell,
                                                  List<RequestRecord> records,
                                                  BaselineComparison baseline) {
-        if (cell == null || records.isEmpty()) return e(0, "미실행", "대상 조합의 응답 Evidence가 없음");
+        if (cell == null || records.isEmpty()) return e(0, "미점검", "대상 조합의 응답 기록이 없음");
         if (baseline.matched()) return e(2, "비통제 관측 차등", baseline.basis());
         return e(1, "단일 관측", baseline.basis());
     }
@@ -419,7 +419,7 @@ public final class AuthorizationMatrixAnalyzer {
                                     Oracle oracle, BaselineComparison baseline) {
         List<Gate> out = new ArrayList<>();
         boolean attributed = records.stream().allMatch(record -> identity.id().equals(record.selectedIdentity()));
-        out.add(new Gate("session", "테스트 신원 유효", attributed ? GateState.PASS : GateState.FAIL,
+        out.add(new Gate("session", "테스트 계정 유효", attributed ? GateState.PASS : GateState.FAIL,
                 attributed ? "요청이 선택한 수집 세션으로 귀속됨" : "요청과 선택한 수집 세션이 일치하지 않음"));
 
         out.add(new Gate("baseline", "정상 기준선", baseline.matched() ? GateState.PASS : GateState.UNKNOWN,
@@ -432,7 +432,7 @@ public final class AuthorizationMatrixAnalyzer {
                 read ? "읽기 요청에는 쓰기 상태 전제조건을 적용하지 않음"
                         : "CSRF·nonce·선행 상태 준비 여부를 자동 증명하지 않음"));
         out.add(new Gate("oracle", "결과 오라클", oracle.satisfied() ? GateState.PASS : GateState.UNKNOWN,
-                oracle.satisfied() ? oracle.requirement() : "후속 상태 또는 의미 응답 증거가 더 필요함"));
+                oracle.satisfied() ? oracle.requirement() : "후속 상태 또는 의미 있는 응답 기록이 더 필요함"));
         return List.copyOf(out);
     }
 
@@ -444,7 +444,7 @@ public final class AuthorizationMatrixAnalyzer {
                                                          boolean objectMatrix,
                                                          String ownerId,
                                                          AccessRole effectiveRequirement) {
-        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 Evidence가 없음");
+        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 기록이 없음");
         if (!oracle.satisfied()) {
             return BaselineComparison.missing("대상 응답의 의미 오라클이 충족되지 않아 정상 기준선과 차등 비교하지 않음");
         }
@@ -459,7 +459,7 @@ public final class AuthorizationMatrixAnalyzer {
                         + "이며 O2/O3 판정 등급에 미달함");
             }
             if (ownerId.equals(cell.key().identity())) {
-                return BaselineComparison.missing("소유자 자신의 응답은 교차 신원 차등 기준선으로 중복 사용하지 않음");
+                return BaselineComparison.missing("소유자 자신의 응답은 교차 계정 차등 기준선으로 중복 사용하지 않음");
             }
             provenance = owner.confidence() >= 100 ? "O3 명시 소유자" : "O2 " + owner.basis();
             baselines = result.coverageRecords.stream().filter(record -> ownerId.equals(record.idn)
@@ -478,7 +478,7 @@ public final class AuthorizationMatrixAnalyzer {
                     && ResponseEvidence.successful(record)).toList();
         }
         if (baselines.isEmpty()) {
-            return BaselineComparison.missing(provenance + "의 동일 작업 성공 Evidence가 없음");
+            return BaselineComparison.missing(provenance + "의 동일 작업 성공 기록이 없음");
         }
 
         List<RequestRecord> successfulTargets = targets.stream().filter(ResponseEvidence::successful).toList();
@@ -859,7 +859,7 @@ public final class AuthorizationMatrixAnalyzer {
             case UNKNOWN_POLICY -> "응답 관측 · 기대 정책 미정";
             case OWNERSHIP_UNKNOWN -> "소유권 미확정";
             case INVALID_EXPERIMENT -> "실험 무효";
-            case COVERAGE_GAP -> "교차 실행 공백";
+            case COVERAGE_GAP -> "미점검";
             case UNTESTED -> "미검증";
         };
     }
@@ -950,10 +950,10 @@ public final class AuthorizationMatrixAnalyzer {
 
     private static List<LegendItem> evidenceLegend() {
         return List.of(
-                new LegendItem("E3", "통제 재현", "정상 대조·유효 신원·의미 오라클·독립 반복이 검증된 상태. 현재는 자동 부여하지 않으며 사람 확정 검토로만 기록"),
-                new LegendItem("E2", "차등 비교", "유효 신원의 동일 대상 비교와 의미 응답이 있음"),
+                new LegendItem("E3", "통제 재현", "정상 대조·유효 계정·의미 오라클·독립 반복이 검증된 상태. 현재는 자동 부여하지 않으며 사람 확정 검토로만 기록"),
+                new LegendItem("E2", "차등 비교", "유효 계정의 동일 대상 비교와 의미 응답이 있음"),
                 new LegendItem("E1", "단일 관측", "응답 한 건 또는 통제되지 않은 탐색 관측"),
-                new LegendItem("E0", "미실행", "해당 신원·기능·객체 조합의 응답 없음"));
+                new LegendItem("E0", "미점검", "해당 계정·기능·객체 조합의 응답 없음"));
     }
 
     private static List<LegendItem> ownershipLegend() {

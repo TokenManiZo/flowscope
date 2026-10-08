@@ -25,16 +25,16 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
   if (node.kind === "target") {
     const groups = projection.groups
     return {
-      stats: [["API 그룹", groups.length], ["API", groups.reduce((sum, group) => sum + group.endpointCount, 0)], ["Gap", groups.reduce((sum, group) => sum + group.gapCount, 0)]],
-      listTitle: "Gap이 많은 그룹",
-      list: [...groups].sort((a, b) => b.gapCount - a.gapCount).slice(0, 5).map(group => [group.label, `Gap ${group.gapCount}`]),
+      stats: [["API 그룹", groups.length], ["API", groups.reduce((sum, group) => sum + group.endpointCount, 0)], ["미점검", groups.reduce((sum, group) => sum + group.gapCount, 0)]],
+      listTitle: "미점검이 많은 그룹",
+      list: [...groups].sort((a, b) => b.gapCount - a.gapCount).slice(0, 5).map(group => [group.label, `미점검 ${group.gapCount}`]),
     }
   }
   if (node.kind === "api-group") {
     const group = projection.groups.find(item => item.id === node.groupId)
     if (!group) return null
     return {
-      stats: [["API", group.endpointCount], ...(group.observedCount ? [["관측 기능", group.observedCount] as [string, number]] : []), ["Gap", group.gapCount], ["경로 후보", group.routeCandidateCount]],
+      stats: [["API", group.endpointCount], ...(group.observedCount ? [["관측 기능", group.observedCount] as [string, number]] : []), ["미점검", group.gapCount], ["경로 후보", group.routeCandidateCount]],
       sources: group.endpointCount ? group.sourceCounts : undefined,
       listTitle: "포함된 API",
       list: group.operations.slice(0, 8).map(operation => [plain(operation), mostUrgent(group.cells.filter(cell => cell.op === operation))]),
@@ -59,14 +59,14 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     const byTarget = groupBy(cells, projection.kind === "operation" ? cell => cell.resource : cell => cell.op)
     return {
       stats: [[projection.kind === "operation" ? "접근 객체" : "접근 API", byTarget.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["허용", cells.filter(cell => cell.overall === "allow").length]],
-      listTitle: projection.kind === "operation" ? "접근한 객체" : "이 신원이 접근한 API",
+      listTitle: projection.kind === "operation" ? "접근한 객체" : "이 계정이 접근한 API",
       list: [...byTarget].slice(0, 8).map(([target, items]) => [plain(target), mostUrgent(items)]),
     }
   }
   if (node.kind === "operation-group" && node.objectGroup) {
     // API 묶음: 묶인 API와 그 API의 가장 급한 판정.
     return {
-      stats: [["API", node.objectGroup.members.length], ["접근 신원", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      stats: [["API", node.objectGroup.members.length], ["계정", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
       listTitle: "묶음 API",
       list: node.objectGroup.members.map(member => [plain(member), mostUrgent(cells.filter(cell => cell.op === member))] as [string, string]),
     }
@@ -74,7 +74,7 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
   if (node.kind === "object-group" && node.objectGroup) {
     // 묶음 안 객체 목록과 소유자. 펼치지 않아도 어떤 객체가 묶였는지 확인할 수 있다.
     return {
-      stats: [["객체", node.objectGroup.members.length], ["접근 신원", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      stats: [["객체", node.objectGroup.members.length], ["계정", groupBy(cells, cell => cell.idn).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
       objectOwners: true,
       listTitle: "객체 · 소유자",
       list: node.objectGroup.members.map(member => [stripOrigin(member) || member, identityLabel(node.objectGroup?.owners[member] ?? "소유자 확인 필요")] as [string, string]),
@@ -84,16 +84,16 @@ export function graphNodeSummary(node: HierarchyNode, projection: HierarchyProje
     const byIdentity = groupBy(cells, cell => cell.idn)
     const owner = node.owner ?? null
     return {
-      stats: [["접근 신원", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["관측 기록", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
-      listTitle: owner ? `접근한 신원 · 소유자 ${identityLabel(owner)}` : "접근한 신원",
+      stats: [["계정", byIdentity.size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length], ["요청 기록", new Set(cells.flatMap(cell => cell.evidenceIds)).size]],
+      listTitle: owner ? `접근한 계정 · 소유자 ${identityLabel(owner)}` : "접근한 계정",
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity === owner ? `${identityLabel(identity)} (소유자)` : identity, mostUrgent(items)]),
     }
   }
   if (node.kind === "operation") {
     const byIdentity = groupBy(cells, cell => cell.idn)
     return {
-      stats: [["신원", byIdentity.size], ["객체", node.displayObjectCount ?? new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
-      listTitle: "접근한 신원",
+      stats: [["계정", byIdentity.size], ["객체", node.displayObjectCount ?? new Set(cells.map(cell => cell.resource).filter(Boolean)).size], ["주의", cells.filter(cell => cell.overall === "suspicious" || cell.overall === "undecided").length]],
+      listTitle: "접근한 계정",
       // 상세 패널의 identityVerdicts 조회 키로도 쓰므로 원본 신원을 유지한다.
       list: [...byIdentity].slice(0, 8).map(([identity, items]) => [identity, mostUrgent(items)]),
     }

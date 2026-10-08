@@ -54,7 +54,7 @@ it("asks for the owner up front when it is unknown, counting identities held as 
   const unknown = { ...snapshot, owners: {}, ownerOverrides: {}, cells: [{ idn: "acct-demo-user-b", op: read, resource, overall: "untested" }] } as unknown as Snapshot
   renderWithQueryClient(<GraphOwnerControl snapshot={unknown} operation={read} resource={resource} />)
   expect(screen.getByRole("heading", { name: "소유자를 정해야 판정할 수 있어요" })).toBeVisible()
-  expect(screen.getByRole("region", { name: "소유자" })).toHaveTextContent("지금 신원 1개가 판정 보류(UNTESTED)예요")
+  expect(screen.getByRole("region", { name: "소유자" })).toHaveTextContent("지금 계정 1개가 미점검이에요")
   expect(screen.getByRole("radiogroup", { name: "소유자 선택" })).toBeVisible()
   expect(screen.getByRole("button", { name: "소유자로 확정" })).toBeDisabled()
 })

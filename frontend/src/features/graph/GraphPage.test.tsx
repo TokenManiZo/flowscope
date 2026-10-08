@@ -105,7 +105,7 @@ it("navigates Site→Group and selects API and Object in the list without leavin
   expect(breadcrumb).not.toHaveTextContent("https://api.example.test")
   await userEvent.click(screen.getByRole("button", { name: /^orders 객체 1개 펼치기/ }))
   await userEvent.click(screen.getByRole("row", { name: "orders:101" }))
-  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/관측 기록|연결된 관측 기록이 없습니다/)).toBeVisible()
+  expect(within(screen.getByRole("complementary", { name: "선택 작업" })).getByText(/요청 기록|연결된 요청 기록이 없습니다/)).toBeVisible()
   expect(screen.queryByText("cell-evidence-not-an-event")).not.toBeInTheDocument()
   expect(within(breadcrumb).getByText("ORDERS APIs")).toHaveAttribute("aria-current", "page")
 }, 15_000)
@@ -166,7 +166,7 @@ it("destroys the canvas branch and exposes the same projection as a list across 
   render(<GraphPage />)
   expect(screen.getByRole("complementary", { name: "분석 필터" })).toBeVisible()
   const rail = screen.getByRole("complementary", { name: "분석 필터" })
-  for (const section of ["보기 범위", "출처", "신원", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
+  for (const section of ["보기 범위", "출처", "계정", "응답 코드", "그래프 조작"]) expect(within(rail).getByText(section)).toBeVisible()
   // 판정·Gap 목록·역할 개수·보기 전환은 그래프 필터에서 뺐다(판정은 매트릭스, 색 기준은 강조 필터가 맡는다).
   for (const removed of ["Verdict", "Gap", "Role · policy", "View options", "고급", "경로 후보 표시", "인증·화면·반복 보조 흐름 표시", "그래프 입력 방식"]) expect(within(rail).queryByText(removed)).not.toBeInTheDocument()
   expect(screen.getAllByText("TARGET")).toHaveLength(1)

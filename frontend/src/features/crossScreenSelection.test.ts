@@ -29,7 +29,7 @@ describe("cross-screen selection on the packaged sample snapshot", () => {
     for (const forbidden of ["maskedPreview", "\"digest\"", "reqText", "respText", "***MASKED***", "Bearer "]) expect(serialized).not.toContain(forbidden)
   })
 
-  it("resolves priority-queue gaps and their validation cells to server 관측 기록 that the graph and matrix also expose", () => {
+  it("resolves priority-queue gaps and their validation cells to server 요청 기록 that the graph and matrix also expose", () => {
     const map = projectParameterMap(sample, { ...defaultParameterFilters, riskOnly: false, statuses: ["OPEN", "VERIFIED", "DISMISSED"] }, null)
     expect(map.queue.length).toBe(sample.surface!.parameterGaps!.length)
     const serverCellIds = new Set(sample.surface!.validationCells!.map((cell) => validationCellId(cell)))
@@ -44,13 +44,13 @@ describe("cross-screen selection on the packaged sample snapshot", () => {
         const authority = authorityCell(cell.identity, `${cell.endpoint.service} ${cell.endpoint.method} ${cell.endpoint.pathTemplate}`, cell.targetResource)
         if (!authority) continue
         matchedAuthority += 1
-        for (const id of cell.evidenceIds) expect(authority.evidenceIds, `validation cell 관측 기록 ${cell.id}건 ${id} belongs to its authority cell`).toContain(id)
+        for (const id of cell.evidenceIds) expect(authority.evidenceIds, `validation cell 요청 기록 ${cell.id}건 ${id} belongs to its authority cell`).toContain(id)
       }
     }
     expect(matchedAuthority).toBeGreaterThan(0)
   })
 
-  it("opens the same authority cell 관측 기록 from the graph Object View, the judgment matrix, and the legacy matrix", () => {
+  it("opens the same authority cell 요청 기록 from the graph Object View, the judgment matrix, and the legacy matrix", () => {
     const operation = sample.cells.find((cell) => cell.resource !== null)!.op
     const site = projectHierarchy(sample, filters, { level: "site", groupId: "", operation: "", operationLimit: 18, objectLimit: 18, focusCandidateKey: "" })
     const group = site.groups.find((item) => item.operations.includes(operation))!
@@ -73,7 +73,7 @@ describe("cross-screen selection on the packaged sample snapshot", () => {
       expect(legacy.cell.evidenceIds).toEqual(authority.evidenceIds)
     }
     expect(compared).toBeGreaterThan(0)
-    for (const id of objectView.listItems.flatMap((item) => item.selection.evidenceIds)) expect(eventIds.has(id), `graph 관측 기록 ${id} is a server event`).toBe(true)
+    for (const id of objectView.listItems.flatMap((item) => item.selection.evidenceIds)) expect(eventIds.has(id), `graph 요청 기록 ${id} is a server event`).toBe(true)
   })
 
   it("keeps route candidates neutral across the graph and the surface", () => {
