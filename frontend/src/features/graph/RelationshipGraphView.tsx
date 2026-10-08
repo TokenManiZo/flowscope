@@ -455,7 +455,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   </div>
 
   return <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--flowscope-canvas)]" aria-labelledby="graph-title">
-    <h1 id="graph-title" className="sr-only">공격면 그래프</h1>
+    <h1 id="graph-title" className="sr-only">점검 그래프</h1>
     {workspaceState.error && <Alert variant="destructive" className="m-4"><AlertTitle>그래프 배치를 저장하거나 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{workspaceState.error}</p><p>화면의 변경은 아직 프로젝트에 반영되지 않았을 수 있습니다. 다시 불러오면 미저장 변경을 버리고 저장된 배치로 돌아갑니다.</p><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => void workspaceState.retry().catch(() => {})}>다시 저장</Button><Button variant="outline" size="sm" onClick={() => void workspaceState.reload()}>저장된 배치 다시 불러오기</Button></div></AlertDescription></Alert>}
     {!workspaceState.workspace && !workspaceState.error && <p className="m-4 text-sm text-muted-foreground">프로젝트 배치를 불러오는 중입니다.</p>}
     {snapshot.isError && <Alert variant="destructive" className="m-4"><AlertTitle>그래프를 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}

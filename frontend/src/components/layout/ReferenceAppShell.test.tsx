@@ -40,13 +40,13 @@ it("stays an icon rail on hover and expands only through the toggle button, push
   const nav = screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })
   expect(within(nav).queryByRole("link", { name: "교차 계정 검증" })).not.toBeInTheDocument()
   const rail = nav.closest("[data-expanded]") as HTMLElement
-  const graph = within(nav).getByRole("link", { name: "점검 Gap 그래프" })
+  const graph = within(nav).getByRole("link", { name: "점검 그래프" })
 
   expect(rail).toHaveAttribute("data-expanded", "false")
   expect(rail).toHaveClass("w-14")
   expect(rail).not.toHaveClass("absolute")
-  expect(within(graph).getByText("점검 Gap 그래프")).toHaveClass("sr-only")
-  expect(graph).toHaveAttribute("title", "점검 Gap 그래프")
+  expect(within(graph).getByText("점검 그래프")).toHaveClass("sr-only")
+  expect(graph).toHaveAttribute("title", "점검 그래프")
   for (const name of ["판정 매트릭스", "요청 기록"]) {
     const link = within(nav).getByRole("link", { name })
     expect(link.parentElement).not.toHaveClass("sr-only")
@@ -60,7 +60,7 @@ it("stays an icon rail on hover and expands only through the toggle button, push
   await user.click(screen.getByRole("button", { name: "사이드바 펼치기" }))
   expect(rail).toHaveAttribute("data-expanded", "true")
   expect(rail).toHaveClass("w-60")
-  expect(within(graph).getByText("점검 Gap 그래프")).not.toHaveClass("sr-only")
+  expect(within(graph).getByText("점검 그래프")).not.toHaveClass("sr-only")
   expect(within(nav).getByRole("link", { name: "판정 매트릭스" })).toHaveAttribute("aria-current", "page")
   expect(localStorage.getItem("flowscope.sidebar")).toBe("open")
 

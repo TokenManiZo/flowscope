@@ -131,9 +131,9 @@ describe("dashboard shell", () => {
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument()
     expect(screen.queryByText(/\d+%|취약점 확정/)).not.toBeInTheDocument()
     // 버튼 대신 단계 칸 전체가 해당 화면으로 가는 링크다.
-    expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toHaveAttribute("href", "#graph")
-    expect(screen.queryByRole("button", { name: "Gap 그래프에서 확인" })).not.toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "점검 Gap 그래프" })).toHaveAttribute("href", "#graph")
+    expect(screen.getByRole("link", { name: "비교 · 점검 그래프" })).toHaveAttribute("href", "#graph")
+    expect(screen.queryByRole("button", { name: "점검 그래프에서 확인" })).not.toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "점검 그래프" })).toHaveAttribute("href", "#graph")
   })
 
   it("exposes the grouped sidebar route set and normalizes unsafe hashes to home", async () => {
@@ -147,7 +147,7 @@ describe("dashboard shell", () => {
     expect(screen.getByRole("link", { name: "FlowScope 홈으로 이동" })).toHaveAttribute("href", "#home")
     expect(screen.queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
     const routes = [
-      ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 Gap 그래프", "graph", null],
+      ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 그래프", "graph", null],
       ["판정 매트릭스", "matrix", null], ["요청 기록", "evidence", null],
     ] as const
 
@@ -280,24 +280,24 @@ describe("dashboard shell", () => {
   it("keeps the dashboard summary and main content without an empty selection inspector", async () => {
     renderDashboard(representativeSnapshot)
 
-    await screen.findByRole("link", { name: "비교 · Gap 그래프" })
+    await screen.findByRole("link", { name: "비교 · 점검 그래프" })
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
     expect(screen.getByLabelText("현재 요약")).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "비교 · 점검 그래프" })).toBeVisible()
   })
 
   it.each([900, 600])("keeps dashboard summary and graph entry reachable without an inspector Sheet at %ipx", async (width) => {
     setCompactViewport(width)
     renderDashboard()
 
-    await screen.findByRole("link", { name: "비교 · Gap 그래프" })
+    await screen.findByRole("link", { name: "비교 · 점검 그래프" })
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     expect(screen.getByLabelText("현재 요약")).toBeVisible()
 
     expect(screen.queryByRole("button", { name: "선택 상세 열기" })).not.toBeInTheDocument()
     expect(screen.queryByRole("dialog", { name: "선택 상세" })).not.toBeInTheDocument()
-    expect(screen.getByRole("link", { name: "비교 · Gap 그래프" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "비교 · 점검 그래프" })).toBeVisible()
   })
 })

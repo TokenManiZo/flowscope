@@ -21,7 +21,7 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "home", label: "홈", group: "overview", icon: House },
   { route: "dashboard", label: "대시보드", group: "overview", icon: LayoutDashboard },
   { route: "inspection", label: "점검 시작", group: "overview", icon: ScanSearch },
-  { route: "graph", label: "점검 Gap 그래프", group: "analysis", icon: Network },
+  { route: "graph", label: "점검 그래프", group: "analysis", icon: Network },
   { route: "matrix", label: "판정 매트릭스", group: "analysis", icon: Table2 },
   { route: "evidence", label: "요청 기록", group: "evidence", icon: FileSearch },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
