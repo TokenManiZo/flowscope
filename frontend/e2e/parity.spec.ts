@@ -409,7 +409,7 @@ test("shows the judgment matrix with server recommendations and a server-bound r
   const inspector = page.getByRole("complementary", { name: "선택 상세" })
   await expect(inspector.getByRole("region", { name: "독립 신뢰도 축" })).toBeVisible()
   await expect(inspector.getByRole("region", { name: "테스트 유효성 게이트" })).toBeVisible()
-  await expect(inspector.getByRole("region", { name: "사람 최종 판정" })).toBeVisible()
+  await expect(inspector.getByRole("region", { name: "취약점 확인" })).toBeVisible()
   await expect(inspector.getByRole("button", { name: "판정 저장" })).toBeEnabled()
   await expect(inspector).not.toContainText("E3")
 })
