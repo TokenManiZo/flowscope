@@ -133,7 +133,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   // 상세는 역할·정책 지정, Request Lab 전송, 사람 최종 판정 세 칸뿐이다.
   expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["정책·역할 지정", "Request Lab 전송", "사람 최종 판정"])
-  expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("A → B: Request Lab의 전송 인증에서 B을(를) 고르세요.")
+  expect(within(inspector).getByRole("region", { name: "Request Lab 전송" })).toHaveTextContent("A → B: Request Lab의 전송 계정에서 B을(를) 고르세요.")
   expect(inspector).not.toHaveTextContent("ev-a")
   expect(within(inspector).queryByRole("region", { name: "독립 신뢰도 축" })).not.toBeInTheDocument()
   expect(within(inspector).queryByRole("region", { name: "테스트 유효성 게이트" })).not.toBeInTheDocument()

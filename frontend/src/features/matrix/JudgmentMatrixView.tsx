@@ -92,7 +92,7 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
   useEffect(() => { setConfirmed(item.reviewStatus === "CONFIRMED"); setNote(item.reviewNote) }, [item.reviewStatus, item.reviewNote])
   const resource = "resource" in item ? item.resource : null
   const recommendation = item.recommendation
-  // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 인증에서 고른다(자동 전송 없음).
+  // 추천 여부와 무관하게 이 칸의 근거 요청을 Request Lab으로 연다. 대상 신원은 Request Lab의 전송 계정에서 고른다(자동 전송 없음).
   const basisId = recommendation?.basisEvidenceIds[0] ?? item.evidenceIds[0]
   // 근거 기록을 보낼 수 없으면(원문이 일부만 남음) 같은 API에서 보낼 수 있는 기록을 대신 연다.
   const basisEvent = snapshot ? requestLabEvent(snapshot.events, item.operation, basisId, resource) : undefined
@@ -113,7 +113,7 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
     <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}:${"resourcePolicy" in item ? item.resourcePolicy : ""}:${identity?.role ?? ""}`} item={item} requiredRole={requiredRole} identityKind={identity?.kind} identityRole={identity?.role} disabled={disabled} />
     <section aria-label="Request Lab 전송" className="grid gap-2 rounded-md border border-border/70 p-3">
       <h3 className="text-sm font-semibold">Request Lab 전송</h3>
-      {recommendation && <p className="text-xs">{recommendation.basisIdentityLabel} → {recommendation.testIdentityLabel}: Request Lab의 전송 인증에서 {recommendation.testIdentityLabel}을(를) 고르세요.{recommendation.stateChanging ? " 상태를 바꾸는 요청이니 직접 확인한 뒤 보내세요." : ""}</p>}
+      {recommendation && <p className="text-xs">{recommendation.basisIdentityLabel} → {recommendation.testIdentityLabel}: Request Lab의 전송 계정에서 {recommendation.testIdentityLabel}을(를) 고르세요.{recommendation.stateChanging ? " 상태를 바꾸는 요청이니 직접 확인한 뒤 보내세요." : ""}</p>}
       <Button type="button" size="sm" className="w-fit" disabled={disabled || !basisEvent} onClick={() => setLabOpen(true)}>Request Lab에서 보내기</Button>
       {!basisEvent && <p className="text-xs text-muted-foreground">이 API의 요청 기록이 없어 Request Lab을 열 수 없습니다.</p>}
     </section>

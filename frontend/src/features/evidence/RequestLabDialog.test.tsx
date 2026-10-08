@@ -34,7 +34,7 @@ const inspecting = (...accountIds: string[]): HumanRun => ({ active: accountIds.
 function clientInspecting(run: HumanRun) {
   return seedHumanRun(createTestQueryClient(), run)
 }
-// 이 파일의 기본은 비로그인으로 점검 중인 상태다. 점검 상태에 따른 기본 전송 인증은 따로 고정한다.
+// 이 파일의 기본은 비로그인으로 점검 중인 상태다. 점검 상태에 따른 기본 전송 계정은 따로 고정한다.
 function renderWithQueryClient(ui: ReactElement, client = clientInspecting(inspecting(""))) {
   return renderWithClient(ui, client)
 }
@@ -102,19 +102,19 @@ function authenticationLabel(value: string) {
 }
 
 async function chooseAuthentication(user: ReturnType<typeof userEvent.setup>, value: string) {
-  if (!screen.queryByRole("listbox")) await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
+  if (!screen.queryByRole("listbox")) await user.click(screen.getByRole("combobox", { name: "전송 계정" }))
   await user.click(await screen.findByRole("option", { name: authenticationLabel(value) }))
 }
 
 async function openDraft(currentSession: boolean | null = false) {
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   // 비로그인으로 점검 중이면 열자마자 원본에서 비로그인 편집본이 준비된다(Original·+ 없음).
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled())
   if (currentSession) {
     await chooseAuthentication(userEvent.setup(), "ACCOUNT:acct-1")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled())
   }
   return request
 }
@@ -131,7 +131,7 @@ describe("RequestLabDialog", () => {
     expect(request).not.toHaveAttribute("readonly")
     expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
-    await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
+    await user.click(screen.getByRole("combobox", { name: "전송 계정" }))
     const options = await screen.findByRole("listbox")
     expect(within(options).getByRole("option", { name: "관리자" })).toBeVisible()
     expect(within(options).getByRole("option", { name: "USER C · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
@@ -141,7 +141,7 @@ describe("RequestLabDialog", () => {
     expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
     expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveAttribute("readonly")
     expect(screen.getByRole("note")).toHaveTextContent("처음 수집한 원문입니다")
-    await user.click(screen.getByRole("button", { name: "편집으로 돌아가기" }))
+    await user.click(screen.getByRole("button", { name: "편집 화면으로" }))
     expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
     expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(false)
   })
@@ -152,7 +152,7 @@ describe("RequestLabDialog", () => {
   ])("defaults the send authentication to %s", async (_, run, label) => {
     installTransport()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />, clientInspecting(run))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(label))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(label))
   })
 
   it.each([
@@ -166,7 +166,7 @@ describe("RequestLabDialog", () => {
     // 고를 신원이 없으면 어떤 인증도 미리 적용하지 않는다.
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab/credentials")).toBe(false)
     expect(screen.getByRole("button", { name: "작성 중 · 인증 선택 전" })).toHaveAttribute("aria-pressed", "true")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(/인증 선택/)
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(/인증 선택/)
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
   })
 
@@ -219,11 +219,11 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
     const editor = await openDraft() as HTMLTextAreaElement
     // 계정·비로그인에서는 인증 헤더가 교체된다고 안내한다.
-    expect(screen.getByText(/고른 전송 인증으로 바뀝니다/)).toBeInTheDocument()
+    expect(screen.getByText(/고른 전송 계정으로 바뀝니다/)).toBeInTheDocument()
     const text = editor.value
     const credsBefore = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab/credentials").length
     await chooseAuthentication(user, "RAW")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("직접 입력"))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("직접 입력"))
     // 직접 입력은 인증 교체 미리보기를 부르지 않고 요청 본문을 그대로 둔다.
     expect(fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab/credentials").length).toBe(credsBefore)
     expect((screen.getByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement).value).toBe(text)
@@ -241,9 +241,9 @@ describe("RequestLabDialog", () => {
     const capturing: ManagedSession = { ...activeSession, status: "CAPTURING", capturing: true, replayReady: true }
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[capturing]} />)
     await openDraft()
-    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 계정(alice)으로 보내려면 전송 인증에서 alice을(를) 고르세요.")
+    expect(screen.getByRole("note")).toHaveTextContent("이 기록의 계정(alice)으로 보내려면 전송 계정에서 alice을(를) 고르세요.")
     await chooseAuthentication(user, "ACCOUNT:acct-1")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("관리자"))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("관리자"))
     await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(true))
@@ -292,7 +292,7 @@ describe("RequestLabDialog", () => {
     const user = userEvent.setup()
     const view = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, second]} rawState={owner} />)
     await openDraft()
-    const authentication = screen.getByRole("combobox", { name: "전송 인증" })
+    const authentication = screen.getByRole("combobox", { name: "전송 계정" })
     for (const [index, id] of ["acct-1", "acct-2"].entries()) {
       await chooseAuthentication(user, `ACCOUNT:${id}`)
       await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel(`ACCOUNT:${id}`)))
@@ -344,7 +344,7 @@ describe("RequestLabDialog", () => {
     await openDraft(true)
     await chooseAuthentication(user, "ACCOUNT:acct-2")
     expect(await screen.findByRole("alert")).toHaveTextContent("B 세션 만료")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
     expect(owner.requests[0]?.accountId).toBe("acct-1")
     expect(owner.request).toContain("Cookie: session=A")
   })
@@ -370,7 +370,7 @@ describe("RequestLabDialog", () => {
     const pane = screen.getByRole("region", { name: "Request 원문 패널" })
     await user.click(within(pane).getByRole("button", { name: "JSON 정돈" }))
     const derived = owner.jsonViews.request!
-    const authentication = screen.getByRole("combobox", { name: "전송 인증" })
+    const authentication = screen.getByRole("combobox", { name: "전송 계정" })
     await chooseAuthentication(user, "ACCOUNT:acct-1")
     await waitFor(() => expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
     await waitFor(() => expect(authentication).toBeEnabled())
@@ -530,7 +530,7 @@ describe("RequestLabDialog", () => {
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
     expect(request).toHaveValue(secret)
     await user.click(screen.getByRole("button", { name: "원문 보기" }))
-    await user.click(screen.getByRole("button", { name: "편집으로 돌아가기" }))
+    await user.click(screen.getByRole("button", { name: "편집 화면으로" }))
     expect(screen.getByRole("alert")).toHaveTextContent("편집에 반영하지 않았습니다")
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
     fireEvent.change(request, { target: { value: "x".repeat(1_048_577) } })
@@ -580,8 +580,8 @@ describe("RequestLabDialog", () => {
     expect(status).toHaveTextContent("일부만 남아 있어 편집·재전송할 수 없습니다")
     expect(status).toHaveTextContent("이 API를 한 번 더 둘러본 뒤 새 기록에서 Request Lab을 여세요")
     // 돌아갈 편집본이 없으니 눌러도 아무 일이 없는 버튼을 두지 않는다.
-    expect(screen.getByRole("button", { name: "편집으로 돌아가기" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "편집으로 돌아가기" })).toHaveAttribute("title", "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다.")
+    expect(screen.getByRole("button", { name: "편집 화면으로" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "편집 화면으로" })).toHaveAttribute("title", "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다.")
     expect(screen.getByRole("note")).toHaveTextContent("처음 수집한 원문입니다. 읽기 전용입니다.")
     expect(screen.getByRole("note")).not.toHaveTextContent("편집으로 돌아가면")
   })
@@ -624,7 +624,7 @@ describe("RequestLabDialog", () => {
 
     await openDraft(true)
     // Active cross-identity replay rejects this LEGACY_RESPONSE session; the Request Lab still offers it.
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
     expect(screen.queryByLabelText("계정")).not.toBeInTheDocument()
   })
 
@@ -632,7 +632,7 @@ describe("RequestLabDialog", () => {
     const fetch = installReusableTransport()
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} />)
     await openDraft(true)
-    const authentication = screen.getByRole("combobox", { name: "전송 인증" })
+    const authentication = screen.getByRole("combobox", { name: "전송 계정" })
     expect(authentication).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1"))
     expect(authentication).toHaveTextContent("관리자")
     expect(screen.queryByRole("region", { name: "Request Lab 메타데이터" })).not.toBeInTheDocument()
@@ -645,7 +645,7 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession, { ...activeSession, accountId: "inactive", accountLabel: "비활성", status: "EXPIRED" }, { ...activeSession, accountId: "other", service: "https://other.example.test" }]} />)
 
     expect(await openDraft(true)).toHaveValue(secret)
-    await user.click(screen.getByRole("combobox", { name: "전송 인증" }))
+    await user.click(screen.getByRole("combobox", { name: "전송 계정" }))
     for (const label of ["USER B", "USER C", "비활성", "다른 서비스"]) {
       expect(screen.getByRole("option", { name: `${label} · 점검 시작 후 사용 가능` })).toHaveAttribute("aria-disabled", "true")
     }
@@ -666,12 +666,12 @@ describe("RequestLabDialog", () => {
     sent.delete("operationId")
     expect(sent).toEqual(new URLSearchParams({ action: "send", eventId: "event-7", credentialMode: "ACCOUNT", accountId: "acct-1", request: secret }))
     await chooseAuthentication(user, "ANONYMOUS")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await chooseAuthentication(user, "ACCOUNT:acct-1")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ACCOUNT:acct-1")))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     const sends = fetch.mock.calls.filter(([input]) => String(input) === "/api/request-lab")
     expect(new URLSearchParams(String(sends[1]?.[1]?.body)).get("credentialMode")).toBe("ANONYMOUS")
@@ -692,7 +692,7 @@ describe("RequestLabDialog", () => {
     expect(await screen.findByText(/Standalone 데모에서는/)).toBeVisible()
     // 편집할 수 없는 원문이면 편집본(작성 중 탭)을 만들지 않고 인증도 고를 수 없다.
     expect(screen.queryByRole("button", { name: /작성 중/ })).not.toBeInTheDocument()
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeDisabled()
     expect(screen.getByLabelText("Request Lab 요청 원문")).toBeDisabled()
     const send = screen.getByRole("button", { name: "요청 재전송" })
     expect(send).toBeDisabled()
@@ -729,10 +729,10 @@ describe("RequestLabDialog", () => {
     installTransport()
     const { unmount } = renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
     await openDraft()
-    await userEvent.click(screen.getByRole("combobox", { name: "전송 인증" }))
+    await userEvent.click(screen.getByRole("combobox", { name: "전송 계정" }))
     expect(screen.getByRole("option", { name: "관리자 · 점검 시작 후 사용 가능" })).toHaveAttribute("aria-disabled", "true")
     await userEvent.keyboard("{Escape}")
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS"))
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ANONYMOUS"))
     unmount()
 
     installReusableTransport()
@@ -741,7 +741,7 @@ describe("RequestLabDialog", () => {
     expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
     rerender(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[]} />)
     await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled())
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel(""))
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel(""))
   })
 
   it("retries a draft load and stacks each send as its own tab", async () => {
@@ -818,7 +818,7 @@ describe("RequestLabDialog", () => {
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[older, collecting, notReady]} />)
 
     await openDraft()
-    const authentication = screen.getByRole("combobox", { name: "전송 인증" })
+    const authentication = screen.getByRole("combobox", { name: "전송 계정" })
     expect(authentication).toHaveTextContent(authenticationLabel("ANONYMOUS"))
     await user.click(authentication)
     expect(screen.getByRole("option", { name: "USER B" })).not.toHaveAttribute("aria-disabled", "true")
@@ -1092,13 +1092,13 @@ describe("RequestLabDialog", () => {
     await openDraft()
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
 
-    expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeDisabled()
+    expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "원문 보기" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toBeDisabled()
     expect(screen.getByRole("button", { name: "수정된 요청 1 삭제" })).toBeDisabled()
     await act(async () => { send.resolve(json({ success: true, message: "sent", eventId: "ev-new", status: 200, response: "ok", durationMs: 3, requestBytes: 1, responseBytes: 2 })) })
 
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled())
     expect(screen.getByRole("button", { name: "수정된 요청 1 · 비로그인 · 200" })).toBeEnabled()
     expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("ok")
     expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly")
@@ -1125,8 +1125,8 @@ describe("RequestLabDialog", () => {
     expect(owner.request).toBe(original)
     expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab")).toBe(false)
     await chooseAuthentication(user, "ANONYMOUS")
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled())
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent(authenticationLabel("ANONYMOUS")))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled())
     await user.click(screen.getByRole("button", { name: "요청 재전송" }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/request-lab", expect.objectContaining({ method: "POST" })))
     const sent = fetch.mock.calls.find(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")
@@ -1229,7 +1229,7 @@ describe("RequestLabDialog", () => {
       : Promise.resolve(json({ ...requestLabDraft(), workspace: { datasetRevision: 7, revision: 0, persisted: true, tab: { nextId: 1, selectedId: 0, entries: {} } } }))))
     renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={onOpenChange} event={event} sessions={[]} rawState={owner} datasetRevision={7} />)
     // 열면 비로그인 편집본이 바로 준비된다.
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
     fireEvent.change(screen.getByLabelText("Request Lab 요청 원문"), { target: { value: "KEEP-UNSAVED" } })
     await user.click(screen.getByRole("button", { name: "닫기" }))
     expect(await screen.findByText("disk full")).toBeVisible()

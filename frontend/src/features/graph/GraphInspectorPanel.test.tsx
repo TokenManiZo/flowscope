@@ -50,7 +50,7 @@ it("opens Request Lab ready to send without logging in, and sends nothing until 
   await userEvent.click(screen.getByRole("button", { name: "Request Lab에서 보내기" }))
   await screen.findByLabelText("Request Lab 요청 원문")
   // 비로그인으로 점검 중이면 원본에서 비로그인 편집본이 바로 준비된다: 관리 인증 헤더(Cookie)가 빠진다.
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("GET /orders/1 HTTP/1.1\n\n")
   expect(screen.queryByRole("button", { name: "Original" })).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: /Repeater/ })).not.toBeInTheDocument()
