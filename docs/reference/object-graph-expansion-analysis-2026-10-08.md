@@ -6,6 +6,12 @@
 
 ### 1~3단계 실험 설정 (후속 요청 반영)
 
+POST 보정: 서로 다른 문자열 경로를 path ID로 추론할 때 POST 요청의 query/body 필드 구조도 비교한다. 입력 구조가 다른 `/auth/login`, `/auth/signup`, token query 동작을 `/auth/{id}` 하나로 합치지 않는다. 고정 동작명 denylist는 추가하지 않는다. 실제 URL query와 요청 body가 모두 있으면 두 입력 위치는 별도로 표시한다. 숫자·토큰형 POST 경로 ID와 body 조합은 계속 지원한다. 같은 필드 구조를 쓰는 서로 다른 고정 POST 동작과 문자열 ID를 관측만으로 완벽히 구분하는 한계는 남는다.
+
+다중 경로: 마지막 ID만 객체로 표시하되 앞선 ID의 부모 범위를 유지한다. 별도 표시 메타데이터 `apiFamily`를 통해 `/api/{id_0}/detail/{id_1}` API 그룹 → `/api/101/detail/{id_1}` 및 `/api/202/detail/{id_1}` 부모 API → 각 `PATH PARAM · id_1` 그룹 → OBJ 순으로 두 번 펼친다. 부모별 표시 API 노드의 ID를 별도로 부여하여 기존 canonical operation이 같아도 부모 범위가 섞이지 않는다. 검색으로 부모 API에 이동할 때 API 그룹 펼침도 복원한다. 원본 operation/resource·Evidence 좌표 및 기존 판정은 유지한다.
+
+이 보정의 검증: 프런트엔드 전체 93개 파일·785개 테스트, TypeScript 검사, Java 객체 투영·스냅샷 불변성·인가 판정·Request Lab 저장·20,000건 스냅샷 회귀 검사 통과. 4단계는 계속 비활성화한다.
+
 경로 객체도 접힌 `PATH PARAM · id` 그룹으로 표시한다. query는 `QUERY PARAM`, 요청 body는 `REQUEST BODY` 배지로 구분한다. 펼치면 연결 신원·API 및 해당 객체 그룹이 상단에 연속 배치되고 OBJ 번호순은 유지한다. 개별 OBJ는 화면 전체 최대 10개이며 더 보기/검색으로 제한을 우회하지 않는다. 전체 관측과 그룹 총개수는 유지한다. 개별 OBJ 더블클릭/Enter는 실제 관측 Evidence의 최신 요청을 Request Lab으로 열고, 그룹 더블클릭은 펼침/접기만 수행한다. 4단계는 비활성화 상태다.
 
 최종 변경 검증: 프런트엔드 전체 93개 파일·783개 테스트 통과 후 화면 전체 10개 제한 회귀를 추가해 관련 52개 테스트 통과. TypeScript 검사, Java 객체 투영·스냅샷 불변성·인가 판정·Request Lab 저장·20,000건 스냅샷 회귀 검사 통과. Request Lab 더블클릭은 실제 Evidence의 최신 eventId로 대화상자를 여는 UI 테스트와 캔버스 dbltap 콜백 테스트로 검증했다. 실제 실행 중인 Burp 확장은 JAR 재로드가 필요하며 기존 저장 판정은 변경하지 않는다.

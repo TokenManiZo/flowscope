@@ -17,6 +17,35 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("opens a multi-path API family before opening each parent's final objects", () => {
+    const snapshot = data()
+    const operation = `${service} GET /api/{id}/detail/{id}`
+    const family = `${service} GET /api/{id_0}/detail/{id_1}`
+    snapshot.events = snapshot.events.map(event => ({ ...event, op: operation }))
+    snapshot.cells = snapshot.cells.map(cell => ({ ...cell, op: operation }))
+    snapshot.displayObjects = snapshot.displayObjects!.map((object, i) => ({ ...object, operation, apiFamily: family,
+      apiKey: `${service} GET /api/${i < 2 ? "101" : "202"}/detail/{id_1}`, groupKey: i < 2 ? "parent-101" : "parent-202", ordinal: i < 2 ? i+1 : 1 }))
+    const navigation = { ...nav, groupId: apiGroupDescriptor(service, "/api/{id}/detail/{id}").id }
+    const collapsed = projectHierarchy(snapshot, filters, navigation)
+    expect(collapsed.operations).toHaveLength(0)
+    expect(collapsed.resources).toHaveLength(0)
+    expect(collapsed.nodes.find(node => node.kind === "operation-group")?.label).toBe(family)
+    const opened = { ...filters, expandedObjectGroups: [`operation-group:${family}`] }
+    const parents = projectHierarchy(snapshot, opened, navigation)
+    expect(parents.operations).toHaveLength(2)
+    expect(new Set(parents.operations.map(node => node.id)).size).toBe(2)
+    expect(parents.nodes.filter(node => node.kind === "object-group")).toHaveLength(2)
+    expect(parents.resources).toHaveLength(0)
+    const children = projectHierarchy(snapshot, { ...opened, expandedObjectGroups: [...opened.expandedObjectGroups, "object-group:parent-101"] }, navigation)
+    expect(children.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 2"])
+    expect(children.resources.flatMap(node => node.selection.evidenceIds)).toEqual(["ev-1", "ev-2"])
+    const index = buildGraphSearchIndex(snapshot, filters)
+    const entry = index.entries.find(item => item.kind === "operation" && item.value.includes("/api/101/"))!
+    const destination = searchDestination(entry, navigation, null, false)
+    expect(destination.expand).toContain(`operation-group:${family}`)
+    const searched = projectHierarchy(snapshot, { ...filters, expandedObjectGroups: destination.expand }, destination.navigation, destination.reveal)
+    expect(searched.nodes.some(node => node.id === destination.nodeId)).toBe(true)
+  })
   it("folds path objects and labels their parameter location", () => {
     const graph = projectHierarchy(data(), { ...filters, expandedObjectGroups: [] }, nav)
     expect(graph.resources).toHaveLength(0)

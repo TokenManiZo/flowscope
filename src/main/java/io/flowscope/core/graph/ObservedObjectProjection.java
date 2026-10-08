@@ -30,7 +30,7 @@ import java.io.StringReader;
 public final class ObservedObjectProjection {
     private ObservedObjectProjection() {}
     public record ObjectObservation(String eventId, String operation, String apiKey, String groupKey,
-            String objectKey, String kind, List<String> fields, String legacyResource, int ordinal) {}
+            String objectKey, String kind, List<String> fields, String legacyResource, int ordinal, String apiFamily) {}
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(128).maxStringLength(1_000_000).build()).build())
@@ -62,6 +62,7 @@ public final class ObservedObjectProjection {
         List<PathRow> rows = new ArrayList<>();
         Map<String, Set<String>> siblings = new HashMap<>();
         Map<String, Boolean> strongSibling = new HashMap<>();
+        Map<String, Map<String, Set<String>>> postSchemas = new HashMap<>();
         for (RequestRecord r : unique.values()) {
             List<String> segments = Arrays.asList(r.path.split("/", -1));
             if (segments.size() > 128 || r.path.length() > 8192) continue;
@@ -69,17 +70,21 @@ public final class ObservedObjectProjection {
             for (int i = 2; i < segments.size(); i++) if (token(segments.get(i))) positions.add(i);
             PathRow row = new PathRow(r, segments, positions);
             rows.add(row);
+            String schema = "POST".equals(r.method) ? requestSchema(r) : null;
             for (int i = 2; i < segments.size(); i++) {
                 if (segments.get(i).isEmpty()) continue;
                 String key = siblingKey(row, i);
                 siblings.computeIfAbsent(key, ignored -> new HashSet<>()).add(segments.get(i));
                 if (token(segments.get(i))) strongSibling.put(key, true);
+                if (schema != null) postSchemas.computeIfAbsent(key, ignored -> new HashMap<>())
+                        .computeIfAbsent(segments.get(i), ignored -> new HashSet<>()).add(schema);
             }
         }
         // Infer string slots from structure, not a numeric/hex admission filter.
         for (PathRow row : rows) for (int i = 2; i < row.segments.size(); i++) {
             String key = siblingKey(row, i);
             if (!row.segments.get(i).isEmpty() && !strongSibling.getOrDefault(key, false)
+                    && (!"POST".equals(row.record.method) || sharedSchema(postSchemas.get(key)))
                     && siblings.getOrDefault(key, Set.of()).size() > 1) row.positions.add(i);
         }
         Map<String, Observers> observers = new HashMap<>();
@@ -93,13 +98,17 @@ public final class ObservedObjectProjection {
             if (row.positions.isEmpty() || !observers.get(family(row)).corroborated()) continue;
             int position = row.positions.stream().mapToInt(Integer::intValue).max().orElseThrow();
             List<String> api = new ArrayList<>(row.segments);
-            api.set(position, "{id}");
+            api.set(position, row.positions.size() > 1 ? "{id_" + (row.positions.size() - 1) + "}" : "{id}");
             String apiKey = row.record.service + " " + row.record.method + " " + String.join("/", api);
             String group = key("PATH", apiKey);
             // Actual parent scope and coordinate survive future family refinement.
             String object = key("PATH", row.record.service, row.record.method, row.record.path, Integer.toString(position));
             String legacy = row.record.resource;
-            add(out, ordinals, row.record, apiKey, group, object, "PATH", List.of("/segments/" + (position - 1)), legacy);
+            List<String> familyPath = new ArrayList<>(row.segments);
+            int slot = 0;
+            for (int at : row.positions) familyPath.set(at, "{id_" + slot++ + "}");
+            String apiFamily = row.positions.size() > 1 ? row.record.service + " " + row.record.method + " " + String.join("/", familyPath) : null;
+            add(out, ordinals, row.record, apiKey, group, object, "PATH", List.of("/segments/" + (position - 1)), legacy, apiFamily);
         }
         Set<String> pathCandidates = new HashSet<>();
         for (PathRow row : rows) if (!row.positions.isEmpty()) pathCandidates.add(row.record.evidenceId);
@@ -292,6 +301,40 @@ public final class ObservedObjectProjection {
         shaped.set(position, "{id}");
         return row.record.service + "\0" + row.record.method + "\0" + position + "\0" + String.join("/", shaped);
     }
+    private static boolean sharedSchema(Map<String, Set<String>> byValue) {
+        if (byValue == null || byValue.size() < 2) return false;
+        Set<String> shared = null;
+        for (Set<String> schemas : byValue.values()) {
+            if (shared == null) shared = new HashSet<>(schemas); else shared.retainAll(schemas);
+        }
+        return shared != null && !shared.isEmpty();
+    }
+    private static String requestSchema(RequestRecord r) {
+        try {
+            SortedSet<String> fields = new TreeSet<>();
+            if (r.query != null) {
+                if (r.query.length() > 1_000_000) return null;
+                String[] pairs = r.query.split("&");
+                if (pairs.length > 10_000) return null;
+                for (String pair : pairs) if (!pair.isEmpty()) fields.add("QUERY:" + URLDecoder.decode(pair.split("=", 2)[0], StandardCharsets.UTF_8));
+            }
+            String body = r.requestBodyForAnalysis();
+            if (body != null && !body.isBlank()) {
+                if (body.length() > 1_000_000 || r.requestPayload != null && !r.requestPayload.retained()) return null;
+                if (body.stripLeading().startsWith("{") || body.stripLeading().startsWith("[")) {
+                    SortedSet<String> bodyFields = new TreeSet<>();
+                    normalizeJson(JSON.readTree(body), "", bodyFields, new int[]{0});
+                    bodyFields.forEach(field -> fields.add("BODY:" + field));
+                } else {
+                    var extracted = ParameterExtractor.extract(r);
+                    if (!extracted.parsedCompletely()) return null;
+                    extracted.observations().stream().filter(o -> o.key().location() != ParameterObservation.Location.PATH)
+                            .forEach(o -> fields.add(o.key().location() + ":" + o.key().canonicalPath()));
+                }
+            }
+            return fields.isEmpty() ? null : JSON.writeValueAsString(fields);
+        } catch (Exception ignored) { return null; }
+    }
     private static String family(PathRow row) {
         List<String> shaped = new ArrayList<>(row.segments);
         row.positions.forEach(i -> shaped.set(i, "{id}"));
@@ -299,9 +342,13 @@ public final class ObservedObjectProjection {
     }
     private static void add(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
             RequestRecord r, String api, String group, String object, String kind, List<String> fields, String legacy) {
+        add(out, ordinals, r, api, group, object, kind, fields, legacy, null);
+    }
+    private static void add(List<ObjectObservation> out, Map<String, LinkedHashMap<String, Integer>> ordinals,
+            RequestRecord r, String api, String group, String object, String kind, List<String> fields, String legacy, String apiFamily) {
         var members = ordinals.computeIfAbsent(group, ignored -> new LinkedHashMap<>());
         int number = members.computeIfAbsent(object, ignored -> members.size() + 1);
-        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number));
+        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily));
     }
     private static String key(String... parts) {
         StringBuilder framed = new StringBuilder();

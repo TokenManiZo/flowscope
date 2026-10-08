@@ -64,10 +64,37 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
   for (const entry of entries) {
     const bucket = byApi.get(entry.object.apiKey) ?? []; bucket.push(entry); byApi.set(entry.object.apiKey, bucket)
   }
+  const familyByApi = new Map<string, string>()
+  const familyItems = new Map<string, ObjectEntry[]>()
+  for (const [api, items] of byApi) {
+    const family = items.find(item => item.object.apiFamily)?.object.apiFamily
+    if (!family) continue
+    familyByApi.set(api, family)
+    const bucket = familyItems.get(family) ?? []; bucket.push(...items); familyItems.set(family, bucket)
+  }
+  const closedFamilies = new Set<string>()
+  if (navigation.level === "group") for (const [family, items] of familyItems) {
+    const expanded = (filters.expandedObjectGroups ?? []).includes(`operation-group:${family}`)
+    const apis = [...new Set(items.map(item => item.object.apiKey))]
+    const group = node("operation-group", family, family, { ...select(items), displayApiKey: family }, {
+      objectGroup: { key: family, members: apis, owners: {}, expanded },
+      displayOperations: [...new Set(items.map(item => item.object.operation))],
+    })
+    if (!expanded) {
+      closedFamilies.add(family)
+      list.push(group)
+      for (const identity of new Set(items.map(item => item.event.idn))) {
+        if (!nodes.some(n => n.id === `identity:${identity}`)) node("identity", identity, graphAccountLabel(snapshot, identity), { ...select(items.filter(item => item.event.idn === identity)), identity })
+        edge("identity-operation", `identity:${identity}`, group.id, items.filter(item => item.event.idn === identity))
+      }
+    }
+  }
   let visibleObjects = 0
   for (const [api, items] of byApi) {
+    const family = familyByApi.get(api)
+    if (family && closedFamilies.has(family)) continue
     const operations = [...new Set(items.map(item => item.object.operation))].sort()
-    const apiNode = node("operation", operations[0], api, { ...select(items), displayApiKey: api }, { displayOperations: operations, displayObjectCount: new Set(items.map(item => item.object.objectKey)).size })
+    const apiNode = node("operation", family ? api : operations[0], api, { ...select(items), displayApiKey: api }, { displayOperations: operations, displayObjectCount: new Set(items.map(item => item.object.objectKey)).size })
     if (navigation.level === "group") list.push(apiNode)
     for (const identity of new Set(items.map(item => item.event.idn))) {
       if (!nodes.some(n => n.id === `identity:${identity}`)) node("identity", identity, graphAccountLabel(snapshot, identity), { ...select(items.filter(item => item.event.idn === identity)), identity })
@@ -83,7 +110,7 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         const bucket = objects.get(item.object.objectKey) ?? []; bucket.push(item); objects.set(item.object.objectKey, bucket)
       }
       const first = members[0].object, expanded = (filters.expandedObjectGroups ?? []).includes(`object-group:${groupKey}`)
-        const label = first.kind === "PATH" ? "id" : first.kind === "RESPONSE_BODY" ? "OBJ" : [...new Set(first.fields.map(field => field.replace(/^\//, "").replace(/\//g, ".")))].join(" · ") || "OBJ"
+      const label = first.kind === "PATH" ? (family ? family.match(/\{id_\d+\}/g)?.at(-1)?.slice(1, -1) ?? "id" : "id") : first.kind === "RESPONSE_BODY" ? "OBJ" : [...new Set(first.fields.map(field => field.replace(/^\//, "").replace(/\//g, ".")))].join(" · ") || "OBJ"
       const groupNode = node("object-group", groupKey, label, { ...select(members), displayApiKey: api }, { displayObjectKind: first.kind, objectGroup: { key: label, members: [...objects.keys()], owners: {}, expanded } })
       edge("operation-resource", apiNode.id, groupNode.id, members)
       let shown = 0

@@ -107,8 +107,36 @@ class ObservedObjectProjectionTest {
         assertEquals(out.get(0).apiKey(), out.get(1).apiKey());
         assertNotEquals(out.get(0).apiKey(), out.get(2).apiKey());
         assertEquals(List.of(1,2,1), out.stream().map(ObservedObjectProjection.ObjectObservation::ordinal).toList());
+        assertEquals("https://t:443 GET /api/{id_0}/detail/{id_1}", out.getFirst().apiFamily());
+        assertTrue(out.getFirst().apiKey().endsWith("/api/101/detail/{id_1}"));
         var strings = ObservedObjectProjection.build(List.of(record("/orders/alpha/detail", 4),record("/orders/beta/detail", 5)));
         assertEquals(2, strings.size()); assertTrue(strings.getFirst().apiKey().endsWith("/orders/{id}/detail"));
+    }
+    @Test void postActionsWithDifferentInputSchemasStaySeparateApisWithoutPhantomPathObjects() {
+        var login = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/api/auth/login", 200, "A");
+        login.reqBody = "{\"email\":\"a@t\",\"password\":\"secret\"}";
+        var signup = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/api/auth/signup", 200, "A");
+        signup.reqBody = "{\"email\":\"a@t\",\"password\":\"secret\",\"name\":\"A\",\"number\":1}";
+        var verify = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/api/auth/verify", 200, "A");
+        verify.query = "token=abc";
+        int i = 0;
+        for (var r : List.of(login, signup, verify)) { r.hasResponse = true; r.evidenceId = "post-action-" + ++i; }
+        Normalizer.normalizeAll(List.of(login, signup, verify));
+        var out = ObservedObjectProjection.build(List.of(login, signup, verify));
+        assertEquals(3, out.size());
+        assertEquals(2, out.stream().filter(o -> "REQUEST_BODY".equals(o.kind())).count());
+        assertEquals(1, out.stream().filter(o -> "QUERY".equals(o.kind())).count());
+        assertEquals(3, out.stream().map(ObservedObjectProjection.ObjectObservation::apiKey).distinct().count());
+    }
+    @Test void actualPostQueryAndBodyRemainSeparateAndNumericPathIdsAreSupported() {
+        var a = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders/101", 200, "A");
+        var b = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders/202", 200, "A");
+        int i = 0;
+        for (var r : List.of(a,b)) { r.hasResponse = true; r.evidenceId = "post-order-" + ++i; r.reqBody = "{\"orderid\":1}"; r.query = "page=1"; }
+        Normalizer.normalizeAll(List.of(a,b));
+        var out = ObservedObjectProjection.build(List.of(a,b));
+        assertEquals(6, out.size());
+        assertEquals(Set.of("PATH", "QUERY", "REQUEST_BODY"), new HashSet<>(out.stream().map(ObservedObjectProjection.ObjectObservation::kind).toList()));
     }
     @Test void methodAndServiceAndUntrustedTrafficDoNotCorroborate() {
         var a = record("/posts/100", 1);

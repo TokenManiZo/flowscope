@@ -17,6 +17,7 @@ export interface DisplayObject {
   eventId: string
   operation: string
   apiKey: string
+  apiFamily?: string | null
   groupKey: string
   objectKey: string
   kind: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
