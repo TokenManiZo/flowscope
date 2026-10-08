@@ -139,10 +139,10 @@ describe("LiveAuthorizationReplayCard", () => {
     expect(isAccountSelectable(legacy)).toBe(false);
     expect(isAccountSelectable({ ...legacy, verificationSource: "OPERATOR_ASSERTED" })).toBe(true);
 
-    expect(VERIFICATION_SOURCE_LABEL.OPERATOR_ASSERTED).toBe("운영자 확인");
-    expect(VERIFICATION_SOURCE_LABEL.RULE_MATCHED).toBe("규칙 확인");
-    expect(VERIFICATION_SOURCE_LABEL.LEGACY_RESPONSE).toBe("약검증");
-    expect(VERIFICATION_SOURCE_LABEL.NONE).toBe("미검증");
+    expect(VERIFICATION_SOURCE_LABEL.OPERATOR_ASSERTED).toBe("직접 확인");
+    expect(VERIFICATION_SOURCE_LABEL.RULE_MATCHED).toBe("규칙으로 확인");
+    expect(VERIFICATION_SOURCE_LABEL.LEGACY_RESPONSE).toBe("로그인 추정");
+    expect(VERIFICATION_SOURCE_LABEL.NONE).toBe("확인 안 됨");
   });
 
   it("keeps the start button disabled until a target and the approval are set", async () => {
@@ -221,7 +221,7 @@ describe("unavailable identities and start guidance", () => {
     const client = makeClient(snapshot())
     render(<LiveAuthorizationReplayCard accounts={accounts} apiClient={client} />)
     expect(await screen.findByText("세션 없음")).toBeVisible()
-    expect(screen.getByText("자격 충돌")).toBeVisible()
+    expect(screen.getByText("다른 계정 로그인 정보 섞임")).toBeVisible()
     expect(screen.getByText("세션 확인 필요")).toBeVisible()
     expect(screen.queryByText("UNVERIFIED")).not.toBeInTheDocument()
     expect(screen.getByRole("link", { name: "계정·세션에서 세션 캡처 →" })).toHaveAttribute("href", "#accounts")

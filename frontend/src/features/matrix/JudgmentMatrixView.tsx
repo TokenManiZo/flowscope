@@ -118,8 +118,8 @@ function JudgmentDetail({ item, requiredRole, identity, disabled, snapshot }: { 
       {!basisEvent && <p className="text-xs text-muted-foreground">이 API의 요청 기록이 없어 Request Lab을 열 수 없습니다.</p>}
     </section>
     {labOpen && basisEvent && snapshot && <RequestLabDialog open onOpenChange={open => { if (!open) setLabOpen(false) }} event={basisEvent} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={snapshot.datasetRevision ?? snapshot.identityRevision ?? 0} snapshotRevision={snapshot.revision} suspended={disabled} />}
-    <section aria-label="사람 최종 판정" className="grid gap-2 rounded-md border border-border/70 p-3">
-      <h3 className="text-sm font-semibold">사람 최종 판정</h3>
+    <section aria-label="최종 판단" className="grid gap-2 rounded-md border border-border/70 p-3">
+      <h3 className="text-sm font-semibold">최종 판단</h3>
       <label className="flex items-start gap-2 text-xs"><Checkbox className="mt-0.5" checked={confirmed} disabled={disabled || !reviewable} onCheckedChange={(checked) => setConfirmed(checked === true)} /><span>취약점으로 확정</span></label>
       <label className="grid gap-1 text-xs"><span>검증 메모</span><input aria-label="검증 메모" className="rounded border border-border/70 bg-background px-2 py-1 text-sm" maxLength={2000} value={note} disabled={disabled || !reviewable} onChange={(event) => setNote(event.target.value)} /></label>
       <div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={disabled || !reviewable || review.isPending} onClick={() => void submit(confirmed ? "CONFIRMED" : "UNRESOLVED")}>판정 저장</Button><Button type="button" size="sm" variant="outline" disabled={disabled || !reviewable || review.isPending} onClick={() => void submit("DISMISSED")}>정상·기각</Button></div>

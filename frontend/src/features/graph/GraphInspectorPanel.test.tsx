@@ -139,5 +139,5 @@ it.each(["UNKNOWN", "POLLING"])("shows B's neutral evidence in the API card deta
   renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={null} snapshot={data} node={node} projection={graph} />)
   expect(screen.getByRole("listitem", { name: "alice 요청 기록 1건" })).toBeVisible()
   expect(screen.getByRole("listitem", { name: "bob 요청 기록 1건" })).not.toHaveTextContent("ALLOW")
-  expect(screen.getByText(/인가 판정에 포함되지 않은 요청 기록 1건/)).toBeVisible()
+  expect(screen.getByText(/권한 판정에 포함되지 않은 요청 기록 1건/)).toBeVisible()
 })

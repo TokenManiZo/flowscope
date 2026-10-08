@@ -17,12 +17,12 @@ const REVIEWABLE: ReadonlySet<MatrixStatus> = new Set<MatrixStatus>(["BFLA_CANDI
 /** Display copy only: preserve server status, recommendations and review decisions. */
 export function judgmentStatusLabel(item: Pick<JudgmentItem, "status" | "statusLabel">): string {
   const labels: Partial<Record<MatrixStatus, string>> = {
-    POLICY_ENFORCED: "차단 대상 · 차단 관측",
-    EXPECTED_ACCESS: "허용 대상 · 접근 관측",
-    OWNERSHIP_UNKNOWN: "소유자 확인 필요",
-    UNKNOWN_POLICY: "접근 정책 확인 필요",
-    BFLA_TEST_RECOMMENDED: "기능 접근 테스트 필요",
-    BOLA_IDOR_TEST_RECOMMENDED: "객체 접근 테스트 필요",
+    POLICY_ENFORCED: "정상 (막힘)",
+    EXPECTED_ACCESS: "정상 (허용)",
+    OWNERSHIP_UNKNOWN: "데이터 주인 지정 필요",
+    UNKNOWN_POLICY: "권한 규칙 지정 필요",
+    BFLA_TEST_RECOMMENDED: "이 계정으로 시험 필요",
+    BOLA_IDOR_TEST_RECOMMENDED: "이 계정으로 시험 필요",
   }
   return labels[item.status] ?? item.statusLabel
 }
@@ -49,7 +49,7 @@ export function judgmentTone(status: MatrixStatus): JudgmentTone {
 }
 
 /** 판단할 것이 없는 흔한 상태는 칸에 짧은 회색 글자로만 둔다(전체 문구는 aria-label·툴팁·상세에 유지). */
-export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 정책 확인 필요", COVERAGE_GAP: "미점검", UNTESTED: "미점검" }
+export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "권한 규칙 지정 필요", COVERAGE_GAP: "미점검", UNTESTED: "미점검" }
 
 export function reviewSuffix(status: ReviewStatus): string {
   return status === "CONFIRMED" ? " · 사용자 확정" : status === "DISMISSED" ? " · 정상/기각" : ""

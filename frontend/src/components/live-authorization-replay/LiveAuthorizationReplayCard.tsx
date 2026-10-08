@@ -49,10 +49,10 @@ export function isStrongVerification(source: string | undefined): boolean {
 }
 
 export const VERIFICATION_SOURCE_LABEL: Record<string, string> = {
-  OPERATOR_ASSERTED: "운영자 확인",
-  RULE_MATCHED: "규칙 확인",
-  LEGACY_RESPONSE: "약검증",
-  NONE: "미검증",
+  OPERATOR_ASSERTED: "직접 확인",
+  RULE_MATCHED: "규칙으로 확인",
+  LEGACY_RESPONSE: "로그인 추정",
+  NONE: "확인 안 됨",
 };
 
 export interface LiveAuthorizationReplayCardProps {
@@ -78,7 +78,7 @@ const STATUS_LABEL: Record<ReplayAccount["status"], string> = {
 
 /** 고를 수 없는 계정의 이유. 상태 값 대신 사용자가 해야 할 일을 짧게 말한다. */
 function unavailableReason(account: ReplayAccount): string {
-  if (account.credentialConflict) return "자격 충돌";
+  if (account.credentialConflict) return "다른 계정 로그인 정보 섞임";
   if (account.status !== "ACTIVE") return "세션 없음";
   return "세션 확인 필요";
 }
