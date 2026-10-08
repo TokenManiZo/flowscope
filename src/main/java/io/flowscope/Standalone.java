@@ -155,7 +155,7 @@ public final class Standalone {
                 throw new IllegalStateException("프로젝트 또는 Request Lab이 변경되었습니다.");
             }
             if (activeProjectDatabase == null) throw new IllegalStateException("먼저 프로젝트를 DB에 저장해 주세요.");
-            if (records.stream().noneMatch(record -> evidenceId.equals(record.evidenceId))) throw new IllegalArgumentException("해당 Evidence가 없습니다.");
+            if (records.stream().noneMatch(record -> evidenceId.equals(record.evidenceId))) throw new IllegalArgumentException("해당 요청 기록이 없습니다.");
             RequestLabWorkspace next = change.apply(requestLabWorkspace, evidenceId);
             try { sqliteProjectStore.saveRequestLabWorkspace(activeProjectDatabase, evidenceId, requestLabWorkspace, next); }
             catch (Exception error) { throw projectFailure("Request Lab 저장에 실패했습니다.", error); }
@@ -338,7 +338,7 @@ public final class Standalone {
             RequestRecord record = result.records.stream()
                     .filter(candidate -> candidate.evidenceId.equals(evidenceId))
                     .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("해당 Evidence를 찾을 수 없습니다."));
+                    .orElseThrow(() -> new IllegalArgumentException("해당 요청 기록을 찾을 수 없습니다."));
             String request = record.requestTextForEvidence();
             String response = record.responseTextForEvidence();
             return new FlowScopeWebServer.RequestLabDraft(record.evidenceId, record.service,

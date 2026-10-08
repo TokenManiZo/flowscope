@@ -443,7 +443,7 @@ public final class AuthorizationMatrixAnalyzer {
                                                          boolean objectMatrix,
                                                          String ownerId,
                                                          AccessRole effectiveRequirement) {
-        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 Evidence가 없음");
+        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 기록이 없음");
         if (!oracle.satisfied()) {
             return BaselineComparison.missing("대상 응답의 의미 오라클이 충족되지 않아 정상 기준선과 차등 비교하지 않음");
         }
@@ -477,7 +477,7 @@ public final class AuthorizationMatrixAnalyzer {
                     && ResponseEvidence.successful(record)).toList();
         }
         if (baselines.isEmpty()) {
-            return BaselineComparison.missing(provenance + "의 동일 작업 성공 Evidence가 없음");
+            return BaselineComparison.missing(provenance + "의 동일 작업 성공 기록이 없음");
         }
 
         List<RequestRecord> successfulTargets = targets.stream().filter(ResponseEvidence::successful).toList();

@@ -73,7 +73,7 @@ final class ZapBrowserAuthenticator {
                 .path("authSuccessful").asBoolean(false);
         LoginEvidence login2 = loginEvidence(runId, login, zapReportedSuccess);
         if (!login2.confirmed()) {
-            throw new IllegalStateException("로그인 실패: 재사용 가능한 ZAP 인증 응답 Evidence를 확인하지 못했습니다. "
+            throw new IllegalStateException("로그인 실패: 재사용 가능한 ZAP 인증 응답 기록을 확인하지 못했습니다. "
                     + login2.diagnosis(login.loggedInIndicator())
                     + " ANON으로 대체하지 않으며 로그인 URL·ID·비밀번호를 확인하세요.");
         }

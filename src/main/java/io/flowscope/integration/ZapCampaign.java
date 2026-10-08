@@ -380,7 +380,7 @@ public final class ZapCampaign implements AutoCloseable {
                 throw new IllegalStateException("인증은 확인됐지만 독립 계정 세션으로 연결하지 못했습니다.");
             }
             state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                    "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다.");
+                    "ZAP 인증 기록을 독립 계정 세션으로 연결했습니다.");
             replaceZapAuthentication(0, new ZapAuthenticationResult(
                     "VERIFIED_BY_ZAP", identity.browser(), "독립 계정 세션 갱신 완료"));
             RuntimeException cleanup = cleanupZapIdentity(identity, contextName, contextCreated);
@@ -971,7 +971,7 @@ public final class ZapCampaign implements AutoCloseable {
                         authenticationHeartbeat.cancel(false);
                     }
                     state.zapAccounts().status(lane.accountId(), ZapAccountVault.AuthStatus.VERIFIED_BY_ZAP,
-                            "ZAP 인증 성공과 재사용 가능한 인증 Evidence를 확인했습니다.");
+                            "ZAP 인증 성공과 재사용 가능한 인증 기록을 확인했습니다.");
                     boolean sessionPromoted = state.promoteAuthenticatedSession(
                             lane.accountId(), identity.verifiedEvidenceRuntimeId());
                     if (!sessionPromoted) {
@@ -981,9 +981,9 @@ public final class ZapCampaign implements AutoCloseable {
                     authenticationVerified = true;
                     replaceZapAuthentication(index, new ZapAuthenticationResult(
                             "VERIFIED_BY_ZAP", identity.browser(),
-                            "ZAP 인증 Evidence를 독립 계정 세션으로 연결했습니다."));
+                            "ZAP 인증 기록을 독립 계정 세션으로 연결했습니다."));
                     recordZapProgress(lane.accountLabel(), "AUTHENTICATION", "DONE",
-                            "ZAP 인증 응답 Evidence 확인 · 계정 크롤링 시작");
+                            "ZAP 인증 응답 기록 확인 · 계정 크롤링 시작");
                 }
             }
             SeedResult firstSeeds = routeSeeds(target, warning);

@@ -519,7 +519,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             body.put("durationMs", result.durationMs());
             body.put("requestBytes", result.requestBytes());
             body.put("responseBytes", result.responseBytes());
-            body.put("message", "응답을 받았으며 HUMAN 검증 Evidence로 분리 기록했습니다.");
+            body.put("message", "응답을 받았으며 HUMAN 검증 요청 기록으로 따로 저장했습니다.");
             return json(200, body);
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
@@ -612,7 +612,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("message", result.sent() > 0
-                    ? "안전 재전송 응답을 CONTROLLED Evidence로 기록했습니다."
+                    ? "안전 재전송 응답을 CONTROLLED 요청 기록으로 저장했습니다."
                     : result.drafted() > 0
                     ? "상태 변경 요청을 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다."
                     : "자동 전송 없이 재전송 런을 종료했습니다.");
@@ -1079,7 +1079,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             bindReviewPolicy(itemId, evidenceIds);
             state.config().attachReviewValidation(itemId, validationIds);
             state.rebuild();
-            return success("Evidence에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
+            return success("요청 기록에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
@@ -1113,11 +1113,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private List<String> reviewValidation(String itemId, List<String> basisIds, String requested) {
         if (requested.isBlank()) return List.of();
         List<String> ids = requested.lines().filter(id -> !id.isBlank()).distinct().toList();
-        if (ids.size() > 20) throw new IllegalArgumentException("검증 Evidence는 최대 20건까지 연결할 수 있습니다.");
+        if (ids.size() > 20) throw new IllegalArgumentException("검증 요청 기록은 최대 20건까지 연결할 수 있습니다.");
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
         for (String id : ids) {
             RequestRecord record = state.snapshot().records.stream().filter(value -> id.equals(value.evidenceId))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 Evidence가 아닙니다."));
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 요청 기록이 아닙니다."));
             boolean target = matrix.functions().stream().anyMatch(cell -> cell.id().equals(itemId)
                     && cell.identity().equals(record.idn) && cell.operation().equals(record.op))
                     || matrix.objects().stream().anyMatch(cell -> cell.id().equals(itemId)
