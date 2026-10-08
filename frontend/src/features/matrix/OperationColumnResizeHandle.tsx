@@ -22,7 +22,8 @@ export function OperationColumnResizeHandle({ width, onWidthChange }: { width: n
   }
   return <div role="separator" aria-label="API 열 너비 조절" aria-orientation="vertical" aria-valuemin={MIN_WIDTH} aria-valuemax={MAX_WIDTH} aria-valuenow={width} tabIndex={0}
     title="드래그 또는 방향키로 API 열 너비 조절 · 더블클릭으로 기본 너비 복원"
-    className="group absolute inset-y-0 right-0 flex w-4 touch-none cursor-col-resize select-none items-center justify-center border-r border-border hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    style={{ left: width - 16 }}
+    className="group absolute inset-y-0 z-40 flex w-4 touch-none cursor-col-resize select-none items-center justify-center border-r border-border hover:bg-muted focus-visible:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     onPointerDown={event => { event.preventDefault(); drag.current = { id: event.pointerId, x: event.clientX, width }; event.currentTarget.setPointerCapture?.(event.pointerId) }}
     onPointerMove={event => { if (drag.current?.id === event.pointerId) resize(drag.current.width + event.clientX - drag.current.x) }}
     onPointerUp={release} onPointerCancel={release} onLostPointerCapture={() => { drag.current = null }} onKeyDown={onKeyDown}
