@@ -338,11 +338,24 @@ public final class SnapshotJsonWriter {
                 object.put("resource", record.resource);
                 object.put("evidence", Normalizer.resourceEvidence(record));
             }
-            String key = new AuthorizationAnalysis.CellKey(
-                    record.idn, record.op, record.resource).stableKey() + "\u0000" + record.source;
-            event.put("verdict", wire(verdicts.getOrDefault(key, Verdict.UNTESTED)));
+            event.put("verdict", wire(eventVerdict(record, result, verdicts)));
         }
         return out;
+    }
+
+    /** Combine only this evidence's function and observed OBJ cells, as graph nodes do. */
+    private static Verdict eventVerdict(RequestRecord record, Pipeline.Result result, Map<String, Verdict> verdicts) {
+        var candidates = java.util.EnumSet.noneOf(Verdict.class);
+        String functionKey = new AuthorizationAnalysis.CellKey(record.idn, record.op, null).stableKey();
+        candidates.add(verdicts.getOrDefault(functionKey + "\u0000" + record.source, Verdict.UNTESTED));
+        for (String resource : result.objects.resources(record.evidenceId)) {
+            String objectKey = new AuthorizationAnalysis.CellKey(record.idn, record.op, resource).stableKey();
+            candidates.add(verdicts.getOrDefault(objectKey + "\u0000" + record.source, Verdict.UNTESTED));
+        }
+        for (Verdict verdict : List.of(Verdict.SUSPICIOUS, Verdict.UNDECIDED, Verdict.DENY, Verdict.ALLOW, Verdict.UNTESTED)) {
+            if (candidates.contains(verdict)) return verdict;
+        }
+        return Verdict.UNTESTED;
     }
 
     /**

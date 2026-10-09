@@ -43,6 +43,25 @@ class ObservedObjectAuthorityTest {
         assertEquals(original, a.reqText);
         assertFalse(a.resource.contains("observed-object:"), "compatibility metadata cannot overwrite the captured DTO");
     }
+    @Test void eventVerdictsUseObservedObjKeysAndDoNotLeakBetweenObjects() throws Exception {
+        var config = config();
+        var owned = record("a", "GET", "/api/posts/7", null, null, "{\"id\":7}");
+        var foreign = record("a", "GET", "/api/posts/8", null, null, "{\"id\":8}");
+        var result = Pipeline.run(List.of(owned, foreign), config);
+        result.objects.resources(owned.evidenceId).forEach(key -> config.withResourceOwner(key, "a"));
+        result.objects.resources(foreign.evidenceId).forEach(key -> config.withResourceOwner(key, "b"));
+        result = Pipeline.run(List.of(owned, foreign), config);
+        assertNotNull(owned.resource, "fixture must retain an old resource coordinate");
+        assertTrue(result.analysis.cells().stream().noneMatch(cell -> owned.resource.equals(cell.key().resource())));
+        var events = new ObjectMapper().readTree(new SnapshotJsonWriter().write(1, result, config, List.of(), List.of())).path("events");
+        for (var event : events) {
+            assertEquals(event.path("eventId").asText().equals(owned.evidenceId) ? "allow" : "suspicious", event.path("verdict").asText());
+        }
+        config.withEndpointRequirement(owned.op, AccessRole.ADMIN);
+        result = Pipeline.run(List.of(owned, foreign), config);
+        events = new ObjectMapper().readTree(new SnapshotJsonWriter().write(2, result, config, List.of(), List.of())).path("events");
+        for (var event : events) assertEquals("suspicious", event.path("verdict").asText(), "function violations remain visible");
+    }
     @Test void publicIsSharedByGraphAndMatrixAndScopedToOneApiAndObj() {
         var config = config();
         var a = record("a", "GET", "/api/posts/7", "post_id=7", null, "{\"id\":7}");

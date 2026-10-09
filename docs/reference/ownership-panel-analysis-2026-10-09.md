@@ -181,3 +181,14 @@ The prior legacy removal only removed the graph owner's dependency on canonical 
 - 회귀 검증에는 그래프/매트릭스 키 일치, 채널별 수동 소유권, Public 범위 격리, 정적 자원·실패 전용·검증 요청 제외, 통제 재전송 연결, 중첩 부모 격리, 모호한 식별자, BFLA 중복 방지, 대량 행 페이지 전환이 포함된다.
 
 최종 검증 결과: Java 961개 중 955개 통과·6개 건너뜀·실패 0개, UI 타입 검사 및 869개 테스트 통과, 다크/라이트 소유권·재전송 이동 및 600/1280/1920px 브라우저 검증 5개 통과. 최신 JAR의 UI 파일이 빌드 출력과 일치함을 확인하고 본 프로젝트의 동일 target 경로에 복사하여 SHA-256 일치를 검증했다.
+
+## 추가 참조 감사: 2026-10-09
+
+주요 객체 판정, 소유자 조회, Public 정책, 그래프와 매트릭스 행은 `ObservedObjectIndex`를 사용한다. 하지만 전체 주변 경로의 이전 키 의존성이 모두 제거된 상태는 아니다.
+
+- `SnapshotJsonWriter.events`가 `record.resource`로 판정을 조회하던 부분을 수정했다. 이제 해당 evidence의 기능 셀과 새 OBJ 셀만 조회하고 그래프와 같은 우선순위로 표시한다. 객체 간 판정 분리와 기능 권한 위반 유지 회귀 테스트를 추가했다.
+- `FlowScopeExtension.authorizationReplayRecommendation` 및 `crossIdentityDraftRecommendation`의 기준 기록 필터는 여전히 `expectedResource.equals(record.resource)`를 사용한다. 새 OBJ 키와 일치하지 않아 기준 기록을 찾지 못할 수 있다. 이 감사에서는 수정하지 않았다.
+- `ApiManagement`의 삭제 후 orphan resource 정리는 기존 `record.resource` 및 `resourceReferences`를 사용한다. 새 OBJ 소유자/정책 설정 정리는 추가 이식이 필요하다. 이 감사에서는 수정하지 않았다.
+- `Normalizer`, `ObservedObjectProjection.legacyResource`, 원본 DTO의 resource 메타데이터는 인식 신호, 데이터 흐름 연결 및 직렬화 호환에 여전히 쓰인다. 판정 정본과 구분해야 하며 무조건 삭제할 대상이 아니다.
+
+추가 검증: 객체 정본/스냅샷 관련 Java 테스트 20개 통과. 전체 참조 제거 완료라는 이전 설명은 위 잔여 경로를 반영해 정정한다.
