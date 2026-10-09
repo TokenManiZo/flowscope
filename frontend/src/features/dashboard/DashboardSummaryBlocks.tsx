@@ -84,9 +84,9 @@ const reasonLabels: Record<string, string> = {
 }
 const methodTone: Record<string, string> = { GET: "text-observation-human", POST: "text-observation-scanner" }
 
-function ListCard({ title, href, linkLabel, empty, children }: { title: string; href: string; linkLabel: string; empty: string; children: ReactNode[] }) {
+function ListCard({ title, href, linkLabel, empty, children }: { title: string; href?: string; linkLabel?: string; empty: string; children: ReactNode[] }) {
   return <section aria-label={title} className="min-w-0 overflow-hidden rounded-xl border border-border bg-card">
-    <header className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-3"><h2 className="text-sm font-semibold">{title}</h2><a href={href} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{linkLabel}</a></header>
+    <header className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-3"><h2 className="text-sm font-semibold">{title}</h2>{href && linkLabel && <a href={href} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">{linkLabel}</a>}</header>
     {children.length ? <ul>{children}</ul> : <p className="px-4 py-6 text-sm text-muted-foreground">{empty}</p>}
   </section>
 }
@@ -103,13 +103,13 @@ const reviewLabels: Record<ReviewStatus, string> = { UNRESOLVED: "검토 전", C
 
 /** 규칙 후보 목록. 제목은 이름과 요청 두 줄로 나눈다. */
 export function CandidateList({ scenarios }: { scenarios: readonly Scenario[] }) {
-  return <ListCard title="IDOR·BFLA 의심" href="#scenarios" linkLabel="시나리오 보기" empty="규칙에 해당하는 후보가 없습니다.">{scenarios.slice(0, 5).map(scenario => {
+  return <ListCard title="IDOR·BFLA 의심" empty="규칙에 해당하는 후보가 없습니다.">{scenarios.slice(0, 5).map(scenario => {
     const { name, target } = scenarioTitleParts(scenario.title)
-    return <li key={scenario.id} className="border-t border-border first:border-t-0"><a href="#scenarios" className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
+    return <li key={scenario.id} className="border-t border-border first:border-t-0"><div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2.5 text-sm">
       <span className="rounded border border-candidate-border px-1.5 text-[11px] font-semibold text-candidate">{scenario.risk}</span>
       <span className="min-w-0"><span className="block">{name}</span>{target && <span className="block break-all font-mono text-xs text-muted-foreground">{target}</span>}</span>
       <span className="text-xs text-muted-foreground">{reviewLabels[scenario.reviewStatus] ?? scenario.reviewStatus}</span>
-    </a></li>
+    </div></li>
   })}</ListCard>
 }
 
@@ -117,13 +117,13 @@ const sourceMarks = [["HUMAN", "H", "bg-observation-human"], ["SCANNER", "S", "b
 
 /** 3-way 비교: API마다 어느 소스가 관측했는지. 빈 칸은 그 소스가 아직 보지 못한 API다(취약점 판정 아님). */
 export function SourceCoverageList({ rows }: { rows: readonly SourceCoverageRow[] }) {
-  return <ListCard title="출처별 발견" href="#surface" linkLabel="API·입력 차이에서 모두 보기" empty="실제 응답이 있는 API가 아직 없습니다.">{rows.length === 0 ? [] : [
+  return <ListCard title="출처별 발견" empty="실제 응답이 있는 API가 아직 없습니다.">{rows.length === 0 ? [] : [
     <li key="head" aria-hidden="true" className="grid grid-cols-[4.5rem_minmax(0,1fr)_repeat(3,1.75rem)] items-center gap-3 px-4 pt-2 pb-1 text-[11px] font-semibold text-muted-foreground"><span /><span />{sourceMarks.map(([, short]) => <span key={short} className="text-center">{short}</span>)}</li>,
-    ...rows.map(row => <li key={row.key} className="border-t border-border/70"><a href="#surface" aria-label={`${row.method} ${row.path} · ${row.sources.join(", ")} 관측`} className="grid grid-cols-[4.5rem_minmax(0,1fr)_repeat(3,1.75rem)] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
+    ...rows.map(row => <li key={row.key} className="border-t border-border/70"><div aria-label={`${row.method} ${row.path} · ${row.sources.join(", ")} 관측`} className="grid grid-cols-[4.5rem_minmax(0,1fr)_repeat(3,1.75rem)] items-center gap-3 px-4 py-2 text-sm">
       <span className={cn("rounded border border-border px-1.5 text-center font-mono text-[11px]", methodTone[row.method] ?? "text-muted-foreground")}>{row.method}</span>
       <span className="min-w-0 break-all font-mono text-xs">{row.path}{row.sources.length < 3 && <span className="ml-2 font-sans text-[11px] text-muted-foreground">일부만 발견</span>}</span>
       {sourceMarks.map(([source, , color]) => <span key={source} className="grid place-items-center">{row.sources.includes(source) ? <span className={cn("size-2 rounded-full", color)} /> : <span className="size-2 rounded-full border border-border" />}</span>)}
-    </a></li>),
+    </div></li>),
   ]}</ListCard>
 }
 

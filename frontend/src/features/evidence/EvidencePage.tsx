@@ -1,5 +1,5 @@
 import { identityLabel } from "@/lib/display/identityLabel"
-import { ArrowUpRight, Eye, EyeOff, Check, RotateCcw } from "lucide-react"
+import { Eye, EyeOff, Check, RotateCcw } from "lucide-react"
 import { DeleteTrafficButton } from "@/features/api-management/ApiActions"
 import { Checkbox } from "@/components/ui/checkbox"
 import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
@@ -19,7 +19,7 @@ import { useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutation } from "
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { trafficClassLabel, trafficReasonLabel } from "@/lib/display/traffic"
 import { cn } from "@/lib/utils"
-import { openSurfaceSelection, takePageSelection } from "./evidenceNavigation"
+import { takePageSelection } from "./evidenceNavigation"
 import { EvidenceHttpViewer } from "./EvidenceHttpViewer"
 import { EvidenceFilters } from "./EvidenceFilters"
 import { boundedText, defaultEvidenceFilters, dispositionCounts, hiddenEvidenceCount, tabDispositions, visibleEvidence, repeatEvidenceIds, type EvidenceTab } from "./evidenceSelectors"
@@ -161,7 +161,6 @@ export function EvidencePage() {
           <Button size="sm" variant="outline" className="h-9" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.trafficDisposition === "EXCLUDE" ? "AUTO" : "EXCLUDE" })}>{selectedEvent.trafficDisposition === "EXCLUDE" ? <Eye className="size-4" /> : <EyeOff className="size-4" />}{selectedEvent.trafficDisposition === "EXCLUDE" ? "숨김 해제" : "목록에서 숨기기"}</Button>
         </div>
         {snapshot.data && <div className="flex flex-wrap items-center gap-2 pl-1"><DeleteTrafficButton snapshot={snapshot.data} evidenceIds={[selectedEvent.eventId]} label="이 기록 삭제" className="h-9 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={snapshot.isError} />{rowIds(selectedEvent).length > 1 && <DeleteTrafficButton snapshot={snapshot.data} evidenceIds={rowIds(selectedEvent)} label={`반복 묶음 ${rowIds(selectedEvent).length}건 삭제`} className="h-9" disabled={snapshot.isError} />}</div>}
-        <Button size="sm" variant="secondary" className="ml-auto h-9 shrink-0" disabled={snapshot.isError || !selectedEvent.op} onClick={() => openSurfaceSelection(selectedEvent.op, datasetRevision)}>API에서 보기<ArrowUpRight className="size-4" /></Button>
       </div>
       <p className="text-xs text-muted-foreground">분류와 숨김은 같은 API 전체에 적용됩니다. 삭제하면 선택 기록과 연결된 재현 기록을 지웁니다.</p>
       {trafficDecision.isError && <p role="alert" className="text-xs text-destructive">{trafficDecision.error instanceof Error ? trafficDecision.error.message : "분류를 저장하지 못했습니다."}</p>}

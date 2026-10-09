@@ -11,6 +11,7 @@ import { NODE_SIZE_LIMIT, type GraphPreferences, type NodeSize } from "./graphPr
 import { clampBetweenLanes, GRAPH_MAX_ZOOM, GRAPH_MIN_ZOOM, LANE_GAP, laneAnchor, laneIndexForKind, laneLimits, type LaneBounds } from "./graphLanes"
 import { selectGraphItem, type GraphProjection, type GraphSelection } from "./graphProjection"
 import { graphOpenAction, type HierarchyNode, type HierarchyProjection } from "./graphHierarchy"
+import { isSelectionAnchorKind, selectionPositions } from "./graphSelectionLayout"
 import { highlightPositions } from "./graphFilterLayout"
 import { deriveGraphFocus } from "./graphFocus"
 import { readableGraphViewport } from "./graphViewport"
@@ -204,7 +205,7 @@ export function readPreferences(core: Core): Pick<GraphPreferences, "positions" 
   const positions: GraphPreferences["positions"] = {}
   const sizes: Record<string, NodeSize> = {}
   core.nodes().forEach((node) => {
-    const position = node.data("foldBasePosition") ?? node.position()
+    const position = node.data("foldBasePosition") ?? node.data("selectionBasePosition") ?? node.position()
     const anchor = node.data("layoutAnchorPosition")
     if (anchor && node.data("layoutAnchorId")) positions[String(node.data("layoutAnchorId"))] = { ...anchor }
     if (!anchor && node.data("temporaryObjectPosition") !== "yes" && (node.data("temporaryFoldPosition") !== "yes" || node.data("temporaryObjectPosition") === "no")) positions[node.id()] = { x: position.x, y: position.y }
@@ -329,6 +330,108 @@ export function positionInLanes(core: Core, height: number, savedPositions: Grap
     // their parent without persisting displaced siblings or moving the camera.
     insertGroupMembers(allColumns[index], allColumns[index].filter(automaticMember))
   })
+}
+
+/** Canvas height can exceed the browser or a clipping parent; use the visible portion. */
+export function visibleCanvasBounds(canvas: HTMLElement): { top: number; bottom: number } {
+  const rect = canvas.getBoundingClientRect()
+  if (rect.height <= 0) return { top: 40, bottom: canvas.clientHeight }
+  let top = Math.max(rect.top + 40, 0), bottom = Math.min(rect.bottom, window.innerHeight)
+  for (let parent = canvas.parentElement; parent; parent = parent.parentElement) {
+    if (!/hidden|clip|auto|scroll/.test(getComputedStyle(parent).overflowY)) continue
+    const bounds = parent.getBoundingClientRect()
+    top = Math.max(top, bounds.top)
+    bottom = Math.min(bottom, bounds.bottom)
+  }
+  return { top: top - rect.top, bottom: bottom - rect.top }
+}
+
+/** A fold transition clears only fold-owned displacement, preserving visible account/API selection positions. */
+export function restoreFoldSelection(core: Core) {
+  core.nodes().forEach(node => {
+    if (!node.data("foldBasePosition") && !node.data("selectionGroupDisplacement") && !node.data("memberOf")) return
+    const base = node.data("selectionBasePosition")
+    if (base) placeFoldNode(node, base)
+    node.removeData("selectionBasePosition")
+    node.removeData("selectionGroupDisplacement")
+  })
+}
+
+/** Selection positions are temporary, so folding and saved layouts retain their base coordinates. */
+export function positionSelectionInLanes(core: Core, selectedId: string | null, laneCount: number, focus: ReturnType<typeof graphFocusStates>, anchor?: { x: number; y: number }, canvasBounds?: number | { top: number; bottom: number }) {
+  const nodes: cytoscape.NodeSingular[] = []
+  core.nodes().forEach(node => { nodes.push(node) })
+  const place = (node: cytoscape.NodeSingular, point: { x: number; y: number }) => {
+    const locked = node.locked?.() ?? false
+    if (locked) node.unlock()
+    node.position(point)
+    if (locked) node.lock()
+  }
+  if (!selectedId) {
+    for (const node of nodes) {
+      const base = node.data("selectionBasePosition")
+      if (base) { place(node, base); node.removeData("selectionBasePosition") }
+      node.removeData?.("selectionGroupDisplacement")
+    }
+    return
+  }
+  const movedGroups = new Set<string>()
+  const placeSelectionBlock = (node: cytoscape.NodeSingular, point: { x: number; y: number }) => {
+    if (!node.data("selectionBasePosition")) node.data("selectionBasePosition", { ...node.position() })
+    const dx = point.x - node.position().x, dy = point.y - node.position().y
+    if (node.data("groupState") === "open") {
+      if (dx || dy) movedGroups.add(node.id())
+      const base = node.data("selectionBasePosition")
+      for (const child of nodes) {
+        if (child.data("memberOf") !== node.id()) continue
+        if (!child.data("selectionBasePosition")) child.data("selectionBasePosition", {
+          x: child.position().x + base.x - node.position().x,
+          y: child.position().y + base.y - node.position().y,
+        })
+      }
+      moveGroupMembers(core, node.id(), dx, dy)
+    }
+    place(node, point)
+  }
+  const selected = nodes.find(node => node.id() === selectedId)
+  if (selected && anchor && laneCount === 3 && isSelectionAnchorKind(String(selected.data("kind")))) {
+    placeSelectionBlock(selected, anchor)
+    if (selected.data("groupState") === "open") movedGroups.add(selected.id())
+  }
+  const zoom = core.zoom() || 1
+  const bounds = typeof canvasBounds === "number" ? { top: 40, bottom: canvasBounds } : canvasBounds
+  if (bounds && bounds.bottom <= bounds.top) return
+  const viewport = bounds ? { top: (bounds.top - core.pan().y) / zoom, bottom: (bounds.bottom - core.pan().y) / zoom } : undefined
+  const positions = selectionPositions(nodes.map(node => ({ id: node.id(), kind: String(node.data("kind")), lane: laneIndexForKind(String(node.data("kind")), laneCount), ...node.position(), height: nodeModelHeight(node), connected: focus.node(node.id()) === "yes" })), selectedId, laneCount, viewport)
+  for (const node of nodes) {
+    const point = positions[node.id()]
+    if (!point) continue
+    placeSelectionBlock(node, point)
+  }
+  // Expansion follows the moved parent. Reserve the whole block and displace other blocks, not just their headers.
+  for (const id of [...movedGroups]) {
+    const parent = nodes.find(node => node.id() === id)!
+    const children = nodes.filter(node => node.data("memberOf") === id)
+    if (!children.length) continue
+    const family = [parent, ...children]
+    const top = Math.min(...family.map(node => node.position().y - nodeModelHeight(node) / 2))
+    let cursor = Math.max(...family.map(node => node.position().y + nodeModelHeight(node) / 2)) + LANE_NODE_GAP
+    const lane = laneIndexForKind(String(parent.data("kind")), laneCount)
+    const others = nodes.filter(node => node.id() !== id && !node.data("memberOf") && laneIndexForKind(String(node.data("kind")), laneCount) === lane)
+      .sort((a, b) => a.position().y - b.position().y)
+    for (const other of others) {
+      const block = [other, ...nodes.filter(node => node.data("memberOf") === other.id())]
+      const blockTop = Math.min(...block.map(node => node.position().y - nodeModelHeight(node) / 2))
+      const blockBottom = Math.max(...block.map(node => node.position().y + nodeModelHeight(node) / 2))
+      if (blockBottom + LANE_NODE_GAP <= top) continue
+      const dy = Math.max(0, cursor - blockTop)
+      if (dy) {
+        for (const member of block) member.data("selectionGroupDisplacement", id)
+        placeSelectionBlock(other, { x: other.position().x, y: other.position().y + dy })
+      }
+      cursor = blockBottom + dy + LANE_NODE_GAP
+    }
+  }
 }
 
 /** 현재 필터 표시 상태를 두 영역으로 배치한다. 필터 해제 때 되돌리지 않는다. */
@@ -591,6 +694,8 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   const coreRef = useRef<Core | null>(null)
   const keyboardNodeRef = useRef<string | null>(null)
   const focusAfterFoldRef = useRef<string | null>(null)
+  const foldStateRef = useRef<string | null>(null)
+  const selectionAnchorRef = useRef<{ id: string; point: { x: number; y: number } } | null>(null)
   const imageSwapRef = useRef(0)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
   const tooltipNodeRef = useRef<string | null>(null)
@@ -648,6 +753,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   laneBoundsListenerRef.current = onLaneBoundsChange
   laneCountRef.current = laneCount
   preferencesRef.current = preferences
+  const appliedSelectionHighlightRef = useRef(highlight)
   const highlightRef = useRef(highlight)
   highlightRef.current = highlight
   const statusColorsRef = useRef(statusColors)
@@ -989,10 +1095,23 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     dismissCardTooltip()
     keyboardNodeRef.current = null
     const saved = preferencesRef.current
+    const foldState = "kind" in projection ? JSON.stringify(projection.nodes.filter(node => node.objectGroup).map(node => [node.id, node.objectGroup!.expanded, node.objectGroup!.members])) : ""
+    // Folding owns its displacement layer. Do not carry expanded sibling positions into a collapsed graph.
+    if (foldStateRef.current !== null && foldStateRef.current !== foldState) {
+      restoreFoldSelection(core)
+    }
+    foldStateRef.current = foldState
     const live = hasProjectionRef.current ? readPreferences(core) : { positions: {}, sizes: {}, viewport: null }
+    const selectedPositions: GraphPreferences["positions"] = {}
+    const selectedBases: GraphPreferences["positions"] = {}
+    if (selectedElementIdRef.current) core.nodes().forEach(node => {
+      const base = node.data("selectionBasePosition")
+      if (base) { selectedBases[node.id()] = { ...base }; selectedPositions[node.id()] = { ...node.position() } }
+    })
     hasProjectionRef.current = true
     const relayout = appliedLayoutRef.current !== layoutVersion
     appliedLayoutRef.current = layoutVersion
+    if (relayout) selectionAnchorRef.current = null
     core.elements().remove()
     cardsRef.current = new Map()
     // 정렬은 위치만 바꾼다. 크기·viewport는 명시적 초기화 때만 비운다.
@@ -1003,8 +1122,11 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
     core.nodes().forEach(node => { if (objectEditsRef.current.has(node.id())) node.data("temporaryObjectPosition", "no") })
     applyHighlight(core, projection, highlightRef.current, cardsRef.current, theme, statusColorsRef.current, splitSourcesRef.current)
     setCornerCursor(null)
-    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : { ...saved?.positions, ...live.positions }, laneCount)
+    positionInLanes(core, containerRef.current?.clientHeight ?? 0, relayout ? null : { ...saved?.positions, ...live.positions, ...selectedPositions }, laneCount)
     if (highlightRef.current) positionHighlightedInLanes(core, laneCount)
+    if (!relayout) core.nodes().forEach(node => {
+      if (selectedBases[node.id()]) node.data("selectionBasePosition", selectedBases[node.id()])
+    })
     core.nodes().forEach((node) => {
       if (locked) node.lock(); else node.unlock()
     })
@@ -1026,6 +1148,10 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
   useEffect(() => {
     const core = coreRef.current
     if (!core) return
+    if (appliedSelectionHighlightRef.current !== highlight) {
+      positionSelectionInLanes(core, null, laneCount, graphFocusStates(projectionRef.current, null))
+      appliedSelectionHighlightRef.current = highlight
+    }
     applyHighlight(core, projectionRef.current, highlight, cardsRef.current, theme, statusColors, splitSources)
     if (highlight && positionHighlightedInLanes(core, laneCount)) {
       publishLayoutRef.current?.()
@@ -1092,10 +1218,15 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
       if (element.data("objectFocus") !== objectFocus) element.data("objectFocus", objectFocus)
     })
     if (typeof core.batch === "function") core.batch(apply); else apply()
+    let selected: cytoscape.NodeSingular | undefined
+    core.nodes().forEach(node => { if (node.id() === selectedElementId) selected = node })
+    if (!selected) selectionAnchorRef.current = null
+    else if (selectionAnchorRef.current?.id !== selectedElementId) selectionAnchorRef.current = { id: selected.id(), point: { ...selected.position() } }
+    positionSelectionInLanes(core, selectedElementId, laneCount, focus, selectionAnchorRef.current?.point, containerRef.current ? visibleCanvasBounds(containerRef.current) : undefined)
     syncSelection(core, selectedElementId)
     publishLayoutRef.current?.()
     if (containerRef.current) publishGeometry(containerRef.current, core)
-  }, [selectedElementId, openObjectGroupId, projection, laneCount])
+  }, [selectedElementId, openObjectGroupId, projection, laneCount, highlight])
 
   // ponytail: 툴바 확대/축소 등 바깥에서 온 viewport만 적용한다. 캔버스가 방금 보고한 값이면 무시해야 팬 중에 되감기지 않는다.
   useEffect(() => {

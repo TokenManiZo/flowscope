@@ -146,6 +146,7 @@ describe("dashboard shell", () => {
     expect(screen.getByRole("navigation", { name: "FlowScope 전역 탐색" })).toBeVisible()
     expect(screen.getByRole("link", { name: "FlowScope 홈으로 이동" })).toHaveAttribute("href", "#home")
     expect(screen.queryByRole("link", { name: "대시보드" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: /API·입력 차이|시나리오 보기/ })).not.toBeInTheDocument()
     const routes = [
       ["점검 시작", "inspection", null], ["계정·세션", "accounts", null], ["점검 그래프", "graph", null],
       ["판정 매트릭스", "matrix", null], ["요청 기록", "evidence", null],

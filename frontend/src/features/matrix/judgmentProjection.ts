@@ -19,9 +19,9 @@ export function judgmentStatusLabel(item: Pick<JudgmentItem, "status" | "statusL
   const labels: Record<MatrixStatus, string> = {
     POLICY_ENFORCED: "접근 차단됨", EXPECTED_ACCESS: "접근 허용됨",
     EXPECTED_ACCESS_DENIED: "허용된 계정인데 접근 실패",
-    OWNERSHIP_UNKNOWN: "데이터 소유자 확인 필요", UNKNOWN_POLICY: "접근 기준 확인 필요",
+    OWNERSHIP_UNKNOWN: "데이터 소유권 확인 필요", UNKNOWN_POLICY: "접근 권한 확인 필요",
     POLICY_CONFIRMATION_REQUIRED: "접근 기준 직접 확인 필요",
-    BFLA_TEST_RECOMMENDED: "낮은 권한으로 확인 필요", BOLA_IDOR_TEST_RECOMMENDED: "다른 계정으로 확인 필요",
+    BFLA_TEST_RECOMMENDED: "해당 계정으로 접근 확인 필요", BOLA_IDOR_TEST_RECOMMENDED: "해당 계정으로 접근 확인 필요",
     BFLA_CANDIDATE: "기능 권한 우회 의심", BFLA_REPRODUCED: "기능 권한 우회 재현됨", BFLA_REVIEW_REQUIRED: "기능 접근 결과 확인 필요",
     BOLA_IDOR_CANDIDATE: "다른 사용자 데이터 접근 의심", BOLA_REPRODUCED: "다른 사용자 데이터 접근 재현됨", BOLA_IDOR_REVIEW_REQUIRED: "데이터 접근 결과 확인 필요",
     INVALID_EXPERIMENT: "테스트 조건 확인 필요", COVERAGE_GAP: "요청 기록 없음", UNTESTED: "확인 전",
@@ -52,7 +52,7 @@ export function judgmentTone(status: MatrixStatus): JudgmentTone {
 }
 
 /** 판단할 것이 없는 흔한 상태는 칸에 짧은 회색 글자로만 둔다(전체 문구는 aria-label·툴팁·상세에 유지). */
-export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 기준 확인 필요", COVERAGE_GAP: "요청 기록 없음", UNTESTED: "확인 전" }
+export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 권한 확인 필요", COVERAGE_GAP: "요청 기록 없음", UNTESTED: "확인 전" }
 
 export function reviewSuffix(status: ReviewStatus): string {
   return status === "CONFIRMED" ? " · 사용자 확정" : status === "DISMISSED" ? " · 정상/기각" : ""
