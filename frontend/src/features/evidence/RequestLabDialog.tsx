@@ -31,6 +31,8 @@ interface Props {
   suspended?: boolean
   /** Persisted verification metadata remains available to the surrounding inspector. */
   verifications?: readonly ManualVerification[]
+  /** 경로 후보처럼 캡처 원문 대신 미리 채운 요청으로 열 때 쓴다. 있으면 첫 편집본을 이 전문으로 직접 입력(RAW) 모드로 만든다. */
+  prefillRequest?: string
   /** Test-only inspection seam; production always owns a new instance locally. */
   rawState?: MemoryOnlyRawState
 }
@@ -44,7 +46,7 @@ export function activeAccounts(sessions: readonly ManagedSession[], service: str
   return [...unique.values()]
 }
 
-export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
+export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, prefillRequest, rawState }: Props) {
   const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
   const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string; sessionHandle?: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
@@ -236,7 +238,10 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   }
   /** 원본에서 새 편집본을 만들고 점검 중인 신원의 인증을 적용한다. 열 때와 탭을 모두 지웠을 때 쓴다. */
   function startDraft() {
-    if (!draft?.requestEditable || busy || suspended) return
+    if (busy || suspended) return
+    // 경로 후보: 캡처 원문이 아니라 미리 채운 요청으로 첫 편집본을 만든다(직접 입력). 원본 편집 가능 여부와 무관하게 연다.
+    if (prefillRequest) { createDraft(prefillRequest, "RAW", ""); return }
+    if (!draft?.requestEditable) return
     const next = createDraft(raw.current.originalRequest, "ORIGINAL", "")
     const credentials = inspectedCredentials()
     if (next && credentials) void changeCredentials(credentials.mode, credentials.accountId, next)

@@ -2,8 +2,8 @@ import { useState } from "react"
 import { Send } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { CandidateRequestLabDialog } from "@/features/evidence/CandidateRequestLabDialog"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
+import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { Snapshot } from "@/lib/api/types"
 import { evidenceOrdinalLabels, hasEvidenceOrdinal } from "@/lib/display/operationLabel"
 import { runLabel } from "@/lib/display/runStatus"
@@ -33,6 +33,11 @@ function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestL
   const ids = new Set(candidate.provenanceEvidenceIds)
   const events = snapshot.events.filter((item) => ids.has(item.eventId))
   const hasWhy = candidate.reviewReason.trim().length > 0 || candidate.priorityReasons.length > 0
+  // 후보를 발견한 요청(같은 호스트) 하나를 전송 seed로 쓴다. 다른 노드와 같은 Request Lab 모달을 열되, 요청문을 후보 경로로 미리 채워 그 엔드포인트로 보낸다.
+  const seedEvent = events[0] ?? null
+  const sendMethod = candidate.method && candidate.method !== "UNKNOWN" ? candidate.method : "GET"
+  const sendHost = (() => { try { return new URL(candidate.service).host } catch { return candidate.service } })()
+  const prefillRequest = `${sendMethod} ${candidate.pathTemplate} HTTP/1.1\r\nHost: ${sendHost}\r\n\r\n`
   return <section className="grid gap-3" aria-label="경로 후보 상세">
     <dl className="grid gap-1.5 rounded-md border p-3 text-sm">
       <div><dt className="inline font-medium">점검 대상: </dt><dd data-testid="route-candidate-applicability" className={`inline ${applicabilityTone.className}`}>{candidate.observed ? "관측됨" : "미관측 후보"} · {candidate.applicability}</dd></div>
@@ -42,9 +47,10 @@ function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestL
         <div className="mt-2 grid gap-1 text-xs"><div className="break-all"><span className="font-medium">검토: </span>{candidate.reviewReason || "-"}</div><div className="break-all"><span className="font-medium">우선순위: </span>{candidate.priorityReasons.join(", ") || "-"}</div></div>
       </details>}
     </dl>
-    {/* 아직 안 보낸 후보 경로를 처음으로 직접 보내 본다(발견에 쓰인 요청 재전송과 별개). */}
-    <Button size="sm" className="w-fit" disabled={disabled} onClick={() => setSendOpen(true)}><Send className="size-4" />이 경로로 요청 보내기</Button>
-    <CandidateRequestLabDialog open={sendOpen} onOpenChange={setSendOpen} disabled={disabled} accounts={snapshot.accounts} sessions={snapshot.managedSessions} candidate={{ service: candidate.service, method: candidate.method, pathTemplate: candidate.pathTemplate }} />
+    {/* 아직 안 보낸 후보 경로를 처음으로 직접 보내 본다(②의 발견 요청 재전송과 같은 Request Lab 모달, 경로만 후보로 프리필). */}
+    <Button size="sm" className="w-fit" disabled={disabled || !seedEvent} onClick={() => setSendOpen(true)}><Send className="size-4" />이 경로로 요청 보내기</Button>
+    {!seedEvent && <p className="text-xs text-muted-foreground">이 후보를 발견한 캡처 요청이 없어 바로 보낼 수 없습니다.</p>}
+    {seedEvent && <RequestLabDialog open={sendOpen} onOpenChange={setSendOpen} event={seedEvent} prefillRequest={prefillRequest} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={snapshot.datasetRevision ?? snapshot.identityRevision ?? 0} snapshotRevision={snapshot.revision} suspended={disabled} />}
     <p className="text-xs text-muted-foreground">아래는 이 후보를 발견한 요청입니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>
     <EvidenceActionList events={events} snapshot={snapshot} disabled={disabled} onOpenRequestLab={onOpenRequestLab} identityOf={collectionIdentity} labelIdentity={(identity) => graphAccountLabel(snapshot, identity)} />
   </section>

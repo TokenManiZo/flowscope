@@ -62,6 +62,18 @@ it("shows a route candidate with the shared 요청 기록 UI plus a why-candidat
   expect(panel).not.toHaveTextContent("fetch")
 })
 
+it("opens the shared Request Lab for a candidate, prefilled with the candidate path", async () => {
+  stubFetch(draft({ request: "GET /orders/1 HTTP/1.1\r\nHost: api.example.test\r\n\r\n" }))
+  const routeCandidate = { id: "route-candidate:1", service: "https://api.example.test", method: "POST", pathTemplate: "/exec/front/manage/a2hs", observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT_LITERAL"], provenanceEvidenceIds: ["ev-1"], provenance: [{ type: "JAVASCRIPT_LITERAL", evidenceId: "ev-1", source: "human", runId: "r", adapter: "browser", applicability: "REVIEW", reason: "literal" }], reviewReason: "", priorityReasons: [] }
+  const candidateSelection: GraphSelection = { operation: "POST /exec/front/manage/a2hs", resource: null, identity: null, source: "human", evidenceIds: ["ev-1"], routeCandidate }
+  renderWithQueryClient(<GraphInspectorPanel selection={candidateSelection} event={null} snapshot={snapshot} />)
+  await userEvent.click(screen.getByRole("button", { name: "이 경로로 요청 보내기" }))
+  // ②와 같은 Request Lab 모달이 열리고, 요청문은 후보 경로로 프리필된다(발견 요청 .php가 아니라).
+  const editor = await screen.findByLabelText("Request Lab 요청 원문") as HTMLTextAreaElement
+  await waitFor(() => expect(editor.value).toContain("POST /exec/front/manage/a2hs"))
+  expect(editor.value).not.toContain("/orders/1")
+})
+
 it("opens Request Lab ready to send without logging in, and sends nothing until asked", async () => {
   const fetch = stubFetch(draft({ request: `${secret}\n\n` }))
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />, seedHumanRun(createTestQueryClient(), anonymousInspectionFixture))
