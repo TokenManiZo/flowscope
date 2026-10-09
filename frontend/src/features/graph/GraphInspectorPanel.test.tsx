@@ -63,14 +63,18 @@ it.each(["human", "scanner", "llm"] as const)("hides the origin in observed API 
 })
 
 it("shows a route candidate with the shared 요청 기록 UI plus a why-candidate summary, not the compact text dump", () => {
-  const routeCandidate = { id: "route-candidate:1", service: "https://api.example.test", method: "GET", pathTemplate: "/api/v2/users/{id}/export", observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT"], provenanceEvidenceIds: ["ev-1"], provenance: [{ type: "JAVASCRIPT", evidenceId: "ev-1", source: "scanner", runId: "scan-1", adapter: "fetch", applicability: "REVIEW", reason: "번들에서 발견" }], reviewReason: "민감 export 경로", priorityReasons: ["input"] }
+  const routeCandidate = { id: "route-candidate:1", service: "https://api.example.test", method: "GET", pathTemplate: "/api/v2/users/{id}/export", observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT_LITERAL"], provenanceEvidenceIds: ["ev-1"], provenance: [{ type: "JAVASCRIPT_LITERAL", evidenceId: "ev-1", source: "scanner", runId: "scan-1", adapter: "fetch", applicability: "REVIEW", reason: "번들에서 발견" }], reviewReason: "민감 export 경로", priorityReasons: ["input"] }
   const candidateSelection: GraphSelection = { operation: "GET /api/v2/users/{id}/export", resource: null, identity: null, source: "scanner", evidenceIds: ["ev-1"], routeCandidate }
   renderWithQueryClient(<GraphInspectorPanel selection={candidateSelection} event={null} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
   const panel = screen.getByRole("complementary", { name: "선택 작업" })
   expect(panel).toHaveTextContent("GET /api/v2/users/{id}/export")
-  // 후보 맥락은 얇은 요약으로 남긴다.
-  expect(within(panel).getByTestId("route-candidate-applicability")).toHaveTextContent("미관측 후보 · REVIEW")
-  expect(panel).toHaveTextContent("찾은 곳: JAVASCRIPT")
+  // 후보 맥락은 쉬운 칩 + 한 줄 요약으로 보여 준다(날 enum·"검토 필요"는 쓰지 않는다).
+  const status = within(panel).getByTestId("route-candidate-status")
+  expect(status).toHaveTextContent("미요청")
+  expect(status).toHaveTextContent("JS 코드에서 발견")
+  expect(status).toHaveTextContent("아직 안 보낸 API")
+  expect(status).not.toHaveTextContent("REVIEW")
+  expect(status).not.toHaveTextContent("JAVASCRIPT_LITERAL")
   // 발견에 쓰인 요청은 다른 노드와 같은 요청 기록 카드로 보여 주고 Request Lab으로 보낼 수 있다.
   const row = within(panel).getByRole("listitem", { name: "alice 요청 기록 1건" })
   expect(within(row).getByRole("img", { name: "사람" })).toBeInTheDocument()
