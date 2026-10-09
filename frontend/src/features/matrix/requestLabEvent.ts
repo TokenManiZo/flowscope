@@ -3,8 +3,9 @@ import type { EventRecord } from "@/lib/api/types"
 const resendDetails = new Set(["BURP_REPEATER", "BURP_INTRUDER"])
 
 /** API 경로에서 열 때는 계정·판정 근거와 무관하게 해당 API의 가장 최근 요청을 보여 준다. */
-export function latestOperationEvent(events: readonly EventRecord[], operation: string, evidenceIds?: readonly string[]): EventRecord | undefined {
-  return events.filter(event => event.op === operation && (!evidenceIds || evidenceIds.includes(event.eventId) || event.clusterEvidenceIds?.some(id => evidenceIds.includes(id))))
+export function latestOperationEvent(events: readonly EventRecord[], operation: string | readonly string[], evidenceIds?: readonly string[]): EventRecord | undefined {
+  const operations = new Set(typeof operation === "string" ? [operation] : operation)
+  return events.filter(event => operations.has(event.op) && (!evidenceIds || evidenceIds.includes(event.eventId) || event.clusterEvidenceIds?.some(id => evidenceIds.includes(id))))
     .reduce<EventRecord | undefined>((latest, event) => !latest || event.timestamp >= latest.timestamp ? event : latest, undefined)
 }
 

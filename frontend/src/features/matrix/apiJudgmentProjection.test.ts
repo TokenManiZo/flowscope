@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest"
+import type { DisplayObject } from "@/lib/api/types"
 import type { JudgmentCell, JudgmentRow } from "./judgmentProjection"
-import { exclusionKey, groupApiJudgments, isExcluded, loadMatrixExclusions, saveMatrixExclusions } from "./apiJudgmentProjection"
+import { exclusionKey, groupApiJudgments, matrixApiResolver, isExcluded, loadMatrixExclusions, saveMatrixExclusions } from "./apiJudgmentProjection"
 const op = "https://demo.test:443 GET /orders/{id}"
 const cell = (id: string, status: string, reviewStatus = "UNRESOLVED") => ({ id, status, reviewStatus }) as JudgmentCell
 const row = (resource: string, value: JudgmentCell, operation = op): JudgmentRow => ({ key: resource, resource, operation, policy: null, ownerLabel: "A", attention: value.status.includes("CANDIDATE"), cellsByIdentity: { a: value } })
@@ -39,4 +40,18 @@ it("isolates project storage, rejects invalid persisted data and tolerates unava
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota") })
   expect(saveMatrixExclusions("one", [])).toBe(false)
   expect(saveMatrixExclusions(null, [])).toBe(false)
+})
+
+it("shares the graph metadata for alphabetic IDs, static routes and nested API families", () => {
+  const operations = ["https://demo.test:443 GET /posts/aaaa", "https://demo.test:443 GET /posts/bbbb", "https://demo.test:443 GET /posts/recent"]
+  const objects = operations.slice(0, 2).map(operation => ({ operation, apiKey: "https://demo.test:443 GET /posts/{id}" })) as DisplayObject[]
+  const resolve = matrixApiResolver(objects)
+  const grouped = groupApiJudgments(operations.map((operation, i) => row(String(i), cell(String(i), "EXPECTED_ACCESS"), operation)), resolve)
+  expect(grouped).toHaveLength(2)
+  expect(grouped[0].operations).toEqual(operations.slice(0, 2))
+  expect(grouped[1].operation).toBe(operations[2])
+  expect(matrixApiResolver()({ operation: "https://demo.test:443 GET /v2/posts/123" })).toBe("https://demo.test:443 GET /v2/posts/{id}")
+  const nested = "https://demo.test:443 GET /projects/1/posts/{id}", family = "https://demo.test:443 GET /projects/{id_0}/posts/{id_1}"
+  const nestedResolve = matrixApiResolver([{ operation: "nested", apiKey: nested, apiFamily: family }, { operation: "nested", apiKey: nested }] as DisplayObject[])
+  expect(nestedResolve({ operation: "nested" })).toBe(family)
 })

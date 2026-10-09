@@ -76,7 +76,7 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 1920, height: 108
     await page.screenshot({ path: info.outputPath("observations.png") })
     await page.goto(`${baseURL}#matrix`)
     const table = page.getByRole("region", { name: "판정 매트릭스 표" })
-    await expect(table.locator("button[aria-pressed]")).toHaveCount(24)
+    await expect(table.locator("button[aria-pressed]")).toHaveCount(1)
     await expect(page.getByRole("complementary", { name: "분석 필터" })).toHaveCount(0)
     await expect(table.locator("button[aria-pressed]").first()).toContainText("접근")
     expect(await table.evaluate(element => element.clientHeight)).toBeGreaterThan(180)

@@ -4,14 +4,15 @@ const service = "https://matrix.invalid:443"
 const operation = `${service} GET /api/shop/orders/{id}`
 const confidence = { code: "P0", level: 0, label: "미정", basis: "사용자 지정" }
 const objects = Array.from({ length: 8 }, (_, i) => ["a", "b"].map(identity => ({
-  id: `cell-${i}-${identity}`, identity, identityLabel: `USER ${identity.toUpperCase()}`, role: "User", operation,
-  resource: `${service} orders:${i}`, owner: "a", ownerLabel: "USER A", relation: identity === "a" ? "OWNER" : "SAME_ROLE_FOREIGN",
+  id: `cell-${i}-${identity}`, identity, identityLabel: `USER ${identity.toUpperCase()}`, role: "User", operation: `${service} GET /api/shop/orders/opaque${String.fromCharCode(97 + i)}`,
+  resource: `${service} observed-object:key-${i}`, owner: "a", ownerLabel: "USER A", relation: identity === "a" ? "OWNER" : "SAME_ROLE_FOREIGN",
   techniques: ["BOLA", "IDOR"], resourcePolicy: "UNKNOWN", ownership: confidence, policy: confidence, evidence: confidence,
   expected: "UNKNOWN", actual: "UNTESTED", status: identity === "a" ? "EXPECTED_ACCESS" : i === 3 ? "BOLA_IDOR_CANDIDATE" : "BOLA_IDOR_TEST_RECOMMENDED",
   statusLabel: "서버 판정", blockingLayers: [], gates: [], statusCodes: [], sourceVerdicts: {}, evidenceIds: [],
   reviewStatus: "UNRESOLVED", reviewNote: "", reviewEvidenceIds: [], recommendation: null,
 }))).flat()
 const second = { ...objects[0], id: "second", operation: `${service} POST /api/auth/login`, resource: `${service} login:1` }
+const displayObjects = Array.from({ length: 8 }, (_, i) => ({ eventId: `event-${i}`, operation: `${service} GET /api/shop/orders/opaque${String.fromCharCode(97 + i)}`, apiKey: operation, objectKey: `key-${i}`, groupKey: "orders", kind: "PATH", fields: ["/segments/3"], legacyResource: null, ordinal: i + 1 }))
 const matrix = { summary: { bflaTestRecommendations: 0, bolaIdorTestRecommendations: 7, manualReviewPending: 8, humanConfirmed: 0, humanDismissed: 0 },
   identities: ["a", "b"].map(id => ({ id, label: `USER ${id.toUpperCase()}`, role: "User", kind: "REGISTERED" })),
   functions: [], objects: [...objects, second], evidence: [], configurationWarnings: [], policyLegend: [], evidenceLegend: [], ownershipLegend: [], }
@@ -27,7 +28,7 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
       if (url.origin !== origin) { await route.abort(); return }
       if (!url.pathname.startsWith("/api/")) { await route.continue(); return }
       if (request.method() !== "GET") { mutations.push(url.pathname); await route.abort(); return }
-      const body = url.pathname === "/api/snapshot" ? { ...snapshotFixture, authorizationMatrix: matrix }
+      const body = url.pathname === "/api/snapshot" ? { ...snapshotFixture, displayObjects, authorizationMatrix: matrix }
         : url.pathname === "/api/projects" ? { directory: "/test/projects", active: { id: "matrix-project", name: "Matrix", scope: [service], managed: true, readable: true }, projects: [], saveState: "SAVED" }
           : url.pathname === "/api/scanner-run" ? scannerRunFixture
             : url.pathname === "/api/human-run" ? humanRunFixture
@@ -40,6 +41,8 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
     const table = page.getByRole("table")
     await expect(table.getByRole("row")).toHaveCount(3)
     await expect(table.getByText("객체 8개")).toBeVisible()
+    const heights = await table.locator("button[data-tone]").evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height))
+    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1)
     await expect(table.getByText("BOLA/IDOR 후보")).toBeVisible()
     const help = page.getByRole("button", { name: "BOLA/IDOR 후보 · USER B · GET /api/shop/orders/{id} 설명", exact: true })
     await help.scrollIntoViewIfNeeded()
@@ -56,8 +59,9 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
     const open = page.getByRole("button", { name: "GET /api/shop/orders/{id} 관련 결과 보기" })
     await open.focus(); await open.press("Enter")
     await expect(table.getByRole("row")).toHaveCount(9)
+    await expect(table.getByRole("button", { name: /GET \/api\/shop\/orders\/opaque.* 관련 결과 보기/ })).toHaveCount(8)
     await expect(table.getByText("/api/auth/login")).toHaveCount(0)
-    await page.getByRole("button", { name: "orders:3 매트릭스에서 제외", exact: true }).click()
+    await page.getByRole("button", { name: "PATH · OBJ 4 매트릭스에서 제외", exact: true }).click()
     await expect(table.getByRole("row")).toHaveCount(8)
     await page.getByRole("button", { name: "실행 취소" }).click()
     await expect(table.getByRole("row")).toHaveCount(9)

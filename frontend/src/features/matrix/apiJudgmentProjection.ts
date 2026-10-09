@@ -1,10 +1,26 @@
+import type { DisplayObject } from "@/lib/api/types"
+import { operationShapeKey } from "@/features/graph/graphPathShape"
 import type { JudgmentCell, JudgmentRow, JudgmentView } from "./judgmentProjection"
 
 export interface MatrixExclusion { key: string; view: JudgmentView; operation: string; resource: string | null; label: string }
-export interface ApiJudgmentRow extends JudgmentRow { objectCount: number; countsByIdentity: Record<string, readonly { label: string; count: number }[]> }
+export interface ApiJudgmentRow extends JudgmentRow { objectCount: number; operations: readonly string[]; countsByIdentity: Record<string, readonly { label: string; count: number }[]> }
 export const exclusionKey = (view: JudgmentView, operation: string, resource: string | null) => JSON.stringify([view, operation, resource])
 export function isExcluded(row: JudgmentRow, view: JudgmentView, exclusions: readonly MatrixExclusion[]) {
   return exclusions.some(entry => entry.view === view && entry.operation === row.operation && (entry.resource === null || entry.resource === row.resource))
+}
+/** Same collected API/family coordinates as the graph. Original operation and OBJ authority stay intact. */
+export function matrixApiResolver(objects: readonly DisplayObject[] = []) {
+  const families = new Map(objects.filter(object => object.apiFamily).map(object => [object.apiKey, object.apiFamily!]))
+  const byOperation = new Map<string, Set<string>>()
+  for (const object of objects) {
+    const keys = byOperation.get(object.operation) ?? new Set<string>()
+    keys.add(object.apiFamily ?? families.get(object.apiKey) ?? object.apiKey)
+    byOperation.set(object.operation, keys)
+  }
+  return (row: Pick<JudgmentRow, "operation">): string => {
+    const keys = byOperation.get(row.operation)
+    return keys?.size === 1 ? [...keys][0] : keys ? row.operation : operationShapeKey(row.operation)
+  }
 }
 function priority(cell: JudgmentCell): number {
   if (cell.reviewStatus === "CONFIRMED") return 100
@@ -27,9 +43,9 @@ function countLabel(cell: JudgmentCell) {
   return "확인 필요"
 }
 /** Summary selects an existing cell for display; it never changes authority, evidence or review IDs. */
-export function groupApiJudgments(rows: readonly JudgmentRow[]): ApiJudgmentRow[] {
+export function groupApiJudgments(rows: readonly JudgmentRow[], apiKey: (row: JudgmentRow) => string = row => row.operation): ApiJudgmentRow[] {
   const groups = new Map<string, JudgmentRow[]>()
-  for (const row of rows) { const group = groups.get(row.operation) ?? []; group.push(row); groups.set(row.operation, group) }
+  for (const row of rows) { const key = apiKey(row); const group = groups.get(key) ?? []; group.push(row); groups.set(key, group) }
   return [...groups].map(([operation, rows]) => {
     const cellsByIdentity: Record<string, JudgmentCell> = {}
     const counts: Record<string, Map<string, number>> = {}
@@ -40,7 +56,7 @@ export function groupApiJudgments(rows: readonly JudgmentRow[]): ApiJudgmentRow[
       const label = countLabel(cell); counter.set(label, (counter.get(label) ?? 0) + 1)
     }
     return { ...rows[0], key: JSON.stringify([operation, null]), operation, resource: null, ownerLabel: null,
-      cellsByIdentity, attention: rows.some(row => row.attention), objectCount: rows.filter(row => row.resource !== null).length,
+      cellsByIdentity, attention: rows.some(row => row.attention), objectCount: new Set(rows.flatMap(row => row.resource === null ? [] : [row.resource])).size, operations: [...new Set(rows.map(row => row.operation))],
       countsByIdentity: Object.fromEntries(Object.entries(counts).map(([identity, counter]) => [identity, [...counter].map(([label, count]) => ({ label, count }))])) }
   })
 }

@@ -370,7 +370,7 @@ it("keeps object rules out of the panel and reveals status explanations only fro
 })
 
 it("keeps the operation column unpinned and wraps long paths into two lines inside a bounded block", () => {
-  const full = "/community/api/v2/community/posts/7weVqm2Pmn3gC6T2gdzpm4/comments/0123456789abcdef"
+  const full = "/community/api/community/posts/verylongopaquestaticname/comments/anotherlongopaquestaticname"
   current = { ...snapshot, authorizationMatrix: { ...matrix, functions: [...matrix.functions, fn("function-long", "b", `${service} GET ${full}`)] } }
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
@@ -385,7 +385,7 @@ it("keeps the operation column unpinned and wraps long paths into two lines insi
   const lines = [...block.querySelectorAll("[aria-hidden] > span")].map((line) => line.textContent)
   expect(lines).toHaveLength(2)
   expect(lines[0]!.startsWith("…/")).toBe(true)
-  expect(lines[1]!.endsWith("/0123456789abcdef")).toBe(true)
+  expect(lines[1]!.endsWith("/anotherlongopaquestaticname")).toBe(true)
   expect(within(header).getByText(full)).toHaveClass("sr-only")
 })
 
@@ -407,22 +407,22 @@ it("keeps only the two judgment views above the table", async () => {
 it("renders only 50 rows per page and resets the page when switching dimensions", async () => {
   const user = userEvent.setup()
   current = { ...snapshot, authorizationMatrix: { ...matrix,
-    functions: Array.from({ length: 120 }, (_, index) => fn(`bulk-${index}`, "a", `${service} GET /bulk/${String(index).padStart(3, "0")}`)),
+    functions: Array.from({ length: 120 }, (_, index) => fn(`bulk-${index}`, "a", `${service} GET /bulk/${String.fromCharCode(97 + Math.floor(index / 26))}${String.fromCharCode(97 + index % 26)}`)),
   } }
   renderView(<JudgmentMatrixView />)
   const table = screen.getByRole("table")
   expect(within(table).getAllByRole("row")).toHaveLength(51)
-  expect(within(table).getByText("/bulk/000")).toBeVisible()
-  expect(within(table).queryByText("/bulk/050")).not.toBeInTheDocument()
+  expect(within(table).getByText("/bulk/aa")).toBeVisible()
+  expect(within(table).queryByText("/bulk/by")).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "다음 페이지" }))
-  expect(within(table).getByText("/bulk/050")).toBeVisible()
-  expect(within(table).queryByText("/bulk/000")).not.toBeInTheDocument()
+  expect(within(table).getByText("/bulk/by")).toBeVisible()
+  expect(within(table).queryByText("/bulk/aa")).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "다음 페이지" }))
   expect(within(table).getAllByRole("row")).toHaveLength(21)
   expect(screen.getByRole("button", { name: "다음 페이지" })).toBeDisabled()
   await user.click(screen.getByRole("tab", { name: /객체 권한/ }))
   await user.click(screen.getByRole("tab", { name: /기능 권한/ }))
-  expect(within(screen.getByRole("table")).getByText("/bulk/000")).toBeVisible()
+  expect(within(screen.getByRole("table")).getByText("/bulk/aa")).toBeVisible()
   expect(screen.getByRole("button", { name: "이전 페이지" })).toBeDisabled()
 })
 
@@ -491,4 +491,30 @@ it("explains short statuses through a separate keyboard-accessible help button w
   await user.click(within(inspector).getByRole("button", { name: "접근 테스트 필요 설명" }))
   expect(screen.getByText("다른 계정의 요청 기록이 있습니다. 이 계정으로도 해당 데이터에 접근되는지 확인하세요.")).toBeVisible()
   expect(saveReview).not.toHaveBeenCalled()
+})
+
+it("uses the graph API key for opaque paths, preserves object reviews and latest requests, and excludes the entire group", async () => {
+  const first = `${service} GET /api/posts/aaaa`, second = `${service} GET /api/posts/bbbb`, api = `${service} GET /api/posts/{id}`
+  const resourceA = `${service} observed-object:key-a`, resourceB = `${service} observed-object:key-b`
+  const related = [obj("opaque-a", "a", resourceA, { operation: first, status: "EXPECTED_ACCESS" }), obj("opaque-b", "b", resourceB, { operation: second, status: "BOLA_IDOR_CANDIDATE", evidenceIds: ["newest"] }), obj("recent", "a", `${service} recent`, { operation: `${service} GET /api/posts/recent` })]
+  const displayObjects = [first, second].map((operation, i) => ({ eventId: `event-${i}`, operation, apiKey: api, groupKey: "posts", objectKey: i ? "key-b" : "key-a", kind: "PATH" as const, fields: ["/segments/2"], legacyResource: null, ordinal: i + 1 }))
+  current = { ...snapshot, displayObjects, events: [{ ...snapshot.events[0], eventId: "newest", op: second, timestamp: 10 }], authorizationMatrix: { ...matrix, objects: related } }
+  const user = userEvent.setup()
+  const { rerender } = renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("tab", { name: /객체 권한/ }))
+  expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(3)
+  expect(screen.getByText("객체 2개")).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "GET /api/posts/{id} 최신 요청을 Request Lab에서 열기" }))
+  expect(screen.getByRole("dialog", { name: "Request Lab" })).toHaveTextContent("newest")
+  await user.click(screen.getByRole("button", { name: "GET /api/posts/{id} 관련 결과 보기" }))
+  await user.click(screen.getByRole("button", { name: "BOLA/IDOR 후보: B · GET /api/posts/bbbb · PATH · OBJ 2" }))
+  await user.click(within(screen.getByRole("region", { name: "취약점 확인" })).getByRole("button", { name: "취약점으로 확정" }))
+  await waitFor(() => expect(saveReview).toHaveBeenCalledWith("opaque-b", "CONFIRMED", ""))
+  await user.click(screen.getByRole("button", { name: "이 API 제외" }))
+  expect(screen.queryByText("/api/posts/{id}")).not.toBeInTheDocument()
+  current = { ...current!, revision: 5, authorizationMatrix: { ...matrix, objects: [...related, obj("opaque-new", "a", `${service} extra`, { operation: `${service} GET /api/posts/cccc` })] }, displayObjects: [...displayObjects, { ...displayObjects[0], operation: `${service} GET /api/posts/cccc`, objectKey: "key-c" }] }
+  rerender(<JudgmentMatrixView />)
+  expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2)
+  await user.click(screen.getByRole("button", { name: "실행 취소" }))
+  expect(screen.getByText("객체 3개")).toBeVisible()
 })

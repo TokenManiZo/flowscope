@@ -9,7 +9,7 @@ import { InfoHint } from "@/components/ui/info-hint"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { exclusionKey, groupApiJudgments, loadMatrixExclusions, saveMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
+import { exclusionKey, groupApiJudgments, matrixApiResolver, loadMatrixExclusions, saveMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
@@ -166,11 +166,12 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, false) : null, [matrix, view])
   const objectLabels = useMemo(() => new Map(snapshot.data?.displayObjects?.map(object => [`${object.operation.split(" ")[0]} observed-object:${object.objectKey}`, `${object.kind} · ${observedObjectLabel(object)}`])), [snapshot.data?.displayObjects])
   const rowObjectLabel = (resource: string) => objectLabels.get(resource) ?? withoutService(resource)
+  const apiKey = useMemo(() => matrixApiResolver(snapshot.data?.displayObjects), [snapshot.data?.displayObjects])
   const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.view === view).map(entry => entry.key)), [exclusions, view])
-  const includedRows = useMemo(() => projection?.rows.filter(row => !excludedKeys.has(exclusionKey(view, row.operation, null))
-    && !excludedKeys.has(exclusionKey(view, row.operation, row.resource))) ?? [], [projection, view, excludedKeys])
-  const displayRows = useMemo(() => (api ? includedRows.filter(row => row.operation === api) : groupApiJudgments(includedRows))
-    .filter(row => !attentionOnly || row.attention), [includedRows, api, attentionOnly])
+  const includedRows = useMemo(() => projection?.rows.filter(row => !excludedKeys.has(exclusionKey(view, apiKey(row), null)) && !excludedKeys.has(exclusionKey(view, row.operation, null))
+    && !excludedKeys.has(exclusionKey(view, row.operation, row.resource))) ?? [], [projection, view, excludedKeys, apiKey])
+  const displayRows = useMemo(() => (api ? includedRows.filter(row => apiKey(row) === api) : groupApiJudgments(includedRows, apiKey))
+    .filter(row => !attentionOnly || row.attention), [includedRows, api, attentionOnly, apiKey])
   const excludedHere = exclusions.filter(entry => entry.view === view)
   const pageCount = Math.max(1, Math.ceil(displayRows.length / 50))
   const currentPage = Math.min(page, pageCount - 1)
@@ -266,28 +267,31 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
             <colgroup><col style={{ width: operationWidth }} />{projection.identities.map(identity => <col key={identity.id} />)}</colgroup>
             <TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{api && view === "object" ? "객체" : "API"}<span className="mt-1 block text-xs font-normal text-muted-foreground">{api ? "결과를 누르면 상세 확인" : "API를 누르면 관련 결과 보기"}</span></TableHead>{projection.identities.map(identity => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span></TableHead>)}</TableRow></TableHeader>
             <TableBody>{visibleRows.map(row => {
-              const aggregated = !api && view === "object"
               const group = api ? null : row as ApiJudgmentRow
-              const latest = latestOperationEvent(snapshot.data?.events ?? [], row.operation, row.resource ? Object.values(row.cellsByIdentity).flatMap(cell => cell.evidenceIds) : undefined)
+              const aggregated = !api && (view === "object" || (group?.operations.length ?? 0) > 1)
+              const latest = latestOperationEvent(snapshot.data?.events ?? [], group?.operations ?? row.operation, row.resource ? Object.values(row.cellsByIdentity).flatMap(cell => cell.evidenceIds) : undefined)
               return <TableRow key={row.key}>
-                <TableHead scope="row" className="overflow-hidden whitespace-normal bg-background py-3 pr-6 align-top">
-                  <div className="flex items-start gap-2">
-                    <button type="button" className="min-w-0 flex-1 rounded-sm text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" aria-label={`${withoutService(row.operation)} 관련 결과 보기`} disabled={disabled} onClick={() => openApi(row.operation)}><OperationLabel operation={row.operation} width={operationWidth - 84} />{group && group.objectCount > 0 && <span className="mt-2 flex items-center gap-1 text-xs font-normal text-muted-foreground">객체 {group.objectCount}개<ChevronRight aria-hidden="true" className="size-3.5" /></span>}</button>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button size="icon" variant="ghost" className="size-8" aria-label={`${withoutService(row.operation)} 최신 요청을 Request Lab에서 열기`} title="최신 요청 열기" disabled={disabled || !latest} onClick={() => setApiLabEvent(latest ?? null)}><ArrowUpRight aria-hidden="true" className="size-4" /></Button>
-                      <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스에서만 제외" disabled={disabled} onClick={() => exclude(row.operation, row.resource)}>제외</Button>
+                <TableHead scope="row" className="overflow-hidden whitespace-normal bg-background px-4 py-3 align-middle">
+                  <div className="grid gap-2">
+                    <button type="button" className="min-h-12 min-w-0 rounded-sm text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" aria-label={`${withoutService(row.operation)} 관련 결과 보기`} disabled={disabled} onClick={() => openApi(apiKey(row))}><OperationLabel operation={row.operation} width={operationWidth - 32} /></button>
+                    {row.resource && <p className="line-clamp-2 text-sm font-normal leading-5 text-muted-foreground" title={`${rowObjectLabel(row.resource)}${row.ownerLabel ? ` · 객체 소유자 ${row.ownerLabel}` : ""}`}>{rowObjectLabel(row.resource)}{row.ownerLabel ? ` · 객체 소유자 ${row.ownerLabel}` : ""}</p>}
+                    <div className="flex min-h-8 items-center justify-between gap-2">
+                      <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">{group && group.objectCount > 0 ? <>객체 {group.objectCount}개<ChevronRight aria-hidden="true" className="size-3.5" /></> : group ? group.operations.length > 1 ? `요청 경로 ${group.operations.length}개` : "기능 판정" : "객체별 결과"}</span>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button size="icon" variant="ghost" className="size-8" aria-label={`${withoutService(row.operation)} 최신 요청을 Request Lab에서 열기`} title="최신 요청 열기" disabled={disabled || !latest} onClick={() => setApiLabEvent(latest ?? null)}><ArrowUpRight aria-hidden="true" className="size-4" /></Button>
+                        <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스에서만 제외" disabled={disabled} onClick={() => exclude(row.operation, row.resource)}>제외</Button>
+                      </div>
                     </div>
                   </div>
-                  {row.resource && <p className="mt-2 break-all text-xs font-normal text-muted-foreground">{rowObjectLabel(row.resource)}{row.ownerLabel ? ` · 객체 소유자 ${row.ownerLabel}` : ""}</p>}
                 </TableHead>
                 {projection.identities.map(identity => {
                   const cell = row.cellsByIdentity[identity.id]
                   const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined
                   const counts = group?.countsByIdentity[identity.id]
-                  return <TableCell key={identity.id} className="whitespace-normal py-3 align-top">{cell ? <div className="relative"><button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={!aggregated && cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(cell.operation)}${!aggregated && "resource" in cell ? ` · ${rowObjectLabel(cell.resource ?? "")}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `grid w-full min-w-28 gap-1 rounded-md border border-transparent p-3 pr-10 text-left text-sm text-muted-foreground hover:bg-muted/50 ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `grid w-full min-w-44 gap-1 rounded-md border p-3 pr-10 text-left text-sm ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => aggregated ? openApi(row.operation) : select(cell.id)}>
-                    <span className={quiet ? undefined : "font-semibold"}>{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span>
-                    {aggregated && counts && group.objectCount > 1 && <span className="text-xs font-normal opacity-90">{counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}</span>}
-                  </button><span className="absolute top-3 right-3" title={judgmentStatusDescription(cell.status)}><InfoHint label={`${judgmentStatusLabel(cell)} · ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(cell.operation)}${!aggregated && row.resource ? ` · ${rowObjectLabel(row.resource)}` : ""}`}>{judgmentStatusDescription(cell.status)}</InfoHint></span></div> : <span className="text-sm text-muted-foreground">데이터 없음</span>}</TableCell>
+                  return <TableCell key={identity.id} className="whitespace-normal px-3 py-3 align-middle">{cell ? <div className="relative"><button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={!aggregated && cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(aggregated ? row.operation : cell.operation)}${!aggregated && "resource" in cell ? ` · ${rowObjectLabel(cell.resource ?? "")}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `flex h-24 w-full min-w-44 flex-col justify-center gap-1.5 rounded-md border border-border bg-muted/30 px-4 py-3 pr-10 text-left text-sm leading-5 text-muted-foreground hover:bg-muted/50 ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `flex h-24 w-full min-w-44 flex-col justify-center gap-1.5 rounded-md border px-4 py-3 pr-10 text-left text-sm leading-5 ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => aggregated ? openApi(row.operation) : select(cell.id)}>
+                    <span className="line-clamp-2 text-base font-semibold leading-6">{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span>
+                    {aggregated && counts && (group.objectCount > 1 || group.operations.length > 1) && <span className="truncate text-sm font-normal leading-5 opacity-90" title={counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}>{counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}</span>}
+                  </button><span className="absolute top-3 right-3" title={judgmentStatusDescription(cell.status)}><InfoHint label={`${judgmentStatusLabel(cell)} · ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(aggregated ? row.operation : cell.operation)}${!aggregated && row.resource ? ` · ${rowObjectLabel(row.resource)}` : ""}`}>{judgmentStatusDescription(cell.status)}</InfoHint></span></div> : <span className="flex h-24 min-w-44 items-center rounded-md border border-dashed border-border px-4 text-sm text-muted-foreground">데이터 없음</span>}</TableCell>
                 })}
               </TableRow>
             })}</TableBody>
