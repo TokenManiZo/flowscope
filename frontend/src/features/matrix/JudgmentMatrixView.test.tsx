@@ -14,6 +14,7 @@ vi.stubGlobal("ResizeObserver", ResizeObserverStub)
 
 let current: Snapshot | undefined
 let queryError = false
+let projectId = "matrix-project"
 const refetchSnapshot = vi.fn()
 const saveReview = vi.fn(async (itemId: string, status: string, note: string) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
 const saveRequirement = vi.fn(async (operation: string, role: string) => ({ success: true, message: `requirement ${operation} ${role}` }))
@@ -27,6 +28,7 @@ const runAuthorizationReplay = vi.fn(async (itemId: string, armed: boolean) => (
 
 vi.mock("@/lib/query/hooks", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/query/hooks")>(),
+  useProjectsQuery: () => ({ data: { directory: "/test/projects", active: { id: projectId }, projects: [] } }),
   useSnapshotQuery: () => ({ data: current, isLoading: current === undefined, isError: queryError, error: new Error("snapshot unavailable"), isStale: false, dataUpdatedAt: 1000, refetch: refetchSnapshot }),
   useHumanRunQuery: () => ({ data: humanRunActive === undefined ? undefined : { active: humanRunActive, completed: false, runId: "", accountId: "", proxy: "" } }),
 }))
@@ -76,7 +78,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); })
+beforeEach(() => { localStorage.clear(); projectId = "matrix-project"; current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); })
 
 it("renders the compact server summary and matrix without row subtitles or P/E/O cell chips", async () => {
   renderView(<JudgmentMatrixView />)
@@ -146,6 +148,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
+  await user.click(screen.getByRole("button", { name: "GET /api/orders/{id} 관련 결과 보기" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   expect(within(table).getByText("orders:101 · 객체 소유자 A")).toBeVisible()
   await user.click(within(table).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · orders:101` }))
@@ -203,6 +206,7 @@ it("opens a same-API record whose raw is still in memory when the basis record l
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
+  await user.click(screen.getByRole("button", { name: "GET /api/orders/{id} 관련 결과 보기" }))
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · orders:101` }))
   await user.click(within(screen.getByRole("region", { name: "요청·응답 확인" })).getByRole("button", { name: "Request Lab 열기" }))
   expect(await screen.findByRole("dialog", { name: "Request Lab" })).toHaveTextContent("ev-live")
@@ -212,6 +216,7 @@ it("keeps the same sections on non-reviewable observed cells, locks review, and 
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
+  await user.click(screen.getByRole("button", { name: "GET /api/orders/{id} 관련 결과 보기" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   await user.click(within(table).getByRole("button", { name: `접근 허용됨: A · GET /api/orders/{id} · orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
@@ -350,6 +355,7 @@ it("keeps object rules out of the panel and reveals status explanations only fro
     cell.id === "object-b" ? { ...cell, blockingLayers: ["BOLA"], resourcePolicy: "OWNER_ONLY" } : cell) } }
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
+  await user.click(screen.getByRole("button", { name: "GET /api/orders/{id} 관련 결과 보기" }))
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · orders:101` }))
 
   expect(screen.queryByText("차단층")).not.toBeInTheDocument()
@@ -418,4 +424,52 @@ it("renders only 50 rows per page and resets the page when switching dimensions"
   await user.click(screen.getByRole("tab", { name: /기능 권한/ }))
   expect(within(screen.getByRole("table")).getByText("/bulk/000")).toBeVisible()
   expect(screen.getByRole("button", { name: "이전 페이지" })).toBeDisabled()
+})
+
+it("summarizes APIs, drills into all related objects, excludes an object and restores the API list position", async () => {
+  const extra = obj("extra", "b", `${service} orders:102`, { status: "BOLA_IDOR_CANDIDATE", statusLabel: "다른 사용자 데이터 접근 의심" })
+  const other = obj("other", "b", `${service} products:1`, { operation: `${service} GET /api/products` })
+  current = { ...snapshot, authorizationMatrix: { ...matrix, objects: [...matrix.objects, extra, other] } }
+  const user = userEvent.setup()
+  renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("tab", { name: /객체 권한/ }))
+  const table = screen.getByRole("table")
+  expect(within(table).getAllByRole("row")).toHaveLength(3)
+  expect(within(table).getByText("객체 2개")).toBeVisible()
+  expect(within(table).getByText("다른 사용자 데이터 접근 의심")).toBeVisible()
+  const scroller = screen.getByTestId("judgment-matrix-scroll")
+  scroller.scrollTop = 180
+  await user.click(screen.getByRole("button", { name: "GET /api/orders/{id} 관련 결과 보기" }))
+  expect(within(table).queryByText("/api/products")).not.toBeInTheDocument()
+  expect(within(table).getAllByRole("row")).toHaveLength(3)
+  await user.click(screen.getByRole("button", { name: "orders:102 매트릭스에서 제외" }))
+  expect(within(table).queryByText(/orders:102/)).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "실행 취소" }))
+  expect(within(table).getByText("orders:102 · 객체 소유자 A")).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "목록으로" }))
+  expect(scroller.scrollTop).toBe(180)
+  expect(within(table).getByText("/api/products")).toBeVisible()
+  expect(within(table).getAllByRole("row")).toHaveLength(3)
+})
+
+it("persists API exclusions only for the active project and restores individual and all entries", async () => {
+  const user = userEvent.setup()
+  const { rerender } = renderView(<JudgmentMatrixView />)
+  await user.click(screen.getByRole("button", { name: "GET /api/admin/export 매트릭스에서 제외" }))
+  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+  projectId = "different-project"
+  rerender(<JudgmentMatrixView />)
+  expect(screen.getByRole("table")).toBeVisible()
+  projectId = "matrix-project"
+  rerender(<JudgmentMatrixView />)
+  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "제외한 항목 1" }))
+  await user.click(screen.getByRole("button", { name: "GET /api/admin/export 복원" }))
+  expect(screen.getByRole("table")).toBeVisible()
+  await user.keyboard("{Escape}")
+  await user.click(screen.getByRole("button", { name: "GET /api/admin/export 매트릭스에서 제외" }))
+  await user.click(screen.getByRole("button", { name: "제외한 항목 1" }))
+  await user.click(screen.getByRole("button", { name: "전체 복원" }))
+  expect(screen.getByRole("table")).toBeVisible()
+  expect(saveReview).not.toHaveBeenCalled()
 })

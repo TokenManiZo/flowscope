@@ -1,6 +1,6 @@
 import { identityLabel } from "@/lib/display/identityLabel"
-import { useEffect, useMemo, useRef, useState } from "react"
-import { ArrowUpRight, ShieldCheck, UserRound } from "lucide-react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { ArrowLeft, ArrowUpRight, ChevronRight, RotateCcw, ShieldCheck, UserRound } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -8,10 +8,12 @@ import { Badge } from "@/components/ui/badge"
 import { InfoHint } from "@/components/ui/info-hint"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { exclusionKey, groupApiJudgments, loadMatrixExclusions, saveMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
-import { useRequirementMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
+import { useProjectsQuery, useRequirementMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { observedObjectLabel } from "@/features/graph/observedObjectLabel"
 import { MatrixOwnerControl } from "./MatrixOwnerControl"
@@ -137,27 +139,73 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
 
 export function JudgmentMatrixView() {
   const snapshot = useSnapshotQuery()
-  return <JudgmentMatrixWorkspace key={snapshot.data?.datasetRevision ?? "legacy"} snapshot={snapshot} />
+  const projects = useProjectsQuery()
+  const project = projects.data
+  const currentProject = project && (project.datasetRevision === undefined || project.datasetRevision === snapshot.data?.datasetRevision) ? project : null
+  const storageScope = currentProject?.active ? JSON.stringify([currentProject.directory, currentProject.active.id]) : null
+  return <JudgmentMatrixWorkspace key={JSON.stringify([snapshot.data?.datasetRevision ?? "legacy", storageScope])} snapshot={snapshot} storageScope={storageScope} />
 }
 
-function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof useSnapshotQuery> }) {
+function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnType<typeof useSnapshotQuery>; storageScope: string | null }) {
   const [apiLabEvent, setApiLabEvent] = useState<EventRecord | null>(null)
   const [operationWidth, setOperationWidth] = useState(OPERATION_COLUMN_DEFAULT_WIDTH)
   const scroll = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(0)
+  const [api, setApi] = useState<string | null>(null)
+  const [exclusions, setExclusions] = useState(() => loadMatrixExclusions(storageScope))
+  const [exclusionMessage, setExclusionMessage] = useState("")
+  const [undo, setUndo] = useState<MatrixExclusion[] | null>(null)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  const listPosition = useRef({ page: 0, top: 0, left: 0 })
+  const pendingRestore = useRef(false)
   const [view, setView] = useState<JudgmentView>("function")
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const matrix = snapshot.data?.authorizationMatrix ?? null
-  const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, attentionOnly) : null, [matrix, view, attentionOnly])
+  const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, false) : null, [matrix, view])
   const objectLabels = useMemo(() => new Map(snapshot.data?.displayObjects?.map(object => [`${object.operation.split(" ")[0]} observed-object:${object.objectKey}`, `${object.kind} · ${observedObjectLabel(object)}`])), [snapshot.data?.displayObjects])
   const rowObjectLabel = (resource: string) => objectLabels.get(resource) ?? withoutService(resource)
-  const pageCount = Math.max(1, Math.ceil((projection?.rows.length ?? 0) / 50))
+  const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.view === view).map(entry => entry.key)), [exclusions, view])
+  const includedRows = useMemo(() => projection?.rows.filter(row => !excludedKeys.has(exclusionKey(view, row.operation, null))
+    && !excludedKeys.has(exclusionKey(view, row.operation, row.resource))) ?? [], [projection, view, excludedKeys])
+  const displayRows = useMemo(() => (api ? includedRows.filter(row => row.operation === api) : groupApiJudgments(includedRows))
+    .filter(row => !attentionOnly || row.attention), [includedRows, api, attentionOnly])
+  const excludedHere = exclusions.filter(entry => entry.view === view)
+  const pageCount = Math.max(1, Math.ceil(displayRows.length / 50))
   const currentPage = Math.min(page, pageCount - 1)
-  const visibleRows = projection?.rows.slice(currentPage * 50, (currentPage + 1) * 50) ?? []
-  useEffect(() => { if (scroll.current) scroll.current.scrollTop = 0 }, [currentPage, view, attentionOnly])
-  useEffect(() => { setPage(0) }, [view, attentionOnly])
+  const visibleRows = displayRows.slice(currentPage * 50, (currentPage + 1) * 50)
+  useLayoutEffect(() => {
+    if (scroll.current) {
+      scroll.current.scrollTop = pendingRestore.current ? listPosition.current.top : 0
+      scroll.current.scrollLeft = pendingRestore.current ? listPosition.current.left : 0
+    }
+    pendingRestore.current = false
+  }, [currentPage, api, view, attentionOnly])
+  useEffect(() => { setPage(0); setApi(null) }, [view, attentionOnly])
+  const openApi = (operation: string) => {
+    if (!api) listPosition.current = { page: currentPage, top: scroll.current?.scrollTop ?? 0, left: scroll.current?.scrollLeft ?? 0 }
+    setApi(operation); setPage(0); setSelectedId(null); setInspectorOpen(false)
+  }
+  const backToList = () => { pendingRestore.current = true; setApi(null); setPage(listPosition.current.page); setSelectedId(null); setInspectorOpen(false) }
+  const updateExclusions = (next: MatrixExclusion[]) => {
+    setExclusions(next)
+    return saveMatrixExclusions(storageScope, next)
+  }
+  const exclude = (operation: string, resource: string | null) => {
+    const key = exclusionKey(view, operation, resource)
+    if (exclusions.some(entry => entry.key === key)) return
+    setUndo(exclusions)
+    const label = resource ? `${withoutService(operation)} · ${rowObjectLabel(resource)}` : withoutService(operation)
+    const saved = updateExclusions([...exclusions, { key, view, operation, resource, label }])
+    setExclusionMessage(`${resource ? "객체 행을" : "API를"} 매트릭스에서 제외했습니다.${saved ? "" : " 설정은 현재 화면에서만 유지됩니다."}`)
+    setSelectedId(null); setInspectorOpen(false)
+    if (api && resource === null) backToList()
+  }
+  const restore = (key?: string) => {
+    updateExclusions(key ? exclusions.filter(entry => entry.key !== key) : exclusions.filter(entry => entry.view !== view))
+    setUndo(null); setExclusionMessage("제외한 항목을 복원했습니다.")
+  }
   const selected = matrix ? findJudgmentItem(matrix, selectedId) : null
   useEffect(() => { if (selectedId && !selected && !snapshot.isError) { setSelectedId(null); setInspectorOpen(false) } }, [selectedId, selected, snapshot.isError])
   const disabled = snapshot.isError
@@ -170,6 +218,14 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
     <div className="flex h-10 shrink-0 items-center gap-1">
       <Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-8 gap-3 px-2 py-1" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">확인 필요한 결과만</span><span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-4" : "translate-x-0"}`} /></span></Button><InfoHint label="확인 필요한 결과만">취약점 의심, 추가 테스트 추천, 접근 기준·소유자 미확인, 요청 기록 없음 등 확인할 결과가 있는 API 행만 표시합니다. 같은 행의 다른 계정 결과도 함께 보여줍니다.</InfoHint>
     </div>
+    <Popover open={restoreOpen} onOpenChange={setRestoreOpen}>
+      <PopoverTrigger asChild><Button size="sm" variant="outline" disabled={disabled || excludedHere.length === 0}><RotateCcw aria-hidden="true" className="size-3.5" />제외한 항목 {excludedHere.length}</Button></PopoverTrigger>
+      <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-0" aria-label="제외한 항목 복원">
+        <div className="flex items-center justify-between gap-3 border-b p-3"><p className="text-sm font-semibold">제외한 항목 {excludedHere.length}</p><Button size="sm" variant="ghost" disabled={disabled || excludedHere.length === 0} onClick={() => restore()}>전체 복원</Button></div>
+        <p className="px-3 pt-3 text-xs text-muted-foreground">매트릭스에서만 제외됩니다. 원본 요청과 판정 기록은 유지됩니다.</p>
+        <ul className="max-h-80 overflow-auto p-2">{excludedHere.map(entry => <li key={entry.key} className="flex items-center gap-3 rounded-md p-2"><span className="min-w-0 flex-1 break-all text-sm"><span className="mr-2 text-xs text-muted-foreground">{entry.resource ? "객체" : "API"}</span>{entry.label}</span><Button size="sm" variant="outline" disabled={disabled} aria-label={`${entry.label} 복원`} onClick={() => restore(entry.key)}>복원</Button></li>)}</ul>
+      </PopoverContent>
+    </Popover>
   </div>
   const inspector = selected && matrix ? <JudgmentDetail key={JSON.stringify([selected.id, selected.reviewEvidenceIds])} item={selected} requiredRole={snapshot.data?.requiredRoles[selected.operation]} disabled={disabled} snapshot={snapshot.data} /> : <p className="p-4 text-sm text-muted-foreground">계정별 결과를 누르면 상세 내용을 볼 수 있습니다.</p>
 
@@ -190,15 +246,54 @@ function JudgmentMatrixWorkspace({ snapshot }: { snapshot: ReturnType<typeof use
           <span className="mt-1 block text-xs">{warning.message}</span>
         </li>)}</ul></AlertDescription>
       </Alert>}
-      {summary && <ul role="list" aria-label="판정 요약" className="flex shrink-0 flex-wrap gap-x-6 gap-y-2 border-b border-border/70 pb-3">{[
+      {summary && <ul title="제외 여부와 관계없이 전체 판정 기록의 집계입니다." role="list" aria-label="판정 요약" className="flex shrink-0 flex-wrap gap-x-6 gap-y-2 border-b border-border/70 pb-3">{[
         ["기능 권한 확인", summary.bflaTestRecommendations],
         ["데이터 권한 확인", summary.bolaIdorTestRecommendations],
         ["직접 확인 필요", summary.manualReviewPending],
         ["확정한 취약점", summary.humanConfirmed],
         ["정상·기각", summary.humanDismissed],
-      ].map(([label, value]) => <li key={String(label)} className="flex items-center gap-2 text-sm"><p className="text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{value}</p></li>)}</ul>}
-      {projection && pageCount > 1 && <nav aria-label="판정 매트릭스 페이지" className="flex shrink-0 items-center justify-between gap-3 text-sm"><span>{currentPage * 50 + 1}–{Math.min((currentPage + 1) * 50, projection.rows.length)} / {projection.rows.length}</span><div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>이전 페이지</Button><span>{currentPage + 1} / {pageCount}</span><Button size="sm" variant="outline" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>다음 페이지</Button></div></nav>}
-      {projection && (projection.rows.length ? <div ref={scroll} role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="min-h-40 min-w-0 max-w-full flex-1 overflow-auto rounded-md border overscroll-contain"><div className="relative min-h-full w-max min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}><OperationColumnResizeHandle width={operationWidth} onWidthChange={setOperationWidth} /><Table containerClassName="w-max min-w-full overflow-visible" className="table-fixed min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}><colgroup><col style={{ width: operationWidth }} />{projection.identities.map(identity => <col key={identity.id} />)}</colgroup><TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">API<span className="mt-1 block text-xs font-normal text-muted-foreground">클릭하면 최신 요청 열기</span></TableHead>{projection.identities.map((identity) => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span></TableHead>)}</TableRow></TableHeader><TableBody>{visibleRows.map((row) => <TableRow key={row.key}><TableHead scope="row" className="overflow-hidden whitespace-normal bg-background py-3 pr-6 align-top"><button type="button" className="block w-full rounded-sm text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" aria-label={`${withoutService(row.operation)} 최신 요청을 Request Lab에서 열기`} disabled={disabled || !latestOperationEvent(snapshot.data?.events ?? [], row.operation, row.resource ? Object.values(row.cellsByIdentity).flatMap(cell => cell.evidenceIds) : undefined)} onClick={() => setApiLabEvent(latestOperationEvent(snapshot.data?.events ?? [], row.operation, row.resource ? Object.values(row.cellsByIdentity).flatMap(cell => cell.evidenceIds) : undefined) ?? null)}><OperationLabel operation={row.operation} width={operationWidth} /></button>{row.resource && <p className="mt-2 break-all text-xs font-normal text-muted-foreground">{rowObjectLabel(row.resource)}{row.ownerLabel ? ` · 객체 소유자 ${row.ownerLabel}` : ""}</p>}</TableHead>{projection.identities.map((identity) => { const cell = row.cellsByIdentity[identity.id]; const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined; return <TableCell key={identity.id} className="whitespace-normal py-3 align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(cell.operation)}${"resource" in cell ? ` · ${rowObjectLabel(cell.resource ?? "")}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `grid w-full min-w-28 rounded-md border border-transparent p-3 text-left text-sm text-muted-foreground hover:bg-muted/50 ${cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `grid w-full min-w-44 rounded-md border p-3 text-left text-sm ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => select(cell.id)}><span className={quiet ? undefined : "font-semibold"}>{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span></button> : <span className="text-sm text-muted-foreground">데이터 없음</span>}</TableCell> })}</TableRow>)}</TableBody></Table></div></div> : <p className="rounded-md border p-6 text-sm text-muted-foreground">{view === "function" ? "현재 필터에 표시할 역할 × 기능 조합이 없습니다." : "객체 참조 요청 기록이 없거나 현재 필터에 표시할 계정 × 객체 조합이 없습니다."}</p>)}
+      ].map(([label, value]) => <li key={String(label)} className="flex items-center gap-2 text-sm"><p className="text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{value}</p></li>)}<li><InfoHint label="전체 판정 집계">제외 여부와 관계없이 전체 판정 기록을 집계합니다. 제외는 매트릭스의 표시만 바꿉니다.</InfoHint></li></ul>}
+      {projection && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm">
+        {api ? <nav aria-label="판정 매트릭스 경로" className="flex min-w-0 flex-wrap items-center gap-2"><Button size="sm" variant="ghost" onClick={backToList}><ArrowLeft aria-hidden="true" className="size-4" />목록으로</Button><ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" /><span className="break-all font-mono">{withoutService(api)}</span></nav> : <p className="text-muted-foreground">API {displayRows.length}개{view === "object" ? ` · 객체 ${displayRows.reduce((count, row) => count + (row as ApiJudgmentRow).objectCount, 0)}개` : ""}<InfoHint label="API별 판정 요약">수집된 객체의 판정 결과를 API별로 요약합니다. 의심·재현 결과를 우선 표시하며, API를 누르면 객체별 결과를 볼 수 있습니다. 요약은 API 전체의 정상 여부를 확정하지 않습니다.</InfoHint></p>}
+        {api && <Button size="sm" variant="outline" disabled={disabled} onClick={() => exclude(api, null)}>이 API 제외</Button>}
+      </div>}
+      {exclusionMessage && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"><span>{exclusionMessage}</span>{undo && <Button size="sm" variant="ghost" disabled={disabled} onClick={() => { const saved = updateExclusions(undo); setUndo(null); setExclusionMessage(`제외를 취소했습니다.${saved ? "" : " 설정은 현재 화면에서만 유지됩니다."}`) }}>실행 취소</Button>}</div>}
+      {projection && pageCount > 1 && <nav aria-label="판정 매트릭스 페이지" className="flex shrink-0 items-center justify-between gap-3 text-sm"><span>{currentPage * 50 + 1}–{Math.min((currentPage + 1) * 50, displayRows.length)} / {displayRows.length}</span><div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>이전 페이지</Button><span>{currentPage + 1} / {pageCount}</span><Button size="sm" variant="outline" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>다음 페이지</Button></div></nav>}
+      {projection && (displayRows.length ? <div ref={scroll} role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="min-h-40 min-w-0 max-w-full flex-1 overflow-auto rounded-md border overscroll-contain">
+        <div className="relative min-h-full w-max min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}>
+          <OperationColumnResizeHandle width={operationWidth} onWidthChange={setOperationWidth} />
+          <Table containerClassName="w-max min-w-full overflow-visible" className="table-fixed min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}>
+            <colgroup><col style={{ width: operationWidth }} />{projection.identities.map(identity => <col key={identity.id} />)}</colgroup>
+            <TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{api && view === "object" ? "객체" : "API"}<span className="mt-1 block text-xs font-normal text-muted-foreground">{api ? "결과를 누르면 상세 확인" : "API를 누르면 관련 결과 보기"}</span></TableHead>{projection.identities.map(identity => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span></TableHead>)}</TableRow></TableHeader>
+            <TableBody>{visibleRows.map(row => {
+              const aggregated = !api && view === "object"
+              const group = api ? null : row as ApiJudgmentRow
+              const latest = latestOperationEvent(snapshot.data?.events ?? [], row.operation, row.resource ? Object.values(row.cellsByIdentity).flatMap(cell => cell.evidenceIds) : undefined)
+              return <TableRow key={row.key}>
+                <TableHead scope="row" className="overflow-hidden whitespace-normal bg-background py-3 pr-6 align-top">
+                  <div className="flex items-start gap-2">
+                    <button type="button" className="min-w-0 flex-1 rounded-sm text-left hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50" aria-label={`${withoutService(row.operation)} 관련 결과 보기`} disabled={disabled} onClick={() => openApi(row.operation)}><OperationLabel operation={row.operation} width={operationWidth - 84} />{group && group.objectCount > 0 && <span className="mt-2 flex items-center gap-1 text-xs font-normal text-muted-foreground">객체 {group.objectCount}개<ChevronRight aria-hidden="true" className="size-3.5" /></span>}</button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <Button size="icon" variant="ghost" className="size-8" aria-label={`${withoutService(row.operation)} 최신 요청을 Request Lab에서 열기`} title="최신 요청 열기" disabled={disabled || !latest} onClick={() => setApiLabEvent(latest ?? null)}><ArrowUpRight aria-hidden="true" className="size-4" /></Button>
+                      <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스에서만 제외" disabled={disabled} onClick={() => exclude(row.operation, row.resource)}>제외</Button>
+                    </div>
+                  </div>
+                  {row.resource && <p className="mt-2 break-all text-xs font-normal text-muted-foreground">{rowObjectLabel(row.resource)}{row.ownerLabel ? ` · 객체 소유자 ${row.ownerLabel}` : ""}</p>}
+                </TableHead>
+                {projection.identities.map(identity => {
+                  const cell = row.cellsByIdentity[identity.id]
+                  const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined
+                  const counts = group?.countsByIdentity[identity.id]
+                  return <TableCell key={identity.id} className="whitespace-normal py-3 align-top">{cell ? <button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={!aggregated && cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(cell.operation)}${!aggregated && "resource" in cell ? ` · ${rowObjectLabel(cell.resource ?? "")}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `grid w-full min-w-28 gap-1 rounded-md border border-transparent p-3 text-left text-sm text-muted-foreground hover:bg-muted/50 ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `grid w-full min-w-44 gap-1 rounded-md border p-3 text-left text-sm ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => aggregated ? openApi(row.operation) : select(cell.id)}>
+                    <span className={quiet ? undefined : "font-semibold"}>{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span>
+                    {aggregated && counts && group.objectCount > 1 && <span className="text-xs font-normal opacity-90">{counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}</span>}
+                  </button> : <span className="text-sm text-muted-foreground">데이터 없음</span>}</TableCell>
+                })}
+              </TableRow>
+            })}</TableBody>
+          </Table>
+        </div>
+      </div> : <div className="grid justify-items-start gap-3 rounded-md border p-6 text-sm text-muted-foreground"><p>{api ? "현재 API에 표시할 객체가 없습니다. 필터 또는 제외한 항목을 확인하세요." : "현재 필터에 표시할 API가 없습니다. 필터 또는 제외한 항목을 확인하세요."}</p>{api && <Button variant="outline" size="sm" onClick={backToList}>목록으로</Button>}</div>)}
     </section>
     {apiLabEvent && snapshot.data && <RequestLabDialog key={apiLabEvent.eventId} open onOpenChange={open => { if (!open) setApiLabEvent(null) }} event={apiLabEvent} accounts={snapshot.data.accounts} sessions={snapshot.data.managedSessions} verifications={snapshot.data.manualVerifications} datasetRevision={snapshot.data.datasetRevision ?? snapshot.data.identityRevision ?? 0} snapshotRevision={snapshot.data.revision} suspended={disabled} />}
   </ReferenceAnalysisWorkspace>
