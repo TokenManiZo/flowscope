@@ -66,7 +66,7 @@ function PolicyAssignment({ item, requiredRole: currentRequiredRole, disabled }:
   }
   const select = "h-9 min-w-0 flex-1 rounded-md border border-border/70 bg-background px-2 text-sm"
   return <section aria-label="접근 허용 기준" className="grid gap-3 border-t border-border pt-5">
-    <div className="flex items-center gap-1.5"><h3 className="text-sm font-semibold">접근 허용 기준</h3><InfoHint label="접근 허용 기준">이 권한 이상인 계정이 접근할 수 있어야 합니다.</InfoHint></div>
+    <div className="flex items-center gap-1.5"><h3 className="text-sm font-semibold">접근 허용 기준</h3><InfoHint label="접근 허용 기준">이 권한 이상의 계정만 접근 할 수 있어야 합니다</InfoHint></div>
     <div className="grid gap-1.5"><label htmlFor="matrix-minimum-role" className="text-xs text-muted-foreground">최소 권한</label><div className="flex gap-2"><select id="matrix-minimum-role" aria-label="최소 권한" className={select} value={requiredRole} disabled={disabled} onChange={(event) => setRequiredRole(event.target.value)}><option value="" disabled>아직 정하지 않음</option>{ROLE_OPTIONS.map((value) => <option key={value} value={value}>{roleLabel[value]} ({value})</option>)}</select><Button type="button" size="sm" variant="outline" className="h-10" aria-label="최소 권한 저장" disabled={disabled || !requiredRole || requirement.isPending} onClick={() => void run(() => requirement.mutateAsync({ operation: item.operation, role: requiredRole }), "최소 권한을 저장했습니다.")}>저장</Button></div></div>
     {message && <p role="status" className="text-xs">{message}</p>}
   </section>

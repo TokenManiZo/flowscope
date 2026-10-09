@@ -1065,6 +1065,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String target = !operation.isEmpty() && !resource.isEmpty()
                     ? AnalysisConfig.operationObjectPolicyKey(operation, resource) : required(form, "target");
             ResourcePolicy policy = ResourcePolicy.valueOf(required(form, "policy").toUpperCase(Locale.ROOT));
+            if (resource.contains(" observed-object:")) {
+                boolean observed = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records).stream()
+                        .anyMatch(object -> operation.equals(object.operation())
+                                && resource.equals(object.operation().split(" ")[0] + " observed-object:" + object.objectKey()));
+                if (!observed) throw new IllegalArgumentException("관측된 API와 객체를 선택하세요.");
+                String method = operation.split(" ")[1];
+                if (policy == ResourcePolicy.PUBLIC && !method.equals("GET") && !method.equals("HEAD"))
+                    throw new IllegalArgumentException("조회 API만 공개로 설정할 수 있습니다.");
+            }
             state.config().withResourcePolicy(target, policy);
             state.rebuild();
             return success(policy == ResourcePolicy.UNKNOWN

@@ -168,6 +168,7 @@ public final class SnapshotJsonWriter {
         root.set("roles", roles(result, config));
         root.set("owners", owners(result));
         root.set("ownerOverrides", json.valueToTree(config.resourceOwners()));
+        root.set("resourcePolicyOverrides", json.valueToTree(config.resourcePolicies()));
         ArrayNode manual = root.putArray("manualVerifications");
         for (RequestRecord record : result.records) {
             if (record.source == Source.HUMAN && record.phase == io.flowscope.core.RunPhase.VALIDATION

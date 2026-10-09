@@ -53,6 +53,15 @@ for (const theme of ["dark", "light"] as const) test(`observed OBJ ownership and
       if (url.pathname === "/api/graph-workspace") {
         await route.fulfill({ json: { datasetRevision: 7, revision: ++workspaceRevision } }); return
       }
+      if (url.pathname === "/api/resource-policy") {
+        const body = new URLSearchParams(request.postData() ?? "")
+        const key = `${body.get("operation")} @ ${body.get("resource")}`
+        const policies = { ...snapshot.resourcePolicyOverrides }
+        if (body.get("policy") === "UNKNOWN") delete policies[key]
+        else policies[key] = body.get("policy")!
+        snapshot = { ...snapshot, revision: snapshot.revision + 1, resourcePolicyOverrides: policies }
+        await route.fulfill({ json: { success: true } }); return
+      }
       if (url.pathname === "/api/owner") {
         const body = new URLSearchParams(request.postData() ?? "")
         const change = { resource: body.get("resource") ?? "", identity: body.get("identity") ?? "" }
@@ -97,6 +106,19 @@ for (const theme of ["dark", "light"] as const) test(`observed OBJ ownership and
   }
   await selectObject(objects[0].objectKey)
   await expect(inspector.getByRole("heading", { name: /소유자 USER A/ })).toBeVisible()
+  await inspector.getByRole("button", { name: "소유자 바꾸기", exact: true }).click()
+  await inspector.getByRole("radio", { name: /누구나 조회 가능/ }).check()
+  await inspector.getByRole("button", { name: "공개로 설정", exact: true }).click()
+  await expect(inspector.getByRole("heading", { name: /누구나 조회 가능/ })).toBeVisible()
+  expect(snapshot.ownerOverrides?.[`${service} observed-object:${objects[0].objectKey}`]).toBe("user-a")
+  await selectObject(objects[0].objectKey)
+  await expect(inspector.getByRole("heading", { name: /누구나 조회 가능/ })).toBeVisible()
+  await inspector.screenshot({ path: testInfo.outputPath(`graph-public-${theme}.png`), animations: "disabled" })
+  await inspector.getByRole("button", { name: "공개 설정 바꾸기", exact: true }).click()
+  await inspector.getByRole("radio", { name: /USER A/ }).check()
+  await inspector.getByRole("button", { name: "소유자로 확정", exact: true }).click()
+  await expect(inspector.getByRole("heading", { name: /소유자 USER A/ })).toBeVisible()
+  expect(snapshot.resourcePolicyOverrides).toEqual({})
   const replays = inspector.getByRole("region", { name: "Request Lab 재현", exact: true })
   await expect(replays.getByRole("heading", { name: "Request Lab 재현 · 2건", exact: true })).toBeVisible()
   await expect(replays.getByText(explanation, { exact: true })).toHaveCount(0)

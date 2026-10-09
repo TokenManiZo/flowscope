@@ -1276,6 +1276,29 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void savesObservedPublicReadPolicyAndRejectsWrongObjectOrWriteApi() throws Exception {
+        start();
+        String service = state.record.service;
+        RequestRecord read = new RequestRecord(Source.HUMAN, service, "GET", "/lookup", 200, "fp");
+        read.query = "report_id=2"; read.hasResponse = true;
+        RequestRecord write = new RequestRecord(Source.HUMAN, service, "POST", "/lookup", 200, "fp");
+        write.reqBody = "{\"content\":\"hello\"}"; write.hasResponse = true;
+        state.records.add(read); state.records.add(write); state.rebuild();
+        var objects = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records);
+        var readObject = objects.stream().filter(object -> object.eventId().equals(read.evidenceId)).findFirst().orElseThrow();
+        var writeObject = objects.stream().filter(object -> object.eventId().equals(write.evidenceId)).findFirst().orElseThrow();
+        String resource = service + " observed-object:" + readObject.objectKey();
+        String form = "operation=" + encode(readObject.operation()) + "&resource=" + encode(resource) + "&policy=";
+        assertEquals(200, post("/api/resource-policy", form + "PUBLIC", token).statusCode());
+        String key = AnalysisConfig.operationObjectPolicyKey(readObject.operation(), resource);
+        assertEquals("PUBLIC", json(get("/api/snapshot", token, origin())).path("resourcePolicyOverrides").path(key).asText());
+        assertEquals(200, post("/api/resource-policy", form + "UNKNOWN", token).statusCode());
+        assertFalse(state.config.resourcePolicies().containsKey(key));
+        assertEquals(400, post("/api/resource-policy", "operation=" + encode(readObject.operation()) + "&resource=" + encode(service + " observed-object:invented") + "&policy=PUBLIC", token).statusCode());
+        assertEquals(400, post("/api/resource-policy", "operation=" + encode(writeObject.operation()) + "&resource=" + encode(service + " observed-object:" + writeObject.objectKey()) + "&policy=PUBLIC", token).statusCode());
+    }
+
+    @Test
     void assignsOwnersToObservedObjectsWithoutLegacyResources() throws Exception {
         start();
         String service = state.record.service;

@@ -514,6 +514,8 @@ export interface Snapshot {
   owners: Readonly<Record<string, string>>
   /** 사용자가 직접 지정한 소유자. 자동 추정보다 우선한다. */
   ownerOverrides?: Readonly<Record<string, string>>
+  /** API·객체별 직접 지정한 접근 정책. */
+  resourcePolicyOverrides?: Readonly<Record<string, string>>
   /** Request Lab로 보낸 HUMAN 검증 응답. 탐색 관측과 분리돼 원본 Evidence에 연결된다. */
   manualVerifications?: readonly ManualVerification[]
   requiredRoles: Readonly<Record<string, string>>

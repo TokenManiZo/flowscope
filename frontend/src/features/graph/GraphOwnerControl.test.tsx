@@ -57,12 +57,13 @@ it("assigns an unknown OBJ and undo clears that assignment before a snapshot ref
   expect(screen.getByRole("radio", { name: /USER A/ })).not.toBeChecked()
 })
 
-it("uses only the observed OBJ override and offers no canonical public or judgment controls", () => {
+it("uses only the observed OBJ override and offers Public without relying on canonical owners", () => {
   installFetch()
   renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, owners: { [resource]: "acct-demo-user-a" } }} resource={resource} />)
   expect(screen.getByRole("heading", { name: "객체 소유자 지정" })).toBeVisible()
-  expect(screen.queryByText(/Public|판정|미점검|IDOR/)).not.toBeInTheDocument()
-  expect(screen.getAllByRole("radio")).toHaveLength(snapshot.accounts.filter(account => account.target === service).length)
+  expect(screen.getByRole("radio", { name: /Public/ })).toBeDisabled()
+  expect(screen.queryByText(/판정|미점검|IDOR/)).not.toBeInTheDocument()
+  expect(screen.getAllByRole("radio")).toHaveLength(snapshot.accounts.filter(account => account.target === service).length + 1)
 })
 
 it("follows the saved observed owner when the snapshot changes elsewhere", () => {
@@ -82,7 +83,8 @@ it("filters out accounts from other services and asks for registration when none
   const { rerender } = renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, accounts: [...snapshot.accounts, foreign] }} resource={resource} />)
   expect(screen.queryByRole("radio", { name: /FOREIGN/ })).not.toBeInTheDocument()
   rerender(<GraphOwnerControl snapshot={{ ...unknown, accounts: [foreign] }} resource={resource} />)
-  expect(screen.queryByRole("radio")).not.toBeInTheDocument()
+  expect(screen.getAllByRole("radio")).toHaveLength(1)
+  expect(screen.getByRole("radio", { name: /Public/ })).toBeDisabled()
   expect(screen.getByRole("link", { name: "계정·세션에서 계정 등록" })).toHaveAttribute("href", "#accounts")
   expect(screen.getByRole("button", { name: "소유자로 확정" })).toBeDisabled()
 })
@@ -136,4 +138,39 @@ it("blocks duplicate confirmation and option changes while a save is pending", a
   expect(posts(fetch)).toEqual([ownerForm("acct-demo-user-a")])
   finish(response())
   expect(await screen.findByRole("status")).toHaveTextContent("소유자를 USER A(으)로 확정했습니다")
+})
+
+const operation = `${service} GET /posts/{id}`
+const policyKey = `${operation} @ ${resource}`
+it("saves and undoes public read for this API and OBJ without clearing its owner", async () => {
+  const fetch = installFetch(), user = userEvent.setup()
+  renderWithQueryClient(<GraphOwnerControl snapshot={snapshot} operation={operation} resource={resource} />)
+  await user.click(screen.getByRole("button", { name: "소유자 바꾸기" }))
+  await user.click(screen.getByRole("radio", { name: /Public/ }))
+  expect(fetch).not.toHaveBeenCalled()
+  await user.click(screen.getByRole("button", { name: "공개로 설정" }))
+  await screen.findByRole("status")
+  await user.click(screen.getByRole("button", { name: "되돌리기" }))
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => String(url) === "/api/resource-policy").map(([, init]) => new URLSearchParams(String(init?.body)).get("policy"))).toEqual(["PUBLIC", "UNKNOWN"]))
+  expect(posts(fetch)).toEqual([])
+  expect(new URLSearchParams(String(fetch.mock.calls[0][1]?.body)).get("resource")).toBe(resource)
+  expect(new URLSearchParams(String(fetch.mock.calls[0][1]?.body)).get("operation")).toBe(operation)
+})
+it("restores Public from a snapshot and clears it when choosing an owner", async () => {
+  const fetch = installFetch(), user = userEvent.setup()
+  renderWithQueryClient(<GraphOwnerControl snapshot={{ ...snapshot, resourcePolicyOverrides: { [policyKey]: "PUBLIC" } }} operation={operation} resource={resource} />)
+  expect(screen.getByRole("heading", { name: /누구나 조회 가능/ })).toBeVisible()
+  await user.click(screen.getByRole("button", { name: "공개 설정 바꾸기" }))
+  expect(screen.getByRole("radio", { name: /Public/ })).toBeChecked()
+  await user.click(screen.getByRole("radio", { name: /USER B/ }))
+  await user.click(screen.getByRole("button", { name: "소유자로 확정" }))
+  await screen.findByRole("status")
+  expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(["/api/resource-policy", "/api/owner"])
+  expect(posts(fetch)).toEqual([ownerForm("acct-demo-user-b")])
+})
+it.each(["POST", "PUT", "PATCH", "DELETE"])("disables Public for %s even when body OBJ ownership is available", method => {
+  installFetch()
+  renderWithQueryClient(<GraphOwnerControl snapshot={unknown} operation={`${service} ${method} /posts`} resource={resource} />)
+  expect(screen.getByRole("radio", { name: /Public/ })).toBeDisabled()
+  expect(screen.getByRole("radio", { name: /USER A/ })).toBeEnabled()
 })

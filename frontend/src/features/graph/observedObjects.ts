@@ -126,7 +126,8 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         const selection = { ...select(observations, null, true), displayObjectKey: key, displayApiKey: api }
         const owner = snapshot.ownerOverrides?.[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? null
         const label = observedObjectLabel(observations[0].object)
-        const objectNode = node("resource", key, label, selection, { owner, displayObjectKind: first.kind })
+        const publicRead = snapshot.resourcePolicyOverrides?.[`${observations[0].object.operation} @ ${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] === "PUBLIC"
+        const objectNode = node("resource", key, label, selection, { owner, publicRead, displayObjectKind: first.kind })
         edge("operation-resource", apiNode.id, objectNode.id, observations, true)
         if (navigation.level === "operation") list.push(objectNode)
       }

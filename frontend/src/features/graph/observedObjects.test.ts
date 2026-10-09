@@ -18,6 +18,16 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("restores Public for only the saved API and object while retaining its owner", () => {
+    const snapshot = data(), object = snapshot.displayObjects![0]
+    const resource = `${service} observed-object:${object.objectKey}`
+    snapshot.ownerOverrides = { [resource]: "user-a" }
+    snapshot.resourcePolicyOverrides = { [`${object.operation} @ ${resource}`]: "PUBLIC" }
+    const graph = projectHierarchy(snapshot, filters, nav)
+    expect(graph.resources.find(node => node.selection.displayObjectKey === object.objectKey)).toMatchObject({ publicRead: true, owner: "user-a" })
+    expect(graph.resources.filter(node => node.publicRead)).toHaveLength(1)
+  })
+
   it("uses the same integer and opaque labels in graph and search without changing object order", () => {
     const snapshot = data()
     snapshot.displayObjects = snapshot.displayObjects!.map((object, i) => ({ ...object,

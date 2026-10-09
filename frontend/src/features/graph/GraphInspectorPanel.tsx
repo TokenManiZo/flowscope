@@ -40,7 +40,7 @@ interface Props {
 export function GraphInspectorPanel({ selection, event, snapshot, suspended = false, node = null, projection = null, actions = {} }: Props) {
   const baseSummary = node && projection ? graphNodeSummary(node, projection) : null
   // 조회가 공개면 소유자 대신 "공개"로 보여 준다. 저장된 소유자는 쓰기 판정에 계속 쓰인다.
-  const publicObject = node?.kind === "resource" && node.selection.operation && node.selection.resource ? isPublicRead(snapshot, node.selection.operation, node.selection.resource) : false
+  const publicObject = node?.kind === "resource" && (node.publicRead || (node.selection.operation && node.selection.resource ? isPublicRead(snapshot, node.selection.operation, node.selection.resource) : false))
   const summary = baseSummary && publicObject ? { ...baseSummary, listTitle: "접근한 계정 · 조회 공개", list: baseSummary.list.map(([label, value]) => [label.replace(/ \(소유자\)$/, ""), value] as [string, string]) } : baseSummary
   const observedOwnerResource = node?.kind === "resource" && !node.staticResource && node.selection.displayObjectKey
     ? snapshot.displayObjects?.find(object => object.objectKey === node.selection.displayObjectKey && node.selection.evidenceIds.includes(object.eventId)) : undefined
@@ -67,7 +67,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   return <div className="flex h-full min-h-0 flex-1 flex-col bg-[var(--flowscope-pane)]">
     <InspectorPanel title="선택 작업" actionsPlacement="footer" actions={selectionActions} description={<div className="mt-2 grid gap-2"><span className="block break-all rounded-md border border-border/70 bg-background px-3 py-2 font-mono text-sm leading-relaxed text-foreground">{title}</span>{selection.identity && <span className="flex items-center gap-2 text-xs"><span className="text-muted-foreground">계정</span><span className="rounded border border-border/70 bg-background px-2 py-1 font-medium text-foreground">{graphAccountLabel(snapshot, selection.identity)}</span></span>}{selection.resource && <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">객체 식별자</summary><span className="mt-1 block select-all break-all font-mono text-foreground">{stripOrigin(selection.resource) || selection.resource}</span></details>}</div>} tabs={null}>
       {/* 선택한 OBJ의 수동 소유권은 판정용 resource와 독립적으로 저장한다. */}
-      {ownerResource && <GraphOwnerControl key={ownerResource} snapshot={snapshot} resource={ownerResource} disabled={suspended} />}
+      {ownerResource && <GraphOwnerControl key={ownerResource} snapshot={snapshot} operation={observedOwnerResource?.operation} resource={ownerResource} disabled={suspended} />}
       {node?.kind === "support-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했지만 판정 대상이 아닙니다. 이 카드만으로 API 존재, 접근 허용, 취약점을 뜻하지 않습니다.</p>}
       {/* 대상·API 그룹은 후보·확인 필요·계정별 접근으로 정리한 요약을 보여 준다. */}
       {node?.discovery ? <p className="mb-4 text-sm text-muted-foreground">{node.discovery === "unregistered" ? "브라우저에서 발견한 주소입니다." : "점검 범위에 등록된 주소입니다."} 트래픽이 들어오면 여기에 연결됩니다.</p>
