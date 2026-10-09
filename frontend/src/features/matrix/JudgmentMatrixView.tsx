@@ -111,7 +111,7 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
       </dl>
     </header>
     <PolicyAssignment key={`${item.id}:${requiredRole ?? ""}`} item={item} requiredRole={requiredRole} disabled={disabled} />
-    {resource && snapshot && <MatrixOwnerControl key={resource} resource={resource} snapshot={snapshot} disabled={disabled} />}
+    {resource && snapshot && <MatrixOwnerControl key={`${item.operation}:${resource}`} operation={item.operation} resource={resource} snapshot={snapshot} disabled={disabled} />}
     <section aria-label="요청·응답 확인" className="grid gap-3 border-t border-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">요청·응답 확인</h3>{basisEvent && <span className="rounded-md border border-border/70 bg-background px-2 py-1 font-mono text-xs">HTTP {basisEvent.status}</span>}</div>
       {basisEvent && <div className="grid gap-2 text-sm"><p className="break-all font-mono leading-5">{basisEvent.method} {basisEvent.path}</p><p className="text-muted-foreground">{new Date(basisEvent.timestamp).toLocaleString("ko-KR")} · {{ human: "사용자 요청", scanner: "스캐너 요청", llm: "AI 요청", unknown: "출처 미확인" }[basisEvent.source] ?? basisEvent.source}</p></div>}

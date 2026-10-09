@@ -161,3 +161,9 @@ QUERY/REQUEST_BODY의 표시 객체는 필드·값 조합 또는 본문 전체�
 접근 허용 기준 도움말을 사용자 지정 문장 “이 권한 이상의 계정만 접근 할 수 있어야 합니다”로 수정했다.
 
 복원 검증: 관련 프런트엔드 52개, 서버·프로젝트 저장 25개, 다크·라이트 Playwright 2개 테스트 통과. 타입 검사·빌드·패키징 통과. Public 설정 후 소유자 유지, 화면 재선택 후 복원, 해제, 해당 API·객체 한정, 쓰기 API 차단을 확인했다. 최신 JAR를 본 프로젝트 target 경로로 복사했다.
+
+### Matrix Public and unresolved object-model mismatch
+
+MatrixOwnerControl now offers Public for GET/HEAD and saves the selected operation/resource policy without replacing the owner. Matrix tests: 25 passed; typecheck, frontend build and JAR packaging passed.
+
+The prior legacy removal only removed the graph owner's dependency on canonical resources. AuthorizationAnalyzer still groups records by record.resource, and AuthorizationMatrixAnalyzer still derives BOLA/IDOR rows from those analysis cells. Graph displayObjects come independently from ObservedObjectProjection. BFLA endpoint aggregation is not the cause. The internal object model was NOT unified or removed. Temporary key aliasing was discarded because it would conceal this mismatch. A unified replacement must use the new OBJ model for matrix rows, ownership, policies, evidence, judgments and project persistence together.
