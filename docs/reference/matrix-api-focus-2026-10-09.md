@@ -14,3 +14,11 @@ Validation:
 - 3 existing browser cases cover matrix, observations and inspection at 600/1280/1920px.
 - All browser API responses are synthetic local fixtures; no target requests or mutations are made.
 - UI build and incremental offline JAR packaging passed. UI detector reported no findings.
+
+## Status copy and contextual help
+
+Status labels now distinguish `BOLA/IDOR 후보` / `BFLA 후보`, `접근 테스트 필요`, and `응답 확인 필요`. Owner/policy/configuration labels are shorter. All server statuses have a short explanation describing the reason and next action. Backend status values, authority, review IDs and summaries are unchanged.
+
+Each table status has a separate question-mark control, outside the result-selection button, so opening help does not select a result or drill into an API. The inspector uses the same explanations. Keyboard Enter and Escape work; help popovers retain a 16px viewport margin in both themes and narrow screens.
+
+Validation: 876 frontend tests, TypeScript checks, four dark/light browser cases at 600/1280px including help keyboard navigation and viewport bounds, UI build and offline JAR packaging passed. Detector reported no findings.

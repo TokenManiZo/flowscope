@@ -11,6 +11,6 @@ export function InfoHint({ label, children }: { label: string; children: ReactNo
         <CircleHelp className="size-4" aria-hidden="true" />
       </button>
     </PopoverTrigger>
-    <PopoverContent align="start" className="w-72 p-3 text-sm leading-relaxed">{children}</PopoverContent>
+    <PopoverContent align="start" collisionPadding={16} className="w-72 max-w-[calc(100vw-2rem)] p-3 text-sm leading-relaxed">{children}</PopoverContent>
   </Popover>
 }
