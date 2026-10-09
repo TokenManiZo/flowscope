@@ -68,14 +68,14 @@ class FlowScopeRequestLabCredentialsTest {
                     + "\r\nCookie: session=original\r\nAuthorization: Bearer original\r\n"
                     + "X-CSRF-Token: csrf-original\r\nProxy-Authorization: old-proxy\r\n"
                     + "X-Test: keep\r\nContent-Length: 7\r\nConnection: close\r\n\r\npayload";
-            var prepare = FlowScopeExtension.class.getDeclaredMethod("prepareHumanRequest", RequestRecord.class,
-                    String.class, CredentialMode.class, String.class);
+            var prepare = FlowScopeExtension.class.getDeclaredMethod("prepareHumanRequest", String.class,
+                    RequestRecord.class, String.class, CredentialMode.class, String.class);
             prepare.setAccessible(true);
             for (String id : List.of("original", "account-a", "account-b", "anonymous")) {
                 CredentialMode mode = id.equals("original") ? CredentialMode.ORIGINAL
                         : id.equals("anonymous") ? CredentialMode.ANONYMOUS : CredentialMode.ACCOUNT;
                 // Feed the previously prepared request back in: switching accounts must remove the old identity.
-                HttpRequest prepared = (HttpRequest) prepare.invoke(extension, seed, original, mode,
+                HttpRequest prepared = (HttpRequest) prepare.invoke(extension, seed.service, seed, original, mode,
                         mode == CredentialMode.ACCOUNT ? id : "");
                 original = prepared.toString();
                 try (var socket = new Socket("127.0.0.1", server.getAddress().getPort())) {
@@ -140,11 +140,11 @@ class FlowScopeRequestLabCredentialsTest {
             var seed = new RequestRecord(Source.HUMAN, service, "GET", "/orders/7", 200, "test");
             String edited = "GET /orders/7 HTTP/1.1\r\nHost: target.test\r\n"
                     + "Authorization: Bearer typed-by-hand\r\nCookie: sid=keep\r\nConnection: close\r\n\r\n";
-            var prepare = FlowScopeExtension.class.getDeclaredMethod("prepareHumanRequest", RequestRecord.class,
-                    String.class, CredentialMode.class, String.class);
+            var prepare = FlowScopeExtension.class.getDeclaredMethod("prepareHumanRequest", String.class,
+                    RequestRecord.class, String.class, CredentialMode.class, String.class);
             prepare.setAccessible(true);
             // 직접 입력: 손으로 쓴 인증 헤더가 지워지거나 교체되지 않고 그대로 나가야 한다(계정 모드와 다름).
-            HttpRequest prepared = (HttpRequest) prepare.invoke(extension, seed, edited, CredentialMode.RAW, "");
+            HttpRequest prepared = (HttpRequest) prepare.invoke(extension, seed.service, seed, edited, CredentialMode.RAW, "");
             assertEquals("Bearer typed-by-hand", prepared.headerValue("Authorization"));
             assertEquals("sid=keep", prepared.headerValue("Cookie"));
         } finally {

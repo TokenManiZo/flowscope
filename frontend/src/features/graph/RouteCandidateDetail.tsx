@@ -1,6 +1,8 @@
 import { useState } from "react"
+import { Send } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { CandidateRequestLabDialog } from "@/features/evidence/CandidateRequestLabDialog"
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import type { Snapshot } from "@/lib/api/types"
 import { evidenceOrdinalLabels, hasEvidenceOrdinal } from "@/lib/display/operationLabel"
@@ -26,6 +28,7 @@ export function RouteCandidateDetail({ candidate, ordinals, snapshot, disabled =
 
 /** 다른 노드와 같은 요청 기록 UI로 통일한 버전. 후보 맥락은 위에 얇게, 발견에 쓰인 요청은 EvidenceActionList로 보여 준다. */
 function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestLab }: { candidate: GraphRouteCandidateDetail; snapshot: Snapshot; disabled: boolean; onOpenRequestLab?(): void }) {
+  const [sendOpen, setSendOpen] = useState(false)
   const applicabilityTone = routeCandidateTone(candidate.applicability)
   const ids = new Set(candidate.provenanceEvidenceIds)
   const events = snapshot.events.filter((item) => ids.has(item.eventId))
@@ -39,7 +42,10 @@ function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestL
         <div className="mt-2 grid gap-1 text-xs"><div className="break-all"><span className="font-medium">검토: </span>{candidate.reviewReason || "-"}</div><div className="break-all"><span className="font-medium">우선순위: </span>{candidate.priorityReasons.join(", ") || "-"}</div></div>
       </details>}
     </dl>
-    <p className="text-xs text-muted-foreground">이 후보를 발견한 요청입니다. 아직 이 경로로 직접 보낸 요청은 없습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>
+    {/* 아직 안 보낸 후보 경로를 처음으로 직접 보내 본다(발견에 쓰인 요청 재전송과 별개). */}
+    <Button size="sm" className="w-fit" disabled={disabled} onClick={() => setSendOpen(true)}><Send className="size-4" />이 경로로 요청 보내기</Button>
+    <CandidateRequestLabDialog open={sendOpen} onOpenChange={setSendOpen} disabled={disabled} accounts={snapshot.accounts} sessions={snapshot.managedSessions} candidate={{ service: candidate.service, method: candidate.method, pathTemplate: candidate.pathTemplate }} />
+    <p className="text-xs text-muted-foreground">아래는 이 후보를 발견한 요청입니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>
     <EvidenceActionList events={events} snapshot={snapshot} disabled={disabled} onOpenRequestLab={onOpenRequestLab} identityOf={collectionIdentity} labelIdentity={(identity) => graphAccountLabel(snapshot, identity)} />
   </section>
 }
