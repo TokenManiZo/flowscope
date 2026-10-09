@@ -111,6 +111,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
                                                 CredentialMode credentialMode, String accountId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
+        /** 캡처된 요청이 없는 경로 후보를 대상 서비스(host)만으로 처음 전송한다. 원본 모드는 쓸 수 없다. */
+        default RequestLabResult sendRequestLabForService(String service, String request,
+                                                          CredentialMode credentialMode, String accountId) {
+            throw new UnsupportedOperationException("request lab is unavailable");
+        }
         default CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(String itemId, boolean armed) {
             throw new UnsupportedOperationException("authorization replay is unavailable");
         }
@@ -505,12 +510,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
                 throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
             }
-            String eventId = required(values, "eventId");
+            String eventId = values.getOrDefault("eventId", "").trim();
+            String service = values.getOrDefault("service", "").trim();
+            if (eventId.isBlank() == service.isBlank()) {
+                throw new IllegalArgumentException("eventId 또는 service 중 하나만 지정해야 합니다.");
+            }
+            if (!service.isBlank() && mode == CredentialMode.ORIGINAL) {
+                throw new IllegalArgumentException("원본 모드는 캡처된 요청에만 쓸 수 있습니다.");
+            }
             String operationId = required(values, "operationId");
             if (!operationId.matches("[A-Za-z0-9_-]{16,120}")) {
                 throw new IllegalArgumentException("operationId 형식이 올바르지 않습니다.");
             }
-            RequestLabResult result = executeRequestLabOnce(operationId, eventId, rawRequest, mode, accountId);
+            RequestLabResult result = executeRequestLabOnce(operationId,
+                    eventId.isBlank() ? null : eventId, service.isBlank() ? null : service, rawRequest, mode, accountId);
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("eventId", result.eventId());
@@ -691,14 +704,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return sources;
     }
 
-    private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String request,
+    private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String service, String request,
                                                    CredentialMode mode, String accountId) {
-        String signature = requestLabSignature(eventId, request, mode.name(), accountId);
+        String signature = requestLabSignature(eventId, service, request, mode.name(), accountId);
         RequestLabOperation proposed = new RequestLabOperation(signature, new CompletableFuture<>());
         RequestLabOperation operation = requestLabOperations.putIfAbsent(operationId, proposed);
         if (operation == null) {
             try {
-                RequestLabResult result = state.sendRequestLab(eventId, request, mode, accountId);
+                RequestLabResult result = eventId != null
+                        ? state.sendRequestLab(eventId, request, mode, accountId)
+                        : state.sendRequestLabForService(service, request, mode, accountId);
                 proposed.result().complete(result);
                 RequestLabResult compact = new RequestLabResult(result.eventId(), result.status(),
                         "동일 operationId의 중복 전송을 차단하고 최초 실행 결과를 재사용했습니다.",

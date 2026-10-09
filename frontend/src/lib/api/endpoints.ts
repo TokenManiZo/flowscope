@@ -45,6 +45,9 @@ export const getRequestLabDraft = (eventId: string, signal?: AbortSignal, includ
 export const sendRequestLab = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"; accountId: string }, signal?: AbortSignal) =>
   // 서버는 operationId로 같은 전송의 중복 실행을 막는다. 누르기마다 새 값을 쓴다.
   postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
+// 캡처된 요청이 없는 경로 후보를 대상 서비스(host)만으로 처음 보낸다. eventId 대신 service를 넘기고 원본 모드는 쓰지 않는다.
+export const sendCandidateRequestLab = (values: { service: string; request: string; credentialMode: "ANONYMOUS" | "ACCOUNT" | "RAW"; accountId: string }, signal?: AbortSignal) =>
+  postForm<RequestLabResult>("/api/request-lab", { action: "send", operationId: crypto.randomUUID(), ...values }, undefined, signal)
 export const previewRequestLabCredentials = (values: { eventId: string; request: string; credentialMode: "ORIGINAL" | "ANONYMOUS" | "ACCOUNT" | "RAW"; accountId: string; datasetRevision: number }, signal?: AbortSignal) =>
   postForm<{ headers: RequestLabCredentialHeader[] }>("/api/request-lab/credentials", { ...values, datasetRevision: String(values.datasetRevision) }, undefined, signal)
 export const saveRequestLabWorkspace = (values: { eventId: string; datasetRevision: number; revision: number; change: import("./types").RequestLabWorkspaceChange }, signal?: AbortSignal) =>
