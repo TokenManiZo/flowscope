@@ -36,7 +36,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
     const place = () => {
       const rect = input.current?.getBoundingClientRect()
       if (!rect) return
-      const width = Math.min(480, window.innerWidth - 32)
+      const width = Math.min(rect.width, Math.max(0, window.innerWidth - 32))
       const top = rect.bottom + 4
       const next = { left: Math.max(16, Math.min(rect.left, window.innerWidth - width - 16)), top, width, height: Math.max(80, Math.min(320, window.innerHeight - top - 88)) }
       setBounds(current => current.left === next.left && current.top === next.top && current.width === next.width && current.height === next.height ? current : next)
@@ -45,6 +45,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
     window.addEventListener("resize", place)
     window.addEventListener("scroll", place, true)
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place)
+    if (root.current) observer?.observe(root.current)
     if (root.current?.parentElement) observer?.observe(root.current.parentElement)
     const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node) && !popup.current?.contains(event.target as Node)) setOpen(false) }
     document.addEventListener("pointerdown", outside)
