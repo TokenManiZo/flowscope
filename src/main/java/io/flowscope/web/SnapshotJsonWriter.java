@@ -137,7 +137,7 @@ public final class SnapshotJsonWriter {
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
         root.set("events", events(result, rawAvailable, collectionAccount));
         if (objectResult != result) {
-            objectProjection = io.flowscope.core.graph.ObservedObjectProjection.build(result.records);
+            objectProjection = result.objects.observations();
             objectResult = result;
         }
         root.set("displayObjects", json.valueToTree(objectProjection));

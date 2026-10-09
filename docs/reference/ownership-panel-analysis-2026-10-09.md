@@ -167,3 +167,17 @@ QUERY/REQUEST_BODY의 표시 객체는 필드·값 조합 또는 본문 전체�
 MatrixOwnerControl now offers Public for GET/HEAD and saves the selected operation/resource policy without replacing the owner. Matrix tests: 25 passed; typecheck, frontend build and JAR packaging passed.
 
 The prior legacy removal only removed the graph owner's dependency on canonical resources. AuthorizationAnalyzer still groups records by record.resource, and AuthorizationMatrixAnalyzer still derives BOLA/IDOR rows from those analysis cells. Graph displayObjects come independently from ObservedObjectProjection. BFLA endpoint aggregation is not the cause. The internal object model was NOT unified or removed. Temporary key aliasing was discarded because it would conceal this mismatch. A unified replacement must use the new OBJ model for matrix rows, ownership, policies, evidence, judgments and project persistence together.
+
+
+## 새 OBJ 판정 정본 통합 및 최종 검증
+
+- `ObservedObjectIndex`를 Pipeline에서 한 번 생성하고 그래프·소유자 저장·BOLA/IDOR 매트릭스의 공통 키로 사용한다. 기존 `ObservedObjectProjection`의 해시·그룹·인식 규칙은 변경하지 않았다. 핵심 API(`API` + `INCLUDE` + 분석 신뢰 조건)만 객체 판정 대상으로 사용한다.
+- PATH, QUERY, REQUEST_BODY 각각의 기존 OBJ 키에 소유자와 Public 정책을 저장한다. 같은 숫자 ID라도 서비스·부모 경로·메서드·입력 채널이 다르면 자동으로 합치지 않는다. 정책 저장은 API와 OBJ의 조합을 보존한다.
+- BFLA는 요청별 기능 셀을 한 번 생성한다. 객체 채널 수만큼 기능 판정이나 finding을 중복 계산하지 않는다. BOLA/IDOR는 새 OBJ별 행에 기존 정책·응답·기준선·사람 검토 조건을 적용한다. 응답에서 업무 식별자를 확인할 수 없는 입력도 수동 소유권은 설정할 수 있으며, 성공 상태 코드만으로 IDOR 후보를 만들지 않는다.
+- 응답 소유자 필드, 생성 응답, 컬렉션 멤버십에 따른 자동 소유자 근거를 새 OBJ에 연결했다. 같은 서비스의 복수 계정 후보가 충돌하면 미확정으로 둔다. 통제 재전송은 이미 수집된 OBJ만 재사용하고 새 OBJ나 표시 번호를 생성하지 않는다.
+- 옛 `record.resource` 기반 소유자 resolver, 판정 행 생성, 소유자 저장 fallback을 제거했다. Normalizer의 resource/reference metadata는 입력 필드 연결·데이터 흐름·원본 DTO 호환에 사용되므로 유지한다. 이 metadata는 소유권이나 객체 판정의 저장 키가 아니다.
+- 사람 검토와 수동 검증 응답 첨부도 새 키를 사용한다. 기준 요청과 다른 OBJ 입력을 기존 객체의 검증으로 첨부할 수 없다. 소유자 변경 시 해당 객체의 이전 검토는 재검토 상태가 된다.
+- 매트릭스는 50행씩 표시한다. 공통 Evidence/operation 색인, memoized label/projection, 페이지 전환 시 스크롤 초기화로 대량 OBJ의 렌더링 부담을 줄였다. 객체 행에서 Request Lab을 열 때 다른 OBJ의 최신 요청을 대신 고르지 않는다.
+- 회귀 검증에는 그래프/매트릭스 키 일치, 채널별 수동 소유권, Public 범위 격리, 정적 자원·실패 전용·검증 요청 제외, 통제 재전송 연결, 중첩 부모 격리, 모호한 식별자, BFLA 중복 방지, 대량 행 페이지 전환이 포함된다.
+
+최종 검증 결과: Java 961개 중 955개 통과·6개 건너뜀·실패 0개, UI 타입 검사 및 869개 테스트 통과, 다크/라이트 소유권·재전송 이동 및 600/1280/1920px 브라우저 검증 5개 통과. 최신 JAR의 UI 파일이 빌드 출력과 일치함을 확인하고 본 프로젝트의 동일 target 경로에 복사하여 SHA-256 일치를 검증했다.

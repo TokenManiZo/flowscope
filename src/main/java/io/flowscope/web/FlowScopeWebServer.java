@@ -1066,7 +1066,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     ? AnalysisConfig.operationObjectPolicyKey(operation, resource) : required(form, "target");
             ResourcePolicy policy = ResourcePolicy.valueOf(required(form, "policy").toUpperCase(Locale.ROOT));
             if (resource.contains(" observed-object:")) {
-                boolean observed = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records).stream()
+                boolean observed = state.snapshot().objects.observations().stream()
                         .anyMatch(object -> operation.equals(object.operation())
                                 && resource.equals(object.operation().split(" ")[0] + " observed-object:" + object.objectKey()));
                 if (!observed) throw new IllegalArgumentException("관측된 API와 객체를 선택하세요.");
@@ -1116,13 +1116,25 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private void bindReviewPolicy(String itemId, List<String> evidenceIds) {
-        state.snapshot().records.stream().filter(record -> evidenceIds.contains(record.evidenceId))
-                .forEach(record -> state.config().bindReviewPolicy(itemId, record.idn, record.op, record.resource));
+        state.snapshot().analysis.findings().stream().filter(finding -> finding.id().equals(itemId)).forEach(finding -> {
+            var target = finding.cell();
+            state.config().bindReviewPolicy(itemId, target.identity(), target.operation(), target.resource());
+            bindBasisReviewPolicy(itemId, evidenceIds, target.resource());
+        });
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
-        matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell ->
-                state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), null));
-        matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell ->
-                state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), cell.resource()));
+        matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell -> {
+            state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), null);
+            bindBasisReviewPolicy(itemId, evidenceIds, null);
+        });
+        matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell -> {
+            state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), cell.resource());
+            bindBasisReviewPolicy(itemId, evidenceIds, cell.resource());
+        });
+    }
+
+    private void bindBasisReviewPolicy(String itemId, List<String> evidenceIds, String targetResource) {
+        state.snapshot().records.stream().filter(record -> evidenceIds.contains(record.evidenceId))
+                .forEach(record -> state.config().bindReviewPolicy(itemId, record.idn, record.op, targetResource));
     }
 
     /** Attach only explicitly selected, stored manual responses for this exact matrix target. */
@@ -1138,7 +1150,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     && cell.identity().equals(record.idn) && cell.operation().equals(record.op))
                     || matrix.objects().stream().anyMatch(cell -> cell.id().equals(itemId)
                     && cell.identity().equals(record.idn) && cell.operation().equals(record.op)
-                    && cell.resource().equals(record.resource));
+                    && state.snapshot().objects.matchesInput(record, cell.resource()));
             if (!target || record.source != io.flowscope.core.Source.HUMAN
                     || record.phase != io.flowscope.core.RunPhase.VALIDATION
                     || record.executionTrust != io.flowscope.core.ExecutionTrust.CONTROLLED
@@ -1713,11 +1725,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String identity = form.getOrDefault("identity", "").trim();
             if (!identity.isEmpty()) {
                 var records = state.snapshot().records;
-                String observedEvent = io.flowscope.core.graph.ObservedObjectProjection.build(records).stream()
+                String observedEvent = state.snapshot().objects.observations().stream()
                         .filter(object -> resource.equals(object.operation().split(" ")[0] + " observed-object:" + object.objectKey()))
                         .map(io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation::eventId).findFirst().orElse(null);
-                RequestRecord target = records.stream().filter(record -> record.evidenceId.equals(observedEvent) || resource.equals(record.resource)
-                                || record.resourceReferences.stream().anyMatch(reference -> resource.equals(reference.resource())))
+                RequestRecord target = records.stream().filter(record -> record.evidenceId.equals(observedEvent))
                         .findFirst().orElseThrow(() -> new IllegalArgumentException("관측된 리소스를 선택하세요."));
                 boolean sameService = state.config().account(identity)
                         .map(account -> account.service().equals(target.service)).orElse(false)

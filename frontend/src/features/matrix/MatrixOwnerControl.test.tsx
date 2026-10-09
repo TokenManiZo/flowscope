@@ -6,7 +6,7 @@ import sample from "@/test/sample/sample-snapshot.json"
 import { renderWithQueryClient } from "@/test/render"
 import { MatrixOwnerControl } from "./MatrixOwnerControl"
 
-const resource = "https://demo.flowscope.test:443 orders:101"
+const resource = (sample as unknown as Snapshot).authorizationMatrix!.objects.find(cell => cell.owner === "acct-demo-user-a")!.resource
 const snapshot = sample as unknown as Snapshot
 afterEach(() => vi.unstubAllGlobals())
 

@@ -57,13 +57,13 @@ it("assigns an unknown OBJ and undo clears that assignment before a snapshot ref
   expect(screen.getByRole("radio", { name: /USER A/ })).not.toBeChecked()
 })
 
-it("uses only the observed OBJ override and offers Public without relying on canonical owners", () => {
+it("shows the shared confirmed OBJ owner and offers Public for read APIs", () => {
   installFetch()
   renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, owners: { [resource]: "acct-demo-user-a" } }} resource={resource} />)
-  expect(screen.getByRole("heading", { name: "객체 소유자 지정" })).toBeVisible()
-  expect(screen.getByRole("radio", { name: /Public/ })).toBeDisabled()
+  expect(screen.getByRole("heading", { name: /소유자 USER A/ })).toHaveTextContent("자동 추정")
+  expect(screen.getByRole("button", { name: "소유자 바꾸기" })).toBeVisible()
   expect(screen.queryByText(/판정|미점검|IDOR/)).not.toBeInTheDocument()
-  expect(screen.getAllByRole("radio")).toHaveLength(snapshot.accounts.filter(account => account.target === service).length + 1)
+  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument()
 })
 
 it("follows the saved observed owner when the snapshot changes elsewhere", () => {

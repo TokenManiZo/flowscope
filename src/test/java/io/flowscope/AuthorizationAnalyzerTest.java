@@ -20,13 +20,13 @@ class AuthorizationAnalyzerTest {
         records.add(rec(Source.LLM, "B", "GET", "/api/orders/101", 403,
                 "{\"error\":\"forbidden\"}"));
 
-        Pipeline.Result result = Pipeline.run(records);
+        Pipeline.Result result = CoreObjectFixture.run(records);
         AuthorizationAnalysis analysis = result.analysis;
 
         assertEquals("user-a", analysis.owners().values().iterator().next().identity());
         assertTrue(analysis.findings().stream().anyMatch(f -> f.type() == AuthorizationAnalysis.FindingType.BOLA));
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
-                .filter(c -> c.key().identity().equals("user-b")).findFirst().orElseThrow();
+                .filter(c -> c.key().resource() != null && c.key().identity().equals("user-b")).findFirst().orElseThrow();
         assertEquals(Verdict.SUSPICIOUS, cross.perSource().get(Source.SCANNER).verdict());
         assertEquals(Verdict.DENY, cross.perSource().get(Source.LLM).verdict());
         assertTrue(cross.conflict(), "같은 조합의 소스별 판정 차이를 보존");
@@ -40,22 +40,22 @@ class AuthorizationAnalyzerTest {
                 "{\"id\":101,\"owner\":\"user-a\"}"));
         records.add(rec(Source.LLM, "B", "DELETE", "/api/orders/101", 204, ""));
 
-        AuthorizationAnalysis a = Pipeline.run(records).analysis;
+        AuthorizationAnalysis a = CoreObjectFixture.run(records).analysis;
         AuthorizationAnalysis.CoverageCell cell = a.cells().stream()
-                .filter(c -> c.key().operation().contains("DELETE")).findFirst().orElseThrow();
+                .filter(c -> c.key().resource() != null && c.key().operation().contains("DELETE")).findFirst().orElseThrow();
         assertEquals(Verdict.SUSPICIOUS, cell.overall());
     }
 
     @Test
     void 소유자_근거가_없으면_취약으로_단정하지_않는다() {
         RequestRecord r = rec(Source.LLM, "A", "GET", "/api/orders/101", 200, "{\"id\":101}");
-        AuthorizationAnalysis a = Pipeline.run(List.of(r)).analysis;
-        AuthorizationAnalysis.OwnerInfo owner = a.owners().get(r.resource);
+        AuthorizationAnalysis a = CoreObjectFixture.run(List.of(r)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = a.owners().get(CoreObjectFixture.resource(r));
 
         assertEquals(20, owner.confidence());
         assertFalse(owner.confirmed(), "첫 성공 접근자 O1은 판정 가능한 소유자가 아니다");
         assertFalse(owner.decisionGrade(), "첫 성공 접근자 O1은 confidence 게이트를 통과하면 안 된다");
-        assertEquals(Verdict.UNTESTED, a.cells().get(0).overall());
+        assertEquals(Verdict.UNTESTED, a.cells().stream().filter(cell -> cell.key().resource() != null).findFirst().orElseThrow().overall());
         assertTrue(a.findings().isEmpty());
     }
 
@@ -67,11 +67,11 @@ class AuthorizationAnalyzerTest {
         RequestRecord crossRead = rec(Source.SCANNER, "B", "GET", "/api/orders/701", 200,
                 "{\"id\":701}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(ownerCollection, crossRead)).analysis;
-        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(crossRead.resource);
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(ownerCollection, crossRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(CoreObjectFixture.resource(crossRead));
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
                 .filter(cell -> cell.key().identity().equals("user-b")
-                        && cell.key().resource().equals(crossRead.resource))
+                        && java.util.Objects.equals(cell.key().resource(), CoreObjectFixture.resource(crossRead)))
                 .findFirst().orElseThrow();
 
         assertEquals("user-a", owner.identity());
@@ -91,10 +91,10 @@ class AuthorizationAnalyzerTest {
         create.responseContentType = "application/json";
         RequestRecord crossRead = rec(Source.SCANNER, "B", "GET", "/api/orders/801", 200, "{\"id\":801}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(create, crossRead)).analysis;
-        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(crossRead.resource);
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(create, crossRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(CoreObjectFixture.resource(crossRead));
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
-                .filter(cell -> cell.key().identity().equals("user-b") && crossRead.resource.equals(cell.key().resource()))
+                .filter(cell -> cell.key().identity().equals("user-b") && CoreObjectFixture.resource(crossRead).equals(cell.key().resource()))
                 .findFirst().orElseThrow();
 
         assertEquals("user-a", owner.identity());
@@ -111,9 +111,9 @@ class AuthorizationAnalyzerTest {
         create.responseContentType = "application/json";
         RequestRecord read = rec(Source.HUMAN, "B", "GET", "/api/users/5/orders/ab12", 200, "{\"id\":\"ab12\"}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(create, read)).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(create, read)).analysis;
 
-        assertEquals("user-a", analysis.owners().get(read.resource).identity());
+        assertEquals("user-a", analysis.owners().get(CoreObjectFixture.resource(read)).identity());
     }
 
     @Test
@@ -127,10 +127,10 @@ class AuthorizationAnalyzerTest {
         secondCreate.responseContentType = "application/json";
         RequestRecord cartRead = rec(Source.SCANNER, "C", "GET", "/api/carts/902", 200, "{\"id\":902}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(anonymousCreate, ticketRead, firstCreate, secondCreate, cartRead)).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(anonymousCreate, ticketRead, firstCreate, secondCreate, cartRead)).analysis;
 
-        assertFalse(analysis.owners().get(ticketRead.resource).basis().contains("생성 요청자"));
-        AuthorizationAnalysis.OwnerInfo cart = analysis.owners().get(cartRead.resource);
+        assertFalse(analysis.owners().get(CoreObjectFixture.resource(ticketRead)).basis().contains("생성 요청자"));
+        AuthorizationAnalysis.OwnerInfo cart = analysis.owners().get(CoreObjectFixture.resource(cartRead));
         assertNull(cart.identity());
         assertFalse(cart.decisionGrade());
         assertTrue(cart.basis().contains("생성 응답 충돌"));
@@ -143,8 +143,8 @@ class AuthorizationAnalyzerTest {
         RequestRecord ownerRead = rec(Source.HUMAN, "B", "GET", "/api/notes/903", 200, "{\"id\":903,\"owner\":\"user-b\"}");
         ownerRead.responseContentType = "application/json";
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(create, ownerRead)).analysis;
-        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(ownerRead.resource);
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(create, ownerRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(CoreObjectFixture.resource(ownerRead));
 
         assertEquals("user-b", owner.identity());
         assertTrue(owner.confirmed(), "명시 소유필드 O3가 생성 요청자 O2를 이긴다");
@@ -161,11 +161,11 @@ class AuthorizationAnalyzerTest {
         RequestRecord crossRead = rec(Source.SCANNER, "C", "GET", "/api/orders/702", 200,
                 "{\"id\":702}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(firstCollection, secondCollection, crossRead)).analysis;
-        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(crossRead.resource);
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(firstCollection, secondCollection, crossRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(CoreObjectFixture.resource(crossRead));
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
                 .filter(cell -> cell.key().identity().equals("user-c")
-                        && cell.key().resource().equals(crossRead.resource))
+                        && java.util.Objects.equals(cell.key().resource(), CoreObjectFixture.resource(crossRead)))
                 .findFirst().orElseThrow();
 
         assertNull(owner.identity());
@@ -177,7 +177,7 @@ class AuthorizationAnalyzerTest {
         assertTrue(analysis.findings().stream().noneMatch(finding -> finding.cell().equals(cross.key())));
         assertTrue(analysis.gaps().stream().noneMatch(gap ->
                         gap.type() == AuthorizationAnalysis.GapType.UNCROSSED
-                                && gap.resource().equals(crossRead.resource)),
+                                && gap.resource().equals(CoreObjectFixture.resource(crossRead))),
                 "공유/공개 O0 객체는 교차 추천도 만들면 안 된다");
     }
 
@@ -189,8 +189,8 @@ class AuthorizationAnalyzerTest {
         RequestRecord orderRead = rec(Source.SCANNER, "B", "GET", "/api/orders/703", 200,
                 "{\"id\":703}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(unrelatedCollection, orderRead)).analysis;
-        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(orderRead.resource);
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(unrelatedCollection, orderRead)).analysis;
+        AuthorizationAnalysis.OwnerInfo owner = analysis.owners().get(CoreObjectFixture.resource(orderRead));
 
         assertEquals("user-b", owner.identity());
         assertEquals(20, owner.confidence());
@@ -203,10 +203,10 @@ class AuthorizationAnalyzerTest {
         RequestRecord r = rec(Source.HUMAN, "A", "PUT", "/api/orders/101", 200, "{\"ok\":true}");
         r.reqBody = "{\"owner\":\"user-a\"}";
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(r)).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(r)).analysis;
 
-        assertFalse(analysis.owners().get(r.resource).confirmed());
-        assertEquals(Verdict.UNTESTED, analysis.cells().get(0).overall());
+        assertFalse(analysis.owners().get(CoreObjectFixture.resource(r)).confirmed());
+        assertEquals(Verdict.UNTESTED, analysis.cells().stream().filter(cell -> cell.key().resource() != null).findFirst().orElseThrow().overall());
         assertTrue(analysis.findings().isEmpty());
     }
 
@@ -218,9 +218,9 @@ class AuthorizationAnalyzerTest {
         records.add(rec(Source.SCANNER, "B", "GET", "/api/orders/101", 200,
                 "{\"count\":1010,\"message\":\"owner-user-a-disabled\"}"));
 
-        AuthorizationAnalysis analysis = Pipeline.run(records).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(records).analysis;
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
-                .filter(c -> c.key().identity().equals("user-b")).findFirst().orElseThrow();
+                .filter(c -> c.key().resource() != null && c.key().identity().equals("user-b")).findFirst().orElseThrow();
 
         assertEquals(Verdict.UNDECIDED, cross.overall());
         assertTrue(analysis.findings().stream().noneMatch(f -> f.cell().equals(cross.key())));
@@ -236,7 +236,7 @@ class AuthorizationAnalyzerTest {
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withEndpointRequirement(op, AccessRole.ADMIN);
 
-        AuthorizationAnalysis a = AuthorizationAnalyzer.analyze(records, config);
+        AuthorizationAnalysis a = CoreObjectFixture.analyze(records, config);
         assertEquals(Verdict.SUSPICIOUS, a.cells().get(0).overall());
         assertTrue(a.findings().stream().anyMatch(f -> f.type() == AuthorizationAnalysis.FindingType.BFLA));
     }
@@ -252,9 +252,9 @@ class AuthorizationAnalyzerTest {
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withIdentityRole("user-b", AccessRole.USER)
                 .withEndpointRequirement(reader.op, AccessRole.USER)
-                .withResourcePolicy(reader.resource, ResourcePolicy.PUBLIC);
+                .withResourcePolicy(CoreObjectFixture.resource(reader), ResourcePolicy.PUBLIC);
 
-        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(List.of(owner, reader), config);
+        AuthorizationAnalysis analysis = CoreObjectFixture.analyze(List.of(owner, reader), config);
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
                 .filter(cell -> cell.key().identity().equals("user-b")).findFirst().orElseThrow();
 
@@ -271,9 +271,9 @@ class AuthorizationAnalyzerTest {
         AnalysisConfig config = new AnalysisConfig()
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withEndpointRequirement(ownerDelete.op, AccessRole.ADMIN)
-                .withResourcePolicy(ownerDelete.resource, ResourcePolicy.OWNER_ONLY);
+                .withResourcePolicy(CoreObjectFixture.resource(ownerDelete), ResourcePolicy.OWNER_ONLY);
 
-        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(List.of(ownerRead, ownerDelete), config);
+        AuthorizationAnalysis analysis = CoreObjectFixture.analyze(List.of(ownerRead, ownerDelete), config);
         AuthorizationAnalysis.CoverageCell delete = analysis.cells().stream()
                 .filter(cell -> cell.key().operation().equals(ownerDelete.op)).findFirst().orElseThrow();
 
@@ -291,7 +291,7 @@ class AuthorizationAnalyzerTest {
         records.add(rec(Source.SCANNER, "B", "GET", "/api/profile/2", 200,
                 "{\"id\":2,\"owner\":\"user-b\"}"));
 
-        AuthorizationAnalysis a = Pipeline.run(records).analysis;
+        AuthorizationAnalysis a = CoreObjectFixture.run(records).analysis;
         assertTrue(a.gaps().stream().anyMatch(g -> g.type() == AuthorizationAnalysis.GapType.UNCROSSED
                 && g.identity().equals("user-b") && g.operation().contains("orders")));
     }
@@ -309,9 +309,9 @@ class AuthorizationAnalyzerTest {
         serviceB.body = "{\"ownerId\":\"42\"}";
         serviceB.hasResponse = true;
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(serviceA, serviceB)).analysis;
-        assertEquals("user-a", analysis.owners().get(serviceA.resource).identity());
-        assertEquals("user-b", analysis.owners().get(serviceB.resource).identity());
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(serviceA, serviceB)).analysis;
+        assertEquals("user-a", analysis.owners().get(CoreObjectFixture.resource(serviceA)).identity());
+        assertEquals("user-b", analysis.owners().get(CoreObjectFixture.resource(serviceB)).identity());
     }
 
     @Test
@@ -320,17 +320,17 @@ class AuthorizationAnalyzerTest {
         records.add(rec(Source.HUMAN, "A", "GET", "/api/orders/101", 200, "{\"id\":101}"));
         records.add(rec(Source.HUMAN, "B", "GET", "/api/profile/2", 200, "{\"id\":2}"));
         Normalizer.normalizeAll(records);
-        String resource = records.get(0).resource;
+        String resource = CoreObjectFixture.resource(records.get(0));
         AnalysisConfig configured = new AnalysisConfig()
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withResourceOwner(resource, "user-b");
 
-        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(records, configured);
+        AuthorizationAnalysis analysis = CoreObjectFixture.analyze(records, configured);
         assertEquals("user-b", analysis.owners().get(resource).identity());
-        assertEquals("사용자 명시 소유자", analysis.owners().get(resource).basis());
+        assertEquals("사용자 확정 OBJ 소유자", analysis.owners().get(resource).basis());
         assertEquals(AccessRole.USER, records.get(0).role);
 
-        AuthorizationAnalyzer.analyze(records, new AnalysisConfig());
+        CoreObjectFixture.analyze(records, new AnalysisConfig());
         assertEquals(AccessRole.UNKNOWN, records.get(0).role);
     }
 
@@ -347,7 +347,7 @@ class AuthorizationAnalyzerTest {
         attacker.body = owner.body;
         attacker.hasResponse = true;
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(owner, attacker)).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(owner, attacker)).analysis;
 
         AuthorizationAnalysis.OwnerInfo resolved = analysis.owners().values().iterator().next();
         assertTrue(resolved.confirmed());
@@ -364,10 +364,10 @@ class AuthorizationAnalyzerTest {
         RequestRecord metadata = rec(Source.HUMAN, "A", "HEAD", "/api/orders/8", 200,
                 "{\"owner\":\"user-a\"}");
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(denied, metadata)).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(denied, metadata)).analysis;
 
-        assertFalse(analysis.owners().containsKey(denied.resource));
-        assertFalse(analysis.owners().containsKey(metadata.resource));
+        assertTrue(analysis.owners().values().stream().noneMatch(owner -> owner.confirmed()));
+        assertTrue(analysis.owners().values().stream().noneMatch(owner -> owner.confirmed()));
         assertTrue(analysis.findings().isEmpty());
     }
 
@@ -378,14 +378,12 @@ class AuthorizationAnalyzerTest {
         RequestRecord loginRedirect = rec(Source.HUMAN, "A", "GET", "/api/orders/8", 302, "");
         loginRedirect.location = "/auth/login?next=/api/orders/8";
 
-        AuthorizationAnalysis analysis = Pipeline.run(List.of(normalRedirect, loginRedirect)).analysis;
+        AuthorizationAnalysis analysis = CoreObjectFixture.run(List.of(normalRedirect, loginRedirect)).analysis;
 
-        AuthorizationAnalysis.CoverageCell normal = analysis.cells().stream()
-                .filter(cell -> cell.key().resource().equals(normalRedirect.resource)).findFirst().orElseThrow();
-        AuthorizationAnalysis.CoverageCell login = analysis.cells().stream()
-                .filter(cell -> cell.key().resource().equals(loginRedirect.resource)).findFirst().orElseThrow();
-        assertEquals(Verdict.UNDECIDED, normal.overall());
-        assertEquals(Verdict.DENY, login.overall());
+        assertFalse(ResponseEvidence.denied(normalRedirect));
+        assertTrue(ResponseEvidence.denied(loginRedirect));
+        assertTrue(analysis.cells().stream().allMatch(cell -> cell.key().resource() == null), "거부·리다이렉트만 있는 경로는 새 OBJ를 만들지 않는다");
+        assertTrue(analysis.findings().isEmpty());
     }
 
     @Test
@@ -412,7 +410,7 @@ class AuthorizationAnalyzerTest {
         RequestRecord deepRecord = rec(Source.HUMAN, "A", "GET", "/api/orders/7", 200, deep);
         RequestRecord hugeRecord = rec(Source.HUMAN, "A", "GET", "/api/orders/8", 200, huge);
 
-        Pipeline.Result result = assertDoesNotThrow(() -> Pipeline.run(List.of(deepRecord, hugeRecord)));
+        Pipeline.Result result = assertDoesNotThrow(() -> CoreObjectFixture.run(List.of(deepRecord, hugeRecord)));
 
         assertTrue(result.analysis.owners().values().stream().noneMatch(AuthorizationAnalysis.OwnerInfo::confirmed));
     }

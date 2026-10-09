@@ -3,8 +3,8 @@ import type { EventRecord } from "@/lib/api/types"
 const resendDetails = new Set(["BURP_REPEATER", "BURP_INTRUDER"])
 
 /** API 경로에서 열 때는 계정·판정 근거와 무관하게 해당 API의 가장 최근 요청을 보여 준다. */
-export function latestOperationEvent(events: readonly EventRecord[], operation: string): EventRecord | undefined {
-  return events.filter(event => event.op === operation)
+export function latestOperationEvent(events: readonly EventRecord[], operation: string, evidenceIds?: readonly string[]): EventRecord | undefined {
+  return events.filter(event => event.op === operation && (!evidenceIds || evidenceIds.includes(event.eventId) || event.clusterEvidenceIds?.some(id => evidenceIds.includes(id))))
     .reduce<EventRecord | undefined>((latest, event) => !latest || event.timestamp >= latest.timestamp ? event : latest, undefined)
 }
 
@@ -17,6 +17,7 @@ export function latestOperationEvent(events: readonly EventRecord[], operation: 
 export function requestLabEvent(events: readonly EventRecord[], operation: string, basisId: string | undefined, resource: string | null): EventRecord | undefined {
   const basis = basisId ? events.find(event => event.eventId === basisId || event.clusterEvidenceIds?.includes(basisId)) : undefined
   if (basis?.rawAvailable) return basis
+  if (resource?.includes(" observed-object:")) return basis
   const originals = events.filter(event => event.op === operation && event.phase !== "VALIDATION" && !resendDetails.has(event.sourceDetail))
     .sort((left, right) => right.timestamp - left.timestamp)
   const live = originals.filter(event => event.rawAvailable)

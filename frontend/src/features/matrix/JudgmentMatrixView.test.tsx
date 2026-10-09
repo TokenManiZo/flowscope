@@ -148,7 +148,7 @@ it("opens the recommendation detail, saves a human review against the server cel
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
   expect(within(table).getByText("orders:101 · 객체 소유자 A")).toBeVisible()
-  await user.click(within(table).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(table).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   expect(within(inspector).getAllByRole("region").map((region) => region.getAttribute("aria-label"))).toEqual(["접근 허용 기준", "객체 소유자", "요청·응답 확인", "취약점 확인"])
   expect(within(inspector).getByRole("region", { name: "요청·응답 확인" })).toHaveTextContent("열린 창에서 B 계정을 선택해 확인하세요.")
@@ -203,7 +203,7 @@ it("opens a same-API record whose raw is still in memory when the basis record l
   const user = userEvent.setup()
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
-  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · orders:101` }))
   await user.click(within(screen.getByRole("region", { name: "요청·응답 확인" })).getByRole("button", { name: "Request Lab 열기" }))
   expect(await screen.findByRole("dialog", { name: "Request Lab" })).toHaveTextContent("ev-live")
 })
@@ -213,7 +213,7 @@ it("keeps the same sections on non-reviewable observed cells, locks review, and 
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
   const table = screen.getByRole("region", { name: "판정 매트릭스 표" })
-  await user.click(within(table).getByRole("button", { name: `접근 허용됨: A · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(table).getByRole("button", { name: `접근 허용됨: A · GET /api/orders/{id} · orders:101` }))
   const inspector = screen.getByRole("complementary", { name: "선택 상세" })
   const review = within(inspector).getByRole("region", { name: "취약점 확인" })
   expect(within(review).getByRole("button", { name: "취약점으로 확정" })).toBeDisabled()
@@ -350,7 +350,7 @@ it("keeps object rules out of the panel and reveals status explanations only fro
     cell.id === "object-b" ? { ...cell, blockingLayers: ["BOLA"], resourcePolicy: "OWNER_ONLY" } : cell) } }
   renderView(<JudgmentMatrixView />)
   await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 분석 영역" })).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" }))
-  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · ${service} orders:101` }))
+  await user.click(within(screen.getByRole("region", { name: "판정 매트릭스 표" })).getByRole("button", { name: `해당 계정으로 접근 확인 필요: B · GET /api/orders/{id} · orders:101` }))
 
   expect(screen.queryByText("차단층")).not.toBeInTheDocument()
   const assignment = screen.getByRole("region", { name: "접근 허용 기준" })
@@ -395,4 +395,27 @@ it("keeps only the two judgment views above the table", async () => {
   expect(within(views).getByRole("tab", { name: "객체 권한 (BOLA/IDOR) · 계정 × 객체" })).toHaveAttribute("aria-selected", "true")
   expect(screen.queryByRole("button", { name: "다른 보기" })).not.toBeInTheDocument()
   expect(screen.queryByRole("heading", { name: "파라미터 커버리지" })).not.toBeInTheDocument()
+})
+
+
+it("renders only 50 rows per page and resets the page when switching dimensions", async () => {
+  const user = userEvent.setup()
+  current = { ...snapshot, authorizationMatrix: { ...matrix,
+    functions: Array.from({ length: 120 }, (_, index) => fn(`bulk-${index}`, "a", `${service} GET /bulk/${String(index).padStart(3, "0")}`)),
+  } }
+  renderView(<JudgmentMatrixView />)
+  const table = screen.getByRole("table")
+  expect(within(table).getAllByRole("row")).toHaveLength(51)
+  expect(within(table).getByText("/bulk/000")).toBeVisible()
+  expect(within(table).queryByText("/bulk/050")).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "다음 페이지" }))
+  expect(within(table).getByText("/bulk/050")).toBeVisible()
+  expect(within(table).queryByText("/bulk/000")).not.toBeInTheDocument()
+  await user.click(screen.getByRole("button", { name: "다음 페이지" }))
+  expect(within(table).getAllByRole("row")).toHaveLength(21)
+  expect(screen.getByRole("button", { name: "다음 페이지" })).toBeDisabled()
+  await user.click(screen.getByRole("tab", { name: /객체 권한/ }))
+  await user.click(screen.getByRole("tab", { name: /기능 권한/ }))
+  expect(within(screen.getByRole("table")).getByText("/bulk/000")).toBeVisible()
+  expect(screen.getByRole("button", { name: "이전 페이지" })).toBeDisabled()
 })

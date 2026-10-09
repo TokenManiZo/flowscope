@@ -13,7 +13,7 @@ class SnapshotObservedObjectsTest {
         a.collectionAccountId = "user-a"; b.collectionAccountId = "user-b";
         for (var r : List.of(a,b)) {
             r.hasResponse = true; r.reqText = "GET " + r.path + " HTTP/1.1\r\nHost: t\r\n\r\n";
-            r.body = "{\"title\":\"post\"}";
+            r.body = "{\"title\":\"post\"}"; r.responseContentType = "application/json";
         }
         var result = Pipeline.run(List.of(a,b));
         var analysis = result.analysis;

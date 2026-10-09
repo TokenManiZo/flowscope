@@ -137,7 +137,7 @@ describe("observed display objects", () => {
     expect(graph.operations[0].label).toBe(`${service} GET /posts/{id}`)
     expect(graph.operations[0].selection.operation).toBeNull()
     expect(graph.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 2", "OBJ 3"])
-    expect(graph.resources.every(node => node.selection.resource === null)).toBe(true)
+    expect(graph.resources.map(node => node.selection.resource)).toEqual(snapshot.displayObjects!.map(object => `${service} observed-object:${object.objectKey}`))
     expect(graph.resources.map(node => node.selection.evidenceIds)).toEqual([["ev-1"],["ev-2"],["ev-3"]])
     expect(JSON.stringify(snapshot.cells)).toBe(original)
     expect(graph.edges.filter(edge => edge.relation === "operation-resource")).toHaveLength(4)

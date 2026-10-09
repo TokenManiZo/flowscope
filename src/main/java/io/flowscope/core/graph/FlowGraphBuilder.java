@@ -30,6 +30,9 @@ public final class FlowGraphBuilder {
     public static FlowGraph build(List<RequestRecord> records, AuthorizationAnalysis analysis, AnalysisConfig config) {
         FlowGraph g = new FlowGraph();
         List<RequestRecord> analyzable = records.stream().filter(r -> r.source != Source.UNKNOWN).toList();
+        java.util.Map<String, java.util.Set<String>> resourcesByEvidence = new java.util.LinkedHashMap<>();
+        for (var cell : analysis.cells()) if (cell.key().resource() != null)
+            for (String evidenceId : cell.evidenceIds()) resourcesByEvidence.computeIfAbsent(evidenceId, ignored -> new java.util.LinkedHashSet<>()).add(cell.key().resource());
         for (RequestRecord r : analyzable) {
             if (r.idn == null || r.op == null) {
                 throw new IllegalStateException("정규화되지 않은 레코드: " + r);
@@ -39,14 +42,11 @@ public final class FlowGraphBuilder {
             g.addNode(iId, config.identityLabel(r.idn), FlowGraph.NodeType.IDENTITY);
             g.addNode(oId, withoutService(r.op), FlowGraph.NodeType.OPERATION);
 
-            if (r.resource == null) {
-                // 객체 없는 요청은 요청자 → 엔드포인트 직결 (F-06/F-07)
-                g.addEdge(iId, oId, FlowGraph.EdgeType.ACCESS, r);
-            } else {
-                String rId = "R:" + r.resource;
-                g.addNode(rId, withoutService(r.resource), FlowGraph.NodeType.RESOURCE);
+            g.addEdge(iId, oId, FlowGraph.EdgeType.CALLS, r);
+            for (String resource : resourcesByEvidence.getOrDefault(r.evidenceId, java.util.Set.of())) {
+                String rId = "R:" + resource;
+                g.addNode(rId, withoutService(resource), FlowGraph.NodeType.RESOURCE);
                 g.addEdge(iId, rId, FlowGraph.EdgeType.ACCESS, r);
-                // CALLS 도 신원별로 분리: 다른 신원의 호출이 '겹침'으로 오표시되면 안 된다
                 g.addEdge(rId, oId, FlowGraph.EdgeType.CALLS, r);
             }
         }

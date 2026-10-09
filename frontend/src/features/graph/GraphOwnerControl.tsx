@@ -18,7 +18,8 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
   const readable = !!operation && ["GET", "HEAD"].includes(operation.split(" ")[1])
   const publicRead = !!operation && snapshot.resourcePolicyOverrides?.[`${operation} @ ${resource}`] === "PUBLIC"
   const service = resource.split(" ")[0]
-  const currentOwner = snapshot.ownerOverrides?.[resource] ?? ""
+  const manualOwner = snapshot.ownerOverrides?.[resource] ?? ""
+  const currentOwner = manualOwner || snapshot.owners[resource] || ""
   const accounts = snapshot.accounts.filter(account => account.target === service)
   const labelOf = (identity: string) => accounts.find(account => account.id === identity)?.label ?? identityLabel(identity)
   const current = publicRead ? PUBLIC : currentOwner
@@ -37,8 +38,8 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
   }
   async function apply() {
     if (disabled || pending || !picked || picked === current || (picked === PUBLIC && !readable)) return
-    const previous = { owner: currentOwner, publicRead }
-    const saved = { owner: picked === PUBLIC ? currentOwner : picked, publicRead: picked === PUBLIC }
+    const previous = { owner: manualOwner, publicRead }
+    const saved = { owner: picked === PUBLIC ? manualOwner : picked, publicRead: picked === PUBLIC }
     try {
       await save(saved, previous)
       setDone({ message: picked === PUBLIC ? "이 API의 객체 조회를 공개로 설정했습니다." : `소유자를 ${labelOf(picked)}(으)로 확정했습니다.`, previous, saved })
@@ -79,7 +80,7 @@ export function GraphOwnerControl({ snapshot, operation, resource, disabled = fa
       <p className="text-xs font-medium">누가 이 객체의 주인인가요?</p>
       {picker}
     </div> : <div className="grid gap-2.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3">
-      <h3 className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><CircleCheck className="size-4" aria-hidden="true" />{publicRead ? "누구나 조회 가능 (Public)" : `소유자 ${labelOf(currentOwner)}`}<span className="rounded-full border border-border px-2 py-px text-[11px] font-normal text-muted-foreground">{publicRead ? "조회 공개" : "직접 확정"}</span></h3>
+      <h3 className="flex flex-wrap items-center gap-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300"><CircleCheck className="size-4" aria-hidden="true" />{publicRead ? "누구나 조회 가능 (Public)" : `소유자 ${labelOf(currentOwner)}`}<span className="rounded-full border border-border px-2 py-px text-[11px] font-normal text-muted-foreground">{publicRead ? "조회 공개" : manualOwner ? "직접 확정" : "자동 추정"}</span></h3>
       <p className="text-xs leading-relaxed text-muted-foreground">{publicRead ? "이 API로 이 객체를 조회하는 접근은 공개로 설정했습니다. 수정·삭제 요청과 다른 객체에는 적용하지 않습니다." : "선택한 객체에 저장된 소유자입니다."}</p>
       {editing ? picker : <div><Button size="sm" variant="outline" className="h-8 text-[13px]" disabled={disabled || pending} onClick={() => setEditing(true)}>{publicRead ? "공개 설정 바꾸기" : "소유자 바꾸기"}</Button></div>}
     </div>}

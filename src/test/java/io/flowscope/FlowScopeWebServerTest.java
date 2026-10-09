@@ -550,8 +550,8 @@ final class FlowScopeWebServerTest {
         JsonNode body = JSON.readTree(snapshot.body());
         assertEquals(1, body.path("events").size());
         assertEquals(1, body.path("cells").size());
-        assertEquals("untested", body.at("/cells/0/overall").asText());
-        assertEquals("untested", body.at("/cells/0/perSource/human").asText());
+        assertEquals("allow", body.at("/cells/0/overall").asText());
+        assertEquals("allow", body.at("/cells/0/perSource/human").asText());
         assertEquals("human", body.at("/activeSources/0").asText());
         assertEquals(1, body.at("/trafficStats/captured").asInt());
         assertEquals(0, body.at("/trafficStats/dropped").asInt());
@@ -1165,6 +1165,8 @@ final class FlowScopeWebServerTest {
     @Test
     void editsServiceBoundAccountPolicyAndHumanReview() throws Exception {
         start();
+        state.record.query = "order_id=7";
+        state.rebuild();
         JsonNode account = json(post("/api/account-save", "label=USER+A&role=User&target=https%3A%2F%2Fapi.example.test", token));
         String accountId = account.path("id").asText();
         assertFalse(accountId.isBlank());
@@ -1184,7 +1186,8 @@ final class FlowScopeWebServerTest {
         String operation = state.snapshot().records.getFirst().op;
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
         assertEquals("Admin", state.config.endpointRequirement(operation).label());
-        String resource = state.snapshot().records.getFirst().resource;
+        String resource = state.snapshot().objects.observations().stream().filter(o -> o.kind().equals("QUERY"))
+                .map(io.flowscope.core.ObservedObjectIndex::resource).findFirst().orElseThrow();
         assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
                 + "&policy=PUBLIC", token).statusCode());
         assertEquals(io.flowscope.core.ResourcePolicy.PUBLIC, state.config.resourcePolicy(operation, resource));
@@ -1213,7 +1216,7 @@ final class FlowScopeWebServerTest {
                 + "&value=AUTO", token).statusCode());
 
         state.config.upsertAccount(new AccountProfile("owner", "OWNER", state.record.service, AccessRole.USER));
-        state.config.withResourceOwner(state.snapshot().records.getFirst().resource, "owner");
+        state.config.withResourceOwner(resource, "owner");
         state.rebuild();
         String findingId = state.snapshot().analysis.findings().getFirst().id();
         assertEquals(200, post("/api/review", "itemId=" + encode(findingId)
@@ -1231,7 +1234,7 @@ final class FlowScopeWebServerTest {
                 "BFLA_CANDIDATE", "BFLA_REVIEW_REQUIRED", "BOLA_IDOR_CANDIDATE", "BOLA_IDOR_REVIEW_REQUIRED");
         for (JsonNode cell : matrix.path("objects")) {
             boolean hasRec = !cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull();
-            if (hasRec || reviewableStatus.contains(cell.path("status").asText())) { reviewable = cell; break; }
+            if (cell.path("identity").asText().equals(accountId) && (hasRec || reviewableStatus.contains(cell.path("status").asText()))) { reviewable = cell; break; }
         }
         assertNotNull(reviewable, "사람 검토가 가능한(추천 또는 후보) 객체 cell이 있어야 한다");
         String cellId = reviewable.path("id").asText();
@@ -1262,6 +1265,7 @@ final class FlowScopeWebServerTest {
         manual.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
         manual.originEvidenceId = state.record.evidenceId;
         manual.body = state.record.body;
+        manual.query = state.record.query;
         manual.hasResponse = true;
         manual.timestamp = 2;
         state.records.add(manual);
@@ -1269,6 +1273,19 @@ final class FlowScopeWebServerTest {
         assertEquals(200, post("/api/review", "itemId=" + encode(ownFunction)
                 + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token).statusCode());
         assertEquals(List.of(manual.evidenceId), state.config.reviews().get(ownFunction).validationEvidenceIds());
+        var objectValidationResponse = post("/api/review", "itemId=" + encode(cellId)
+                + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token);
+        assertEquals(200, objectValidationResponse.statusCode(), objectValidationResponse.body());
+        manual.query = "order_id=8"; state.rebuild();
+        assertEquals(400, post("/api/review", "itemId=" + encode(cellId)
+                + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token).statusCode(),
+                "An altered OBJ input cannot be attached to the original object's review");
+        manual.query = state.record.query; state.rebuild();
+        state.config.withResourceOwner(resource, accountId);
+        assertEquals(io.flowscope.core.ReviewDecision.Status.UNRESOLVED,
+                state.config.reviewStatus(cellId, state.config.reviews().get(cellId).evidenceIds()),
+                "Changing new OBJ ownership invalidates the object review bound to that OBJ");
+
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=USER", token).statusCode());
         assertEquals(io.flowscope.core.ReviewDecision.Status.UNRESOLVED,
                 state.config.reviewStatus(ownFunction, state.config.reviews().get(ownFunction).evidenceIds()));
@@ -1333,17 +1350,20 @@ final class FlowScopeWebServerTest {
     @Test
     void restrictsOwnersToSameServiceIdentities() throws Exception {
         start();
+        state.record.query = "order_id=7";
+        state.rebuild();
         RequestRecord record = state.snapshot().records.getFirst();
         state.config.upsertAccount(new AccountProfile("same", "Same", record.service, AccessRole.USER));
         state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
-        String body = "resource=" + encode(record.resource) + "&identity=";
+        String resource = io.flowscope.core.ObservedObjectIndex.resource(state.snapshot().objects.observations().getFirst());
+        String body = "resource=" + encode(resource) + "&identity=";
         for (String invalid : List.of("public", "other", "foreign", "unknown-owner")) {
             assertEquals(400, post("/api/owner", body + invalid, token).statusCode());
         }
         assertEquals(200, post("/api/owner", body + "same", token).statusCode(), "owner need not have an active login session");
-        assertEquals("same", state.config.resourceOwners().get(record.resource));
+        assertEquals("same", state.config.resourceOwners().get(resource));
         assertEquals(200, post("/api/owner", body, token).statusCode());
-        assertFalse(state.config.resourceOwners().containsKey(record.resource));
+        assertFalse(state.config.resourceOwners().containsKey(resource));
         assertTrue(json(get("/api/manual-attempts", token, origin())).isArray());
     }
 

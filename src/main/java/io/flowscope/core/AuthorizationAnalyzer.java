@@ -43,6 +43,15 @@ public final class AuthorizationAnalyzer {
     public static AuthorizationAnalysis analyze(List<RequestRecord> records, AnalysisConfig config) {
         if (records == null || records.isEmpty()) return AuthorizationAnalysis.empty();
         if (records.stream().anyMatch(r -> r.op == null || r.idn == null)) Normalizer.normalizeAll(records);
+        EvidenceIds.assign(records); applyRoles(records, config);
+        for (RequestRecord record : records) if (record.trafficClassification == null)
+            record.trafficClassification = TrafficClassifier.classify(record, config);
+        return analyze(records, config, ObservedObjectIndex.build(records));
+    }
+
+    public static AuthorizationAnalysis analyze(List<RequestRecord> records, AnalysisConfig config, ObservedObjectIndex objects) {
+        if (records == null || records.isEmpty()) return AuthorizationAnalysis.empty();
+        if (records.stream().anyMatch(r -> r.op == null || r.idn == null)) Normalizer.normalizeAll(records);
         EvidenceIds.assign(records);
         applyRoles(records, config);
 
@@ -53,14 +62,17 @@ public final class AuthorizationAnalyzer {
                 .toList();
         if (analyzable.isEmpty()) return AuthorizationAnalysis.empty();
 
-        Map<String, OwnerInfo> owners = resolveOwners(analyzable, config);
+        for (RequestRecord record : analyzable) if (record.trafficClassification == null)
+            record.trafficClassification = TrafficClassifier.classify(record, config);
+        Map<String, OwnerInfo> owners = resolveOwners(analyzable, config, objects);
         Set<Source> activeSources = EnumSet.noneOf(Source.class);
         analyzable.stream().map(r -> r.source).forEach(activeSources::add);
 
         Map<CellKey, List<RequestRecord>> grouped = new LinkedHashMap<>();
         for (RequestRecord r : analyzable) {
-            CellKey key = new CellKey(r.idn, r.op, r.resource);
-            grouped.computeIfAbsent(key, ignored -> new ArrayList<>()).add(r);
+            grouped.computeIfAbsent(new CellKey(r.idn, r.op, null), ignored -> new ArrayList<>()).add(r);
+            for (String resource : objects.resources(r.evidenceId))
+                grouped.computeIfAbsent(new CellKey(r.idn, r.op, resource), ignored -> new ArrayList<>()).add(r);
         }
 
         List<CoverageCell> cells = new ArrayList<>();
@@ -75,7 +87,7 @@ public final class AuthorizationAnalyzer {
 
             Map<Source, Decision> decisions = new EnumMap<>(Source.class);
             for (Map.Entry<Source, List<RequestRecord>> sourceEntry : bySource.entrySet()) {
-                decisions.put(sourceEntry.getKey(), decide(key, sourceEntry.getValue(), owners.get(key.resource()), config));
+                decisions.put(sourceEntry.getKey(), decide(key, sourceEntry.getValue(), owners.get(key.resource()), config, objects));
             }
             Set<Source> missed = EnumSet.noneOf(Source.class);
             missed.addAll(activeSources);
@@ -118,95 +130,61 @@ public final class AuthorizationAnalyzer {
         }
     }
 
-    private static Map<String, OwnerInfo> resolveOwners(List<RequestRecord> records, AnalysisConfig config) {
-        Map<String, Map<String, String>> aliasesByService = new LinkedHashMap<>();
-        for (RequestRecord r : records) {
-            Map<String, String> aliases = aliasesByService.computeIfAbsent(r.service, ignored -> new LinkedHashMap<>());
-            aliases.put(r.idn.toLowerCase(Locale.ROOT), r.idn);
-            String subject = subjectOf(r.fp);
-            if (subject != null) aliases.put(subject.toLowerCase(Locale.ROOT), r.idn);
+    private static Map<String, OwnerInfo> resolveOwners(List<RequestRecord> records, AnalysisConfig config,
+                                                        ObservedObjectIndex objects) {
+        Map<String, Map<String, Set<String>>> aliases = new LinkedHashMap<>();
+        for (RequestRecord record : records) {
+            var serviceAliases = aliases.computeIfAbsent(record.service, ignored -> new LinkedHashMap<>());
+            serviceAliases.computeIfAbsent(record.idn.toLowerCase(Locale.ROOT), ignored -> new LinkedHashSet<>()).add(record.idn);
+            String subject = subjectOf(record.fp);
+            if (subject != null) serviceAliases.computeIfAbsent(subject.toLowerCase(Locale.ROOT), ignored -> new LinkedHashSet<>()).add(record.idn);
         }
-        Map<String, Set<String>> explicit = new LinkedHashMap<>();
-        Map<String, RequestRecord> firstSuccess = new LinkedHashMap<>();
-        for (RequestRecord r : records) {
-            if (r.resource == null) continue;
-            if (isSuccessful(r) && !isMetadataMethod(r.method)) {
-                firstSuccess.putIfAbsent(r.resource, r);
-                for (String ownerValue : ownerValues(r.responseBodyForAnalysis())) {
-                    String identity = aliasesByService.getOrDefault(r.service, Map.of())
-                            .get(ownerValue.toLowerCase(Locale.ROOT));
-                    if (identity != null) {
-                        explicit.computeIfAbsent(r.resource, ignored -> new LinkedHashSet<>()).add(identity);
-                    }
-                }
-            }
+        for (AccountProfile account : config.accounts().values())
+            aliases.computeIfAbsent(account.service(), ignored -> new LinkedHashMap<>())
+                    .computeIfAbsent(account.id().toLowerCase(Locale.ROOT), ignored -> new LinkedHashSet<>()).add(account.id());
+        Map<String, List<RequestRecord>> byEvidence = new LinkedHashMap<>();
+        Map<String, List<RequestRecord>> byPath = new LinkedHashMap<>();
+        for (RequestRecord record : records) {
+            byEvidence.computeIfAbsent(record.evidenceId, ignored -> new ArrayList<>()).add(record);
+            byPath.computeIfAbsent(record.service + "\0" + record.path, ignored -> new ArrayList<>()).add(record);
         }
-        Map<String, Set<String>> collectionMembers = collectionMembers(records);
-        Map<String, Set<String>> creators = creators(records);
-
-        Map<String, OwnerInfo> result = new LinkedHashMap<>();
-        Set<String> resources = new LinkedHashSet<>();
-        records.stream().map(r -> r.resource).filter(java.util.Objects::nonNull).forEach(resources::add);
-        for (String resource : resources) {
-            String configured = config.resourceOwner(resource);
-            if (configured != null) {
-                result.put(resource, new OwnerInfo(resource, configured, 100,
-                        "사용자 명시 소유자", true));
+        Map<String, OwnerInfo> owners = new LinkedHashMap<>();
+        for (var target : objects.targets().values()) {
+            String explicitOwner = config.resourceOwner(target.resource());
+            if (explicitOwner != null) {
+                owners.put(target.resource(), new OwnerInfo(target.resource(), explicitOwner, 100, "사용자 확정 OBJ 소유자", true));
                 continue;
             }
-            Set<String> candidates = explicit.getOrDefault(resource, Set.of());
-            if (candidates.size() == 1) {
-                String identity = candidates.iterator().next();
-                result.put(resource, new OwnerInfo(resource, identity, 100,
-                        "응답 본문의 명시적 소유 필드", true));
-            } else if (candidates.size() > 1) {
-                result.put(resource, new OwnerInfo(resource, null, 0,
-                        "소유 필드 충돌: " + candidates, false));
-            } else if (creators.getOrDefault(resource, Set.of()).size() == 1) {
-                String identity = creators.get(resource).iterator().next();
-                result.put(resource, new OwnerInfo(resource, identity, CREATION_CONFIDENCE,
-                        "생성 요청자(생성 응답이 이 객체 ID를 반환)", false));
-            } else if (creators.getOrDefault(resource, Set.of()).size() > 1) {
-                result.put(resource, new OwnerInfo(resource, null, 0,
-                        "생성 응답 충돌: " + creators.get(resource), false));
-            } else if (collectionMembers.getOrDefault(resource, Set.of()).size() == 1) {
-                String identity = collectionMembers.get(resource).iterator().next();
-                result.put(resource, new OwnerInfo(resource, identity, COLLECTION_MEMBERSHIP_CONFIDENCE,
-                        "단일 계정 컬렉션 멤버십(교차 확인)", false));
-            } else if (collectionMembers.getOrDefault(resource, Set.of()).size() > 1) {
-                result.put(resource, new OwnerInfo(resource, null, 0,
-                        "컬렉션 멤버십 공유/공개: " + collectionMembers.get(resource), false));
-            } else if (firstSuccess.containsKey(resource)) {
-                result.put(resource, new OwnerInfo(resource, firstSuccess.get(resource).idn, 20,
-                        "첫 성공 접근자(저신뢰 후보, 판정 제외)", false));
+            if (target.responseReference() == null) continue;
+            List<RequestRecord> evidence = target.evidenceIds().stream().flatMap(id -> byEvidence.getOrDefault(id, List.of()).stream()).toList();
+            if (evidence.isEmpty()) continue;
+            RequestRecord first = evidence.getFirst();
+            // PATH business identity is shared by HTTP methods; the stored OBJ override stays on its exact key.
+            List<RequestRecord> ownerEvidence = target.kind().equals("PATH")
+                    ? byPath.getOrDefault(first.service + "\0" + first.path, evidence) : evidence;
+            Set<String> explicit = new LinkedHashSet<>(), creators = new LinkedHashSet<>(), members = new LinkedHashSet<>();
+            for (RequestRecord record : ownerEvidence) if (isSuccessful(record) && !isMetadataMethod(record.method))
+                for (String value : ownerValues(record.responseBodyForAnalysis()))
+                    explicit.addAll(aliases.getOrDefault(record.service, Map.of()).getOrDefault(value.toLowerCase(Locale.ROOT), Set.of()));
+            if (target.kind().equals("PATH")) {
+                String collectionPath = first.path.substring(0, first.path.lastIndexOf('/'));
+                String identifier = target.responseReference().substring(target.responseReference().lastIndexOf(':') + 1);
+                for (RequestRecord record : byPath.getOrDefault(first.service + "\0" + collectionPath, List.of())) {
+                    if (!isSuccessful(record) || isMetadataMethod(record.method) || Fingerprints.ANONYMOUS.equals(record.idn)) continue;
+                    if (record.method.equalsIgnoreCase("POST") && createdIds(record.responseBodyForAnalysis()).contains(identifier)) creators.add(record.idn);
+                    if (record.method.equalsIgnoreCase("GET") && ResponseEvidence.showsObject(record.responseBodyForAnalysis(), target.responseReference(), record.idn)) members.add(record.idn);
+                }
             }
+            Set<String> candidates = !explicit.isEmpty() ? explicit : !creators.isEmpty() ? creators : members;
+            String basis = !explicit.isEmpty() ? "응답 본문의 명시적 소유 필드" : !creators.isEmpty() ? "생성 요청자(생성 응답이 이 객체 ID를 반환)" : "단일 계정 컬렉션 멤버십(교차 확인)";
+            int confidence = !explicit.isEmpty() ? 100 : !creators.isEmpty() ? CREATION_CONFIDENCE : COLLECTION_MEMBERSHIP_CONFIDENCE;
+            if (candidates.size() == 1) owners.put(target.resource(), new OwnerInfo(target.resource(), candidates.iterator().next(), confidence, basis, !explicit.isEmpty()));
+            else if (candidates.size() > 1) owners.put(target.resource(), new OwnerInfo(target.resource(), null, 0,
+                    !explicit.isEmpty() ? "소유 필드 충돌" : !creators.isEmpty() ? "생성 응답 충돌" : "컬렉션 멤버십 공유/공개", false));
+            else evidence.stream().filter(record -> isSuccessful(record) && !isMetadataMethod(record.method)).findFirst()
+                    .ifPresent(record -> owners.put(target.resource(), new OwnerInfo(target.resource(), record.idn, 20, "첫 성공 접근자(저신뢰 후보, 판정 제외)", false)));
         }
-        return result;
-    }
-
-    /**
-     * 생성 요청자 추정(RESTler식 "만든 사람 = 소유자"). 로그인된 신원의 POST가 성공하고 그 응답이 새 객체 ID(최상위 또는
-     * 한 단계 아래 객체의 "id")를 돌려주면, 같은 서비스에서 {@code [부모 체인/]컬렉션:ID}로 관측된 객체의 생성자로 본다.
-     * 경로 끝이 객체 ID인 POST(기존 객체에 대한 동작)와 비로그인·신원 불명 요청은 쓰지 않는다.
-     */
-    private static Map<String, Set<String>> creators(List<RequestRecord> records) {
-        Set<String> observed = new LinkedHashSet<>();
-        records.stream().map(r -> r.resource).filter(java.util.Objects::nonNull).forEach(observed::add);
-        Map<String, Set<String>> result = new LinkedHashMap<>();
-        for (RequestRecord create : records) {
-            if (!"POST".equalsIgnoreCase(create.method) || !isSuccessful(create) || create.idn == null
-                    || Fingerprints.ANONYMOUS.equals(create.idn)) continue;
-            Normalizer.Normalized normalized = Normalizer.normalize(create.method, create.path);
-            String opPath = normalized.op.substring(normalized.op.indexOf(' ') + 1);
-            String collection = opPath.substring(opPath.lastIndexOf('/') + 1);
-            if (collection.isBlank() || "{id}".equals(collection)) continue;
-            String prefix = create.service + " " + (normalized.resource == null ? "" : normalized.resource + "/") + collection + ":";
-            for (String id : createdIds(create.responseBodyForAnalysis())) {
-                String resource = prefix + id;
-                if (observed.contains(resource)) result.computeIfAbsent(resource, ignored -> new LinkedHashSet<>()).add(create.idn);
-            }
-        }
-        return result;
+        return owners;
     }
 
     private static Set<String> createdIds(String body) {
@@ -227,34 +205,6 @@ public final class AuthorizationAnalyzer {
         if (value != null && (value.isTextual() || value.isIntegralNumber()) && !value.asText().isBlank()) ids.add(value.asText());
     }
 
-    private static Map<String, Set<String>> collectionMembers(List<RequestRecord> records) {
-        Map<CollectionFamily, Set<String>> resourcesByFamily = new LinkedHashMap<>();
-        for (RequestRecord detail : records) {
-            if (detail.resource == null || !"GET".equalsIgnoreCase(detail.method)) continue;
-            String detailOperation = Normalizer.normalize(detail.method, detail.path).op;
-            if (!detailOperation.endsWith("/{id}")) continue;
-            String collectionOperation = detailOperation.substring(0, detailOperation.length() - "/{id}".length());
-            resourcesByFamily.computeIfAbsent(new CollectionFamily(detail.service, collectionOperation),
-                    ignored -> new LinkedHashSet<>()).add(detail.resource);
-        }
-
-        Map<String, Set<String>> result = new LinkedHashMap<>();
-        for (RequestRecord collection : records) {
-            if (!"GET".equalsIgnoreCase(collection.method) || !isSuccessful(collection)
-                    || collection.idn == null || Fingerprints.ANONYMOUS.equals(collection.idn)) continue;
-            CollectionFamily family = new CollectionFamily(collection.service,
-                    Normalizer.normalize(collection.method, collection.path).op);
-            for (String resource : resourcesByFamily.getOrDefault(family, Set.of())) {
-                if (ResponseEvidence.showsObject(collection.responseBodyForAnalysis(), resource, collection.idn)) {
-                    result.computeIfAbsent(resource, ignored -> new LinkedHashSet<>()).add(collection.idn);
-                }
-            }
-        }
-        return result;
-    }
-
-    private record CollectionFamily(String service, String operation) {}
-
     private static String subjectOf(String fingerprint) {
         if (fingerprint == null) return null;
         int marker = fingerprint.lastIndexOf(":sub:");
@@ -262,7 +212,7 @@ public final class AuthorizationAnalyzer {
         return fingerprint.startsWith("sub:") ? fingerprint.substring(4) : null;
     }
 
-    private static Decision decide(CellKey key, List<RequestRecord> evidence, OwnerInfo owner, AnalysisConfig config) {
+    private static Decision decide(CellKey key, List<RequestRecord> evidence, OwnerInfo owner, AnalysisConfig config, ObservedObjectIndex objects) {
         List<RequestRecord> observed = evidence.stream().filter(r -> r.hasResponse).toList();
         if (observed.isEmpty()) return new Decision(Verdict.UNTESTED, "실제 응답이 없음", false);
         if (isMetadataMethod(observed.get(0).method)) {
@@ -300,12 +250,14 @@ public final class AuthorizationAnalyzer {
             return new Decision(Verdict.UNTESTED, resourcePolicy == ResourcePolicy.UNKNOWN
                     ? "소유자 근거 미확정" : "객체층 정책 판정에 필요한 소유자·역할 근거 미확정", false);
         }
+        if (objects.reference(key.resource()) == null) return new Decision(Verdict.UNDECIDED,
+                "객체 소유자는 지정됐으나 응답에서 확인할 업무 식별자 근거가 없음", false);
         if (isWrite(successful.get(0).method)) {
             return new Decision(Verdict.SUSPICIOUS,
                     "객체층(BOLA) 차단 기대(" + resourcePolicy.label() + ")인데 상태변경 요청이 성공", false);
         }
         if (successful.stream().anyMatch(r -> ResponseEvidence.showsObject(
-                r.responseBodyForAnalysis(), key.resource(), ownerId == null ? key.identity() : ownerId))) {
+                r.responseBodyForAnalysis(), objects.reference(key.resource()), ownerId == null ? key.identity() : ownerId))) {
             return new Decision(Verdict.SUSPICIOUS,
                     "객체층(BOLA) 차단 기대(" + resourcePolicy.label() + ")인데 대상 객체 응답이 반환됨", false);
         }
@@ -315,6 +267,7 @@ public final class AuthorizationAnalyzer {
     private static void addFindings(CoverageCell cell, List<Finding> findings, AnalysisConfig config) {
         if (cell.overall() != Verdict.SUSPICIOUS) return;
         boolean bfla = cell.perSource().values().stream().anyMatch(Decision::roleViolation);
+        if (bfla && cell.key().resource() != null) return;
         FindingType type = bfla ? FindingType.BFLA : FindingType.BOLA;
         Severity severity = bfla ? Severity.HIGH : (isWrite(operationMethod(cell.key().operation())) ? Severity.CRITICAL : Severity.HIGH);
         String title = (type == FindingType.BFLA ? "기능 권한 우회 후보: " : "객체 권한 우회 후보: ")
@@ -338,7 +291,7 @@ public final class AuthorizationAnalyzer {
             OwnerInfo owner = owners.get(resource);
             if (owner == null || !owner.decisionGrade()) continue;
             for (String identity : identities) {
-                if (identity.equals(owner.identity())) continue;
+                if (identity.equals(owner.identity()) || records.stream().noneMatch(record -> record.idn.equals(identity) && operation.startsWith(record.service + " "))) continue;
                 CellKey key = new CellKey(identity, operation, resource);
                 if (observedKeys.contains(key)) continue;
                 int risk = isWrite(operationMethod(operation)) ? 100 : 70;
