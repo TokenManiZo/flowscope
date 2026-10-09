@@ -44,6 +44,24 @@ it("shows only the selected operation and its 요청 기록 rows, without verdic
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
 })
 
+it("shows a route candidate with the shared 요청 기록 UI plus a why-candidate summary, not the compact text dump", () => {
+  const routeCandidate = { id: "route-candidate:1", service: "https://api.example.test", method: "GET", pathTemplate: "/api/v2/users/{id}/export", observed: false, applicability: "REVIEW", provenanceTypes: ["JAVASCRIPT"], provenanceEvidenceIds: ["ev-1"], provenance: [{ type: "JAVASCRIPT", evidenceId: "ev-1", source: "scanner", runId: "scan-1", adapter: "fetch", applicability: "REVIEW", reason: "번들에서 발견" }], reviewReason: "민감 export 경로", priorityReasons: ["input"] }
+  const candidateSelection: GraphSelection = { operation: "GET /api/v2/users/{id}/export", resource: null, identity: null, source: "scanner", evidenceIds: ["ev-1"], routeCandidate }
+  renderWithQueryClient(<GraphInspectorPanel selection={candidateSelection} event={null} snapshot={{ ...snapshot, evidenceOrdinals: { "ev-1": 7 } }} />)
+  const panel = screen.getByRole("complementary", { name: "선택 작업" })
+  expect(panel).toHaveTextContent("GET /api/v2/users/{id}/export")
+  // 후보 맥락은 얇은 요약으로 남긴다.
+  expect(within(panel).getByTestId("route-candidate-applicability")).toHaveTextContent("미관측 후보 · REVIEW")
+  expect(panel).toHaveTextContent("찾은 곳: JAVASCRIPT")
+  // 발견에 쓰인 요청은 다른 노드와 같은 요청 기록 카드로 보여 주고 Request Lab으로 보낼 수 있다.
+  const row = within(panel).getByRole("listitem", { name: "alice 요청 기록 1건" })
+  expect(within(row).getByRole("img", { name: "사람" })).toBeInTheDocument()
+  expect(within(panel).getByRole("button", { name: "Request Lab에서 보내기" })).toBeInTheDocument()
+  // 압축 텍스트 덤프(번호 나열·adapter 원문)는 더 이상 쓰지 않는다.
+  expect(panel).not.toHaveTextContent("찾은 요청 기록")
+  expect(panel).not.toHaveTextContent("fetch")
+})
+
 it("opens Request Lab ready to send without logging in, and sends nothing until asked", async () => {
   const fetch = stubFetch(draft({ request: `${secret}\n\n` }))
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />, seedHumanRun(createTestQueryClient(), anonymousInspectionFixture))
