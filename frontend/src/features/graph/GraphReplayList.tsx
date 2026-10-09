@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react"
 import { ArrowUpRight } from "lucide-react"
 
 import { HelpHint } from "@/components/HelpHint"
-import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import type { ManualVerification, Snapshot } from "@/lib/api/types"
 import { hasEvidenceOrdinal } from "@/lib/display/operationLabel"
 import { graphAccountLabel } from "./graphAccounts"
@@ -12,18 +10,10 @@ interface Props {
   snapshot: Snapshot
   items: readonly ManualVerification[]
   disabled?: boolean
-  onOpenRequestLab?(): void
+  onRevealReplay?(eventId: string): void
 }
 
-export function GraphReplayList({ snapshot, items, disabled = false, onOpenRequestLab }: Props) {
-  const [labContext, setLabContext] = useState<string | null>(null)
-  const datasetRevision = snapshot.datasetRevision ?? snapshot.identityRevision ?? 0
-  const contextOf = (item: ManualVerification) => JSON.stringify([datasetRevision, item.eventId, item.operation, item.resource, item.identityId, item.timestamp])
-  const selected = items.find(item => contextOf(item) === labContext)
-  // 목록에서 빠진 재현도 자기 ID로 저장 원문을 연다. 원본 요청으로 대체하지 않는다.
-  const event = selected ? snapshot.events.find(item => item.eventId === selected.eventId) ?? { eventId: selected.eventId } : null
-  useEffect(() => { if (labContext && !selected) setLabContext(null) }, [labContext, selected])
-
+export function GraphReplayList({ snapshot, items, disabled = false, onRevealReplay }: Props) {
   if (!items.length) return null
   return <section aria-label="Request Lab 재현" className="mb-4 border-b border-border/70 pb-4">
     <div className="mb-2 flex items-center gap-1">
@@ -34,9 +24,9 @@ export function GraphReplayList({ snapshot, items, disabled = false, onOpenReque
       const ordinal = hasEvidenceOrdinal(snapshot.evidenceOrdinals, item.eventId) ? `#${snapshot.evidenceOrdinals![item.eventId]}` : `재현 ${index + 1}`
       const identity = graphAccountLabel(snapshot, item.identityId || item.identity)
       return <li key={item.eventId}>
-        <button type="button" aria-label={`${ordinal} Request Lab에서 열기`} title={`${ordinal} · ${identity} · HTTP ${item.status} — 저장된 요청과 응답 보기`} disabled={disabled}
+        <button type="button" aria-label={`${ordinal} 재전송 그래프에서 보기`} title={`${ordinal} · ${identity} · HTTP ${item.status} — 재전송 그래프에서 보기`} disabled={disabled || !onRevealReplay}
           className="group flex w-full min-w-0 items-center gap-2.5 rounded-md border border-border/70 bg-background px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50"
-          onClick={() => { onOpenRequestLab?.(); setLabContext(contextOf(item)) }}>
+          onClick={() => onRevealReplay?.(item.eventId)}>
           <span className="shrink-0 font-mono text-xs font-medium tabular-nums">{ordinal}</span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{identity}</span>
           <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">HTTP <StatusBadge code={item.status} /></span>
@@ -44,6 +34,5 @@ export function GraphReplayList({ snapshot, items, disabled = false, onOpenReque
         </button>
       </li>
     })}</ul>
-    {event && <RequestLabDialog key={labContext} open initialView="original" onOpenChange={open => { if (!open) setLabContext(null) }} event={event} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={datasetRevision} snapshotRevision={snapshot.revision} suspended={disabled} />}
   </section>
 }

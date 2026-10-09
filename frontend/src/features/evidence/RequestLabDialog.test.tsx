@@ -120,42 +120,6 @@ async function openDraft(currentSession: boolean | null = false) {
 }
 
 describe("RequestLabDialog", () => {
-  it("opens a recorded request and response read-only and creates an editable draft only on demand", async () => {
-    const fetch = installTransport(), owner = createMemoryOnlyRawState(), user = userEvent.setup()
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open initialView="original" onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    await waitFor(() => expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("observed-response"))
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveAttribute("readonly")
-    expect(screen.getByRole("button", { name: "요청 재전송" })).toBeDisabled()
-    expect(owner.requests).toHaveLength(0)
-    expect(fetch.mock.calls.map(([input]) => String(input))).toEqual(["/api/request-lab?eventId=event-7"])
-    await user.click(screen.getByRole("button", { name: "편집 화면으로" }))
-    await waitFor(() => expect(screen.getByLabelText("Request Lab 요청 원문")).not.toHaveAttribute("readonly"))
-    expect(owner.requests).toHaveLength(1)
-    expect(fetch.mock.calls.some(([input]) => String(input) === "/api/request-lab/credentials")).toBe(true)
-    expect(fetch.mock.calls.some(([input, init]) => String(input) === "/api/request-lab" && init?.method === "POST")).toBe(false)
-  })
-
-  it("shows the selected recording instead of a saved draft without changing the saved workspace", async () => {
-    const owner = createMemoryOnlyRawState()
-    const workspace = { datasetRevision: 3, revision: 1, persisted: true, tab: { nextId: 5, selectedId: 4, entries: {
-      "4": { name: "작성 중", request: "SAVED-EDIT", credentialMode: "RAW", result: null, dirty: true },
-    } } }
-    const fetch = vi.fn((input: RequestInfo | URL) => Promise.resolve(json({ ...requestLabDraft(), workspace })))
-    vi.stubGlobal("fetch", fetch)
-    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open initialView="original" datasetRevision={3} onOpenChange={vi.fn()} event={event} sessions={[activeSession]} rawState={owner} />)
-    await waitFor(() => expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("observed-response"))
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
-    expect(owner.requests).toHaveLength(1)
-    expect(owner.selectedId).toBeNull()
-    expect(workspace.tab.selectedId).toBe(4)
-    expect(fetch.mock.calls.map(([input]) => String(input))).toEqual(["/api/request-lab?eventId=event-7"])
-    await userEvent.click(screen.getByRole("button", { name: "편집 화면으로" }))
-    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("SAVED-EDIT")
-    expect(owner.requests).toHaveLength(1)
-    expect(fetch.mock.calls.map(([input]) => String(input))).toEqual(["/api/request-lab?eventId=event-7"])
-  })
-
   it("opens ready to send without logging in, offers registered accounts, and shows the original read-only on demand", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()

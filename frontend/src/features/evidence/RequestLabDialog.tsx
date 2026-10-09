@@ -23,14 +23,12 @@ import { findLegacyMasks } from "./legacyMasks"
 interface Props {
   open: boolean
   onOpenChange(open: boolean): void
-  event: Pick<EventRecord, "eventId"> & Partial<EventRecord>
+  event: EventRecord
   accounts: readonly Account[]
   sessions: readonly ManagedSession[]
   datasetRevision?: number
   snapshotRevision?: number
   suspended?: boolean
-  /** 저장된 재현을 열 때는 편집본을 만들지 않고 그 기록의 요청·응답부터 보여 준다. */
-  initialView?: "edit" | "original"
   /** Persisted verification metadata remains available to the surrounding inspector. */
   verifications?: readonly ManualVerification[]
   /** Test-only inspection seam; production always owns a new instance locally. */
@@ -46,7 +44,7 @@ export function activeAccounts(sessions: readonly ManagedSession[], service: str
   return [...unique.values()]
 }
 
-export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, initialView = "edit", rawState }: Props) {
+export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, rawState }: Props) {
   const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
   const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string; sessionHandle?: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
@@ -317,11 +315,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         const entries = Object.entries(workspace.tab.entries).sort(([a], [b]) => Number(a) - Number(b)).map(([id, value]) => ({ ...value, id: Number(id) }))
         if (!raw.current.restoreRequests(entries, workspace.tab.nextId, workspace.tab.selectedId)) throw new Error("저장 요청이 메모리 한도를 초과했습니다. 다른 요청을 닫고 다시 열어 주세요.")
         persistence.current = new RequestLabPersistence(raw.current, event.eventId, datasetRevision, workspace, setSaveStatus)
-        if (initialView === "original") {
-          returnView.current = raw.current.selectedId
-          raw.current.selectedId = null
-          setView("original")
-        } else setView(raw.current.selectedId ?? "original")
+        setView(raw.current.selectedId ?? "original")
       }
       draftRef.current = metadata
       setDraft(metadata)
@@ -335,7 +329,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
       }
     }).finally(() => { if (!controller.signal.aborted && context.current.generation === generation) setLoading(false) })
     return () => { controller.abort(); persistence.current?.dispose(); persistence.current = null; invalidateSend(); raw.current.clear() }
-  }, [open, event.eventId, datasetRevision, loadAttempt, initialView])
+  }, [open, event.eventId, datasetRevision, loadAttempt])
 
   // Revalidate retained-raw/session metadata after traffic changes without
   // replacing independent requests or their latest responses. The response remains outside the query cache.
@@ -356,12 +350,12 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
 
   // 열자마자 보낼 수 있게 한다: 아직 보내지 않은 탭이 있으면 그 탭을, 없으면 원본에서 점검 중인 신원으로 편집본을 만들어 고른다.
   useEffect(() => {
-    if (initialView === "original" || !open || !draft || prepared.current || loading || busy || suspended) return
+    if (!open || !draft || prepared.current || loading || busy || suspended) return
     prepared.current = true
     const unsent = [...raw.current.requests].reverse().find(item => !item.result)
     if (unsent) changeView(unsent.id)
     else startDraft()
-  }, [open, draft, loading, busy, suspended, raw.current.requests.length, initialView])
+  }, [open, draft, loading, busy, suspended, raw.current.requests.length])
 
   // 세션이 사라지면 진행 중 전송을 끊고 전송을 잠근다. 다른 방식으로 조용히 바꾸지 않는다.
   useEffect(() => {
@@ -680,9 +674,9 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
           {loading && <p className="px-3 py-2 text-xs">Request Lab 초안 불러오는 중…</p>}
           {(error || editRejected) && <div className="grid gap-2 px-3 py-2 text-xs"><p role="alert">{error || EDIT_REJECTED_MESSAGE}</p>{!draft && <Button type="button" variant="outline" disabled={loading} onClick={() => { setError(""); setLoadAttempt(current => current + 1) }}>Request Lab 초안 다시 시도</Button>}</div>}
           {saveStatus?.error && <div className="flex items-center gap-3 px-3 py-2 text-xs"><p role="alert">{saveStatus.error}</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => { release(); onOpenChange(false) }}>변경 버리고 닫기</Button></div>}
-          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{initialView === "original" ? "선택한 기록의 요청과 응답입니다. 읽기 전용입니다." : originalOnly ? "처음 수집한 원문입니다. 읽기 전용입니다." : "처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다."}</p>}
+          {draft && view === "original" && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{originalOnly ? "처음 수집한 원문입니다. 읽기 전용입니다." : "처음 수집한 원문입니다. 읽기 전용이며, 편집으로 돌아가면 고쳐서 보낼 수 있습니다."}</p>}
           {draft && entry && mode !== "ACCOUNT" && (draft.reusableAccountId || draft.observedAccountId) && <p role="note" className="px-3 py-1.5 text-xs text-muted-foreground">{draft.reusableAccountId ? `이 기록의 계정(${draft.observedIdentity})으로 보내려면 전송 계정에서 ${draft.observedIdentity}을(를) 고르세요.` : `${draft.observedIdentity}로 보내려면 계정·세션에서 ${draft.observedIdentity}의 점검 시작을 누르고 로그인하세요.`}</p>}
-          {credentialsRequired && view !== "original" && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "전송할 계정 또는 비로그인을 선택해 주세요."}</p>}
+          {credentialsRequired && <p className="px-3 py-1.5 text-xs text-muted-foreground">{mode === "ACCOUNT" && !selectedAccountValid ? "선택한 계정의 세션이 지금 준비되지 않았습니다. 계정·세션에서 그 계정의 점검 시작을 누르고 로그인하거나, 다른 계정 또는 비로그인을 고르세요." : "전송할 계정 또는 비로그인을 선택해 주세요."}</p>}
           {/* 전송 계정 모드에 따라 인증 헤더가 어떻게 처리되는지 알려 준다: 계정·비로그인은 교체, 직접 입력은 그대로. */}
           {entry && view !== "original" && !credentialsRequired && (mode === "ACCOUNT" || mode === "ANONYMOUS") && <p className="px-3 py-1.5 text-xs text-muted-foreground">요청의 인증 헤더(Authorization·Cookie 등)는 고른 전송 계정으로 바뀝니다. 직접 쓴 값을 그대로 보내려면 <span className="font-medium text-foreground">직접 입력</span>을 고르세요.</p>}
           {entry && view !== "original" && mode === "RAW" && <p className="px-3 py-1.5 text-xs text-muted-foreground">직접 입력: 요청에 쓴 인증 헤더를 바꾸지 않고 그대로 보냅니다.</p>}

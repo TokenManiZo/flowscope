@@ -16,6 +16,7 @@ import { GraphScopeSummary } from "./GraphScopeSummary"
 /** 사이트·그룹 요약 패널에서 그래프로 이어지는 동작. RelationshipGraphView가 이동·선택을 맡는다. */
 export interface ScopeActions {
   onOpenRequestLab?(): void
+  onRevealReplay?(eventId: string): void
   onRevealOperation?(groupId: string, operation: string): void
   onSelectGroup?(groupId: string): void
   onOpenGroup?(groupId: string): void
@@ -75,7 +76,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {!structural && !selection.routeCandidate && unjudgedCount > 0 && <p className="mb-4 text-xs text-muted-foreground">권한 판정에 포함되지 않은 요청 기록 {unjudgedCount}건이 있습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>}
       {node?.kind === "resend-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">Request Lab·Repeater로 값을 바꿔 다시 보낸 요청입니다. 판정과 미점검 계산에 쓰지 않습니다.</p>}
       {node?.kind === "observed-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했습니다. 이 노드는 API 존재나 접근 허용·취약점 판정이 아닙니다.</p>}
-      <GraphReplayList snapshot={snapshot} items={manual} disabled={suspended} onOpenRequestLab={actions.onOpenRequestLab} />
+      <GraphReplayList snapshot={snapshot} items={manual} disabled={suspended} onRevealReplay={actions.onRevealReplay} />
       {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} ordinals={snapshot.evidenceOrdinals} /> : structural ? null : <EvidenceActionList allowDelete={objectSelection} onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
     </InspectorPanel>
   </div>

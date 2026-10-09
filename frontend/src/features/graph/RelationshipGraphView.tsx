@@ -135,6 +135,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   }, [searchQuery])
   const [searchAnchor, setSearchAnchor] = useState<{ key?: string; destination: SearchDestination } | null>(null)
   const [pendingSearch, setPendingSearch] = useState<{ key?: string; destination: SearchDestination; requestId: number } | null>(null)
+  const [pendingReplay, setPendingReplay] = useState<{ dataset: number; eventId: string; requestId: number } | null>(null)
   const [revealRequest, setRevealRequest] = useState<{ nodeId: string; requestId: number } | null>(null)
   const searchRequestId = useRef(0)
   const anchor = searchAnchor && (!searchAnchor.key || searchIndex.byKey.has(searchAnchor.key)) && graphViewKey(searchAnchor.destination.navigation) === viewKey ? searchAnchor : null
@@ -253,7 +254,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   // 초기화: 고른 필터·펼친 묶음·저장된 배치(위치·확대 비율·잠금)를 모두 처음 상태로 되돌린다.
   const resetGraph = () => {
     setOpenObjectGroup(null)
-    setSearchAnchor(null); setPendingSearch(null); setRevealRequest(null)
+    setSearchAnchor(null); setPendingSearch(null); setPendingReplay(null); setRevealRequest(null)
     setHighlight(EMPTY_HIGHLIGHT)
     setFilters((current) => ({ ...current, includeSupportTraffic: false }))
     setGraphMode("collected")
@@ -293,7 +294,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     setSelectedElementId(elementId)
     setInspectorOpen(true)
   }
-  const cancelSearchMove = () => { setPendingSearch(null); setRevealRequest(null) }
+  const cancelSearchMove = () => { setPendingSearch(null); setPendingReplay(null); setRevealRequest(null) }
   const clearGraphSelection = () => { setOpenObjectGroup(null); cancelSearchMove(); setSelection(null); setSelectedElementId(null); setInspectorOpen(false) }
   const changeNavigation = (next: GraphNavigation) => {
     setSearchAnchor(null)
@@ -359,8 +360,28 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     selectGraph(target.selection, target.id)
     setRevealRequest({ nodeId: target.id, requestId: pendingSearch.requestId })
   }, [graph, pendingSearch, searchIndex, snapshot.isError])
+  // 보기 전환 후 새 projection이 준비되면 선택·중앙 이동을 함께 적용한다.
+  useEffect(() => {
+    if (!pendingReplay || !resend || !graph) return
+    if (snapshot.isError || pendingReplay.dataset !== dataset || !sends.some(send => send.tool === "lab" && send.eventId === pendingReplay.eventId)) { setPendingReplay(null); return }
+    const target = graph.nodes.find(node => node.kind === "resend-operation" && node.selection.evidenceIds.includes(pendingReplay.eventId))
+    if (!target) return
+    selectGraph(target.selection, target.id)
+    setRevealRequest({ nodeId: target.id, requestId: pendingReplay.requestId })
+    setPendingReplay(null)
+  }, [pendingReplay, resend, graph, sends, dataset, snapshot.isError])
   const scopeActions = {
     onOpenRequestLab: () => setOpenObjectGroup(null),
+    onRevealReplay: (eventId: string) => {
+      if (snapshot.isError || !sends.some(send => send.tool === "lab" && send.eventId === eventId)) return
+      clearGraphSelection()
+      setSearchAnchor(null)
+      setObjectLabEvent(null)
+      setListMode(false)
+      setShownResendTools(current => current.includes("lab") ? current : [...current, "lab"])
+      setGraphMode("resend")
+      setPendingReplay({ dataset, eventId, requestId: ++searchRequestId.current })
+    },
     onRevealOperation: (groupId: string, operation: string) => {
       moveToSearch({ navigation: navigateHierarchy(resolvedNavigation, "group", groupId), nodeId: `operation:${operation}`, reveal: { operations: [operation] }, expand: [`operation-group:${operationShapeKey(operation)}`] })
     },
