@@ -1,8 +1,11 @@
 import { useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
+import type { Snapshot } from "@/lib/api/types"
 import { evidenceOrdinalLabels, hasEvidenceOrdinal } from "@/lib/display/operationLabel"
 import { runLabel } from "@/lib/display/runStatus"
+import { collectionIdentity, graphAccountLabel } from "./graphAccounts"
 import type { GraphRouteCandidateDetail } from "./graphProjection"
 import { routeCandidateTone } from "./routeCandidateTone"
 
@@ -11,7 +14,38 @@ const INITIAL_TEXT_LIMIT = 160
 
 function bounded(value: string, expanded: boolean) { return expanded || value.length <= INITIAL_TEXT_LIMIT ? value : `${value.slice(0, INITIAL_TEXT_LIMIT)}…` }
 
-export function RouteCandidateDetail({ candidate, ordinals }: { candidate: GraphRouteCandidateDetail; ordinals?: Readonly<Record<string, number>> }) {
+/**
+ * 선택한 경로 후보(미요청 API)의 상세. snapshot이 있으면(노드 클릭 인스펙터·시트) 다른 노드와 같은 요청 기록 양식을 쓴다:
+ * "왜 후보인지" 요약 + 발견에 쓰인 요청을 계정별 카드로 묶고 각 요청을 Request Lab으로 보낼 수 있다. snapshot이 없으면(목록)
+ * 좌표만 아는 압축 텍스트로 보여 준다.
+ */
+export function RouteCandidateDetail({ candidate, ordinals, snapshot, disabled = false, onOpenRequestLab }: { candidate: GraphRouteCandidateDetail; ordinals?: Readonly<Record<string, number>>; snapshot?: Snapshot; disabled?: boolean; onOpenRequestLab?(): void }) {
+  if (snapshot) return <RouteCandidateInspector candidate={candidate} snapshot={snapshot} disabled={disabled} onOpenRequestLab={onOpenRequestLab} />
+  return <RouteCandidateSummary candidate={candidate} ordinals={ordinals} />
+}
+
+/** 다른 노드와 같은 요청 기록 UI로 통일한 버전. 후보 맥락은 위에 얇게, 발견에 쓰인 요청은 EvidenceActionList로 보여 준다. */
+function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestLab }: { candidate: GraphRouteCandidateDetail; snapshot: Snapshot; disabled: boolean; onOpenRequestLab?(): void }) {
+  const applicabilityTone = routeCandidateTone(candidate.applicability)
+  const ids = new Set(candidate.provenanceEvidenceIds)
+  const events = snapshot.events.filter((item) => ids.has(item.eventId))
+  const hasWhy = candidate.reviewReason.trim().length > 0 || candidate.priorityReasons.length > 0
+  return <section className="grid gap-3" aria-label="경로 후보 상세">
+    <dl className="grid gap-1.5 rounded-md border p-3 text-sm">
+      <div><dt className="inline font-medium">점검 대상: </dt><dd data-testid="route-candidate-applicability" className={`inline ${applicabilityTone.className}`}>{candidate.observed ? "관측됨" : "미관측 후보"} · {candidate.applicability}</dd></div>
+      <div><dt className="inline font-medium">찾은 곳: </dt><dd className="inline break-all">{candidate.provenanceTypes.join(", ") || "UNKNOWN"}</dd></div>
+      {hasWhy && <details className="mt-0.5">
+        <summary className="cursor-pointer text-xs text-muted-foreground">왜 점검 대상인가</summary>
+        <div className="mt-2 grid gap-1 text-xs"><div className="break-all"><span className="font-medium">검토: </span>{candidate.reviewReason || "-"}</div><div className="break-all"><span className="font-medium">우선순위: </span>{candidate.priorityReasons.join(", ") || "-"}</div></div>
+      </details>}
+    </dl>
+    <p className="text-xs text-muted-foreground">이 후보를 발견한 요청입니다. 아직 이 경로로 직접 보낸 요청은 없습니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>
+    <EvidenceActionList events={events} snapshot={snapshot} disabled={disabled} onOpenRequestLab={onOpenRequestLab} identityOf={collectionIdentity} labelIdentity={(identity) => graphAccountLabel(snapshot, identity)} />
+  </section>
+}
+
+/** 목록용 압축 요약. 좌표·근거만 아는 상태라 요청 기록 카드 없이 텍스트로만 보여 준다. */
+function RouteCandidateSummary({ candidate, ordinals }: { candidate: GraphRouteCandidateDetail; ordinals?: Readonly<Record<string, number>> }) {
   const [expanded, setExpanded] = useState(false)
   // 번호가 없는 기록(삭제됐거나 지금 분석에 없는 기록)은 열 수 없어 세지도 보여 주지도 않는다.
   const evidenceLabels = evidenceOrdinalLabels(ordinals, candidate.provenanceEvidenceIds)

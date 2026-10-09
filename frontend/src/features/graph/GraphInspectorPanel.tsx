@@ -76,7 +76,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
         <p className="text-xs text-muted-foreground">원본 요청에 연결된 응답입니다. 상태 코드만으로 취약점을 판정하지 않습니다.</p>
         <ul className="mt-2 grid gap-1">{manual.map(item => <li key={item.eventId} className="font-mono text-xs">{snapshot.evidenceOrdinals?.[item.eventId] ? `#${snapshot.evidenceOrdinals[item.eventId]} · ` : ""}HTTP {item.status}</li>)}</ul>
       </section>}
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} ordinals={snapshot.evidenceOrdinals} /> : structural ? null : <EvidenceActionList allowDelete={objectSelection} onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} ordinals={snapshot.evidenceOrdinals} snapshot={snapshot} disabled={suspended} onOpenRequestLab={actions.onOpenRequestLab} /> : structural ? null : <EvidenceActionList allowDelete={objectSelection} onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
     </InspectorPanel>
   </div>
 }
