@@ -2,6 +2,12 @@ import type { EventRecord } from "@/lib/api/types"
 
 const resendDetails = new Set(["BURP_REPEATER", "BURP_INTRUDER"])
 
+/** API 경로에서 열 때는 계정·판정 근거와 무관하게 해당 API의 가장 최근 요청을 보여 준다. */
+export function latestOperationEvent(events: readonly EventRecord[], operation: string): EventRecord | undefined {
+  return events.filter(event => event.op === operation)
+    .reduce<EventRecord | undefined>((latest, event) => !latest || event.timestamp >= latest.timestamp ? event : latest, undefined)
+}
+
 /**
  * 판정 칸에서 Request Lab으로 열 기록을 고른다. Request Lab은 원문(메모리 또는 저장본)이 온전한 기록만 편집·재전송할 수 있다.
  * 판정 근거 기록이 저장 한도를 넘어 일부만 남았으면 같은 API의 다른 기록을 연다.

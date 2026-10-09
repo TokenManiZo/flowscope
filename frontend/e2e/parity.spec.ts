@@ -84,13 +84,6 @@ async function deleteAccountIfPresent(page: Page, label: string) {
   await page.getByRole("button", { name: "계정 삭제 확인" }).click()
   await expect(remove).toHaveCount(0)
 }
-function xmlFixture() {
-  const newline = String.fromCharCode(10)
-  const request = ["GET /metadata-only HTTP/1.1", "Host: e2e.invalid", `X-Test-Request-Marker: ${rawRequestMarker}`, ""].join(newline)
-  const response = ["HTTP/1.1 200 OK", "Content-Type: text/plain", "", rawResponseMarker].join(newline)
-  return `<?xml version="1.0"?><items><item><host>e2e.invalid</host><port>443</port><protocol>https</protocol><method>GET</method><path>/metadata-only</path><status>200</status><request base64="false"><![CDATA[${request}]]></request><response base64="false"><![CDATA[${response}]]></response></item></items>`
-}
-
 test.describe.configure({ mode: "serial" })
 test.beforeEach(async ({ page }) => {
   const monitor: Monitor = { consoleErrors: [], external: [], forbidden: [], pageErrors: [] }
@@ -416,7 +409,7 @@ test("shows the judgment matrix with server recommendations and a server-bound r
   const inspector = page.getByRole("complementary", { name: "선택 상세" })
   await expect(inspector.getByRole("region", { name: "독립 신뢰도 축" })).toBeVisible()
   await expect(inspector.getByRole("region", { name: "테스트 유효성 게이트" })).toBeVisible()
-  await expect(inspector.getByRole("region", { name: "사람 최종 판정" })).toBeVisible()
+  await expect(inspector.getByRole("region", { name: "취약점 확인" })).toBeVisible()
   await expect(inspector.getByRole("button", { name: "판정 저장" })).toBeEnabled()
   await expect(inspector).not.toContainText("E3")
 })
@@ -546,15 +539,6 @@ test("keeps ZAP setup and the independent Explorer while removing obsolete Judge
   await expect(page.getByRole("button", { name: "LLM Explorer 시작" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: /Judge/ })).toHaveCount(0)
   await expect(page.getByRole("tab", { name: "ZAP" })).toBeVisible()
-})
-
-test("imports an in-memory XML fixture and reports the aggregate without persisting its raw marker", async ({ page }) => {
-  await openDashboard(page); await navigate(page, "Evidence", "Evidence")
-  await page.getByRole("button", { name: "XML 가져오기" }).click()
-  await page.getByLabel("XML 파일 선택").setInputFiles({ name: "metadata-only.xml", mimeType: "application/xml", buffer: Buffer.from(xmlFixture()) })
-  await page.getByRole("button", { name: "XML 가져오기 실행" }).click()
-  await expect(page.getByText("가져오기 결과")).toBeVisible()
-  await expect(page.getByText(/가져옴 1 · 응답 없음 0 · 실패 0/)).toBeVisible()
 })
 
 test("keeps the reference frame current-route semantics, Sheets, and layout usable at desktop, 900px, and 600px", async ({ page }) => {

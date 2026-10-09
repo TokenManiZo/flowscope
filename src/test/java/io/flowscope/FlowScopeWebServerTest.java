@@ -587,6 +587,13 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void removedXmlImportEndpointDoesNotAcceptTraffic() throws Exception {
+        start();
+        assertEquals(404, postRaw("/api/import-xml?source=human&name=unused.xml",
+                "<items />", "application/xml", token).statusCode());
+    }
+
+    @Test
     void importsZapHarOnlyAsScannerTraffic() throws Exception {
         start();
         String har = """
@@ -1930,12 +1937,6 @@ final class FlowScopeWebServerTest {
             return humanAnalysis == null ? FlowScopeWebServer.State.super.humanCompletionSnapshot(runId) : humanAnalysis;
         }
         @Override public void loadSample() { }
-        @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
-            BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
-            records.addAll(parsed.records);
-            rebuild();
-            return parsed;
-        }
         @Override public BurpXmlParser.ParseResult importHar(byte[] har) {
             BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
             BurpXmlParser.retainInScope(parsed, ScopePolicy.parse(String.join("\n", scannerScope)));

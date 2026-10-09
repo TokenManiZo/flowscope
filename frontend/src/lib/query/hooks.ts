@@ -8,7 +8,6 @@ import {
   getScannerRun,
   getSnapshot,
   getZapStatus,
-  importXml,
   loadSample,
   manageSessionCapture,
   mergeIdentity,
@@ -179,7 +178,6 @@ export function useSessionBindMutation() { return useInvalidatingMutation(({ ser
 export function useSessionUnbindMutation() { return useInvalidatingMutation(({ service, fingerprint }: { service: string; fingerprint: string }) => unbindSession(service, fingerprint), [queryKeys.snapshot]) }
 export function useSessionCaptureMutation() { return useInvalidatingMutation(({ action, account }: { action: "begin" | "end" | "revoke"; account: string }) => manageSessionCapture(action, account), [queryKeys.snapshot]) }
 export function useIdentityResetMutation() { return useInvalidatingMutation(resetIdentities, [queryKeys.snapshot]) }
-export function useImportXmlMutation() { return useInvalidatingMutation(({ source, name, xml }: { source: "human" | "scanner" | "llm"; name: string; xml: string }) => importXml(source, name, xml), [queryKeys.snapshot]) }
 export function useOwnerMutation() { return useInvalidatingMutation(({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity), [queryKeys.snapshot]) }
 export function useRequestLabSendMutation() { return useInvalidatingMutation(sendRequestLab, [queryKeys.snapshot]) }
 export function useAuthorizationReplayMutation() { return useInvalidatingMutation(({ itemId, armed }: { itemId: string; armed: boolean }) => runAuthorizationReplay(itemId, armed), [queryKeys.snapshot]) }

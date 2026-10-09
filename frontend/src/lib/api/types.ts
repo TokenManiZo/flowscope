@@ -967,10 +967,3 @@ export interface AccountSaveResult extends ApiSuccess {
   id: string
   rebound: number
 }
-
-export interface ImportXmlResult {
-  success: true
-  imported: number
-  candidates: number
-  failed: number
-}

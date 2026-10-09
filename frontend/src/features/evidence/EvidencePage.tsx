@@ -1,5 +1,5 @@
 import { identityLabel } from "@/lib/display/identityLabel"
-import { ArrowUpRight, Eye, EyeOff, Check, RotateCcw } from "lucide-react"
+import { Eye, EyeOff, Check, RotateCcw } from "lucide-react"
 import { DeleteTrafficButton } from "@/features/api-management/ApiActions"
 import { Checkbox } from "@/components/ui/checkbox"
 import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
@@ -14,16 +14,14 @@ import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysi
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { importXml } from "@/lib/api/endpoints"
 import type { EventRecord } from "@/lib/api/types"
-import { queryKeys, useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutation } from "@/lib/query/hooks"
+import { useEvidenceQuery, useSnapshotQuery, useTrafficOverrideMutation } from "@/lib/query/hooks"
 import { evidenceOrdinalLabel, observedTimeLabel } from "@/lib/display/operationLabel"
 import { trafficClassLabel, trafficReasonLabel } from "@/lib/display/traffic"
 import { cn } from "@/lib/utils"
-import { openSurfaceSelection, takePageSelection } from "./evidenceNavigation"
+import { takePageSelection } from "./evidenceNavigation"
 import { EvidenceHttpViewer } from "./EvidenceHttpViewer"
 import { EvidenceFilters } from "./EvidenceFilters"
-import { ImportXmlDialog } from "./ImportXmlDialog"
 import { boundedText, defaultEvidenceFilters, dispositionCounts, hiddenEvidenceCount, tabDispositions, visibleEvidence, repeatEvidenceIds, type EvidenceTab } from "./evidenceSelectors"
 
 const sourceTone: Record<string, string> = { human: "text-observation-human", scanner: "text-observation-scanner", llm: "text-observation-llm" }
@@ -163,7 +161,6 @@ export function EvidencePage() {
           <Button size="sm" variant="outline" className="h-9" disabled={snapshot.isError || !selectedEvent.op || trafficDecision.isPending} onClick={() => trafficDecision.mutate({ operation: selectedEvent.op, value: selectedEvent.trafficDisposition === "EXCLUDE" ? "AUTO" : "EXCLUDE" })}>{selectedEvent.trafficDisposition === "EXCLUDE" ? <Eye className="size-4" /> : <EyeOff className="size-4" />}{selectedEvent.trafficDisposition === "EXCLUDE" ? "숨김 해제" : "목록에서 숨기기"}</Button>
         </div>
         {snapshot.data && <div className="flex flex-wrap items-center gap-2 pl-1"><DeleteTrafficButton snapshot={snapshot.data} evidenceIds={[selectedEvent.eventId]} label="이 기록 삭제" className="h-9 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={snapshot.isError} />{rowIds(selectedEvent).length > 1 && <DeleteTrafficButton snapshot={snapshot.data} evidenceIds={rowIds(selectedEvent)} label={`반복 묶음 ${rowIds(selectedEvent).length}건 삭제`} className="h-9" disabled={snapshot.isError} />}</div>}
-        <Button size="sm" variant="secondary" className="ml-auto h-9 shrink-0" disabled={snapshot.isError || !selectedEvent.op} onClick={() => openSurfaceSelection(selectedEvent.op, datasetRevision)}>API에서 보기<ArrowUpRight className="size-4" /></Button>
       </div>
       <p className="text-xs text-muted-foreground">분류와 숨김은 같은 API 전체에 적용됩니다. 삭제하면 선택 기록과 연결된 재현 기록을 지웁니다.</p>
       {trafficDecision.isError && <p role="alert" className="text-xs text-destructive">{trafficDecision.error instanceof Error ? trafficDecision.error.message : "분류를 저장하지 못했습니다."}</p>}
@@ -174,7 +171,7 @@ export function EvidencePage() {
   return (
     <ReferenceAnalysisWorkspace compactMediaQuery="(max-width: 767px)" ariaLabel="요청 기록 분석 영역" context={null} inspector={inspector} inspectorDefaultWidth={Math.max(600, Math.round(window.innerWidth / 2))} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelected(null) }}>
       <section className="grid min-w-0 gap-3 p-4" aria-labelledby="evidence-title">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">요청 기록</h1><ImportXmlDialog importFile={importXml} afterImport={() => queryClient.invalidateQueries({ queryKey: queryKeys.snapshot })} /></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h1 id="evidence-title" className="text-xl font-semibold">요청 기록</h1></div>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>요청 기록을 불러오지 못했습니다.</AlertTitle><AlertDescription><p>{snapshot.error.message}</p>{snapshot.data && <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 ? new Date(snapshot.dataUpdatedAt).toLocaleString() : "기록 없음"}</p></>}<Button variant="outline" size="sm" onClick={() => void snapshot.refetch()}>snapshot 다시 시도</Button></AlertDescription></Alert>}
       <div role="tablist" aria-label="요청 기록 판정" className="flex gap-5 border-b">{tabs.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} aria-label={`${label} ${counts[key]}`} onClick={() => selectTab(key)}
         className={cn("-mb-px flex items-center gap-1.5 border-b-2 py-2 text-sm", tab === key ? "border-foreground font-semibold" : "border-transparent text-muted-foreground hover:text-foreground")}>

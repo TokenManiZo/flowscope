@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { EvidencePage } from "./EvidencePage"
-import { ImportXmlDialog } from "./ImportXmlDialog"
 import { renderWithQueryClient } from "@/test/render"
 import { observedTimeLabel } from "@/lib/display/operationLabel"
 import type { EvidencePage as EvidencePageData, EventRecord, Snapshot } from "@/lib/api/types"
@@ -374,76 +373,6 @@ describe("EvidencePage", () => {
       expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
     })
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?")).length).toBe(1))
-  })
-
-  it("imports every selected XML file independently with its encoded name and keeps per-file server errors", async () => {
-    const fetch = installFetch([event({ eventId: "imported-event" })])
-    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, _init?: RequestInit) => {
-      const path = String(input)
-      if (path === "/api/snapshot") return Promise.resolve(json(snapshot([event({ eventId: "imported-event" })])))
-      if (path.includes("first+file.xml")) return Promise.resolve(json({ success: true, imported: 3, candidates: 1, failed: 0 }))
-      if (path.includes("second+file.xml")) return Promise.resolve(json({ success: false, message: "두 번째 XML 형식 오류" }, 400))
-      return Promise.resolve(json({ records: [], total: 0, offset: 0, limit: 200, hasMore: false }))
-    })
-    renderWithQueryClient(<EvidencePage />)
-    const user = userEvent.setup({ applyAccept: false })
-    await user.click(await screen.findByRole("button", { name: "XML 가져오기" }))
-    await user.selectOptions(screen.getByLabelText("가져올 출처"), "scanner")
-    const input = screen.getByLabelText("XML 파일 선택")
-    const first = new File(["<items />"], "first file.xml", { type: "application/xml" })
-    const second = new File(["<items />"], "second file.xml", { type: "application/xml" })
-    Object.defineProperty(first, "text", { value: async () => "<items />" })
-    Object.defineProperty(second, "text", { value: async () => "<items />" })
-    await user.upload(input, [
-      first,
-      second,
-    ])
-    await user.click(screen.getByRole("button", { name: "XML 가져오기 실행" }))
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/import-xml?source=scanner&name=first+file.xml",
-      expect.objectContaining({ method: "POST", headers: expect.any(Headers), body: "<items />" }),
-    ))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/import-xml?source=scanner&name=second+file.xml",
-      expect.objectContaining({ method: "POST", headers: expect.any(Headers), body: "<items />" }),
-    ))
-    const imports = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/import-xml"))
-    expect(new Headers(imports[0]?.[1]?.headers).get("Content-Type")).toBe("application/xml;charset=UTF-8")
-    expect(await screen.findByText("가져옴 3 · 응답 없음 1 · 실패 0")).toBeVisible()
-    expect(screen.getByText("second file.xml: 두 번째 XML 형식 오류")).toBeVisible()
-  })
-
-  it("rejects unsupported files before any XML transport begins", async () => {
-    const fetch = installFetch([event({ eventId: "event-1" })])
-    renderWithQueryClient(<EvidencePage />)
-    const user = userEvent.setup({ applyAccept: false })
-    await user.click(await screen.findByRole("button", { name: "XML 가져오기" }))
-    const unsupported = new File(["not xml"], "notes.txt", { type: "text/plain" })
-    await user.upload(screen.getByLabelText("XML 파일 선택"), unsupported)
-    await user.click(screen.getByRole("button", { name: "XML 가져오기 실행" }))
-
-    expect(await screen.findByText("XML 파일만 선택하세요.")).toBeVisible()
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).startsWith("/api/import-xml"))).toBe(false)
-  })
-
-  it("keeps XML import pending until the snapshot acknowledgement settles", async () => {
-    let acknowledge!: () => void
-    const acknowledgement = new Promise<void>((resolve) => { acknowledge = resolve })
-    const importFile = vi.fn().mockResolvedValue({ success: true, imported: 1, candidates: 0, failed: 0 })
-    renderWithQueryClient(<ImportXmlDialog importFile={importFile} afterImport={() => acknowledgement} />)
-    const user = userEvent.setup({ applyAccept: false })
-    await user.click(screen.getByRole("button", { name: "XML 가져오기" }))
-    const file = new File(["<items />"], "one.xml", { type: "application/xml" })
-    Object.defineProperty(file, "text", { value: async () => "<items />" })
-    await user.upload(screen.getByLabelText("XML 파일 선택"), file)
-    await user.click(screen.getByRole("button", { name: "XML 가져오기 실행" }))
-
-    expect(await screen.findByRole("button", { name: "XML 가져오는 중" })).toBeDisabled()
-    await user.click(screen.getByRole("button", { name: "XML 가져오는 중" }))
-    expect(importFile).toHaveBeenCalledTimes(1)
-    acknowledge()
-    expect(await screen.findByRole("button", { name: "XML 가져오기 실행" })).toBeEnabled()
   })
 
   it.each([600, 390])("keeps 요청 기록 filters and selected detail functional at compact %ipx", async (width) => {

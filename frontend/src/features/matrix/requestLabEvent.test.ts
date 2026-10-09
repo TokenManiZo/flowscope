@@ -1,9 +1,17 @@
 import { expect, it } from "vitest"
 import type { EventRecord } from "@/lib/api/types"
-import { requestLabEvent } from "./requestLabEvent"
+import { latestOperationEvent, requestLabEvent } from "./requestLabEvent"
 
 const op = "https://api.test:443 GET /api/orders/{id}"
 const event = (eventId: string, extra: Partial<EventRecord> = {}) => ({ eventId, op, idn: "a", resource: "https://api.test:443 orders:101", timestamp: 1, phase: "EXPLORATION", sourceDetail: "BROWSER", clusterEvidenceIds: [eventId], ...extra }) as EventRecord
+
+it("opens the latest API request across accounts and includes replay traffic without preferring older raw", () => {
+  const events = [event("old", { rawAvailable: true, lastSeen: 100 }),
+    event("latest", { timestamp: 9, idn: "anonymous", phase: "VALIDATION" }),
+    event("other-api", { timestamp: 20, op: "GET /other" })]
+  expect(latestOperationEvent(events, op)?.eventId).toBe("latest")
+  expect(latestOperationEvent(events, "missing")).toBeUndefined()
+})
 
 it("keeps the basis record while its raw request is still in memory", () => {
   const events = [event("basis", { rawAvailable: true }), event("newer", { rawAvailable: true, timestamp: 9 })]

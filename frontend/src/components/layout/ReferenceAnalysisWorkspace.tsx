@@ -114,7 +114,7 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
         </Sheet> : null}
         {hasInspector ? <Sheet modal={inspectorModal} open={isInspectorOpen} onOpenChange={setInspectorOpen}>
           <SheetTrigger asChild><Button type="button" size="sm" variant="outline">선택 상세 열기</Button></SheetTrigger>
-          <SheetContent aria-label={INSPECTOR_TITLE} aria-describedby="reference-analysis-inspector-description" className="w-[min(26rem,90vw)] overflow-y-auto border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] p-0">
+          <SheetContent aria-label={INSPECTOR_TITLE} aria-describedby="reference-analysis-inspector-description" className="flowscope-inspector w-[min(26rem,90vw)] overflow-y-auto border-[var(--flowscope-divider)] p-0">
             <SheetHeader className="sr-only"><SheetTitle>{INSPECTOR_TITLE}</SheetTitle><SheetDescription id="reference-analysis-inspector-description">{INSPECTOR_DESCRIPTION}</SheetDescription></SheetHeader>
             {inspector}
           </SheetContent>
@@ -123,6 +123,6 @@ export function ReferenceAnalysisWorkspace({ ariaLabel, context, toolbar, childr
       {toolbar}
       {children}
     </section>
-    {!compact && hasInspector ? <><PaneResizeHandle side="right" label={INSPECTOR_TITLE} width={inspectorWidth} min={INSPECTOR_MIN_WIDTH} max={inspectorMax()} collapsed={inspectorCollapsed} onWidthChange={setInspectorWidth} onCollapse={() => setInspectorCollapsed(true)} onExpand={() => setInspectorCollapsed(false)} />{!inspectorCollapsed ? <aside aria-label={INSPECTOR_TITLE} className={`min-h-0 shrink-0 border-l border-[var(--flowscope-divider)] bg-[var(--flowscope-pane)] ${inspectorOverflow === "hidden" ? "overflow-hidden" : "overflow-y-auto"}`} style={{ width: inspectorWidth }}>{inspector}</aside> : null}</> : null}
+    {!compact && hasInspector ? <><PaneResizeHandle side="right" label={INSPECTOR_TITLE} width={inspectorWidth} min={INSPECTOR_MIN_WIDTH} max={inspectorMax()} collapsed={inspectorCollapsed} onWidthChange={setInspectorWidth} onCollapse={() => setInspectorCollapsed(true)} onExpand={() => setInspectorCollapsed(false)} />{!inspectorCollapsed ? <aside aria-label={INSPECTOR_TITLE} className={`flowscope-inspector min-h-0 shrink-0 border-l border-[var(--flowscope-divider)] ${inspectorOverflow === "hidden" ? "overflow-hidden" : "overflow-y-auto"}`} style={{ width: inspectorWidth }}>{inspector}</aside> : null}</> : null}
   </section>
 }

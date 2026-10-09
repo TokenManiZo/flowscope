@@ -16,23 +16,26 @@ const REVIEWABLE: ReadonlySet<MatrixStatus> = new Set<MatrixStatus>(["BFLA_CANDI
 
 /** Display copy only: preserve server status, recommendations and review decisions. */
 export function judgmentStatusLabel(item: Pick<JudgmentItem, "status" | "statusLabel">): string {
-  const labels: Partial<Record<MatrixStatus, string>> = {
-    POLICY_ENFORCED: "정상 (막힘)",
-    EXPECTED_ACCESS: "정상 (허용)",
-    OWNERSHIP_UNKNOWN: "데이터 주인 지정 필요",
-    UNKNOWN_POLICY: "권한 규칙 지정 필요",
-    BFLA_TEST_RECOMMENDED: "이 계정으로 시험 필요",
-    BOLA_IDOR_TEST_RECOMMENDED: "이 계정으로 시험 필요",
+  const labels: Record<MatrixStatus, string> = {
+    POLICY_ENFORCED: "접근 차단됨", EXPECTED_ACCESS: "접근 허용됨",
+    EXPECTED_ACCESS_DENIED: "허용된 계정인데 접근 실패",
+    OWNERSHIP_UNKNOWN: "데이터 소유권 확인 필요", UNKNOWN_POLICY: "접근 권한 확인 필요",
+    POLICY_CONFIRMATION_REQUIRED: "접근 기준 직접 확인 필요",
+    BFLA_TEST_RECOMMENDED: "해당 계정으로 접근 확인 필요", BOLA_IDOR_TEST_RECOMMENDED: "해당 계정으로 접근 확인 필요",
+    BFLA_CANDIDATE: "기능 권한 우회 의심", BFLA_REPRODUCED: "기능 권한 우회 재현됨", BFLA_REVIEW_REQUIRED: "기능 접근 결과 확인 필요",
+    BOLA_IDOR_CANDIDATE: "다른 사용자 데이터 접근 의심", BOLA_REPRODUCED: "다른 사용자 데이터 접근 재현됨", BOLA_IDOR_REVIEW_REQUIRED: "데이터 접근 결과 확인 필요",
+    INVALID_EXPERIMENT: "테스트 조건 확인 필요", COVERAGE_GAP: "요청 기록 없음", UNTESTED: "확인 전",
+
   }
   return labels[item.status] ?? item.statusLabel
 }
 
 export function judgmentStatusDescription(status: MatrixStatus): string | undefined {
   switch (status) {
-    case "EXPECTED_ACCESS": return "접근을 허용하도록 설정된 계정에서 성공 응답이 관측됐습니다. 자기 소유 객체에 접근했다는 뜻으로 한정되지 않습니다."
-    case "POLICY_ENFORCED": return "접근을 차단하도록 설정된 계정에서 차단 응답이 관측됐습니다."
-    case "BFLA_TEST_RECOMMENDED": return "상위 역할 계정의 접근 기록은 있지만, 이 계정의 기능 접근 결과가 없어 비교 테스트가 필요합니다. 취약점 확정은 아닙니다."
-    case "BOLA_IDOR_TEST_RECOMMENDED": return "다른 계정의 객체 접근 기록은 있지만, 이 계정의 접근 결과가 없어 비교 테스트가 필요합니다. 취약점 확정은 아닙니다."
+    case "EXPECTED_ACCESS": return "접근이 허용된 계정에서 요청이 성공했습니다. 이 결과만으로 데이터 소유자까지 확인되지는 않습니다."
+    case "POLICY_ENFORCED": return "접근이 제한된 계정의 요청이 차단됐습니다."
+    case "BFLA_TEST_RECOMMENDED": return "더 높은 권한의 계정에서는 요청이 성공했습니다. 이 계정으로도 접근할 수 있는지 확인해 보세요. 아직 취약점으로 확정된 결과는 아닙니다."
+    case "BOLA_IDOR_TEST_RECOMMENDED": return "다른 계정에서 이 데이터에 접근한 기록이 있습니다. 이 계정으로도 볼 수 있는지 확인해 보세요. 아직 취약점으로 확정된 결과는 아닙니다."
     default: return undefined
   }
 }
@@ -49,7 +52,7 @@ export function judgmentTone(status: MatrixStatus): JudgmentTone {
 }
 
 /** 판단할 것이 없는 흔한 상태는 칸에 짧은 회색 글자로만 둔다(전체 문구는 aria-label·툴팁·상세에 유지). */
-export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "권한 규칙 지정 필요", COVERAGE_GAP: "미점검", UNTESTED: "미점검" }
+export const quietStatusLabel: Partial<Record<MatrixStatus, string>> = { UNKNOWN_POLICY: "접근 권한 확인 필요", COVERAGE_GAP: "요청 기록 없음", UNTESTED: "확인 전" }
 
 export function reviewSuffix(status: ReviewStatus): string {
   return status === "CONFIRMED" ? " · 사용자 확정" : status === "DISMISSED" ? " · 정상/기각" : ""
