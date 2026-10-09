@@ -83,6 +83,7 @@ export interface HierarchyProjection {
 
 /** 이 조회 API가 이 객체에 대해 공개 정책(PUBLIC)인지. 서버 권한 매트릭스의 객체 칸을 따른다. */
 export function isPublicRead(snapshot: Snapshot, operation: string, resource: string): boolean {
+  if (snapshot.resourcePolicyOverrides?.[`${operation} @ ${resource}`] === "PUBLIC") return true
   return snapshot.authorizationMatrix?.objects.some(cell => cell.operation === operation && cell.resource === resource && cell.resourcePolicy === "PUBLIC") ?? false
 }
 

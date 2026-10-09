@@ -206,14 +206,15 @@ final class SnapshotSurfaceContractTest {
     void 실제_인가_Evidence와_VALIDATION_전용_성공은_각자_cell과_Evidence를_가진다() throws Exception {
         AnalysisConfig config = new AnalysisConfig()
                 .upsertAccount(new AccountProfile("alice", "Alice", "https://app.test:443", AccessRole.USER))
-                .bindSession("https://app.test:443", "A", "alice")
-                .withResourceOwner("https://app.test:443 orders:101", "alice");
+                .bindSession("https://app.test:443", "A", "alice");
         List<RequestRecord> records = new ArrayList<>();
         for (int i = 0; i < 40; i++) records.add(request("actual-%02d".formatted(i), "{\"orderId\":101}"));
         RequestRecord validation = request("validation", "{\"orderId\":101}");
         validation.phase = RunPhase.VALIDATION;
         records.add(validation);
         records.forEach(record -> record.collectionAccountId = "alice");
+        Pipeline.Result probe = Pipeline.run(records, config);
+        probe.objects.targets().keySet().forEach(key -> config.withResourceOwner(key, "alice"));
         Pipeline.Result result = Pipeline.run(records, config);
         JsonNode surface = json.readTree(new SnapshotJsonWriter().write(7, result, config, List.of(), List.of())).path("surface");
         assertEquals(40, parameter(surface, "JSON_BODY", "/orderId").path("profile").path("observationCount").asInt(),

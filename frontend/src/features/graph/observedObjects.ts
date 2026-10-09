@@ -33,13 +33,16 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
   for (let i = nodes.length - 1; i >= 0; i--) if (removed.has(nodes[i].id)) nodes.splice(i, 1)
   for (let i = edges.length - 1; i >= 0; i--) if (removed.has(edges[i].sourceId) || removed.has(edges[i].targetId)) edges.splice(i, 1)
   for (let i = list.length - 1; i >= 0; i--) if (removed.has(list[i].id) || list[i].selection.resource) list.splice(i, 1)
+  const cellsByEvidence = new Map<string, Snapshot["cells"][number][]>()
+  for (const cell of snapshot.cells) for (const id of cell.evidenceIds) {
+    const bucket = cellsByEvidence.get(id) ?? []; bucket.push(cell); cellsByEvidence.set(id, bucket)
+  }
   const select = (items: readonly ObjectEntry[], source: Source | null = null, isObject = false): HierarchySelection => {
     const ids = new Set(items.map(item => item.event.eventId))
-    const resources = new Set(items.map(item => item.object.legacyResource))
-    const legacy = isObject && resources.size === 1 ? [...resources][0] : null
-    const cells = snapshot.cells.filter(cell => cell.evidenceIds.some(id => ids.has(id)) && (!isObject || legacy !== null && cell.resource === legacy))
+    const objectResource = isObject ? `${items[0].object.operation.split(" ")[0]} observed-object:${items[0].object.objectKey}` : null
+    const cells = [...new Set([...ids].flatMap(id => cellsByEvidence.get(id) ?? []))].filter(cell => !isObject || cell.resource === objectResource)
     const ops = new Set(items.map(item => item.object.operation)), identities = new Set(items.map(item => item.event.idn))
-    return { ...graphCellSelection(cells, source), operation: ops.size === 1 ? [...ops][0] : null, resource: legacy,
+    return { ...graphCellSelection(cells, source), operation: ops.size === 1 ? [...ops][0] : null, resource: objectResource,
       identity: identities.size === 1 ? [...identities][0] : null, source, evidenceIds: [...ids], gapIds: [] }
   }
   const node = (kind: HierarchyNode["kind"], key: string, label: string, selection: HierarchySelection, extra: Partial<HierarchyNode> = {}) => {
@@ -124,9 +127,10 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         if (visibleObjects >= MAX_VISIBLE_OBJECTS) continue
         visibleObjects++
         const selection = { ...select(observations, null, true), displayObjectKey: key, displayApiKey: api }
-        const owner = selection.resource ? snapshot.owners[selection.resource] : null
-        const label = observedObjectLabel(observations[0].object, owner ? graphAccountLabel(snapshot, owner) : null)
-        const objectNode = node("resource", key, label, selection, { owner, displayObjectKind: first.kind })
+        const owner = snapshot.owners[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? snapshot.ownerOverrides?.[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? null
+        const label = observedObjectLabel(observations[0].object)
+        const publicRead = snapshot.resourcePolicyOverrides?.[`${observations[0].object.operation} @ ${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] === "PUBLIC"
+        const objectNode = node("resource", key, label, selection, { owner, publicRead, displayObjectKind: first.kind })
         edge("operation-resource", apiNode.id, objectNode.id, observations, true)
         if (navigation.level === "operation") list.push(objectNode)
       }

@@ -104,8 +104,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     const group = operationGroup(object.operation, resolveGroup), operation = representatives.get(object.apiKey)!
     const family = families.get(object.apiKey)
     const context = { groupId: group.id, groupLabel: group.label, operation, ...(family ? { expand: [`operation-group:${family}`] } : {}) }
-    const owner = object.legacyResource ? snapshot.owners[object.legacyResource] : null
-    if (visible) add("resource", group.service, object.objectKey, observedObjectLabel(object, owner ? graphAccountLabel(snapshot, owner) : null), context)
+    if (visible) add("resource", group.service, object.objectKey, observedObjectLabel(object), context)
     const label = object.kind === "PATH" ? (family?.match(/\{id_\d+\}/g)?.at(-1)?.slice(1, -1) ?? "id") : object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · ")
     add("object-group", group.service, object.groupKey, label, context)
   }

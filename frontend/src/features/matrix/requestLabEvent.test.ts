@@ -41,3 +41,12 @@ it("never substitutes a resent record and falls back to the basis record when no
   // 근거 기록을 못 찾아도 같은 API의 원본 기록을 연다(다시 보낸 기록은 고르지 않는다).
   expect(requestLabEvent(events, op, undefined, null)?.eventId).toBe("basis")
 })
+
+
+it("limits an OBJ API link to that row's captured evidence", () => {
+  const events = [event("basis", { timestamp: 1 }), event("other-obj", { timestamp: 99 }),
+    event("cluster", { timestamp: 2, clusterEvidenceIds: ["same-obj"] })]
+  expect(latestOperationEvent(events, op, ["basis", "same-obj"])?.eventId).toBe("cluster")
+  expect(latestOperationEvent(events, op, ["missing"])).toBeUndefined()
+  expect(requestLabEvent(events, op, "basis", "https://api.test:443 observed-object:obj:sha256:abc")?.eventId).toBe("basis")
+})

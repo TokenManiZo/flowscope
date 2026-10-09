@@ -18,6 +18,16 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("restores Public for only the saved API and object while retaining its owner", () => {
+    const snapshot = data(), object = snapshot.displayObjects![0]
+    const resource = `${service} observed-object:${object.objectKey}`
+    snapshot.ownerOverrides = { [resource]: "user-a" }
+    snapshot.resourcePolicyOverrides = { [`${object.operation} @ ${resource}`]: "PUBLIC" }
+    const graph = projectHierarchy(snapshot, filters, nav)
+    expect(graph.resources.find(node => node.selection.displayObjectKey === object.objectKey)).toMatchObject({ publicRead: true, owner: "user-a" })
+    expect(graph.resources.filter(node => node.publicRead)).toHaveLength(1)
+  })
+
   it("uses the same integer and opaque labels in graph and search without changing object order", () => {
     const snapshot = data()
     snapshot.displayObjects = snapshot.displayObjects!.map((object, i) => ({ ...object,
@@ -127,7 +137,7 @@ describe("observed display objects", () => {
     expect(graph.operations[0].label).toBe(`${service} GET /posts/{id}`)
     expect(graph.operations[0].selection.operation).toBeNull()
     expect(graph.resources.map(node => node.label)).toEqual(["OBJ 1", "OBJ 2", "OBJ 3"])
-    expect(graph.resources.every(node => node.selection.resource === null)).toBe(true)
+    expect(graph.resources.map(node => node.selection.resource)).toEqual(snapshot.displayObjects!.map(object => `${service} observed-object:${object.objectKey}`))
     expect(graph.resources.map(node => node.selection.evidenceIds)).toEqual([["ev-1"],["ev-2"],["ev-3"]])
     expect(JSON.stringify(snapshot.cells)).toBe(original)
     expect(graph.edges.filter(edge => edge.relation === "operation-resource")).toHaveLength(4)
@@ -149,15 +159,15 @@ describe("observed display objects", () => {
     expect(graph.resources).toHaveLength(10)
     expect(graph.hiddenObjectCount).toBe(0)
   })
-  it("links only confirmed owner labels and retains the canonical request for single-object selection", () => {
+  it("keeps object labels free of owner names and retains the original request selection", () => {
     const snapshot = data(); const legacy = `${service} posts:101`
     snapshot.displayObjects = [{ ...snapshot.displayObjects![0], legacyResource: legacy }]
     snapshot.cells = [{ ...snapshot.cells[0], resource: legacy }]
     snapshot.owners = { [legacy]: "user-a" }
     const graph = projectHierarchy(snapshot, filters, nav)
-    expect(graph.resources[0].label).toBe("OBJ 1 - user-a")
+    expect(graph.resources[0].label).toBe("OBJ 1")
     expect(graph.resources[0].selection.operation).toBe(snapshot.events[0].op)
-    expect(relationshipNodeCard(graph.resources[0], graph).title).toBe("OBJ 1 - user-a")
+    expect(relationshipNodeCard(graph.resources[0], graph).title).toBe("OBJ 1")
   })
   it("searches displayed objects and reveals the same stable node at operation level", () => {
     const snapshot = data(), index = buildGraphSearchIndex(snapshot, filters)
