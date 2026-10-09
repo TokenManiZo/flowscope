@@ -1560,6 +1560,33 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void requestLabFirstSendForCandidateServiceUsesServicePath() throws Exception {
+        start();
+        String candidate = "GET /api/v2/users/42/export HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
+        // service만 주면 캡처된 요청 없이 후보 경로로 처음 보낸다(직접 입력).
+        HttpResponse<String> sent = post("/api/request-lab", "action=send&operationId=request-lab-candidate-0001"
+                + "&service=" + encode("https://api.example.test")
+                + "&credentialMode=RAW&accountId=&request=" + encode(candidate), token);
+        assertEquals(200, sent.statusCode(), sent.body());
+        JsonNode result = JSON.readTree(sent.body());
+        assertEquals("ev-candidate", result.path("eventId").asText());
+        assertEquals("https://api.example.test", state.manualService);
+        assertEquals(candidate, state.manualRequest);
+        assertEquals("RAW", state.manualCredentialMode.name());
+
+        // eventId와 service를 둘 다 주거나 둘 다 안 주면 거부한다.
+        assertEquals(400, post("/api/request-lab", "action=send&operationId=request-lab-candidate-0002"
+                + "&credentialMode=RAW&accountId=&request=" + encode(candidate), token).statusCode());
+        assertEquals(400, post("/api/request-lab", "action=send&operationId=request-lab-candidate-0003"
+                + "&eventId=ev&service=" + encode("https://api.example.test")
+                + "&credentialMode=RAW&accountId=&request=" + encode(candidate), token).statusCode());
+        // 후보(service)에는 캡처 원문이 없으므로 원본 모드를 쓸 수 없다.
+        assertEquals(400, post("/api/request-lab", "action=send&operationId=request-lab-candidate-0004"
+                + "&service=" + encode("https://api.example.test")
+                + "&credentialMode=ORIGINAL&accountId=&request=" + encode(candidate), token).statusCode());
+    }
+
+    @Test
     void concurrentRequestLabRetriesJoinOneServerExecution() throws Exception {
         start();
         state.blockManualRequest = true;
@@ -1811,6 +1838,7 @@ final class FlowScopeWebServerTest {
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
+        private volatile String manualService = "";
         private volatile boolean rawAvailable;
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
         private volatile int credentialPreviewCount;
@@ -2064,6 +2092,16 @@ final class FlowScopeWebServerTest {
             }
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
+        }
+        @Override public FlowScopeWebServer.RequestLabResult sendRequestLabForService(String service, String request,
+                                                                                      FlowScopeWebServer.CredentialMode mode,
+                                                                                      String accountId) {
+            manualService = service;
+            manualRequest = request;
+            manualCredentialMode = mode;
+            manualRequestCount.incrementAndGet();
+            return new FlowScopeWebServer.RequestLabResult("ev-candidate", 200,
+                    "HTTP/1.1 200 OK\r\n\r\n", 15, request.length(), 19);
         }
         @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
                 String itemId, boolean armed) {

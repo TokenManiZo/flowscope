@@ -79,7 +79,7 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
       {node?.kind === "resend-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">Request Lab·Repeater로 값을 바꿔 다시 보낸 요청입니다. 판정과 미점검 계산에 쓰지 않습니다.</p>}
       {node?.kind === "observed-operation" && <p className="mb-4 border-b pb-4 text-xs text-muted-foreground">실제 요청·응답을 관측했습니다. 이 노드는 API 존재나 접근 허용·취약점 판정이 아닙니다.</p>}
       <GraphReplayList snapshot={snapshot} items={manual} disabled={suspended} onRevealReplay={actions.onRevealReplay} />
-      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} ordinals={snapshot.evidenceOrdinals} /> : structural ? null : <EvidenceActionList allowDelete={objectSelection} onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
+      {selection.routeCandidate ? <RouteCandidateDetail candidate={selection.routeCandidate} ordinals={snapshot.evidenceOrdinals} snapshot={snapshot} disabled={suspended} onOpenRequestLab={actions.onOpenRequestLab} /> : structural ? null : <EvidenceActionList allowDelete={objectSelection} onOpenRequestLab={actions.onOpenRequestLab} events={events} snapshot={snapshot} disabled={suspended} identityVerdicts={identityVerdicts} identityOf={collectionIdentity} labelIdentity={identity => graphAccountLabel(snapshot, identity)} />}
     </InspectorPanel>
   </div>
 }

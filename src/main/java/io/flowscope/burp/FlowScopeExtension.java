@@ -2325,7 +2325,7 @@ public final class FlowScopeExtension implements BurpExtension {
                                                           FlowScopeWebServer.CredentialMode credentialMode,
                                                           String accountId) {
                 RequestRecord record = evidenceRecord(evidenceId);
-                openDraftInRepeater(record, prepareHumanRequest(record, request, credentialMode, accountId));
+                openDraftInRepeater(record, prepareHumanRequest(record.service, record, request, credentialMode, accountId));
                 return record;
             }
             @Override public boolean requestLabRawAvailable(RequestRecord record) {
@@ -2373,7 +2373,12 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLab(
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
                     String accountId) {
-                return executeHumanRequestLab(evidenceId, request, credentialMode, accountId);
+                return executeHumanRequestLab(evidenceId, null, request, credentialMode, accountId);
+            }
+            @Override public FlowScopeWebServer.RequestLabResult sendRequestLabForService(
+                    String service, String request, FlowScopeWebServer.CredentialMode credentialMode,
+                    String accountId) {
+                return executeHumanRequestLab(null, service, request, credentialMode, accountId);
             }
             @Override public List<FlowScopeWebServer.RequestLabCredentialHeader> requestLabCredentials(
                     String evidenceId, String requestText, FlowScopeWebServer.CredentialMode mode, String accountId) {
@@ -2388,7 +2393,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     else throw new IllegalStateException("편집 가능한 원문이 없습니다.");
                 }
                 // Same URL/scope/session rules as send, without sending or recording an attempt.
-                HttpRequest prepared = prepareHumanRequest(seed,
+                HttpRequest prepared = prepareHumanRequest(seed.service, seed,
                         mode == FlowScopeWebServer.CredentialMode.ORIGINAL ? originalText : requestText,
                         mode, accountId);
                 if (prepared.toByteArray().length() > RAW_REQUEST_LIMIT_BYTES) {
@@ -2858,9 +2863,16 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private FlowScopeWebServer.RequestLabResult executeHumanRequestLab(
-            String evidenceId, String requestText, FlowScopeWebServer.CredentialMode credentialMode,
-            String accountId) {
-        RequestRecord seed = evidenceRecord(evidenceId);
+            String evidenceId, String candidateService, String requestText,
+            FlowScopeWebServer.CredentialMode credentialMode, String accountId) {
+        RequestRecord seed = evidenceId == null ? null : evidenceRecord(evidenceId);
+        String service = seed != null ? seed.service : candidateService;
+        if (service == null || service.isBlank()) {
+            throw new IllegalArgumentException("대상 서비스를 확인할 수 없습니다.");
+        }
+        if (seed == null && credentialMode == FlowScopeWebServer.CredentialMode.ORIGINAL) {
+            throw new IllegalArgumentException("원본 모드는 캡처된 요청에만 쓸 수 있습니다.");
+        }
         String runId = "human-request-lab-" + java.util.UUID.randomUUID();
         // 전송은 분석 워커 밖에서 기다린다. 대신 응답을 기록하는 순간 프로젝트가 그대로인지 확인한다.
         long epoch = datasetEpoch.get();
@@ -2875,7 +2887,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     throw new IllegalStateException("전송 전 차단: 종료 중이거나 요청 기록 저장 상한에 도달했습니다.");
                 }
             }
-            request = prepareHumanRequest(seed, requestText, credentialMode, accountId);
+            request = prepareHumanRequest(service, seed, requestText, credentialMode, accountId);
 
             var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
                     .withResponseTimeout(30_000);
@@ -2908,7 +2920,7 @@ public final class FlowScopeExtension implements BurpExtension {
                     epoch, () -> retainRawExchange(record, exchange.request(), response));
             RequestRecord published = analyzedRecord(record);
             synchronized (records) {
-                if (!retainedEvidence(evidenceId) || !retainedEvidence(published.evidenceId)) {
+                if ((evidenceId != null && !retainedEvidence(evidenceId)) || !retainedEvidence(published.evidenceId)) {
                     throw new IllegalStateException("요청 기록이 삭제되어 결과를 저장할 수 없습니다.");
                 }
                 executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
@@ -2928,9 +2940,11 @@ public final class FlowScopeExtension implements BurpExtension {
                     : !sent ? RunExecutionLedger.Outcome.INVALID_REQUEST
                     : noResponse ? RunExecutionLedger.Outcome.NO_RESPONSE : executionOutcome(error);
             synchronized (records) {
-                if (!retainedEvidence(evidenceId)) throw error;
-                executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request == null ? seed.method : request.method(),
-                        request == null ? seed.service + seed.path : request.url(), outcome, 0, null,
+                if (evidenceId != null && !retainedEvidence(evidenceId)) throw error;
+                String failedMethod = request != null ? request.method() : seed != null ? seed.method : "UNKNOWN";
+                String failedTarget = request != null ? request.url() : seed != null ? seed.service + seed.path : service;
+                executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), failedMethod,
+                        failedTarget, outcome, 0, null,
                         java.time.Instant.now(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), evidenceId);
                 revision.incrementAndGet();
                 scheduleDatabaseSave();
@@ -2987,7 +3001,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("현재 추천과 일치하는 기준 요청 기록을 찾을 수 없습니다."));
-        HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
+        HttpRequest prepared = prepareHumanRequest(seed.service, seed, replayRequestText(seed),
                 FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
         return new CrossIdentityReplayOrchestrator.Recommendation(operation, selected.testIdentity(),
                 selected.basisIdentity(), seed.evidenceId, URI.create(prepared.url()));
@@ -3075,7 +3089,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 .filter(record -> expectedResource == null || expectedResource.equals(record.resource))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("기준 요청 기록의 원문을 찾을 수 없습니다."));
-        HttpRequest prepared = prepareHumanRequest(seed, replayRequestText(seed),
+        HttpRequest prepared = prepareHumanRequest(seed.service, seed, replayRequestText(seed),
                 FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
         return new CrossIdentityReplayOrchestrator.Recommendation(operation, testIdentity,
                 basisIdentity, seed.evidenceId, URI.create(prepared.url()));
@@ -3225,7 +3239,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private HttpRequest prepareReplayRequest(RequestRecord seed, String requestText,
                                              Map<String, String> credentialHeaders) {
-        HttpRequest request = prepareHumanRequest(seed, requestText,
+        HttpRequest request = prepareHumanRequest(seed.service, seed, requestText,
                 FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
         for (Map.Entry<String, String> header : credentialHeaders.entrySet()) {
             request = request.withHeader(header.getKey(), header.getValue());
@@ -3233,18 +3247,18 @@ public final class FlowScopeExtension implements BurpExtension {
         return request;
     }
 
-    private HttpRequest prepareHumanRequest(RequestRecord seed, String requestText,
+    private HttpRequest prepareHumanRequest(String serviceUrl, RequestRecord seed, String requestText,
                                             FlowScopeWebServer.CredentialMode credentialMode,
                                             String accountId) {
         if (requestText == null || requestText.isBlank()) {
             throw new IllegalArgumentException("HTTP 요청 전문이 필요합니다.");
         }
-        URI service = URI.create(seed.service);
-        if (service.getHost() == null) throw new IllegalArgumentException("원본 대상 서비스를 확정할 수 없습니다.");
+        URI service = URI.create(serviceUrl);
+        if (service.getHost() == null) throw new IllegalArgumentException("대상 서비스를 확정할 수 없습니다.");
         boolean secure = "https".equalsIgnoreCase(service.getScheme());
         int port = service.getPort() >= 0 ? service.getPort() : secure ? 443 : 80;
         HttpService httpService = HttpService.httpService(service.getHost(), port, secure);
-        TransientExchangeVault.Exchange rawSeed = rawExchanges.get(seed).orElse(null);
+        TransientExchangeVault.Exchange rawSeed = seed != null ? rawExchanges.get(seed).orElse(null) : null;
         HttpMessageTextCodec.Decoded decodedSeed = rawSeed != null && rawSeed.requestRetained()
                 ? decodeRequest(rawSeed, seed.requestContentType) : null;
         boolean originalBytesUsed = decodedSeed != null && requestText.equals(decodedSeed.text());
@@ -3650,7 +3664,7 @@ public final class FlowScopeExtension implements BurpExtension {
             HttpRequest prepared = null;
             if (requestRetained) {
                 try {
-                    prepared = prepareHumanRequest(record, replayRequestText(record),
+                    prepared = prepareHumanRequest(record.service, record, replayRequestText(record),
                             FlowScopeWebServer.CredentialMode.ANONYMOUS, null);
                     target = URI.create(prepared.url());
                     anonymousRequestKey = anonymousRequestKey(prepared.method(), prepared.url());
