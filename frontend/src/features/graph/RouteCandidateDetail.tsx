@@ -16,6 +16,17 @@ const INITIAL_TEXT_LIMIT = 160
 
 function bounded(value: string, expanded: boolean) { return expanded || value.length <= INITIAL_TEXT_LIMIT ? value : `${value.slice(0, INITIAL_TEXT_LIMIT)}…` }
 
+/** 서버 provenance enum을 "발견한 곳" 쉬운 말로 바꾼다. 모르는 값은 그대로 보여 준다. */
+const FOUND_LABELS: Readonly<Record<string, string>> = {
+  OBSERVED_REQUEST: "실제 요청", BURP_UNREQUESTED: "Burp 목록",
+  HTML_LINK: "HTML 링크", HTML_FORM: "HTML 폼", HTML_EMBED: "HTML 임베드",
+  LOCATION: "리디렉션", JAVASCRIPT_LITERAL: "JS 코드", HTML_SCRIPT: "JS 코드", SCRIPT_DEPENDENCY: "JS 코드",
+  ROBOTS_OR_SITEMAP: "robots·사이트맵", WEB_MANIFEST: "웹 매니페스트", FRAMEWORK_MANIFEST_ASSET: "웹 매니페스트",
+  OPENAPI: "API 문서", XML_ROUTE: "API 문서", BROWSER_RUNTIME: "브라우저 실행 중", LLM_ARTIFACT_ANALYSIS: "LLM 분석",
+  LEGACY_UNMAPPED: "분류 안 됨",
+}
+function foundLabel(type: string) { return FOUND_LABELS[type] ?? type }
+
 /**
  * 선택한 경로 후보(미요청 API)의 상세. snapshot이 있으면(노드 클릭 인스펙터·시트) 다른 노드와 같은 요청 기록 양식을 쓴다:
  * "왜 후보인지" 요약 + 발견에 쓰인 요청을 계정별 카드로 묶고 각 요청을 Request Lab으로 보낼 수 있다. snapshot이 없으면(목록)
@@ -29,24 +40,28 @@ export function RouteCandidateDetail({ candidate, ordinals, snapshot, disabled =
 /** 다른 노드와 같은 요청 기록 UI로 통일한 버전. 후보 맥락은 위에 얇게, 발견에 쓰인 요청은 EvidenceActionList로 보여 준다. */
 function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestLab }: { candidate: GraphRouteCandidateDetail; snapshot: Snapshot; disabled: boolean; onOpenRequestLab?(): void }) {
   const [sendOpen, setSendOpen] = useState(false)
-  const applicabilityTone = routeCandidateTone(candidate.applicability)
   const ids = new Set(candidate.provenanceEvidenceIds)
   const events = snapshot.events.filter((item) => ids.has(item.eventId))
   const hasWhy = candidate.reviewReason.trim().length > 0 || candidate.priorityReasons.length > 0
+  const foundLabels = [...new Set(candidate.provenanceTypes.map(foundLabel))]
+  const foundText = foundLabels.join(" · ") || "알 수 없는 곳"
   // 후보를 발견한 요청(같은 호스트) 하나를 전송 seed로 쓴다. 다른 노드와 같은 Request Lab 모달을 열되, 요청문을 후보 경로로 미리 채워 그 엔드포인트로 보낸다.
   const seedEvent = events[0] ?? null
   const sendMethod = candidate.method && candidate.method !== "UNKNOWN" ? candidate.method : "GET"
   const sendHost = (() => { try { return new URL(candidate.service).host } catch { return candidate.service } })()
   const prefillRequest = `${sendMethod} ${candidate.pathTemplate} HTTP/1.1\r\nHost: ${sendHost}\r\n\r\n`
   return <section className="grid gap-3" aria-label="경로 후보 상세">
-    <dl className="grid gap-1.5 rounded-md border p-3 text-sm">
-      <div><dt className="inline font-medium">점검 대상: </dt><dd data-testid="route-candidate-applicability" className={`inline ${applicabilityTone.className}`}>{candidate.observed ? "관측됨" : "미관측 후보"} · {candidate.applicability}</dd></div>
-      <div><dt className="inline font-medium">찾은 곳: </dt><dd className="inline break-all">{candidate.provenanceTypes.join(", ") || "UNKNOWN"}</dd></div>
+    <div className="grid gap-2 rounded-md border p-3" data-testid="route-candidate-status">
+      <div className="flex flex-wrap gap-1.5">
+        <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">{candidate.observed ? "관측됨" : "미요청"}</span>
+        {foundLabels.map((label) => <span key={label} className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">{label}에서 발견</span>)}
+      </div>
+      <p className="text-xs text-muted-foreground">{candidate.observed ? `${foundText}에서 찾았고 실제 요청도 관측된 API입니다.` : `${foundText}에서 찾은, 아직 안 보낸 API입니다.`}</p>
       {hasWhy && <details className="mt-0.5">
         <summary className="cursor-pointer text-xs text-muted-foreground">왜 점검 대상인가</summary>
-        <div className="mt-2 grid gap-1 text-xs"><div className="break-all"><span className="font-medium">검토: </span>{candidate.reviewReason || "-"}</div><div className="break-all"><span className="font-medium">우선순위: </span>{candidate.priorityReasons.join(", ") || "-"}</div></div>
+        <div className="mt-2 grid gap-1 text-xs">{candidate.reviewReason.trim() && <div className="break-all"><span className="font-medium">검토: </span>{candidate.reviewReason}</div>}{candidate.priorityReasons.length > 0 && <div className="break-all"><span className="font-medium">우선순위: </span>{candidate.priorityReasons.join(", ")}</div>}</div>
       </details>}
-    </dl>
+    </div>
     {/* 아직 안 보낸 후보 경로를 처음으로 직접 보내 본다(②의 발견 요청 재전송과 같은 Request Lab 모달, 경로만 후보로 프리필). */}
     <Button size="sm" className="w-fit" disabled={disabled || !seedEvent} onClick={() => setSendOpen(true)}><Send className="size-4" />이 경로로 요청 보내기</Button>
     {!seedEvent && <p className="text-xs text-muted-foreground">이 후보를 발견한 캡처 요청이 없어 바로 보낼 수 없습니다.</p>}
