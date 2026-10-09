@@ -42,7 +42,6 @@ function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestL
   const [sendOpen, setSendOpen] = useState(false)
   const ids = new Set(candidate.provenanceEvidenceIds)
   const events = snapshot.events.filter((item) => ids.has(item.eventId))
-  const hasWhy = candidate.reviewReason.trim().length > 0 || candidate.priorityReasons.length > 0
   const foundLabels = [...new Set(candidate.provenanceTypes.map(foundLabel))]
   const foundText = foundLabels.join(" · ") || "알 수 없는 곳"
   // 후보를 발견한 요청(같은 호스트) 하나를 전송 seed로 쓴다. 다른 노드와 같은 Request Lab 모달을 열되, 요청문을 후보 경로로 미리 채워 그 엔드포인트로 보낸다.
@@ -51,20 +50,16 @@ function RouteCandidateInspector({ candidate, snapshot, disabled, onOpenRequestL
   const sendHost = (() => { try { return new URL(candidate.service).host } catch { return candidate.service } })()
   const prefillRequest = `${sendMethod} ${candidate.pathTemplate} HTTP/1.1\r\nHost: ${sendHost}\r\n\r\n`
   return <section className="grid gap-3" aria-label="경로 후보 상세">
-    <div className="grid gap-2 rounded-md border p-3" data-testid="route-candidate-status">
-      <div className="flex flex-wrap gap-1.5">
-        <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">{candidate.observed ? "관측됨" : "미요청"}</span>
-        {foundLabels.map((label) => <span key={label} className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground">{label}에서 발견</span>)}
+    {/* 상태·발견 위치 칩 + 한 줄 설명 + "이 경로로 요청 보내기"를 한 박스에. ②의 발견 요청 재전송과 같은 Request Lab 모달을 경로만 후보로 프리필해 연다. */}
+    <div className="grid gap-3 rounded-lg border p-3.5" data-testid="route-candidate-status">
+      <div className="flex flex-wrap gap-2">
+        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 dark:border-amber-400/40 dark:bg-amber-500/20 dark:text-amber-200">{candidate.observed ? "관측됨" : "미요청"}</span>
+        {foundLabels.map((label) => <span key={label} className="inline-flex items-center rounded-full border border-sky-300 bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-800 dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-200">{label}에서 발견</span>)}
       </div>
-      <p className="text-xs text-muted-foreground">{candidate.observed ? `${foundText}에서 찾았고 실제 요청도 관측된 API입니다.` : `${foundText}에서 찾은, 아직 안 보낸 API입니다.`}</p>
-      {hasWhy && <details className="mt-0.5">
-        <summary className="cursor-pointer text-xs text-muted-foreground">왜 점검 대상인가</summary>
-        <div className="mt-2 grid gap-1 text-xs">{candidate.reviewReason.trim() && <div className="break-all"><span className="font-medium">검토: </span>{candidate.reviewReason}</div>}{candidate.priorityReasons.length > 0 && <div className="break-all"><span className="font-medium">우선순위: </span>{candidate.priorityReasons.join(", ")}</div>}</div>
-      </details>}
+      <p className="text-sm text-foreground">{candidate.observed ? `${foundText}에서 찾았고 실제 요청도 관측된 API입니다.` : `${foundText}에서 찾은, 아직 안 보낸 API입니다.`}</p>
+      <Button size="lg" className="w-full" disabled={disabled || !seedEvent} onClick={() => setSendOpen(true)}><Send className="size-4" />이 경로로 요청 보내기</Button>
+      {!seedEvent && <p className="text-xs text-muted-foreground">이 후보를 발견한 캡처 요청이 없어 바로 보낼 수 없습니다.</p>}
     </div>
-    {/* 아직 안 보낸 후보 경로를 처음으로 직접 보내 본다(②의 발견 요청 재전송과 같은 Request Lab 모달, 경로만 후보로 프리필). */}
-    <Button size="sm" className="w-fit" disabled={disabled || !seedEvent} onClick={() => setSendOpen(true)}><Send className="size-4" />이 경로로 요청 보내기</Button>
-    {!seedEvent && <p className="text-xs text-muted-foreground">이 후보를 발견한 캡처 요청이 없어 바로 보낼 수 없습니다.</p>}
     {seedEvent && <RequestLabDialog open={sendOpen} onOpenChange={setSendOpen} event={seedEvent} prefillRequest={prefillRequest} accounts={snapshot.accounts} sessions={snapshot.managedSessions} verifications={snapshot.manualVerifications} datasetRevision={snapshot.datasetRevision ?? snapshot.identityRevision ?? 0} snapshotRevision={snapshot.revision} suspended={disabled} />}
     <p className="text-xs text-muted-foreground">아래는 이 후보를 발견한 요청입니다. 응답 코드는 접근 허용이나 취약점 판정이 아닙니다.</p>
     <EvidenceActionList events={events} snapshot={snapshot} disabled={disabled} onOpenRequestLab={onOpenRequestLab} identityOf={collectionIdentity} labelIdentity={(identity) => graphAccountLabel(snapshot, identity)} />
