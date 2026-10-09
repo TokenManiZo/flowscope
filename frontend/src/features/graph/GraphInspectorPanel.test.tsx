@@ -45,6 +45,23 @@ it("shows only the selected operation and its 요청 기록 rows, without verdic
   expect(screen.queryByRole("region", { name: "Access Check" })).not.toBeInTheDocument()
 })
 
+it.each(["human", "scanner", "llm"] as const)("hides the origin in observed API titles for %s without changing coordinates", source => {
+  const op = "http://127.0.0.1:8888 GET /workshop/api/shop/orders/{id}"
+  const record = { ...event, source, op }
+  const selected = { ...selection, operation: op, resource: null, source, displayApiKey: op }
+  const node: HierarchyNode = {
+    id: `operation:${op}`, kind: "operation", label: op, wrappedLabel: op,
+    verdict: "allow", verdictText: "ALLOW", verdictColor: "green",
+    selection: { ...selected, cells: [], cellKeys: [], gapIds: [] },
+  }
+  renderWithQueryClient(<GraphInspectorPanel selection={selected} node={node} event={record} snapshot={{ ...snapshot, events: [record], cells: [] }} />)
+  const panel = screen.getByRole("complementary", { name: "선택 작업" })
+  expect(within(panel).getByText("GET /workshop/api/shop/orders/{id}")).toBeVisible()
+  expect(within(panel).queryByText(op)).not.toBeInTheDocument()
+  expect(node.label).toBe(op)
+  expect(record.op).toBe(op)
+})
+
 it("opens Request Lab ready to send without logging in, and sends nothing until asked", async () => {
   const fetch = stubFetch(draft({ request: `${secret}\n\n` }))
   renderWithQueryClient(<GraphInspectorPanel selection={selection} event={event} snapshot={snapshot} />, seedHumanRun(createTestQueryClient(), anonymousInspectionFixture))

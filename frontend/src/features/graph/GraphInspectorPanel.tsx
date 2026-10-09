@@ -56,7 +56,9 @@ export function GraphInspectorPanel({ selection, event, snapshot, suspended = fa
   const events = event && !listed.some(item => item.eventId === event.eventId) ? [event, ...listed] : listed
   const judgedIds = new Set(snapshot.cells.flatMap(cell => cell.evidenceIds))
   const unjudgedCount = events.filter(item => ![item.eventId, ...(item.clusterEvidenceIds ?? [])].some(id => judgedIds.has(id))).length
-  const title = (structural || node?.staticResource || selection.displayObjectKey || selection.displayApiKey) && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : node?.label ?? "선택한 그래프 항목"
+  const rawTitle = (structural || node?.staticResource || selection.displayObjectKey || selection.displayApiKey) && node ? node.label : selection.operation ? stripOrigin(selection.operation) || selection.operation : selection.routeCandidate ? `${selection.routeCandidate.method} ${selection.routeCandidate.pathTemplate}` : node?.label ?? "선택한 그래프 항목"
+  const apiTitle = !structural && (!node || ["operation", "observed-operation", "operation-group", "support-operation", "resend-operation", "route-candidate"].includes(node.kind))
+  const title = apiTitle ? stripOrigin(rawTitle) || rawTitle : rawTitle
   const objectSelection = node?.kind === "resource" || node?.kind === "object-group" || !node && !!selection.resource
   const objectEvidenceIds = [...new Set(events.flatMap(item => [item.eventId, ...(item.clusterEvidenceIds ?? [])]))].filter(id => ids.has(id))
   const objectOps = [...new Set([...(node?.displayOperations ?? []), ...(node?.selection.cells.map(cell => cell.op) ?? []), ...events.map(item => item.op), ...(selection.operation ? [selection.operation] : [])])]
