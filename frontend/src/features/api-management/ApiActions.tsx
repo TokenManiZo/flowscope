@@ -81,11 +81,9 @@ interface ApiActionsProps {
 }
 export function ApiActions({ snapshot, operation, operations, disabled = false, size = "default", deleteEvidenceIds, deleteLabel = "API 삭제" }: ApiActionsProps) {
   const targets = [...new Set((operations ?? (operation ? [operation] : [])).map(apiOperation))]
-  const [selected, setSelected] = useState("")
-  const current = targets.includes(selected) ? selected : targets[0]
+  const current = targets[0]
   if (!current) return null
   return <div className={size === "lg" ? "flex w-full min-w-0 flex-col items-center gap-3" : "flex flex-wrap items-center justify-end gap-2"}>
-    {targets.length > 1 && <select aria-label="조작할 API" value={current} disabled={disabled} onChange={event => setSelected(event.target.value)} className={`h-9 min-w-0 rounded-md border border-border bg-background px-2 text-xs ${size === "lg" ? "w-full" : "max-w-64"}`} title={current}>{targets.map(op => <option key={op} value={op}>{op}</option>)}</select>}
     <SingleApiActions key={current} snapshot={snapshot} operation={current} disabled={disabled} size={size} deleteEvidenceIds={deleteEvidenceIds} deleteLabel={deleteLabel} />
   </div>
 }

@@ -1703,7 +1703,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String resource = required(form, "resource");
             String identity = form.getOrDefault("identity", "").trim();
             if (!identity.isEmpty()) {
-                RequestRecord target = state.snapshot().records.stream().filter(record -> resource.equals(record.resource)
+                var records = state.snapshot().records;
+                String observedEvent = io.flowscope.core.graph.ObservedObjectProjection.build(records).stream()
+                        .filter(object -> resource.equals(object.operation().split(" ")[0] + " observed-object:" + object.objectKey()))
+                        .map(io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation::eventId).findFirst().orElse(null);
+                RequestRecord target = records.stream().filter(record -> record.evidenceId.equals(observedEvent) || resource.equals(record.resource)
                                 || record.resourceReferences.stream().anyMatch(reference -> resource.equals(reference.resource())))
                         .findFirst().orElseThrow(() -> new IllegalArgumentException("관측된 리소스를 선택하세요."));
                 boolean sameService = state.config().account(identity)

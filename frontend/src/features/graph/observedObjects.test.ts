@@ -149,15 +149,15 @@ describe("observed display objects", () => {
     expect(graph.resources).toHaveLength(10)
     expect(graph.hiddenObjectCount).toBe(0)
   })
-  it("links only confirmed owner labels and retains the canonical request for single-object selection", () => {
+  it("keeps object labels free of owner names and retains the original request selection", () => {
     const snapshot = data(); const legacy = `${service} posts:101`
     snapshot.displayObjects = [{ ...snapshot.displayObjects![0], legacyResource: legacy }]
     snapshot.cells = [{ ...snapshot.cells[0], resource: legacy }]
     snapshot.owners = { [legacy]: "user-a" }
     const graph = projectHierarchy(snapshot, filters, nav)
-    expect(graph.resources[0].label).toBe("OBJ 1 - user-a")
+    expect(graph.resources[0].label).toBe("OBJ 1")
     expect(graph.resources[0].selection.operation).toBe(snapshot.events[0].op)
-    expect(relationshipNodeCard(graph.resources[0], graph).title).toBe("OBJ 1 - user-a")
+    expect(relationshipNodeCard(graph.resources[0], graph).title).toBe("OBJ 1")
   })
   it("searches displayed objects and reveals the same stable node at operation level", () => {
     const snapshot = data(), index = buildGraphSearchIndex(snapshot, filters)

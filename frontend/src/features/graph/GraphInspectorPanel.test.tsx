@@ -8,7 +8,8 @@ import { createTestQueryClient, renderWithQueryClient, seedHumanRun } from "@/te
 import { EvidenceActionList } from "@/features/evidence/EvidenceActionList"
 import { GraphInspectorPanel } from "./GraphInspectorPanel"
 import { navigateHierarchy, projectHierarchy } from "./graphHierarchy"
-import type { GraphSelection } from "./graphProjection"
+import { graphCellSelection, type GraphSelection } from "./graphProjection"
+import type { HierarchyNode } from "./graphHierarchy"
 
 const event: Snapshot["events"][number] = {
   eventId: "ev-1", method: "GET", path: "/orders/1", status: 200, fp: "fp", idn: "alice", role: "USER", source: "human", op: "GET /orders/{id}", resource: "order:1", timestamp: 1, sourceDetail: "browser", orchestrator: "HUMAN", tool: "browser", phase: "DISCOVERY", executionTrust: "OBSERVED", runId: "r", authState: "AUTH", trafficClass: "API", trafficDisposition: "INCLUDE", coverageEligible: true, classificationOverride: false, classificationReasons: [], pathTemplateStatus: "CORROBORATED", pathTemplateReasons: [], clusterId: "c", repeatCount: 1, firstSeen: 1, lastSeen: 1, clusterEvidenceIds: ["ev-1"], objects: [{ resource: "order:1", evidence: "id" }], verdict: "allow",
@@ -140,4 +141,71 @@ it.each(["UNKNOWN", "POLLING"])("shows B's neutral evidence in the API card deta
   expect(screen.getByRole("listitem", { name: "alice 요청 기록 1건" })).toBeVisible()
   expect(screen.getByRole("listitem", { name: "bob 요청 기록 1건" })).not.toHaveTextContent("ALLOW")
   expect(screen.getByText(/권한 판정에 포함되지 않은 요청 기록 1건/)).toBeVisible()
+})
+
+
+function ownerPanelFixture() {
+  const service = "https://owner.example.test:443", resource = `${service} orders:1`
+  const record = { ...event, service, op: `${service} GET /orders/{id}`, resource }
+  const cell = { ...snapshot.cells[0], op: record.op, resource }
+  const data: Snapshot = { ...snapshot, events: [record], cells: [cell], owners: {}, ownerOverrides: {}, accounts: [
+    { id: "alice", label: "USER A", role: "User", target: service, color: "", authArtifactCount: 1 },
+  ], displayObjects: [{ eventId: record.eventId, operation: record.op, apiKey: record.op, groupKey: "group", objectKey: "display-object-1", kind: "PATH", fields: ["id"], legacyResource: resource, ordinal: 1 }] }
+  const node: HierarchyNode = { id: "resource:display-object-1", kind: "resource", label: "OBJ 1", wrappedLabel: "OBJ 1",
+    verdict: "untested", verdictText: "미점검", verdictColor: "#64748b", displayObjectKind: "PATH",
+    selection: { ...graphCellSelection([cell]), gapIds: [], displayObjectKey: "display-object-1" } }
+  return { data, node, record, resource: `${service} observed-object:display-object-1` }
+}
+
+it("stores ownership by OBJ key even when a legacy resource exists", async () => {
+  const fetch = stubFetch()
+  const user = userEvent.setup()
+  const { data, node, record, resource } = ownerPanelFixture()
+  const { rerender } = renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={record} snapshot={data} node={node} />)
+  expect(screen.getByRole("region", { name: "소유자" })).toBeVisible()
+  const apply = screen.getByRole("button", { name: "소유자로 확정" })
+  expect(apply).toBeDisabled()
+  await user.click(screen.getByRole("radio", { name: /USER A/ }))
+  expect(fetch.mock.calls.filter(([url]) => String(url) === "/api/owner")).toHaveLength(0)
+  await user.click(apply)
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => String(url) === "/api/owner")).toHaveLength(1))
+  const [, request] = fetch.mock.calls.find(([url]) => String(url) === "/api/owner")!
+  expect(String(request?.body)).toBe(String(new URLSearchParams({ resource, identity: "alice" })))
+  rerender(<GraphInspectorPanel selection={node.selection} event={record} snapshot={{ ...data, owners: { [resource]: "alice" }, ownerOverrides: { [resource]: "alice" } }} node={node} />)
+  expect(screen.getByRole("heading", { name: /소유자 USER A/ })).toHaveTextContent("직접 확정")
+  expect(screen.getByRole("button", { name: "소유자 바꾸기" })).toBeVisible()
+})
+
+it.each(["static", "group"])("does not offer owner assignment for %s objects", kind => {
+  const { data, node, record } = ownerPanelFixture()
+  const selected: HierarchyNode = kind === "static" ? { ...node, staticResource: true } : { ...node, kind: "object-group" }
+  renderWithQueryClient(<GraphInspectorPanel selection={selected.selection} event={record} snapshot={data} node={selected} />)
+  expect(screen.queryByRole("region", { name: "소유자" })).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: "소유자로 확정" })).not.toBeInTheDocument()
+})
+
+it("keeps mapped object owner controls disabled while data is suspended", async () => {
+  const { data, node, record } = ownerPanelFixture()
+  renderWithQueryClient(<GraphInspectorPanel selection={node.selection} event={record} snapshot={data} node={node} suspended />)
+  expect(screen.getByRole("radio", { name: /USER A/ })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "소유자로 확정" })).toBeDisabled()
+})
+
+it.each(["PATH", "QUERY", "REQUEST_BODY"] as const)("assigns and restores the owner of an unlinked %s OBJ independently", async kind => {
+  const { data, node, record } = ownerPanelFixture()
+  const key = "unlinked-" + kind, resource = `${record.service} observed-object:${key}`
+  const selected = { ...node, displayObjectKind: kind, selection: { ...node.selection, resource: null, cells: [], displayObjectKey: key } }
+  const current: Snapshot = { ...data, displayObjects: [{ eventId: record.eventId, operation: record.op, apiKey: record.op, groupKey: "group", objectKey: key, kind, fields: ["id"], legacyResource: null, ordinal: 1 }] }
+  const fetch = vi.fn((_url: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(json({ success: true })))
+  vi.stubGlobal("fetch", fetch)
+  const user = userEvent.setup()
+  const { rerender } = renderWithQueryClient(<GraphInspectorPanel selection={selected.selection} event={record} snapshot={current} node={selected} />)
+  await user.click(screen.getByRole("radio", { name: /USER A/ }))
+  await user.click(screen.getByRole("button", { name: "소유자로 확정" }))
+  await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url) === "/api/owner")).toBe(true))
+  const request = fetch.mock.calls.find(([url]) => String(url) === "/api/owner")![1] as RequestInit
+  expect(new URLSearchParams(String(request.body)).get("resource")).toBe(resource)
+  rerender(<GraphInspectorPanel selection={selected.selection} event={record} snapshot={{ ...current, ownerOverrides: { [resource]: "alice" } }} node={selected} />)
+  expect(screen.getByRole("heading", { name: /소유자 USER A/ })).toHaveTextContent("직접 확정")
+  expect(screen.queryByRole("radio", { name: /Public/ })).not.toBeInTheDocument()
 })

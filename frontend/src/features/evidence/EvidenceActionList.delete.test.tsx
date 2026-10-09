@@ -161,9 +161,7 @@ it.each(["resource", "object-group"] as const)("keeps three footer actions for a
   const { container } = renderWithQueryClient(<GraphInspectorPanel selection={selection} event={null} snapshot={snapshot} node={node} />)
   const footer = container.querySelector("footer")!
   expect(within(footer).getAllByRole("button")).toHaveLength(3)
-  const picker = within(footer).getByRole("combobox", { name: "조작할 API" })
-  expect(within(picker).getAllByRole("option")).toHaveLength(2)
-  await user.selectOptions(picker, next.op)
+  expect(within(footer).queryByRole("combobox", { name: "조작할 API" })).not.toBeInTheDocument()
   await user.click(within(footer).getByRole("button", { name: "객체 삭제" }))
   await screen.findByRole("button", { name: "영구 삭제" })
   expect(calls[0]).toEqual({ action: "preview-delete", evidenceIds: ["first", "second", "repeat"], datasetRevision: 7, revision: 3 })

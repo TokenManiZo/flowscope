@@ -135,16 +135,14 @@ it("applies object highlight and registration to its API while restricting delet
   expect(calls.at(-1)).toEqual({ action: "preview-delete", evidenceIds: ["object-request"], datasetRevision: 3, revision: 7 })
 })
 
-it("uses the chosen original API key for actions on a displayed API bundle", async () => {
+it("keeps actions without an API picker for a displayed API bundle", async () => {
   const calls = mockAction(), user = userEvent.setup(), second = op + "/{id}"
   renderWithQueryClient(<ApiActions snapshot={snapshot} operations={[op + "#variant", op, second]} />)
-  const picker = screen.getByRole("combobox", { name: "조작할 API" })
-  expect(within(picker).getAllByRole("option")).toHaveLength(2)
-  await user.selectOptions(picker, second)
+  expect(screen.queryByRole("combobox", { name: "조작할 API" })).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "API 하이라이트" }))
   await user.click(screen.getByRole("button", { name: "보라 하이라이트" }))
-  await waitFor(() => expect(calls.at(-1)).toMatchObject({ action: "highlight", operations: [second] }))
+  await waitFor(() => expect(calls.at(-1)).toMatchObject({ action: "highlight", operations: [op] }))
   await user.click(screen.getByRole("button", { name: "API 하이라이트" }))
   await user.click(screen.getByRole("button", { name: "API 삭제" }))
-  await waitFor(() => expect(calls.at(-1)).toMatchObject({ action: "preview-delete", operations: [second] }))
+  await waitFor(() => expect(calls.at(-1)).toMatchObject({ action: "preview-delete", operations: [op] }))
 })

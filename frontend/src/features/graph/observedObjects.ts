@@ -124,8 +124,8 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         if (visibleObjects >= MAX_VISIBLE_OBJECTS) continue
         visibleObjects++
         const selection = { ...select(observations, null, true), displayObjectKey: key, displayApiKey: api }
-        const owner = selection.resource ? snapshot.owners[selection.resource] : null
-        const label = observedObjectLabel(observations[0].object, owner ? graphAccountLabel(snapshot, owner) : null)
+        const owner = snapshot.ownerOverrides?.[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? null
+        const label = observedObjectLabel(observations[0].object)
         const objectNode = node("resource", key, label, selection, { owner, displayObjectKind: first.kind })
         edge("operation-resource", apiNode.id, objectNode.id, observations, true)
         if (navigation.level === "operation") list.push(objectNode)

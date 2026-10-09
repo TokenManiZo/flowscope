@@ -1276,6 +1276,38 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void assignsOwnersToObservedObjectsWithoutLegacyResources() throws Exception {
+        start();
+        String service = state.record.service;
+        state.config.upsertAccount(new AccountProfile("same", "Same", service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
+        RequestRecord observed = new RequestRecord(Source.HUMAN, service, "POST", "/lookup/abc123", 200, "fp");
+        observed.query = "limit=5&offset=0";
+        observed.reqBody = "{\"content\":\"hello\"}";
+        observed.hasResponse = true;
+        state.records.add(observed);
+        RequestRecord corroboration = new RequestRecord(Source.HUMAN, service, "POST", "/lookup/def456", 200, "fp");
+        corroboration.hasResponse = true;
+        state.records.add(corroboration);
+        state.rebuild();
+        var objects = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records).stream()
+                .filter(object -> object.eventId().equals(observed.evidenceId)).toList();
+        assertEquals(java.util.Set.of("PATH", "QUERY", "REQUEST_BODY"), objects.stream().map(object -> object.kind()).collect(java.util.stream.Collectors.toSet()));
+        for (var object : objects) {
+            assertNull(object.legacyResource());
+            String resource = service + " observed-object:" + object.objectKey();
+            String body = "resource=" + encode(resource) + "&identity=";
+            assertEquals(400, post("/api/owner", body + "foreign", token).statusCode());
+            assertEquals(200, post("/api/owner", body + "same", token).statusCode());
+            assertEquals("same", state.config.resourceOwners().get(resource));
+            assertEquals("same", json(get("/api/snapshot", token, origin())).path("ownerOverrides").path(resource).asText());
+            assertEquals(200, post("/api/owner", body, token).statusCode());
+            assertFalse(state.config.resourceOwners().containsKey(resource));
+        }
+        assertEquals(400, post("/api/owner", "resource=" + encode(service + " observed-object:invented") + "&identity=same", token).statusCode());
+    }
+
+    @Test
     void restrictsOwnersToSameServiceIdentities() throws Exception {
         start();
         RequestRecord record = state.snapshot().records.getFirst();
