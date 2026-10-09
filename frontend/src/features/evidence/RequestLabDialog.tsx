@@ -316,7 +316,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
       raw.current.originalRequest = next.request ?? ""
       raw.current.originalResponse = next.response ?? ""
       const { request: _request, response: _response, workspace, ...metadata } = next
-      if (workspace) {
+      // 경로 후보 프리필 모드는 seed(발견) 요청의 저장 작업을 복원하지 않는다. 그 워크스페이스는 다른 엔드포인트의 것이라, 복원하면 후보 프리필 대신 그 초안이 뜬다.
+      if (workspace && !prefillRequest) {
         const entries = Object.entries(workspace.tab.entries).sort(([a], [b]) => Number(a) - Number(b)).map(([id, value]) => ({ ...value, id: Number(id) }))
         if (!raw.current.restoreRequests(entries, workspace.tab.nextId, workspace.tab.selectedId)) throw new Error("저장 요청이 메모리 한도를 초과했습니다. 다른 요청을 닫고 다시 열어 주세요.")
         persistence.current = new RequestLabPersistence(raw.current, event.eventId, datasetRevision, workspace, setSaveStatus)
@@ -357,7 +358,8 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   useEffect(() => {
     if (!open || !draft || prepared.current || loading || busy || suspended) return
     prepared.current = true
-    const unsent = [...raw.current.requests].reverse().find(item => !item.result)
+    // 프리필 모드는 복원된 초안이 아니라 항상 후보 경로로 새 편집본을 만든다(선택한 후보와 전송 요청이 어긋나지 않게).
+    const unsent = prefillRequest ? undefined : [...raw.current.requests].reverse().find(item => !item.result)
     if (unsent) changeView(unsent.id)
     else startDraft()
   }, [open, draft, loading, busy, suspended, raw.current.requests.length])
