@@ -24,13 +24,15 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 ## 세션·프로젝트 저장
 
-프로젝트 형식은 schema 10입니다. JSON과 SQLite의 project metadata에 Codex `threadId`, 대화 대상, 화면에 보이는 user/assistant 메시지와 turn `runId`를 저장합니다. 기존 schema 1~9는 빈 대화로 열립니다. 새 프로젝트 파일은 옛 JAR에서 열 수 없으므로 업그레이드 전 백업을 보존해야 합니다. 로그인 Cookie·Authorization, FlowScope gateway capability는 이 대화 메타데이터에 넣지 않습니다. 반면 기존 요청/응답 Evidence는 인증값을 포함해 원문 그대로 저장되며, 지속 Codex thread의 로컬 history에도 모델이 본 대상 내용이 남을 수 있습니다.
+프로젝트 형식은 schema 10입니다. JSON과 SQLite의 project metadata에 Codex `threadId`, 대화 대상, 마지막으로 선택한 모델·추론 강도, 화면에 보이는 user/assistant 메시지와 turn `runId`를 저장합니다. 기존 schema 1~9는 빈 대화로 열리고, 이전 schema 10 실험 파일에 모델·강도가 없으면 빈 설정으로 읽습니다. 새 프로젝트 파일은 옛 JAR에서 열 수 없으므로 업그레이드 전 백업을 보존해야 합니다. 로그인 Cookie·Authorization, FlowScope gateway capability는 이 대화 메타데이터에 넣지 않습니다. 반면 기존 요청/응답 Evidence는 인증값을 포함해 원문 그대로 저장되며, 지속 Codex thread의 로컬 history에도 모델이 본 대상 내용이 남을 수 있습니다.
 
 계정 로그인 브라우저의 메모리 세션은 같은 Burp 실행 안에서 turn 사이에 유지됩니다. 프로젝트를 다시 열거나 Burp를 재시작하면 로그인 자격은 복원하지 않으므로 다시 로그인해야 합니다. 같은 컴퓨터의 Codex thread가 남아 있으면 `thread/resume`으로 대화를 이어갑니다. 다른 컴퓨터에서 프로젝트를 열어 로컬 Codex thread가 없으면 자동으로 같은 모델 문맥을 꾸며내지 않고 실패를 표시합니다. `action=new-chat`으로 새 thread를 시작할 수 있습니다.
 
 큰 응답의 임시 artifact는 같은 Burp 프로세스의 대화 turn 사이에 재사용합니다. 확장 종료 후에는 임시 artifact를 폐기하므로, 재시작 뒤 이전 artifact ID로 읽는 것은 지원하지 않습니다. 그 경우 저장된 Evidence를 확인하거나 원 URL을 다시 수집해야 합니다.
 
 ## 이번 구현의 범위와 남은 한계
+
+모델 선택지는 설치된 Codex CLI의 `model/list`에서 읽습니다. 화면은 포커스 복귀와 5분 간격으로 목록을 다시 조회하며 서버의 60초 캐시를 사용합니다. `supportedReasoningEfforts`와 `defaultReasoningEffort`를 읽어 모델별 추론 강도 목록을 만들고, 명시적으로 고른 값은 `turn/start.effort`로 보냅니다. 모델이 바뀐 기존 대화에서는 새 모델의 기본 강도를 명시해 앞 모델의 강도가 잘못 이어지지 않게 합니다. 미지원 조합은 실행 전에 거부합니다. 모델 목록은 표시용 catalog이지 계정 사용 권한의 증명이 아닙니다. FlowScope는 Codex CLI 자체를 자동 업데이트하지 않고, 진행 중인 turn의 모델·강도도 자동 변경하지 않습니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)의 `model/list`와 `turn/start` 계약을 따릅니다.
 
 대화 turn의 HTTP 도구는 사용자 지시의 HTTP method를 전송합니다. `PUT`·`PATCH`·`DELETE`를 URL 이름만 보고 자동 거부하지 않습니다. 이전 일회성 UI run은 기존 프롬프트·임시 thread·행동/시간 계약을 유지합니다. 새 대화 turn에는 기본 500 HTTP 요청, 300 브라우저 행동, 3,000 브라우저 교환의 **turn 강제 종료 상한이 없습니다**. 동일 요청을 다시 보내는 것도 허용합니다. 이 변경은 전역 FlowScope 기록 20,000건, 프로젝트 파일 100MiB, artifact 총량, JavaScript 파서의 물리적 처리 상한을 없애지 않았습니다. 그 경계에 도달하면 계속 수집된다고 주장해서는 안 됩니다.
 
@@ -43,5 +45,5 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 - 필요성: 일회성 Explorer는 답변 뒤 Codex thread와 gateway를 삭제해 사용자가 미해결 항목을 같은 맥락에서 이어서 물을 수 없었습니다. 백엔드를 먼저 분리했으나 기존 UI의 **탐색 시작**은 `message` 없이 자동 탐색을 호출했습니다. 이를 유지하는 대안은 사용자 지시 전 자동 실행이어서 기각했습니다.
 - 수정 범위: `ExplorerProvider`·`CodexAppServerProvider`·`ExplorerCoordinator`·`ExplorerHttpGateway`, Web API, 프로젝트 JSON/SQLite 메타데이터, React `LlmPass`와 API 타입·훅, 단위·브라우저 회귀 테스트. 다른 화면의 구조는 바꾸지 않았습니다.
 - RED→GREEN: 두 번째 turn의 `thread/resume`, HTTP 0건 대화 답변, 불완전 Evidence의 대화 보존, JSON/SQLite 재열기, 잘못된 선언 일부 거부, 500/300/3,000 이전 상한 초과를 각각 재현 후 수정했습니다.
-- 자동 검증: 2026-10-10 `mvn clean verify` 통과(React 885/885, Java 977건 중 실패·오류 0, opt-in 7건 skip). React 테스트는 버튼 클릭 시 미전송, 메시지 전송 시 시작, 저장된 대화에서 후속 turn을 확인합니다. 모의 API를 사용한 Chromium E2E 1건도 통과했습니다. 이전 작업의 opt-in 실물 Codex 두 turn 재개 시험은 통과했지만, 이번 UI가 들어간 JAR을 실제 Burp에서 재로드해 대상 수집을 실행한 적은 없습니다.
+- 자동 검증: 2026-10-10 `mvn clean verify` 통과(React 886/886, Java 978건 중 실패·오류 0, opt-in 7건 skip). React 테스트는 버튼 클릭 시 미전송, 메시지 전송 시 시작, 프로젝트 재열기 뒤 모델·강도 복원, 후속 turn을 확인합니다. 모의 API를 사용한 Chromium E2E 1건도 통과했습니다. 설치된 Codex CLI 0.159.3의 실제 `model/list`에서 표시 모델 8개 모두 강도 목록을 읽었고, opt-in 실물 Codex의 명시적 effort 두 turn 재개 시험도 통과했습니다. 이번 UI가 들어간 JAR을 실제 Burp에서 재로드해 대상 수집을 실행한 적은 없습니다.
 - 다음 gate: 실제 Burp에서 비로그인/두 계정의 후속 turn까지 수집·그래프 확인, 전역 저장 상한 제거를 위한 디스크 기반 기록 설계.

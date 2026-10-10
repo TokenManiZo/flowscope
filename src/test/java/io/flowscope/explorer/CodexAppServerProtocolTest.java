@@ -63,9 +63,14 @@ final class CodexAppServerProtocolTest {
                             case "config/read" -> reply(message, "{\"config\":{\"model\":\"gpt-5.6-sol\"}}");
                             case "model/list" -> reply(message, "{\"data\":["
                                     + "{\"id\":\"gpt-6.1-sol\",\"model\":\"gpt-6.1-sol\","
-                                    + "\"displayName\":\"GPT-6.1 Sol\",\"isDefault\":true},"
+                                    + "\"displayName\":\"GPT-6.1 Sol\",\"isDefault\":true,"
+                                    + "\"defaultReasoningEffort\":\"medium\",\"supportedReasoningEfforts\":["
+                                    + "{\"reasoningEffort\":\"medium\",\"description\":\"Balanced\"},"
+                                    + "{\"reasoningEffort\":\"high\",\"description\":\"Deeper\"}]},"
                                     + "{\"id\":\"gpt-5.6-sol\",\"model\":\"gpt-5.6-sol\","
-                                    + "\"displayName\":\"GPT-5.6 Sol\",\"isDefault\":false}],\"nextCursor\":null}");
+                                    + "\"displayName\":\"GPT-5.6 Sol\",\"isDefault\":false,"
+                                    + "\"defaultReasoningEffort\":\"low\",\"supportedReasoningEfforts\":["
+                                    + "{\"reasoningEffort\":\"low\",\"description\":\"Fast\"}]}],\"nextCursor\":null}");
                             case "thread/start" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
                             case "thread/resume" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
                             case "thread/delete" -> reply(message, "{}");
@@ -156,6 +161,9 @@ final class CodexAppServerProtocolTest {
             assertEquals(List.of("gpt-6.1-sol", "gpt-5.6-sol"),
                     catalog.models().stream().map(ExplorerProvider.ModelOption::id).toList());
             assertTrue(catalog.models().getFirst().recommended());
+            assertEquals("medium", catalog.models().getFirst().defaultEffort());
+            assertEquals(List.of("medium", "high"), catalog.models().getFirst().efforts().stream()
+                    .map(ExplorerProvider.ReasoningOption::effort).toList());
             assertEquals(catalog, provider.models());
             assertEquals(1, launches.get(), "polling must not start another app-server process");
 
@@ -202,7 +210,7 @@ final class CodexAppServerProtocolTest {
             ExplorerProvider.Request base = request();
             provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
                     base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
-                    base.prompt(), "gpt-6.1-sol", "", "Find the API"), new ExplorerProvider.Listener() {
+                    base.prompt(), "gpt-6.1-sol", "high", "", "Find the API"), new ExplorerProvider.Listener() {
                 @Override public void activity(ExplorerProvider.Activity activity) { }
                 @Override public void assistantDelta(String delta) { deltas.add(delta); }
                 @Override public void completed(ExplorerProvider.Result value) {
@@ -224,11 +232,13 @@ final class CodexAppServerProtocolTest {
             assertFalse(started.path("params").path("ephemeral").asBoolean(true));
             JsonNode firstTurn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Find the API", firstTurn.path("params").path("input").get(0).path("text").asText());
+            assertEquals("gpt-6.1-sol", firstTurn.path("params").path("model").asText());
+            assertEquals("high", firstTurn.path("params").path("effort").asText());
             assertFalse(firstTurn.path("params").has("outputSchema"));
 
             provider.start(new ExplorerProvider.Request("run-2", base.target(), base.exactScope(),
                     base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
-                    base.prompt(), "gpt-6.1-sol", "t1", "Continue with account B"), listener(second));
+                    base.prompt(), "gpt-6.1-sol", "medium", "t1", "Continue with account B"), listener(second));
             assertTrue(second.done().await(10, TimeUnit.SECONDS));
             assertNull(second.failure().get());
             FakeCodex secondProcess = process.get();
@@ -239,6 +249,7 @@ final class CodexAppServerProtocolTest {
                     "the resumed conversation must bind tools to the new gateway");
             JsonNode nextTurn = secondProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Continue with account B", nextTurn.path("params").path("input").get(0).path("text").asText());
+            assertEquals("medium", nextTurn.path("params").path("effort").asText());
         }
     }
 

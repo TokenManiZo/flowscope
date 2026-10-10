@@ -41,17 +41,22 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     public record StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model,
-                               String userMessage) {
+                               String effort, String userMessage) {
         public StartRequest {
             accountIds = List.copyOf(accountIds == null ? List.of() : accountIds);
             model = model == null ? "" : model.trim();
+            effort = effort == null ? "" : effort.trim();
             userMessage = userMessage == null ? "" : userMessage.trim();
         }
+        public StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model,
+                            String userMessage) {
+            this(target, accountIds, includeAnonymous, model, "", userMessage);
+        }
         public StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model) {
-            this(target, accountIds, includeAnonymous, model, "");
+            this(target, accountIds, includeAnonymous, model, "", "");
         }
         public StartRequest(String target, List<String> accountIds, boolean includeAnonymous) {
-            this(target, accountIds, includeAnonymous, "", "");
+            this(target, accountIds, includeAnonymous, "", "", "");
         }
     }
 
@@ -64,12 +69,23 @@ public final class ExplorerCoordinator implements AutoCloseable {
                            long elapsedMillis, String message, String providerReadiness,
                            List<String> accountIds, boolean anonymous, long attempts, long responses,
                            long endpointDeclarations, long parameterDeclarations, long capabilityProbes,
-                           List<ExplorerProvider.Unresolved> unresolved, List<Activity> activities, String model) {
+                           List<ExplorerProvider.Unresolved> unresolved, List<Activity> activities,
+                           String model, String effort) {
         public Snapshot {
             accountIds = List.copyOf(accountIds == null ? List.of() : accountIds);
             unresolved = List.copyOf(unresolved == null ? List.of() : unresolved);
             activities = List.copyOf(activities == null ? List.of() : activities);
             model = model == null ? "" : model;
+            effort = effort == null ? "" : effort;
+        }
+        public Snapshot(Status status, String runId, String target, Instant startedAt, Instant endedAt,
+                        long elapsedMillis, String message, String providerReadiness,
+                        List<String> accountIds, boolean anonymous, long attempts, long responses,
+                        long endpointDeclarations, long parameterDeclarations, long capabilityProbes,
+                        List<ExplorerProvider.Unresolved> unresolved, List<Activity> activities, String model) {
+            this(status, runId, target, startedAt, endedAt, elapsedMillis, message, providerReadiness,
+                    accountIds, anonymous, attempts, responses, endpointDeclarations, parameterDeclarations,
+                    capabilityProbes, unresolved, activities, model, "");
         }
         public Snapshot(Status status, String runId, String target, Instant startedAt, Instant endedAt,
                         long elapsedMillis, String message, String providerReadiness,
@@ -103,6 +119,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private final List<ChatMessage> chatMessages = new ArrayList<>();
     private String conversationThreadId = "";
     private String conversationTarget = "";
+    private String conversationModel = "";
+    private String conversationEffort = "";
     private volatile boolean chatModeActive;
     private volatile Snapshot snapshot = idle();
     private volatile ExplorerHttpGateway gateway;
@@ -181,9 +199,20 @@ public final class ExplorerCoordinator implements AutoCloseable {
         String readiness = provider.readiness();
         if (!"READY".equals(readiness)) throw new IllegalStateException(readiness);
         if (contexts.current(Source.SCANNER) != null) throw new IllegalStateException("활성 ZAP 실행을 먼저 종료하세요.");
-        if (!request.model().isBlank() && provider.models().models().stream()
+        ExplorerProvider.ModelCatalog catalog = request.model().isBlank() && request.effort().isBlank()
+                ? null : provider.models();
+        if (!request.model().isBlank() && catalog.models().stream()
                 .noneMatch(option -> option.id().equals(request.model()))) {
             throw new IllegalArgumentException("선택한 Codex 모델은 현재 계정의 사용 가능 목록에 없습니다.");
+        }
+        if (!request.effort().isBlank()) {
+            String modelId = request.model().isBlank() ? catalog.configuredModel() : request.model();
+            ExplorerProvider.ModelOption selected = catalog.models().stream()
+                    .filter(option -> option.id().equals(modelId)).findFirst().orElseThrow(() ->
+                            new IllegalArgumentException("추론 강도를 지정하려면 목록에 있는 모델을 선택하세요."));
+            if (selected.efforts().stream().noneMatch(option -> option.effort().equals(request.effort()))) {
+                throw new IllegalArgumentException("선택한 모델이 해당 추론 강도를 지원하지 않습니다.");
+            }
         }
         String runId = "llm-explorer-" + System.currentTimeMillis() + "-"
                 + UUID.randomUUID().toString().substring(0, 8);
@@ -201,9 +230,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
         browserDeadline = 0;
         snapshot = new Snapshot(Status.AUTHENTICATING, runId, request.target(), Instant.now(), null,
                 0, "Explorer 계정과 세션을 준비하는 중입니다.", readiness,
-                request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model());
+                request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
+                request.model(), request.effort());
         if (!request.userMessage().isBlank()) {
             conversationTarget = request.target();
+            if (!request.model().isBlank()) conversationModel = request.model();
+            if (!request.effort().isBlank()) conversationEffort = request.effort();
             chatMessages.add(new ChatMessage("user", request.userMessage(), runId, Instant.now()));
             chatChanged.run();
         }
@@ -220,7 +252,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         return new Snapshot(value.status(), value.runId(), value.target(), value.startedAt(), value.endedAt(),
                 elapsed, value.message(), provider.readiness(), value.accountIds(), value.anonymous(),
                 value.attempts(), value.responses(), value.endpointDeclarations(),
-                value.parameterDeclarations(), value.capabilityProbes(), value.unresolved(), value.activities(), value.model());
+                value.parameterDeclarations(), value.capabilityProbes(), value.unresolved(), value.activities(),
+                value.model(), value.effort());
     }
 
     public ExplorerProvider.ModelCatalog models() { return provider.models(); }
@@ -232,7 +265,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
     public synchronized ExplorerChatState chatState() {
         return new ExplorerChatState(conversationThreadId, conversationTarget,
                 chatMessages.stream().map(item -> new ExplorerChatState.Message(
-                        item.role(), item.text(), item.runId(), item.at().toString())).toList());
+                        item.role(), item.text(), item.runId(), item.at().toString())).toList(),
+                conversationModel, conversationEffort);
     }
 
     public synchronized void restoreChatState(ExplorerChatState restored) {
@@ -247,6 +281,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         }
         conversationThreadId = state.threadId();
         conversationTarget = state.target();
+        conversationModel = state.model();
+        conversationEffort = state.effort();
         chatMessages.clear();
         chatMessages.addAll(parsed);
     }
@@ -460,6 +496,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         chatMessages.clear();
         conversationThreadId = "";
         conversationTarget = "";
+        conversationModel = "";
+        conversationEffort = "";
     }
 
     public synchronized Snapshot newChat() {
@@ -539,7 +577,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                         limitations, null);
                 providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
                         List.of(request.target()), readyAccounts, gateway.url(), gateway.discoveriesUrl(),
-                        gateway.token(), prompt, request.model(),
+                        gateway.token(), prompt, request.model(), request.effort(),
                         request.userMessage().isBlank() ? "" : conversationThreadId, request.userMessage()),
                         providerListener(runId, limitations, !request.userMessage().isBlank()));
             }
@@ -693,7 +731,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.endedAt(), snapshot.elapsedMillis(), snapshot.message(), snapshot.providerReadiness(),
                 snapshot.accountIds(), snapshot.anonymous(), attempts, responses,
                 snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), probes,
-                snapshot.unresolved(), snapshot.activities(), snapshot.model());
+                snapshot.unresolved(), snapshot.activities(), snapshot.model(), snapshot.effort());
         String account = event.accountId() == null || event.accountId().isBlank() ? "비로그인" : event.accountId();
         addActivity("HTTP", event.method() + " " + event.url(),
                 account + (event.httpStatus() > 0 ? " · HTTP " + event.httpStatus() + " · " + event.evidenceId()
@@ -718,7 +756,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.accountIds(), snapshot.anonymous(), snapshot.attempts(), snapshot.responses(),
                 snapshot.endpointDeclarations() + newEndpoints,
                 snapshot.parameterDeclarations() + newParameters, snapshot.capabilityProbes(),
-                snapshot.unresolved(), snapshot.activities(), snapshot.model());
+                snapshot.unresolved(), snapshot.activities(), snapshot.model(), snapshot.effort());
         addActivity("DISCOVERY", "산출물 선언 저장",
                 "endpoint " + newEndpoints + "건 · parameter " + newParameters
                         + "건을 현재 실행의 요청 기록에 연결했습니다.", "COMPLETED", null);
@@ -736,7 +774,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.endedAt(), snapshot.elapsedMillis(), snapshot.message(), snapshot.providerReadiness(),
                 snapshot.accountIds(), snapshot.anonymous(), snapshot.attempts(), snapshot.responses(),
                 snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), snapshot.capabilityProbes(),
-                snapshot.unresolved(), List.copyOf(next), snapshot.model());
+                snapshot.unresolved(), List.copyOf(next), snapshot.model(), snapshot.effort());
     }
 
     private synchronized void appendAssistantDelta(String runId, String delta) {
@@ -757,7 +795,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.elapsedMillis(), message, snapshot.providerReadiness(), snapshot.accountIds(),
                 snapshot.anonymous(), snapshot.attempts(), snapshot.responses(),
                 snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), snapshot.capabilityProbes(),
-                unresolved, snapshot.activities(), snapshot.model());
+                unresolved, snapshot.activities(), snapshot.model(), snapshot.effort());
     }
 
     private Snapshot terminal(Status status, String message, List<ExplorerProvider.Unresolved> unresolved) {

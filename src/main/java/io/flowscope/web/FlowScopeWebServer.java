@@ -213,6 +213,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
         default List<ExplorerCoordinator.ChatMessage> explorerChatMessages() { return List.of(); }
+        default io.flowscope.explorer.ExplorerChatState explorerChatState() {
+            return io.flowscope.explorer.ExplorerChatState.empty();
+        }
         default ExplorerProvider.ModelCatalog explorerModels() {
             throw new UnsupportedOperationException("Explorer model list is unavailable");
         }
@@ -1575,6 +1578,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             state.explorerChatMessages().forEach(item -> messages.addObject()
                     .put("role", item.role()).put("text", item.text())
                     .put("runId", item.runId()).put("at", item.at().toString()));
+            body.set("chat", json.valueToTree(state.explorerChatState()));
             ExplorerCoordinator.BrowserBudget budget = state.explorerBrowserBudget();
             if (budget == null) body.putNull("browser");
             else {
@@ -1602,7 +1606,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                             .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
                     boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
                     snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
-                            form.getOrDefault("model", ""), form.getOrDefault("message", "")));
+                            form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
+                            form.getOrDefault("message", "")));
                     status = 202;
                 }
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));
@@ -1691,6 +1696,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("message", value.message());
         body.put("providerReadiness", value.providerReadiness());
         body.put("model", value.model());
+        body.put("effort", value.effort());
         body.set("accountIds", json.valueToTree(value.accountIds()));
         body.put("anonymous", value.anonymous());
         body.put("attempts", value.attempts());

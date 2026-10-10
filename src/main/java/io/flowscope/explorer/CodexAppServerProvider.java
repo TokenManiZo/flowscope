@@ -187,7 +187,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     String id = item.path("model").asText("");
                     if (id.isBlank() || item.path("hidden").asBoolean(false)) continue;
                     String label = item.path("displayName").asText(id);
-                    found.putIfAbsent(id, new ModelOption(id, label, item.path("isDefault").asBoolean(false)));
+                    Map<String, ReasoningOption> efforts = new LinkedHashMap<>();
+                    for (JsonNode option : item.path("supportedReasoningEfforts")) {
+                        String effort = option.path("reasoningEffort").asText("");
+                        if (!effort.isBlank()) efforts.putIfAbsent(effort,
+                                new ReasoningOption(effort, option.path("description").asText("")));
+                    }
+                    found.putIfAbsent(id, new ModelOption(id, label, item.path("isDefault").asBoolean(false),
+                            item.path("defaultReasoningEffort").asText(""), List.copyOf(efforts.values())));
                 }
                 cursor = response.path("result").path("nextCursor").asText("");
                 if (cursor.isBlank()) {
@@ -570,6 +577,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode turnParams() {
             ObjectNode params = JSON.createObjectNode();
             params.put("threadId", threadId).put("cwd", workspace.toString()).put("approvalPolicy", "on-request");
+            if (!request.model().isBlank()) params.put("model", request.model());
+            if (!request.effort().isBlank()) params.put("effort", request.effort());
             params.putArray("input").addObject().put("type", "text")
                     .put("text", request.userMessage().isBlank()
                             ? "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요."

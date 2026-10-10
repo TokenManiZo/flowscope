@@ -21,13 +21,20 @@ final class CodexAppServerProviderHarnessTest {
     void realCodexResumesAChatOnTheSameThreadWithFreshGatewayTools() throws Exception {
         try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
             assertEquals("READY", provider.readiness());
-            String model = provider.models().configuredModel();
-            if (model.isBlank()) model = provider.models().models().getFirst().id();
+            ExplorerProvider.ModelCatalog catalog = provider.models();
+            String model = catalog.configuredModel();
+            if (model.isBlank()) model = catalog.models().getFirst().id();
+            String selectedModel = model;
+            ExplorerProvider.ModelOption option = catalog.models().stream()
+                    .filter(item -> item.id().equals(selectedModel)).findFirst().orElseThrow();
+            String effort = option.efforts().stream().filter(item -> item.effort().equals("low"))
+                    .map(ExplorerProvider.ReasoningOption::effort).findFirst()
+                    .orElse(option.defaultEffort());
             String threadId;
             try (ExplorerHttpGateway first = new ExplorerHttpGateway(new ExplorerAccountVault(),
                     request -> { throw new AssertionError("the chat question needs no target request"); },
                     value -> value.startsWith("https://provider-harness.invalid/"), "chat-run-1", ignored -> {})) {
-                ExplorerProvider.Result answer = chatTurn(provider, first, model, "",
+                ExplorerProvider.Result answer = chatTurn(provider, first, model, effort, "",
                         "In one short sentence, say you can continue this conversation later.");
                 assertFalse(answer.summary().isBlank());
                 threadId = answer.threadId();
@@ -36,7 +43,7 @@ final class CodexAppServerProviderHarnessTest {
             try (ExplorerHttpGateway second = new ExplorerHttpGateway(new ExplorerAccountVault(),
                     request -> { throw new AssertionError("the follow-up needs no target request"); },
                     value -> value.startsWith("https://provider-harness.invalid/"), "chat-run-2", ignored -> {})) {
-                ExplorerProvider.Result answer = chatTurn(provider, second, model, threadId,
+                ExplorerProvider.Result answer = chatTurn(provider, second, model, effort, threadId,
                         "In one short sentence, acknowledge this is a follow-up in the same conversation.");
                 assertEquals(threadId, answer.threadId());
                 assertFalse(answer.summary().isBlank());
@@ -45,7 +52,7 @@ final class CodexAppServerProviderHarnessTest {
     }
 
     private static ExplorerProvider.Result chatTurn(CodexAppServerProvider provider,
-                                                    ExplorerHttpGateway gateway, String model,
+                                                    ExplorerHttpGateway gateway, String model, String effort,
                                                     String threadId, String message) throws Exception {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<ExplorerProvider.Result> result = new AtomicReference<>();
@@ -53,7 +60,7 @@ final class CodexAppServerProviderHarnessTest {
         provider.start(new ExplorerProvider.Request("chat-run", "https://provider-harness.invalid/",
                 List.of("https://provider-harness.invalid/"), List.of(), gateway.url(),
                 gateway.discoveriesUrl(), gateway.token(), "Use the user's message and FlowScope tools if needed.",
-                model, threadId, message), new ExplorerProvider.Listener() {
+                model, effort, threadId, message), new ExplorerProvider.Listener() {
             @Override public void activity(ExplorerProvider.Activity activity) {}
             @Override public void completed(ExplorerProvider.Result value) { result.set(value); done.countDown(); }
             @Override public void failed(String value) { failure.set(value); done.countDown(); }

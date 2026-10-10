@@ -120,7 +120,8 @@ export function useExplorerRunQuery() {
 }
 export function useExplorerModelsQuery(enabled: boolean) {
   return useQuery({ queryKey: queryKeys.explorerModels, queryFn: ({ signal }) => getExplorerModels(signal),
-    enabled, staleTime: 60_000, retry: false, refetchOnWindowFocus: false })
+    enabled, staleTime: 60_000, refetchInterval: 5 * 60_000, refetchIntervalInBackground: false,
+    retry: false, refetchOnWindowFocus: true })
 }
 
 function useInvalidatingMutation<TData, TVariables>(

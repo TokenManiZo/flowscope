@@ -381,6 +381,7 @@ final class FlowScopeWebServerTest {
         JsonNode catalog = json(get("/api/explorer-models", token, origin()));
         assertEquals("gpt-5.6-sol", catalog.path("configuredModel").asText());
         assertEquals("gpt-6.1-sol", catalog.at("/models/1/id").asText());
+        assertEquals("high", catalog.at("/models/1/efforts/0/effort").asText());
 
         assertEquals(400, post("/api/explorer-accounts", "action=save&id=human-a&loginUrl=x", token).statusCode());
         HttpResponse<String> opened = post("/api/explorer-accounts",
@@ -397,15 +398,19 @@ final class FlowScopeWebServerTest {
         HttpResponse<String> started = post("/api/explorer-run",
                 "action=start&target=" + encode(state.record.service + "/")
                         + "&anonymous=false&accounts=" + accountId + "&model=gpt-6.1-sol"
+                        + "&effort=high"
                         + "&message=" + encode("Find the documented APIs"),
                 token);
         assertEquals(202, started.statusCode());
         assertEquals("RUNNING", JSON.readTree(started.body()).at("/run/status").asText());
         assertEquals(accountId, JSON.readTree(started.body()).at("/run/accountIds/0").asText());
         assertEquals("gpt-6.1-sol", JSON.readTree(started.body()).at("/run/model").asText());
+        assertEquals("high", JSON.readTree(started.body()).at("/run/effort").asText());
         assertEquals("Find the documented APIs", state.explorerStartMessage);
         assertEquals("Find the documented APIs", json(get("/api/explorer-run", token, origin()))
                 .at("/messages/0/text").asText());
+        assertEquals("high", json(get("/api/explorer-run", token, origin()))
+                .at("/chat/effort").asText());
     }
 
     @Test
@@ -2032,6 +2037,10 @@ final class FlowScopeWebServerTest {
         @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
             return List.copyOf(explorerMessages);
         }
+        @Override public io.flowscope.explorer.ExplorerChatState explorerChatState() {
+            return new io.flowscope.explorer.ExplorerChatState("", "", List.of(),
+                    explorerRun.model(), explorerRun.effort());
+        }
         @Override public List<ExplorerAccountVault.View> explorerAccounts() { return List.copyOf(explorerAccounts); }
         @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
             ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", url,
@@ -2055,7 +2064,8 @@ final class FlowScopeWebServerTest {
                     "user", request.userMessage(), "llm-test-run", java.time.Instant.now()));
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
-                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model());
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
+                    request.model(), request.effort());
             return explorerRun;
         }
         @Override public ExplorerCoordinator.Snapshot newExplorerChat() {
@@ -2068,7 +2078,8 @@ final class FlowScopeWebServerTest {
         @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
             return new io.flowscope.explorer.ExplorerProvider.ModelCatalog("gpt-5.6-sol", List.of(
                     new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-5.6-sol", "GPT-5.6 Sol", false),
-                    new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true)));
+                    new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true,
+                            "high", List.of(new io.flowscope.explorer.ExplorerProvider.ReasoningOption("high", "Deeper")))));
         }
         @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
             explorerReadinessChecks++;

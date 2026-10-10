@@ -895,6 +895,7 @@ export interface ExplorerRun {
   message: string
   providerReadiness: string
   model: string
+  effort?: string
   accountIds: readonly string[]
   anonymous: boolean
   attempts: number
@@ -908,7 +909,8 @@ export interface ExplorerRun {
 
 export interface ExplorerModelCatalog {
   configuredModel: string
-  models: readonly { id: string; label: string; recommended: boolean }[]
+  models: readonly { id: string; label: string; recommended: boolean;
+    defaultEffort?: string; efforts?: readonly { effort: string; description: string }[] }[]
 }
 
 /** `minutes` is a ceiling, not a duration: an exploration that finishes stops well before it. */
@@ -923,6 +925,7 @@ export interface ExplorerBrowserBudget {
 
 export interface ExplorerRunEnvelope {
   run: ExplorerRun
+  chat?: { threadId: string; target: string; model: string; effort: string }
   /** Project-persisted LLM conversation; older servers may omit it. */
   messages?: readonly { role: "user" | "assistant"; text: string; runId: string; at: string }[]
   /** Present only while a login window is being driven. */

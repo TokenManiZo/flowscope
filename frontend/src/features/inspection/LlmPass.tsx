@@ -71,6 +71,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<string[] | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [selectedEffort, setSelectedEffort] = useState<string | null>(null)
   const [operatorMessage, setOperatorMessage] = useState("")
   const [chatOpen, setChatOpen] = useState(false)
   const composer = useRef<HTMLTextAreaElement>(null)
@@ -106,11 +107,17 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const models = useExplorerModelsQuery(providerReady && canConfigure)
   const modelLoading = providerReady && canConfigure && models.isPending
   const catalog = models.isError ? undefined : models.data
-  const nextModel = catalog ? (selectedModel ?? (run && run.status !== "IDLE"
-    ? run.model : catalog.configuredModel)) : ""
+  const previousModel = run && run.status !== "IDLE" ? run.model : data?.chat?.model ?? ""
+  const previousEffort = run && run.status !== "IDLE" ? run.effort ?? "" : data?.chat?.effort ?? ""
+  const nextModel = catalog ? (selectedModel ?? (previousModel || catalog.configuredModel)) : ""
   const modelUnavailable = Boolean(nextModel && catalog
     && !catalog.models.some((item) => item.id === nextModel))
-  const readyToSend = providerReady && !modelLoading && !modelUnavailable && Boolean(target)
+  const modelOption = catalog?.models.find((item) => item.id === nextModel)
+  const effortOptions = modelOption?.efforts ?? []
+  const nextEffort = selectedEffort ?? (previousModel === nextModel ? previousEffort
+    : chatMessages.length > 0 ? modelOption?.defaultEffort ?? "" : "")
+  const effortUnavailable = Boolean(nextEffort && !effortOptions.some((item) => item.effort === nextEffort))
+  const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable && Boolean(target)
     && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
 
@@ -149,7 +156,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     {detailsOpen && <div className="border-t px-3 py-3 text-xs">
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="font-medium">{active ? "브라우저 탐색 중" : runStatusLabel(run?.status ?? "IDLE")}</p>
-        <p className="text-muted-foreground" aria-label={active ? "요청 모델" : "지난 실행 요청 모델"}>요청 모델 <span className="font-mono">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</span></p>
+        <p className="text-muted-foreground" aria-label={active ? "요청 모델" : "지난 실행 요청 모델"}>요청 모델 <span className="font-mono">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</span> · 추론 강도 <span className="font-mono">{run?.effort || "Codex 설정"}</span></p>
       </div>
       {browser ? <div role="group" aria-label="브라우저 탐색 진행" className="grid gap-3">
         <dl className="grid grid-cols-3 gap-x-6 gap-y-3 [&_dt]:text-[11px] [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:font-medium [&_dd]:tabular-nums" aria-label="브라우저 실행 수치">
@@ -182,15 +189,23 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
     }
   })
-  const modelControl = <div className="flex shrink-0 items-center gap-2 text-sm">
+  const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
         <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
         {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
           value={nextModel} disabled={!providerReady || !catalog?.models.length}
-          onChange={(event) => setSelectedModel(event.target.value)}>
-          <option value="">Codex 기본 설정{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>
+          onChange={(event) => { setSelectedModel(event.target.value); setSelectedEffort(null) }}>
+          {(chatMessages.length === 0 || !previousModel || !nextModel) && <option value="">{chatMessages.length ? "대화 설정 유지" : "Codex 기본 설정"}{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>}
           {modelUnavailable && <option value={nextModel} disabled>{nextModel} · 현재 사용 불가</option>}
           {(catalog?.models ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}{option.recommended ? " · Codex 추천" : ""}</option>)}
         </select> : <p className="font-mono text-sm" id="explorer-model">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
+        <label className="shrink-0 text-muted-foreground" htmlFor="explorer-effort">추론 강도</label>
+        {canConfigure ? <select id="explorer-effort" className="h-9 w-[155px] rounded-md border border-input bg-background px-3 text-sm"
+          value={nextEffort} disabled={!providerReady || !modelOption || effortOptions.length === 0}
+          onChange={(event) => setSelectedEffort(event.target.value)}>
+          {(chatMessages.length === 0 || !previousEffort || !nextEffort) && <option value="">{chatMessages.length ? "대화 설정 유지" : "Codex 설정 사용"}</option>}
+          {effortUnavailable && <option value={nextEffort} disabled>{nextEffort} · 현재 사용 불가</option>}
+          {effortOptions.map((option) => <option key={option.effort} value={option.effort} title={option.description}>{option.effort}</option>)}
+        </select> : <p className="font-mono text-sm" id="explorer-effort">{run?.effort || "Codex 설정"}</p>}
         {providerReady && canConfigure && <Button type="button" variant="outline" size="icon" className="size-9" disabled={control.isPending || modelLoading} aria-label="모델 목록 다시 확인" title="모델 목록 다시 확인" onClick={() => control.mutate("recheck", { onSuccess: () => void models.refetch() })}><RefreshCw className="size-3.5" /></Button>}
       </div>
   const control_ = <div className="grid gap-2">
@@ -200,6 +215,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     {models.isError && canConfigure && <p className="text-xs text-amber-800 dark:text-amber-300">모델 목록을 확인하지 못했습니다. Codex 기본 설정으로는 실행할 수 있습니다.</p>}
     {modelLoading && <p className="text-xs text-muted-foreground">현재 계정의 모델 목록을 확인 중입니다.</p>}
     {modelUnavailable && canConfigure && <p role="alert" className="text-xs text-destructive">선택 모델이 현재 목록에 없습니다. 다시 고르세요.</p>}
+    {effortUnavailable && canConfigure && <p role="alert" className="text-xs text-destructive">선택한 추론 강도는 현재 모델에서 지원되지 않습니다. 다시 고르세요.</p>}
     <section className="rounded-md border">
       <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">탐색할 계정 <span className="ml-2 font-normal text-muted-foreground">{[...(shownAnonymous ? ["비로그인"] : []), ...shownSelected.map((id) => accounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
       {accountsOpen && <div className="grid gap-2 border-t p-3">
@@ -214,11 +230,11 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     </section>
     {browserCard}
     <div className="flex flex-wrap items-center justify-start gap-2 border-t pt-3">
-      {!chatVisible && <Button size="sm" disabled={!providerReady || active || modelLoading || modelUnavailable || !target} onClick={() => { setAccountsOpen(false); setChatOpen(true) }}><MessageSquare className="size-4" />채팅 시작</Button>}
+      {!chatVisible && <Button size="sm" disabled={!providerReady || active || modelLoading || modelUnavailable || effortUnavailable || !target} onClick={() => { setAccountsOpen(false); setChatOpen(true) }}><MessageSquare className="size-4" />채팅 시작</Button>}
       {chatMessages.length > 0 && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
         if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
         control.mutate("new-chat", { onSuccess: () => {
-          setAnonymous(nextAnonymous); setSelected(nextSelected); setSelectedModel(nextModel)
+          setAnonymous(nextAnonymous); setSelected(nextSelected); setSelectedModel(nextModel); setSelectedEffort(nextEffort)
           setOperatorMessage(""); setChatOpen(true)
         } })
       }}>새 채팅</Button>}
@@ -235,7 +251,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     if (run?.status === "RUNNING") {
       steer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     } else if (!active && readyToSend) {
-      start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous, model: nextModel, message: text },
+      start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
+        model: nextModel, effort: nextEffort, message: text },
         { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }
   }

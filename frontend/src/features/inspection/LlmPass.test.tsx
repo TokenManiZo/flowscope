@@ -17,8 +17,10 @@ const idle = {
   scope: ["https://app.example.test/"],
 }
 const catalogResponse = () => new Response(JSON.stringify({ configuredModel: "gpt-5.6-sol", models: [
-  { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", recommended: false },
-  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", recommended: true },
+  { id: "gpt-5.6-sol", label: "GPT-5.6 Sol", recommended: false, defaultEffort: "low",
+    efforts: [{ effort: "low", description: "Fast" }] },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", recommended: true, defaultEffort: "medium",
+    efforts: [{ effort: "medium", description: "Balanced" }, { effort: "high", description: "Deeper" }] },
 ] }), { headers: { "Content-Type": "application/json" } })
 
 async function sendFirstMessage(user: ReturnType<typeof userEvent.setup>) {
@@ -82,6 +84,36 @@ it("shows saved conversation and sends a follow-up as another turn", async () =>
   expect(posts[0]).toContain("message=")
 })
 
+it("restores the saved model and effort after reopening a conversation", async () => {
+  const user = userEvent.setup()
+  const posts: string[] = []
+  const reopened = { ...idle,
+    chat: { threadId: "saved-thread", target: "https://app.example.test/", model: "gpt-6.1-sol", effort: "high" },
+    messages: [{ role: "user", text: "이전 질문", runId: "old-run", at: "2026-10-10T00:00:00Z" }],
+  }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/explorer-models") return catalogResponse()
+    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+      posts.push(String(init.body))
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "next-run" } }), { status: 202 })
+    }
+    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(reopened))
+    throw new Error(`unexpected API ${String(input)}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+
+  expect(await screen.findByText("이전 질문")).toBeVisible()
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "탐색 모델" })).toHaveValue("gpt-6.1-sol"))
+  expect(screen.getByRole("combobox", { name: "추론 강도" })).toHaveValue("high")
+  await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
+  await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
+  await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "이어서 조사해")
+  await user.click(screen.getByRole("button", { name: "메시지 전송" }))
+  await waitFor(() => expect(posts).toHaveLength(1))
+  expect(posts[0]).toContain("model=gpt-6.1-sol")
+  expect(posts[0]).toContain("effort=high")
+})
+
 it("offers account models and sends the chosen one with the anonymous run", async () => {
   const user = userEvent.setup()
   const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -113,11 +145,13 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
   const model = await screen.findByRole("combobox", { name: /탐색 모델/ })
   await waitFor(() => expect(model).toHaveValue("gpt-5.6-sol"))
   await user.selectOptions(model, "gpt-6.1-sol")
+  await user.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "high")
   await sendFirstMessage(user)
   await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")).toBe(true))
   const startCall = fetchStub.mock.calls.find(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")
   expect(String((startCall?.[1] as RequestInit).body)).toContain("anonymous=true")
   expect(String((startCall?.[1] as RequestInit).body)).toContain("model=gpt-6.1-sol")
+  expect(String((startCall?.[1] as RequestInit).body)).toContain("effort=high")
 })
 
 it("restores the completed run model for the next editable run after returning to this page", async () => {

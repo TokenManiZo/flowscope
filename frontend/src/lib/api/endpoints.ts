@@ -114,7 +114,7 @@ export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-a
 export const refreshZapSession = (id: string) => postForm<{ status?: string }>("/api/zap-accounts", { action: "refresh-session", id }, [202])
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
 export const getExplorerModels = (signal?: AbortSignal) => apiFetch<ExplorerModelCatalog>("/api/explorer-models", formSignal(signal))
-export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean; model: string; message: string }) =>
+export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean; model: string; effort: string; message: string }) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])
 export const controlExplorerRun = (action: "cancel" | "clear" | "new-chat" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })

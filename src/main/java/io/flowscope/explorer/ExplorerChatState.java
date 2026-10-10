@@ -4,7 +4,8 @@ import java.util.List;
 import java.time.Instant;
 
 /** Visible chat history and the local Codex thread handle; never stores gateway or login credentials. */
-public record ExplorerChatState(String threadId, String target, List<Message> messages) {
+public record ExplorerChatState(String threadId, String target, List<Message> messages,
+                                String model, String effort) {
     public record Message(String role, String text, String runId, String at) {
         public Message {
             if (!"user".equals(role) && !"assistant".equals(role)) {
@@ -21,7 +22,13 @@ public record ExplorerChatState(String threadId, String target, List<Message> me
         threadId = threadId == null ? "" : threadId;
         target = target == null ? "" : target;
         messages = List.copyOf(messages == null ? List.of() : messages);
+        model = model == null ? "" : model;
+        effort = effort == null ? "" : effort;
     }
 
-    public static ExplorerChatState empty() { return new ExplorerChatState("", "", List.of()); }
+    public ExplorerChatState(String threadId, String target, List<Message> messages) {
+        this(threadId, target, messages, "", "");
+    }
+
+    public static ExplorerChatState empty() { return new ExplorerChatState("", "", List.of(), "", ""); }
 }

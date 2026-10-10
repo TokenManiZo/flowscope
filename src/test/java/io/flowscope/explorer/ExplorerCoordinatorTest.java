@@ -151,6 +151,25 @@ final class ExplorerCoordinatorTest {
     }
 
     @Test
+    void rejectsUnsupportedEffortAndSendsTheChosenEffortWithTheTurn() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no target request was made"); }, provider,
+                new RunContextRegistry(), value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            assertThrows(IllegalArgumentException.class, () -> coordinator.start(
+                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true,
+                            "gpt-6.1-sol", "ultra", "Inspect the API")));
+            assertEquals(ExplorerCoordinator.Status.IDLE, coordinator.current().status());
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true,
+                    "gpt-6.1-sol", "high", "Inspect the API"));
+            await(() -> provider.request.get() != null);
+            assertEquals("high", provider.request.get().effort());
+            assertEquals("high", coordinator.current().effort());
+        }
+    }
+
+    @Test
     void restoredProjectChatResumesItsOwnThreadWithoutReusingCredentials() throws Exception {
         FakeProvider provider = new FakeProvider();
         try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
@@ -159,7 +178,7 @@ final class ExplorerCoordinatorTest {
                 () -> Pipeline.run(List.of()), ignored -> {})) {
             ExplorerChatState restored = new ExplorerChatState("saved-thread", "https://app.example.test/",
                     List.of(new ExplorerChatState.Message("user", "Earlier question", "old-run",
-                            "2026-10-10T00:00:00Z")));
+                            "2026-10-10T00:00:00Z")), "gpt-6.1-sol", "high");
             coordinator.restoreChatState(restored);
             assertEquals(restored, coordinator.chatState());
             assertTrue(coordinator.accounts().isEmpty(), "project chat must not restore live login credentials");
@@ -557,7 +576,9 @@ final class ExplorerCoordinatorTest {
         @Override public ModelCatalog models() {
             return new ModelCatalog("gpt-5.6-sol", List.of(
                     new ModelOption("gpt-5.6-sol", "GPT-5.6 Sol", false),
-                    new ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true)));
+                    new ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true, "medium", List.of(
+                            new ReasoningOption("medium", "Balanced"),
+                            new ReasoningOption("high", "Deeper")))));
         }
         @Override public void invalidateReadiness() { invalidations++; }
         @Override public Handle start(Request request, Listener listener) {

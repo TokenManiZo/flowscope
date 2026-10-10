@@ -2256,6 +2256,9 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
                 return explorer.chatMessages();
             }
+            @Override public io.flowscope.explorer.ExplorerChatState explorerChatState() {
+                return explorer.chatState();
+            }
             @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
                 return explorer.models();
             }

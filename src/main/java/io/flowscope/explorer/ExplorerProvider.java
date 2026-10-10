@@ -7,18 +7,25 @@ import java.util.List;
 public interface ExplorerProvider extends AutoCloseable {
     record Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
                    String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
-                   String threadId, String userMessage) {
+                   String effort, String threadId, String userMessage) {
         public Request {
             exactScope = List.copyOf(exactScope);
             accountHandles = List.copyOf(accountHandles);
             model = model == null ? "" : model;
+            effort = effort == null ? "" : effort;
             threadId = threadId == null ? "" : threadId;
             userMessage = userMessage == null ? "" : userMessage;
         }
         public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
+                       String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
+                       String threadId, String userMessage) {
+            this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt,
+                    model, "", threadId, userMessage);
+        }
+        public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
                        String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model) {
             this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt,
-                    model, "", "");
+                    model, "", "", "");
         }
         public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
                        String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt) {
@@ -26,7 +33,19 @@ public interface ExplorerProvider extends AutoCloseable {
         }
     }
 
-    record ModelOption(String id, String label, boolean recommended) {}
+    record ReasoningOption(String effort, String description) {
+        public ReasoningOption { description = description == null ? "" : description; }
+    }
+    record ModelOption(String id, String label, boolean recommended,
+                       String defaultEffort, List<ReasoningOption> efforts) {
+        public ModelOption {
+            defaultEffort = defaultEffort == null ? "" : defaultEffort;
+            efforts = List.copyOf(efforts == null ? List.of() : efforts);
+        }
+        public ModelOption(String id, String label, boolean recommended) {
+            this(id, label, recommended, "", List.of());
+        }
+    }
     record ModelCatalog(String configuredModel, List<ModelOption> models) {
         public ModelCatalog { models = List.copyOf(models); }
     }
