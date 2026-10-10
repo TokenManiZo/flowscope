@@ -22,6 +22,7 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ProjectStore;
+import io.flowscope.explorer.ExplorerChatState;
 import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.SqliteProjectStore;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class SqliteProjectStoreTest {
     @TempDir Path temp;
+
+    @Test
+    void chatThreadAndVisibleMessagesSurviveSqliteReopen() throws Exception {
+        ExplorerChatState chat = new ExplorerChatState("thread-1", "https://app.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Find APIs", "llm-run-1", "2026-10-10T00:00:00Z")));
+        ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("chat project",
+                List.of("https://app.example.test/"), Instant.parse("2026-10-10T00:00:00Z"), chat);
+        Path file = temp.resolve("chat.flowscope.db");
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), java.util.Map.of(),
+                List.of(), List.of(), context);
+
+        assertEquals(chat, store.load(file).context().chat());
+    }
 
     @Test void passiveSubdomainTrafficSurvivesDatabaseReopenWithoutBecomingCoverage() throws Exception {
         var record = new RequestRecord(Source.HUMAN, "https://api.example.test:443", "GET", "/api/orders", 200, "anon");

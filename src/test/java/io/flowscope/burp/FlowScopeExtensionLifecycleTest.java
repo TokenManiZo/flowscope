@@ -7,6 +7,10 @@ import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.SqliteProjectStore;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerChatState;
+import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.explorer.ExplorerProvider;
 import burp.api.montoya.MontoyaApi;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -328,6 +332,36 @@ class FlowScopeExtensionLifecycleTest {
         } finally {
             worker.shutdownNow();
         }
+    }
+
+    @Test
+    void openingAProjectRestoresItsChatWithoutRestoringLoginCredentials() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        field("api").set(extension, loggingApi());
+        ScheduledExecutorService worker = (ScheduledExecutorService) field("worker").get(extension);
+        ExplorerChatState chat = new ExplorerChatState("thread-local", "https://api.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Find APIs", "old-run", "2026-10-10T00:00:00Z")));
+        ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("Chat project",
+                List.of("https://api.example.test"), Instant.EPOCH, chat);
+        Path database = temp.resolve("chat-project.flowscope.db");
+        new SqliteProjectStore(new ProjectStore()).save(database, List.of(), new AnalysisConfig(),
+                List.of(), List.of(), Map.of(), List.of(), List.of(), context);
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        ExplorerProvider provider = new ExplorerProvider() {
+            @Override public String readiness() { return "READY"; }
+            @Override public Handle start(Request request, Listener listener) { throw new AssertionError("no model turn"); }
+            @Override public void close() {}
+        };
+        try (ExplorerCoordinator explorer = new ExplorerCoordinator(vault,
+                request -> { throw new AssertionError("no HTTP"); }, provider,
+                new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            field("explorer").set(extension, explorer);
+            invoke(extension, "loadProjectFile", new Class<?>[]{java.io.File.class}, database.toFile());
+            worker.submit(() -> {}).get(5, TimeUnit.SECONDS);
+            assertEquals(chat, explorer.chatState());
+            assertTrue(explorer.accounts().isEmpty());
+        } finally { worker.shutdownNow(); }
     }
 
     @Test

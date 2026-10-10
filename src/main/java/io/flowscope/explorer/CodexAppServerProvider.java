@@ -266,17 +266,27 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     long initializeId = send("initialize", initializeParams());
                     waitForResponse(reader, initializeId);
                     notify("initialized", JSON.createObjectNode());
-                    long threadIdRequest = send("thread/start", threadParams());
+                    long threadIdRequest = send(request.threadId().isBlank() ? "thread/start" : "thread/resume",
+                            threadParams());
                     JsonNode threadResponse = waitForResponse(reader, threadIdRequest);
                     threadId = threadResponse.path("result").path("thread").path("id").asText("");
                     if (threadId.isBlank()) throw new IOException("Codex thread ID를 받지 못했습니다.");
+                    if (!request.threadId().isBlank() && !request.threadId().equals(threadId)) {
+                        throw new IOException("재개한 Codex thread ID가 요청한 대화와 다릅니다.");
+                    }
+                    listener.threadReady(threadId);
                     long turnRequest = send("turn/start", turnParams());
                     JsonNode turnResponse = waitForResponse(reader, turnRequest);
                     turnId = turnResponse.path("result").path("turn").path("id").asText("");
                     readTurn(reader);
                     if (cancelled.get()) return;
-                    Result result = parseResult(finalMessage, threadId);
-                    deleteThread(reader);
+                    Result result = request.userMessage().isBlank()
+                            ? parseResult(finalMessage, threadId)
+                            : new Result(finalMessage, List.of(), threadId);
+                    if (request.userMessage().isBlank()) deleteThread(reader);
+                    synchronized (CodexAppServerProvider.this) {
+                        if (active == this) active = null;
+                    }
                     listener.completed(result);
                 }
             } catch (Exception error) {
@@ -373,6 +383,9 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         }
 
         private void handleNotification(JsonNode message) {
+            if (message.path("method").asText("").equals("item/agentMessage/delta")) {
+                listener.assistantDelta(message.path("params").path("delta").asText(""));
+            }
             if (message.path("method").asText("").equals("item/completed")
                     && message.path("params").path("item").path("type").asText("").equals("agentMessage")) {
                 finalMessage = message.path("params").path("item").path("text").asText(finalMessage);
@@ -499,7 +512,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             try {
                 long id = send("thread/delete", JSON.createObjectNode().put("threadId", threadId));
                 waitForResponse(reader, id);
-            } catch (Exception ignored) { /* process-local history cleanup failure is reported as a limitation elsewhere */ }
+            } catch (Exception ignored) { /* one-shot cleanup must not erase the completed result */ }
         }
 
         private long send(String method, JsonNode params) {
@@ -540,8 +553,13 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode threadParams() {
             ObjectNode params = JSON.createObjectNode().put("cwd", workspace.toString())
                     .put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
-                    .put("serviceName", "flowscope_explorer").put("ephemeral", true)
                     .put("developerInstructions", request.prompt());
+            if (request.threadId().isBlank()) {
+                params.put("serviceName", "flowscope_explorer")
+                        .put("ephemeral", request.userMessage().isBlank());
+            } else {
+                params.put("threadId", request.threadId());
+            }
             if (!request.model().isBlank()) params.put("model", request.model());
             params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
@@ -553,11 +571,13 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             ObjectNode params = JSON.createObjectNode();
             params.put("threadId", threadId).put("cwd", workspace.toString()).put("approvalPolicy", "on-request");
             params.putArray("input").addObject().put("type", "text")
-                    .put("text", "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요.");
+                    .put("text", request.userMessage().isBlank()
+                            ? "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요."
+                            : request.userMessage());
             ObjectNode sandbox = params.putObject("sandboxPolicy").put("type", "workspaceWrite")
                     .put("networkAccess", false);
             sandbox.putArray("writableRoots").add(workspace.toString());
-            params.set("outputSchema", outputSchema());
+            if (request.userMessage().isBlank()) params.set("outputSchema", outputSchema());
             return params;
         }
 
@@ -569,8 +589,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             ObjectNode properties = schema.putObject("properties");
             properties.putObject("account").put("type", "string")
                     .put("description", "Opaque account handle, or an empty string for anonymous.");
-            properties.putObject("method").put("type", "string").putArray("enum")
-                    .add("GET").add("HEAD").add("OPTIONS").add("POST");
+            properties.putObject("method").put("type", "string")
+                    .put("description", "HTTP method chosen for this exact-scope request, such as GET, POST, PUT, PATCH or DELETE.");
             properties.putObject("url").put("type", "string");
             properties.putObject("headers").put("type", "object").put("additionalProperties", true);
             properties.putObject("body").put("type", "string");
@@ -683,7 +703,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             parameterProperties.putObject("location").put("type", "string").putArray("enum")
                     .add("PATH").add("QUERY").add("JSON_BODY").add("FORM_BODY")
                     .add("MULTIPART_BODY").add("HEADER").add("GRAPHQL_VARIABLE");
-            parameterProperties.putObject("field_path").put("type", "string");
+            parameterProperties.putObject("field_path").put("type", "string")
+                    .put("description", "PATH: URL placeholder name such as orderId; JSON/GraphQL: pointer such as /criteria/status; QUERY/HEADER: field name. Never send parameter values.");
             parameterProperties.putObject("display_name").put("type", "string");
             parameterProperties.putObject("requirement").put("type", "string").putArray("enum")
                     .add("REQUIRED").add("OPTIONAL").add("UNKNOWN");

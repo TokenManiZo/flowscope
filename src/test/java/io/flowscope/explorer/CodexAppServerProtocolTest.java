@@ -67,6 +67,7 @@ final class CodexAppServerProtocolTest {
                                     + "{\"id\":\"gpt-5.6-sol\",\"model\":\"gpt-5.6-sol\","
                                     + "\"displayName\":\"GPT-5.6 Sol\",\"isDefault\":false}],\"nextCursor\":null}");
                             case "thread/start" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
+                            case "thread/resume" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
                             case "thread/delete" -> reply(message, "{}");
                             case "turn/start" -> {
                                 // The provider waits for this response before it starts reading turn events.
@@ -169,11 +170,77 @@ final class CodexAppServerProtocolTest {
             JsonNode thread = active.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
             assertEquals("gpt-6.1-sol", thread.path("params").path("model").asText());
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            assertTrue(thread.path("params").path("ephemeral").asBoolean(false),
+                    "the existing one-shot UI must not leave a persistent chat behind");
+            assertNotNull(active.awaitWritten(value -> "thread/delete".equals(value.path("method").asText())));
         }
     }
 
     private record Capture(CountDownLatch done, AtomicReference<ExplorerProvider.Result> result,
                            AtomicReference<String> failure) {}
+
+    @Test
+    void chatMessagesUseNewTurnsOnTheSamePersistedThread() throws Exception {
+        AtomicReference<FakeCodex> process = new AtomicReference<>();
+        List<String> deltas = new CopyOnWriteArrayList<>();
+        Capture first = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        Capture second = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"method\":\"item/agentMessage/delta\",\"params\":{\"delta\":\"first \"}}");
+                            self.emit("{\"method\":\"item/agentMessage/delta\",\"params\":{\"delta\":\"answer\"}}");
+                            self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{"
+                                    + "\"type\":\"agentMessage\",\"text\":\"first answer\"}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    process.set(fake);
+                    return fake;
+                }, ignored -> { })) {
+            ExplorerProvider.Request base = request();
+            provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                    base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
+                    base.prompt(), "gpt-6.1-sol", "", "Find the API"), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity activity) { }
+                @Override public void assistantDelta(String delta) { deltas.add(delta); }
+                @Override public void completed(ExplorerProvider.Result value) {
+                    first.result().set(value);
+                    first.done().countDown();
+                }
+                @Override public void failed(String message) {
+                    first.failure().set(message);
+                    first.done().countDown();
+                }
+            });
+            assertTrue(first.done().await(10, TimeUnit.SECONDS));
+            assertNull(first.failure().get());
+            assertEquals("first answer", first.result().get().summary());
+            assertEquals(List.of("first ", "answer"), deltas);
+            assertEquals("t1", first.result().get().threadId());
+            FakeCodex firstProcess = process.get();
+            JsonNode started = firstProcess.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
+            assertFalse(started.path("params").path("ephemeral").asBoolean(true));
+            JsonNode firstTurn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Find the API", firstTurn.path("params").path("input").get(0).path("text").asText());
+            assertFalse(firstTurn.path("params").has("outputSchema"));
+
+            provider.start(new ExplorerProvider.Request("run-2", base.target(), base.exactScope(),
+                    base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
+                    base.prompt(), "gpt-6.1-sol", "t1", "Continue with account B"), listener(second));
+            assertTrue(second.done().await(10, TimeUnit.SECONDS));
+            assertNull(second.failure().get());
+            FakeCodex secondProcess = process.get();
+            assertNotSame(firstProcess, secondProcess);
+            JsonNode resumed = secondProcess.awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
+            assertEquals("t1", resumed.path("params").path("threadId").asText());
+            assertTrue(resumed.path("params").path("dynamicTools").isArray(),
+                    "the resumed conversation must bind tools to the new gateway");
+            JsonNode nextTurn = secondProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Continue with account B", nextTurn.path("params").path("input").get(0).path("text").asText());
+        }
+    }
 
     private static ExplorerProvider.Listener listener(Capture capture) {
         return new ExplorerProvider.Listener() {

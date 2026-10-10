@@ -7,7 +7,7 @@
 - 계정의 역할(일반 사용자, 관리자 등)은 사람이 정한 값만 씁니다. 주소에 admin이 들어 있다고 관리자 기능으로 짐작하지 않습니다.
 - 데이터의 주인은 응답에 적힌 소유자 정보로 판단하고, 확실하지 않으면 판단하지 않습니다. 주인은 화면에서 직접 정할 수 있습니다.
 - 모든 결과는 후보입니다. 자동으로 취약점을 확정하지 않고 사람이 확인해서 판정합니다.
-- 저장하기 전에 쿠키, 토큰, 비밀번호를 가립니다. 다만 가리는 건 잘 알려진 인증 값뿐이라 응답 안의 개인정보나 업무 데이터는 남을 수 있습니다.
+- 요청·응답 원문은 쿠키, 토큰, 비밀번호를 포함해 가리지 않고 저장하므로 프로젝트 파일을 비밀 자료로 다뤄야 합니다.
 - 웹 화면은 `127.0.0.1`에서만 열리고, Burp에서 FlowScope를 내리면 같이 꺼집니다.
 - CAPTCHA, 2단계 인증, 기기 인증이 있는 로그인은 자동으로 따라가지 못해서 다시 로그인해야 할 수 있습니다.
 - 실행해야만 나타나는 API나 아직 받지 않은 JavaScript 파일 속 API는 찾지 못합니다. 검토 대기로 분류된 요청을 확인하지 않으면 실제 API가 비교에서 빠질 수 있습니다.
@@ -55,6 +55,7 @@ Web 서버는 `127.0.0.1`에만 bind하며 Host·Origin, 무작위 capability, �
 - 데이터 흐름은 제한된 exact-value matching이며 완전한 semantic taint analysis가 아닙니다.
 - Burp Repeater로 보내기는 메모리 원문 또는 저장된 원문을 미전송 초안으로 엽니다. Web 요청 실험실의 명시적 전송은 HUMAN `VALIDATION` 요청 기록으로 보존하며 탐색 완료나 자동 LLM verdict를 만들지 않습니다.
 - 기존 agent workspace·MCP·Judge 실행기는 제거된 상태입니다. 새 Explorer는 Codex app-server dynamic tool과 Java exact-scope gateway를 사용하며, 브라우저는 사용자가 직접 로그인한 FlowScope Chromium 창 하나만 조작합니다. 현재 MCP 연결은 지원하지 않습니다.
+- 로컬 `-llm.jar`의 대화 API는 프로젝트에 Codex thread ID와 user/assistant 표시 메시지를 저장합니다. Codex의 로컬 thread history에도 모델이 읽은 대상 내용이 남을 수 있습니다. 재시작 때 로그인 자격은 복원하지 않으며, 큰 임시 artifact는 같은 프로세스의 turn 사이에만 유지됩니다. 기존 UI는 채팅을 아직 사용하지 않습니다. [백엔드 계약](llm-chat-backend.md)을 확인하세요.
 - source별 active run context와 정확한 run ID의 완료·취소 경계를 유지합니다. LLM run은 같은 run의 신뢰 가능한 응답 기록 번호가 없으면 완료되지 않습니다.
 - Explorer는 정적·응답 기반 frontier를 넓게 따라가지만 runtime에서만 로드되는 lazy chunk, CAPTCHA/MFA/WebAuthn, 서버 전용 endpoint와 임의 JavaScript wrapper를 완전 발견하지 못할 수 있습니다. POST의 업무 의미도 범용 블랙박스에서 완전히 판별할 수 없으므로 조회·검색 요청으로 제한하고 승인된 테스트 환경에서만 사용합니다.
 - 그래프의 API 그룹은 경로의 첫 안정 세그먼트(`/api`, `/rest`, `/v1` 접두 제외)로 묶는 표시 단위이지 의미 기반 clustering이나 전체 API 추정이 아닙니다. API·접근 대상 ID의 18개 증분은 정렬 뒤 표시 제한이며 숨긴 항목의 요청 기록은 선택·상세에 그대로 남습니다. 20,000건 수집 상한은 별도로 Burp를 보호합니다.

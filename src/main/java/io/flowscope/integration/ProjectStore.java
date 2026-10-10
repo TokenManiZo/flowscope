@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.*;
+import io.flowscope.explorer.ExplorerChatState;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -23,11 +24,20 @@ import java.util.Set;
 /** Versioned FlowScope session file. Model-provider credentials are never part of this schema. */
 public final class ProjectStore {
     /** A diagnostic workspace's user-visible identity. Secrets are never part of this metadata. */
-    public record ProjectContext(String name, List<String> scope, Instant createdAt) {
+    public record ProjectContext(String name, List<String> scope, Instant createdAt, ExplorerChatState chat) {
         public ProjectContext {
             name = name == null ? "" : name.trim();
             scope = List.copyOf(scope == null ? List.of() : scope);
             createdAt = createdAt == null ? Instant.EPOCH : createdAt;
+            chat = chat == null ? ExplorerChatState.empty() : chat;
+        }
+
+        public ProjectContext(String name, List<String> scope, Instant createdAt) {
+            this(name, scope, createdAt, ExplorerChatState.empty());
+        }
+
+        public ProjectContext withChat(ExplorerChatState value) {
+            return new ProjectContext(name, scope, createdAt, value);
         }
 
         public static ProjectContext empty() {
@@ -68,8 +78,8 @@ public final class ProjectStore {
         }
     }
 
-    static final int SCHEMA_VERSION = 9;
-    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6, 7, 8);
+    static final int SCHEMA_VERSION = 10;
+    private static final Set<Integer> LEGACY_SCHEMA_VERSIONS = Set.of(1, 2, 3, 4, 5, 6, 7, 8, 9);
     private static final int MAX_RECORDS = 20_000;
     private static final long MAX_FILE_BYTES = 100L * 1024 * 1024;
     private static final int MAX_TEXT = 8192;
@@ -263,6 +273,7 @@ public final class ProjectStore {
         savedProject.put("name", safeContext.name());
         savedProject.set("scope", json.valueToTree(safeContext.scope()));
         savedProject.put("created_at", safeContext.createdAt().toString());
+        savedProject.set("llm_chat", json.valueToTree(safeContext.chat()));
         List<RunContextRegistry.CompletedRun> exactRuns =
                 (completedRuns == null ? Map.<Source, RunContextRegistry.CompletedRun>of() : completedRuns)
                         .entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
@@ -400,8 +411,11 @@ public final class ProjectStore {
                 projectScope.add(entry);
             }
             String createdAt = required(projectNode, "created_at");
+            ExplorerChatState chat = schemaVersion >= 10 && projectNode.hasNonNull("llm_chat")
+                    ? json.convertValue(projectNode.get("llm_chat"), ExplorerChatState.class)
+                    : ExplorerChatState.empty();
             context = new ProjectContext(projectNode.path("name").asText(""), projectScope,
-                    Instant.parse(createdAt));
+                    Instant.parse(createdAt), chat);
         }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
                 Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),

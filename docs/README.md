@@ -18,7 +18,8 @@
 | [화면별 설명](reference/screens.md) | 사이드바의 각 화면과 버튼 |
 | [기능 상세](reference/features.md) | 무엇을 모으고 어떻게 분석하는지, 어떤 기준으로 후보를 고르는지 |
 | [포트·설정·출처 모델](reference/settings.md) | 리스너 포트, 웹 포트, ZAP API key, 출처 구분 |
-| [판정 규칙·데이터 처리·한계](reference/trust-and-limits.md) | 후보 판정 기준, 데이터를 저장하고 비밀값을 가리는 방법, 알려진 한계 |
+| [판정 규칙·데이터 처리·한계](reference/trust-and-limits.md) | 후보 판정 기준, 인증값을 포함한 원문 저장과 알려진 한계 |
+| [LLM 대화 계약](reference/llm-chat-backend.md) | 채팅 화면·로컬 API·프로젝트 저장과 현재 검증 범위 |
 
 ## 변경 기록
 

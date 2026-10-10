@@ -74,6 +74,8 @@ final class ExplorerCoordinatorTest {
             assertEquals("gpt-6.1-sol", started.model());
             await(() -> provider.request.get() != null);
             assertEquals("gpt-6.1-sol", provider.request.get().model());
+            assertTrue(provider.request.get().prompt().contains("규칙:"),
+                    "the unchanged UI keeps its original one-shot instructions");
         }
     }
 
@@ -106,6 +108,118 @@ final class ExplorerCoordinatorTest {
             assertFalse(coordinator.current().message().contains("탐색 완료"),
                     "provider free text must not become the authoritative count summary");
             assertNull(contexts.current(Source.LLM));
+        }
+    }
+
+    @Test
+    void aReplyWithoutTrafficKeepsTheConversationAvailableForTheNextMessage() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no target request was made"); }, provider, contexts,
+                value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.start(new ExplorerCoordinator.StartRequest(
+                    "https://app.example.test/", List.of(), true, "gpt-6.1-sol", "What can you inspect?"));
+            await(() -> provider.listener.get() != null);
+            assertTrue(provider.request.get().prompt().contains("사용자의 현재 요청"));
+            provider.listener.get().assistantDelta("I can inspect");
+            assertEquals("I can inspect", coordinator.chatMessages().getLast().text());
+            provider.listener.get().completed(new ExplorerProvider.Result("I can inspect the selected site.",
+                    List.of(), "persistent-thread"));
+            await(() -> !activeStatus(coordinator));
+            assertEquals(ExplorerCoordinator.Status.COMPLETED, coordinator.current().status());
+            assertNull(contexts.current(Source.LLM));
+            assertEquals(List.of("What can you inspect?", "I can inspect the selected site."),
+                    coordinator.chatMessages().stream().map(ExplorerCoordinator.ChatMessage::text).toList());
+
+            coordinator.clear();
+            assertEquals(2, coordinator.chatMessages().size(),
+                    "clearing the old run display must not delete a persisted conversation");
+
+            coordinator.start(new ExplorerCoordinator.StartRequest(
+                    "https://app.example.test/", List.of(), true, "gpt-6.1-sol", "Now inspect the API"));
+            await(() -> provider.request.get() != null
+                    && "Now inspect the API".equals(provider.request.get().userMessage()));
+            assertEquals("persistent-thread", provider.request.get().threadId());
+            assertEquals("Now inspect the API", provider.request.get().userMessage());
+            assertEquals(3, coordinator.chatMessages().size());
+            coordinator.steer("Also inspect the profile page");
+            assertEquals("Also inspect the profile page", coordinator.chatMessages().getLast().text(),
+                    "a message sent during a turn must remain visible in the chat transcript");
+        }
+    }
+
+    @Test
+    void restoredProjectChatResumesItsOwnThreadWithoutReusingCredentials() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no target request was made"); }, provider,
+                new RunContextRegistry(), value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            ExplorerChatState restored = new ExplorerChatState("saved-thread", "https://app.example.test/",
+                    List.of(new ExplorerChatState.Message("user", "Earlier question", "old-run",
+                            "2026-10-10T00:00:00Z")));
+            coordinator.restoreChatState(restored);
+            assertEquals(restored, coordinator.chatState());
+            assertTrue(coordinator.accounts().isEmpty(), "project chat must not restore live login credentials");
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(),
+                    true, "gpt-6.1-sol", "Follow up"));
+            await(() -> provider.request.get() != null);
+            assertEquals("saved-thread", provider.request.get().threadId());
+            assertEquals(2, coordinator.chatMessages().size());
+        }
+    }
+
+    @Test
+    void untrustedTargetResponseDoesNotEraseTheChatOrClaimLaneCompletion() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        AtomicReference<Pipeline.Result> published = new AtomicReference<>(Pipeline.run(List.of()));
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("the fake supplies the record"); }, provider, contexts,
+                value -> value.startsWith("https://app.example.test/"), published::get, ignored -> {})) {
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(),
+                    true, "gpt-6.1-sol", "Inspect the API"));
+            await(() -> provider.request.get() != null);
+            String runId = provider.request.get().runId();
+            RequestRecord untrusted = new RequestRecord(Source.LLM, "https://app.example.test:443",
+                    "GET", "/api/orders", 200, "anon");
+            untrusted.hasResponse = true;
+            untrusted.phase = RunPhase.EXPLORATION;
+            untrusted.runId = runId;
+            untrusted.executionTrust = ExecutionTrust.UNVERIFIED_RUNTIME;
+            published.set(Pipeline.run(List.of(untrusted)));
+            provider.listener.get().completed(new ExplorerProvider.Result("I received a response, but its Evidence is incomplete.",
+                    List.of(), "thread-after-error"));
+            await(() -> !activeStatus(coordinator));
+            assertEquals(ExplorerCoordinator.Status.COMPLETED_WITH_LIMITATIONS, coordinator.current().status());
+            assertTrue(coordinator.current().unresolved().stream().anyMatch(item -> item.kind().equals("EVIDENCE_INCOMPLETE")));
+            assertEquals("I received a response, but its Evidence is incomplete.", coordinator.chatMessages().getLast().text());
+            assertEquals("thread-after-error", coordinator.chatState().threadId());
+            assertNull(contexts.completedRun(Source.LLM));
+        }
+    }
+
+    @Test
+    void aFailedChatTurnRetainsTheStartedThreadForAUserFollowUp() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no request"); }, provider,
+                new RunContextRegistry(), value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(),
+                    true, "gpt-6.1-sol", "Inspect this target"));
+            await(() -> provider.listener.get() != null);
+            provider.listener.get().threadReady("thread-survives-failure");
+            provider.listener.get().failed("temporary model failure");
+            await(() -> !activeStatus(coordinator));
+            assertEquals("thread-survives-failure", coordinator.chatState().threadId());
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(),
+                    true, "gpt-6.1-sol", "Continue after the failure"));
+            await(() -> provider.request.get() != null && provider.request.get().runId()
+                    .equals(coordinator.current().runId()));
+            assertEquals("thread-survives-failure", provider.request.get().threadId());
         }
     }
 
@@ -268,7 +382,7 @@ final class ExplorerCoordinatorTest {
         coordinator.openBrowserLogin("usera", "USER A", "USER", "https://app.example.test/");
         coordinator.completeBrowserLogin("usera");
         coordinator.start(new ExplorerCoordinator.StartRequest(
-                "https://app.example.test/", List.of("usera"), false));
+                "https://app.example.test/", List.of("usera"), false, "", "Explore the selected site"));
         await(() -> coordinator.current().status() == ExplorerCoordinator.Status.RUNNING);
         return coordinator;
     }
@@ -346,19 +460,17 @@ final class ExplorerCoordinatorTest {
         }
     }
 
-    /** One page load fires dozens of requests; without a ceiling a single run can eat the whole project. */
+    /** Captured browser traffic must not silently disappear after an arbitrary per-run count. */
     @Test
-    void browserExchangesStopAtTheRunCeiling() throws Exception {
+    void browserExchangesContinueBeyondTheFormerRunCeiling() throws Exception {
         FakeWindow window = new FakeWindow();
         java.util.List<ExplorerCoordinator.BrowserExchange> recorded =
                 java.util.Collections.synchronizedList(new java.util.ArrayList<>());
-        System.setProperty("flowscope.explorer.browserExchanges", "3");
         try (ExplorerCoordinator coordinator = running(window, new FakeProvider(), recorded)) {
             assertEquals(ExplorerCoordinator.Status.RUNNING, coordinator.current().status());
-            for (int count = 0; count < 10; count++) window.emit("https://app.example.test/api/" + count);
-            assertEquals(3, recorded.size(), recorded.toString());
-        } finally {
-            System.clearProperty("flowscope.explorer.browserExchanges");
+            for (int count = 0; count < 3_001; count++) window.emit("https://app.example.test/api/" + count);
+            assertEquals(3_001, recorded.size());
+            assertEquals(3_001, coordinator.browserBudget().endpoints());
         }
     }
 
@@ -399,26 +511,22 @@ final class ExplorerCoordinatorTest {
         }
     }
 
-    /** The action ceiling stops the run; the clock is a ceiling too, never a duration the run has to serve out. */
+    /** The old 300-action/15-minute defaults must not stop an operator-directed chat. */
     @Test
-    void budgetReportsACeilingAndRefusesActionsBeyondIt() throws Exception {
+    void browserActionsContinueBeyondTheFormerRunCeiling() throws Exception {
         FakeWindow window = new FakeWindow();
-        System.setProperty("flowscope.explorer.browserActions", "2");
         try (ExplorerCoordinator coordinator = running(window, new FakeProvider(), null)) {
             ExplorerCoordinator.BrowserBudget budget = coordinator.browserBudget();
-            assertEquals(2, budget.maxActions());
-            assertEquals(15, budget.minutes());
+            assertEquals(0, budget.maxActions());
+            assertEquals(0, budget.minutes());
             assertEquals(0, budget.snapshots());
             assertTrue(budget.elapsedMillis() >= 0 && budget.elapsedMillis() < 60_000, budget.toString());
 
-            coordinator.browserAction("usera", "navigate", "https://app.example.test/a", "", "");
-            coordinator.browserAction("usera", "navigate", "https://app.example.test/b", "", "");
-            assertThrows(IllegalStateException.class,
-                    () -> coordinator.browserAction("usera", "navigate", "https://app.example.test/c", "", ""));
-            // snapshot is free: the model must always be able to see where it already is.
+            for (int count = 0; count < 301; count++) {
+                coordinator.browserAction("usera", "navigate", "https://app.example.test/" + count, "", "");
+            }
+            assertEquals(301, coordinator.browserBudget().actions());
             assertNotNull(coordinator.browserAction("usera", "snapshot", "", "", ""));
-        } finally {
-            System.clearProperty("flowscope.explorer.browserActions");
         }
     }
 

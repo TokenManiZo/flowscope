@@ -923,6 +923,8 @@ export interface ExplorerBrowserBudget {
 
 export interface ExplorerRunEnvelope {
   run: ExplorerRun
+  /** Project-persisted LLM conversation; older servers may omit it. */
+  messages?: readonly { role: "user" | "assistant"; text: string; runId: string; at: string }[]
   /** Present only while a login window is being driven. */
   browser: ExplorerBrowserBudget | null
   accounts: readonly ExplorerAccount[]

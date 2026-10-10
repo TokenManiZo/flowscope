@@ -396,12 +396,16 @@ final class FlowScopeWebServerTest {
 
         HttpResponse<String> started = post("/api/explorer-run",
                 "action=start&target=" + encode(state.record.service + "/")
-                        + "&anonymous=false&accounts=" + accountId + "&model=gpt-6.1-sol",
+                        + "&anonymous=false&accounts=" + accountId + "&model=gpt-6.1-sol"
+                        + "&message=" + encode("Find the documented APIs"),
                 token);
         assertEquals(202, started.statusCode());
         assertEquals("RUNNING", JSON.readTree(started.body()).at("/run/status").asText());
         assertEquals(accountId, JSON.readTree(started.body()).at("/run/accountIds/0").asText());
         assertEquals("gpt-6.1-sol", JSON.readTree(started.body()).at("/run/model").asText());
+        assertEquals("Find the documented APIs", state.explorerStartMessage);
+        assertEquals("Find the documented APIs", json(get("/api/explorer-run", token, origin()))
+                .at("/messages/0/text").asText());
     }
 
     @Test
@@ -413,6 +417,32 @@ final class FlowScopeWebServerTest {
         assertEquals(200, response.statusCode());
         assertEquals("READY", JSON.readTree(response.body()).at("/run/providerReadiness").asText());
         assertEquals(1, state.explorerReadinessChecks);
+    }
+
+    @Test
+    void explicitNewChatClearsConversationMetadataWithoutDeletingEvidence() throws Exception {
+        start();
+        state.explorerMessages.add(new ExplorerCoordinator.ChatMessage("user", "Previous target",
+                "old-run", java.time.Instant.now()));
+        assertEquals(1, json(get("/api/explorer-run", token, origin())).path("messages").size());
+        HttpResponse<String> reset = post("/api/explorer-run", "action=new-chat", token);
+        assertEquals(200, reset.statusCode());
+        assertEquals(0, json(get("/api/explorer-run", token, origin())).path("messages").size());
+        assertEquals(1, state.snapshot().records.size(), "new chat must not clear captured Evidence");
+    }
+
+    @Test
+    void chatPromptSuggestionsAreGenericAndOptional() throws Exception {
+        start();
+        JsonNode prompts = json(get("/api/explorer-prompts", token, origin()));
+        assertTrue(prompts.path("prompts").isArray());
+        assertTrue(prompts.path("prompts").size() >= 2);
+        for (JsonNode item : prompts.path("prompts")) {
+            assertFalse(item.path("id").asText().isBlank());
+            assertFalse(item.path("label").asText().isBlank());
+            assertFalse(item.path("text").asText().isBlank());
+            assertFalse(item.toString().toLowerCase(java.util.Locale.ROOT).contains("crapi"));
+        }
     }
 
     @Test
@@ -1833,6 +1863,8 @@ final class FlowScopeWebServerTest {
         private volatile String refreshedZapSessionAccountId = "";
         private volatile String linkedCandidateId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
+        private final List<ExplorerCoordinator.ChatMessage> explorerMessages = new ArrayList<>();
+        private volatile String explorerStartMessage = "";
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
@@ -1997,6 +2029,9 @@ final class FlowScopeWebServerTest {
             return JSON.createObjectNode().put("status", "CANCELLED");
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
+        @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
+            return List.copyOf(explorerMessages);
+        }
         @Override public List<ExplorerAccountVault.View> explorerAccounts() { return List.copyOf(explorerAccounts); }
         @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
             ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", url,
@@ -2015,9 +2050,19 @@ final class FlowScopeWebServerTest {
             return value;
         }
         @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
+            explorerStartMessage = request.userMessage();
+            if (!request.userMessage().isBlank()) explorerMessages.add(new ExplorerCoordinator.ChatMessage(
+                    "user", request.userMessage(), "llm-test-run", java.time.Instant.now()));
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
                     request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model());
+            return explorerRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot newExplorerChat() {
+            explorerMessages.clear();
+            explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "",
+                    null, null, 0, "Explorer 실행 대기", "READY", List.of(), false,
+                    0, 0, 0, 0, 0, List.of(), List.of());
             return explorerRun;
         }
         @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {

@@ -427,7 +427,7 @@ public final class FlowScopeExtension implements BurpExtension {
         explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
                 new CodexAppServerProvider(api.logging()::logToOutput), runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
-                api.logging()::logToOutput);
+                api.logging()::logToOutput, this::explorerChatChanged);
         explorer.browserRecorder(this::recordBrowserExchange);
         PORT_SOURCE.entrySet().stream().filter(entry -> entry.getValue().source() == Source.LLM)
                 .map(Map.Entry::getKey).filter(port -> port > 0 && port <= 65535).sorted().findFirst()
@@ -1538,7 +1538,8 @@ public final class FlowScopeExtension implements BurpExtension {
         synchronized (records) {
             if (!records.isEmpty()) return true;
         }
-        return !routeCandidates.isEmpty()
+        return explorer != null && !explorer.chatMessages().isEmpty()
+                || !routeCandidates.isEmpty()
                 || !analysisConfig.accounts().isEmpty()
                 || !analysisConfig.identityRoles().isEmpty()
                 || !analysisConfig.endpointRequirements().isEmpty()
@@ -1741,16 +1742,19 @@ public final class FlowScopeExtension implements BurpExtension {
         List<RequestRecord> snapshot;
         synchronized (records) { snapshot = new ArrayList<>(records); }
         sqliteProjectStore.save(target, snapshot, analysisConfig, archivedAssessments, archivedValidations,
-                runContexts.completedRuns(), routeCandidates, executionLedger.attempts(), context, graphWorkspace, requestLabWorkspace);
+                runContexts.completedRuns(), routeCandidates, executionLedger.attempts(),
+                context.withChat(currentChatState()), graphWorkspace, requestLabWorkspace);
     }
 
     private ProjectStore.ProjectContext currentProjectContext(String fallbackName) {
-        if (activeProjectContext != null && activeProjectContext.present()) return activeProjectContext;
+        if (activeProjectContext != null && activeProjectContext.present()) {
+            return activeProjectContext.withChat(currentChatState());
+        }
         List<String> entries = scope.entries();
         String name = fallbackName == null ? "" : fallbackName
                 .replaceFirst("(?i)\\.(flowscope\\.db|json|db)$", "").trim();
         if (name.isBlank() && !entries.isEmpty()) name = entries.getFirst();
-        return new ProjectStore.ProjectContext(name, entries, Instant.now());
+        return new ProjectStore.ProjectContext(name, entries, Instant.now(), currentChatState());
     }
 
     private void saveProjectFile(File file) {
@@ -1820,7 +1824,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             ProjectWorkspace.Allocation migrated = projectWorkspace.allocate(context.name(),
                     String.join("\n", context.scope()));
-            context = migrated.context();
+            context = migrated.context().withChat(data.context().chat());
             try {
                 sqliteProjectStore.save(migrated.database(), loaded, data.config(), data.assessments(),
                         data.validations(), data.completedRuns(), data.routeCandidates(), data.runAttempts(), context, data.graphWorkspace(), data.requestLabWorkspace());
@@ -1900,6 +1904,7 @@ public final class FlowScopeExtension implements BurpExtension {
         executionLedger.replace(data.runAttempts());
         scope = restoredScope;
         scopeText = String.join("\n", context.scope());
+        if (explorer != null) explorer.restoreChatState(context.chat());
         activeProjectDatabase = null;
         activeProjectContext = ProjectStore.ProjectContext.empty();
         publishAnalysis(analysisEpoch, result);
@@ -2248,6 +2253,9 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public com.fasterxml.jackson.databind.node.ObjectNode zapStatus() { return zapConnectionStatus(); }
             @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorer.current(); }
+            @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
+                return explorer.chatMessages();
+            }
             @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
                 return explorer.models();
             }
@@ -2288,6 +2296,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public ExplorerCoordinator.Snapshot cancelExplorer() { return explorer.cancel(); }
             @Override public ExplorerCoordinator.Snapshot clearExplorer() { return explorer.clear(); }
+            @Override public ExplorerCoordinator.Snapshot newExplorerChat() { return explorer.newChat(); }
             @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
                 return explorer.recheckProvider();
             }
@@ -2788,6 +2797,19 @@ public final class FlowScopeExtension implements BurpExtension {
         // Explorer sessions belong to registered accounts now; resetting secrets must not delete those accounts.
         explorer.clearAccounts();
         try { explorer.clear(); } catch (RuntimeException ignored) { }
+        try { explorer.resetChatState(); } catch (RuntimeException ignored) { }
+    }
+
+    private void explorerChatChanged() {
+        if (explorer == null || shuttingDown.get()) return;
+        ProjectStore.ProjectContext context = activeProjectContext;
+        if (context != null && context.present()) activeProjectContext = context.withChat(explorer.chatState());
+        revision.incrementAndGet();
+        scheduleDatabaseSave();
+    }
+
+    private io.flowscope.explorer.ExplorerChatState currentChatState() {
+        return explorer == null ? io.flowscope.explorer.ExplorerChatState.empty() : explorer.chatState();
     }
 
     private void resetZapSecrets() {

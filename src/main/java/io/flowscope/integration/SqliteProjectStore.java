@@ -301,7 +301,7 @@ public final class SqliteProjectStore {
                     }
                     putMetadata(metadata, "request_lab_revision", Long.toString(next.revision()));
                     putMetadata(metadata, "storage_schema_version", Integer.toString(STORAGE_SCHEMA_VERSION));
-                    putMetadata(metadata, "project_schema_version", "9");
+                    putMetadata(metadata, "project_schema_version", Integer.toString(ProjectStore.SCHEMA_VERSION));
                     putMetadata(metadata, "saved_at", java.time.Instant.now().toString());
                 }
                 try (PreparedStatement migration = connection.prepareStatement("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(?, ?)")) {

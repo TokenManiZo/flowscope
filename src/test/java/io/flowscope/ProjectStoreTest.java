@@ -5,6 +5,7 @@ import io.flowscope.core.*;
 import io.flowscope.core.LegacyAssessment;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.RunExecutionLedger;
+import io.flowscope.explorer.ExplorerChatState;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,6 +20,27 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ProjectStoreTest {
     @TempDir Path temp;
+
+    @Test
+    void chatThreadAndVisibleMessagesSurviveJsonReopen() throws Exception {
+        ExplorerChatState chat = new ExplorerChatState("thread-1", "https://app.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Find APIs", "llm-run-1", "2026-10-10T00:00:00Z"),
+                        new ExplorerChatState.Message("assistant", "Found one request", "llm-run-1",
+                                "2026-10-10T00:00:01Z")));
+        ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("chat project",
+                List.of("https://app.example.test/"), Instant.parse("2026-10-10T00:00:00Z"), chat);
+        Path file = temp.resolve("chat.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(), context);
+
+        assertEquals(chat, store.load(file).context().chat());
+        var malformed = new ObjectMapper().readTree(file.toFile());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/llm_chat/messages/0"))
+                .put("at", "not-a-time");
+        new ObjectMapper().writeValue(file.toFile(), malformed);
+        assertThrows(IllegalArgumentException.class, () -> store.load(file),
+                "invalid chat metadata must fail before a project is installed");
+    }
 
     @Test
     void reopeningLegacyStaticApiReclassifiesWithoutLosingEvidence() throws Exception {
@@ -436,7 +458,7 @@ final class ProjectStoreTest {
         var root = new ObjectMapper().readTree(Files.readString(file));
         ProjectStore.ProjectData loaded = store.load(file);
 
-        assertEquals(9, root.path("schema_version").asInt());
+        assertEquals(10, root.path("schema_version").asInt());
         assertEquals(1, root.path("payloads").size(), "동일 payload blob은 한 번만 저장해야 한다");
         assertEquals(request, loaded.records().getFirst().requestTextForEvidence());
         assertEquals(body, loaded.records().getFirst().requestBodyForAnalysis());

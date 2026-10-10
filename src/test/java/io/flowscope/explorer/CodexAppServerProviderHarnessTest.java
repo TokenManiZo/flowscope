@@ -18,6 +18,52 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfSystemProperty(named = "flowscope.harness", matches = "true")
 final class CodexAppServerProviderHarnessTest {
     @Test
+    void realCodexResumesAChatOnTheSameThreadWithFreshGatewayTools() throws Exception {
+        try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
+            assertEquals("READY", provider.readiness());
+            String model = provider.models().configuredModel();
+            if (model.isBlank()) model = provider.models().models().getFirst().id();
+            String threadId;
+            try (ExplorerHttpGateway first = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                    request -> { throw new AssertionError("the chat question needs no target request"); },
+                    value -> value.startsWith("https://provider-harness.invalid/"), "chat-run-1", ignored -> {})) {
+                ExplorerProvider.Result answer = chatTurn(provider, first, model, "",
+                        "In one short sentence, say you can continue this conversation later.");
+                assertFalse(answer.summary().isBlank());
+                threadId = answer.threadId();
+                assertFalse(threadId.isBlank());
+            }
+            try (ExplorerHttpGateway second = new ExplorerHttpGateway(new ExplorerAccountVault(),
+                    request -> { throw new AssertionError("the follow-up needs no target request"); },
+                    value -> value.startsWith("https://provider-harness.invalid/"), "chat-run-2", ignored -> {})) {
+                ExplorerProvider.Result answer = chatTurn(provider, second, model, threadId,
+                        "In one short sentence, acknowledge this is a follow-up in the same conversation.");
+                assertEquals(threadId, answer.threadId());
+                assertFalse(answer.summary().isBlank());
+            }
+        }
+    }
+
+    private static ExplorerProvider.Result chatTurn(CodexAppServerProvider provider,
+                                                    ExplorerHttpGateway gateway, String model,
+                                                    String threadId, String message) throws Exception {
+        CountDownLatch done = new CountDownLatch(1);
+        AtomicReference<ExplorerProvider.Result> result = new AtomicReference<>();
+        AtomicReference<String> failure = new AtomicReference<>();
+        provider.start(new ExplorerProvider.Request("chat-run", "https://provider-harness.invalid/",
+                List.of("https://provider-harness.invalid/"), List.of(), gateway.url(),
+                gateway.discoveriesUrl(), gateway.token(), "Use the user's message and FlowScope tools if needed.",
+                model, threadId, message), new ExplorerProvider.Listener() {
+            @Override public void activity(ExplorerProvider.Activity activity) {}
+            @Override public void completed(ExplorerProvider.Result value) { result.set(value); done.countDown(); }
+            @Override public void failed(String value) { failure.set(value); done.countDown(); }
+        });
+        assertTrue(done.await(3, TimeUnit.MINUTES), "real Codex chat turn timed out");
+        assertNull(failure.get(), failure.get());
+        return result.get();
+    }
+
+    @Test
     void loggedInCodexListsItsOwnSelectableModels() {
         try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
             assertEquals("READY", provider.readiness());

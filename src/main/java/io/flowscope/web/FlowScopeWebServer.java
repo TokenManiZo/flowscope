@@ -212,6 +212,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ExplorerCoordinator.Snapshot explorerStatus() {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
+        default List<ExplorerCoordinator.ChatMessage> explorerChatMessages() { return List.of(); }
         default ExplorerProvider.ModelCatalog explorerModels() {
             throw new UnsupportedOperationException("Explorer model list is unavailable");
         }
@@ -240,6 +241,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default ExplorerCoordinator.Snapshot clearExplorer() {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
+        }
+        default ExplorerCoordinator.Snapshot newExplorerChat() {
+            throw new UnsupportedOperationException("Explorer chat is unavailable");
         }
         default ExplorerCoordinator.Snapshot recheckExplorerProvider() {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
@@ -356,6 +360,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/zap-accounts" -> zapAccounts(request);
             case "/api/scanner-run" -> scannerRun(request);
             case "/api/explorer-run" -> explorerRun(request);
+            case "/api/explorer-prompts" -> explorerPrompts(request);
             case "/api/explorer-models" -> explorerModels(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
             case "/api/identity-reset" -> identityReset(request);
@@ -1566,6 +1571,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (request.method().equals("GET")) {
             ObjectNode body = json.createObjectNode();
             body.set("run", explorerSnapshot(state.explorerStatus()));
+            var messages = body.putArray("messages");
+            state.explorerChatMessages().forEach(item -> messages.addObject()
+                    .put("role", item.role()).put("text", item.text())
+                    .put("runId", item.runId()).put("at", item.at().toString()));
             ExplorerCoordinator.BrowserBudget budget = state.explorerBrowserBudget();
             if (budget == null) body.putNull("browser");
             else {
@@ -1593,12 +1602,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
                             .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
                     boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
                     snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
-                            form.getOrDefault("model", "")));
+                            form.getOrDefault("model", ""), form.getOrDefault("message", "")));
                     status = 202;
                 }
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));
                 case "cancel" -> snapshot = state.cancelExplorer();
                 case "clear" -> snapshot = state.clearExplorer();
+                case "new-chat" -> snapshot = state.newExplorerChat();
                 case "recheck" -> snapshot = state.recheckExplorerProvider();
                 default -> throw new IllegalArgumentException("지원하지 않는 Explorer 동작입니다.");
             }
@@ -1620,6 +1630,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
         } catch (IllegalStateException error) {
             return error(503, error.getMessage());
         }
+    }
+
+    private LoopbackHttpServer.Response explorerPrompts(LoopbackHttpServer.Request request) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        ObjectNode body = json.createObjectNode();
+        var prompts = body.putArray("prompts");
+        prompts.addObject().put("id", "inventory").put("label", "API·입력 찾기")
+                .put("text", "현재 범위에서 실제 화면과 공개 HTML·JavaScript·API 정의를 조사하고 API 요청·응답을 기록해 줘. 코드에서만 확인한 경로와 실제 요청을 구분하고, 확인하지 못한 항목도 알려 줘.");
+        prompts.addObject().put("id", "accounts").put("label", "계정별 요청 살펴보기")
+                .put("text", "준비된 각 계정의 브라우저와 HTTP 도구로 접근 가능한 기능을 살펴보고, 같은 API에 대한 계정별 요청·응답 차이를 기록해 줘. 근거 없는 취약점 판정은 하지 말고 확인이 필요한 부분을 알려 줘.");
+        prompts.addObject().put("id", "continue").put("label", "이어서 확인하기")
+                .put("text", "이 대화에서 이전에 찾았지만 아직 실제 요청·응답으로 확인하지 못한 API와 화면을 이어서 조사해 줘. 이미 기록된 근거를 활용하고 도구 오류가 나면 이유와 다음 방법을 알려 줘.");
+        return json(200, body);
     }
 
     private LoopbackHttpServer.Response explorerAccounts(LoopbackHttpServer.Request request) throws IOException {

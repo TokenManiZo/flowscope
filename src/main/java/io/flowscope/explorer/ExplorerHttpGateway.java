@@ -39,7 +39,6 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> FORBIDDEN_HEADERS = Set.of(
             "authorization", "cookie", "proxy-authorization", "host", "content-length");
-    private static final Set<String> METHODS = Set.of("GET", "HEAD", "OPTIONS", "POST");
     private static final Set<String> DECLARATION_METHODS = Set.of(
             "GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE");
     private static final Set<String> DISCOVERY_FIELDS = Set.of(
@@ -48,7 +47,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             "location", "field_path", "display_name", "requirement");
     private static final int REQUEST_LIMIT = 1024 * 1024;
     private static final int INLINE_BODY_LIMIT = 64 * 1024;
-    private static final int MAX_REQUESTS = Integer.getInteger("flowscope.explorer.maxRequests", 500);
+    private static final int MAX_REQUESTS = Math.max(0, Integer.getInteger("flowscope.explorer.maxRequests", 500));
     private static final long MAX_INDEX_BYTES = Long.getLong(
             "flowscope.javascript.indexBytes", 128L * 1024 * 1024);
     private static final int MAX_DISCOVERIES_PER_CALL = 200;
@@ -60,6 +59,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final ExplorerTransport transport;
     private final Predicate<String> exactScope;
     private final String runId;
+    private final boolean chatTurn;
     private final String token = generateToken();
     private final Consumer<Event> events;
     private final Consumer<List<RouteCandidate>> discoveries;
@@ -71,6 +71,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredParameterKeys = new LinkedHashSet<>();
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
     private final ExplorerArtifactStore artifacts;
+    private final boolean ownsArtifacts;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private volatile BrowserDriver browser;
 
@@ -94,13 +95,32 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                                Predicate<String> exactScope, String runId,
                                Consumer<Event> events,
                                Consumer<List<RouteCandidate>> discoveries) throws java.io.IOException {
+        this(vault, transport, exactScope, runId, events, discoveries, false);
+    }
+
+    public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
+                               Predicate<String> exactScope, String runId,
+                               Consumer<Event> events,
+                               Consumer<List<RouteCandidate>> discoveries, boolean chatTurn) throws java.io.IOException {
+        this(vault, transport, exactScope, runId, events, discoveries, chatTurn, null);
+    }
+
+    public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
+                               Predicate<String> exactScope, String runId,
+                               Consumer<Event> events,
+                               Consumer<List<RouteCandidate>> discoveries, boolean chatTurn,
+                               ExplorerArtifactStore sharedArtifacts) throws java.io.IOException {
         this.vault = vault;
         this.transport = transport;
         this.exactScope = exactScope;
         this.runId = runId;
+        this.chatTurn = chatTurn;
         this.events = events == null ? ignored -> {} : events;
         this.discoveries = discoveries == null ? ignored -> {} : discoveries;
-        this.artifacts = new ExplorerArtifactStore(runId);
+        this.artifacts = sharedArtifacts == null ? new ExplorerArtifactStore(runId) : sharedArtifacts;
+        this.ownsArtifacts = sharedArtifacts == null;
+        if (sharedArtifacts != null) sharedArtifacts.list().forEach(metadata -> metadata.provenance()
+                .forEach(provenance -> responseEvidenceIds.add(provenance.evidenceId())));
         this.server = new LoopbackHttpServer(0, REQUEST_LIMIT, this::handle);
         this.server.start();
     }
@@ -146,7 +166,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         String method = body.path("method").asText("GET").toUpperCase(Locale.ROOT);
         String target = body.path("url").asText("");
         String accountId = body.path("account").asText("").trim();
-        if (!METHODS.contains(method)) return error(400, "지원하지 않는 HTTP method입니다.");
+        if (!method.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,32}")) {
+            return error(400, "HTTP method 형식이 올바르지 않습니다.");
+        }
         URI uri;
         try { uri = URI.create(target); }
         catch (RuntimeException error) { return error(400, "대상 URL이 올바르지 않습니다."); }
@@ -186,8 +208,12 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         }
         String requestKey = accountId + "\0" + method + "\0" + target + "\0" + sha256(requestBody);
         synchronized (this) {
-            if (requestKeys.size() >= MAX_REQUESTS) return error(429, "Explorer run 요청 상한에 도달했습니다.");
-            if (!requestKeys.add(requestKey)) return error(409, "같은 account·method·URL·body 요청은 이미 실행했습니다.");
+            if (!chatTurn && MAX_REQUESTS > 0 && requestKeys.size() >= MAX_REQUESTS) {
+                return error(429, "사용자가 설정한 Explorer run 요청 상한에 도달했습니다.");
+            }
+            if (!chatTurn && !requestKeys.add(requestKey)) {
+                return error(409, "같은 account·method·URL·body 요청은 이미 실행했습니다.");
+            }
         }
         long started = System.nanoTime();
         try {
@@ -438,11 +464,15 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         Set<String> newEndpointKeys = new LinkedHashSet<>();
         Set<String> newParameterKeys = new LinkedHashSet<>();
         Set<String> newParameterProvenanceKeys = new LinkedHashSet<>();
+        ArrayNode rejectedDiscoveries = JSON.createArrayNode();
+        ArrayNode rejectedParameters = JSON.createArrayNode();
         int duplicateEndpoints = 0;
         int duplicateParameters = 0;
         try {
             requireOnlyFields(root, Set.of("discoveries"), "요청 본문");
-            for (JsonNode value : values) {
+            for (int discoveryIndex = 0; discoveryIndex < values.size(); discoveryIndex++) {
+                JsonNode value = values.get(discoveryIndex);
+                try {
                 requireOnlyFields(value, DISCOVERY_FIELDS, "discovery");
                 String method = requiredToken(value, "method", 16).toUpperCase(Locale.ROOT);
                 if (!DECLARATION_METHODS.contains(method)) {
@@ -491,18 +521,16 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     if (newProvenance) provenance.add(new RouteCandidate.Provenance(
                             RouteCandidate.ProvenanceType.LLM_ARTIFACT_ANALYSIS, evidenceId, Source.LLM,
                             runId, adapter, RouteCandidate.Applicability.REVIEW, reason));
-                    if (parameterValues.isArray()) for (JsonNode parameter : parameterValues) {
+                    if (parameterValues.isArray()) for (int parameterIndex = 0;
+                            parameterIndex < parameterValues.size(); parameterIndex++) {
+                        JsonNode parameter = parameterValues.get(parameterIndex);
+                        try {
                         requireOnlyFields(parameter, PARAMETER_FIELDS, "parameter");
                         SurfaceAnalysis.ParameterLocation location = enumValue(
                                 SurfaceAnalysis.ParameterLocation.class,
                                 requiredToken(parameter, "location", 32));
                         String rawFieldPath = requiredText(parameter, "field_path", 512);
-                        String headerName = rawFieldPath.startsWith("/") ? rawFieldPath.substring(1) : rawFieldPath;
-                        if (location == SurfaceAnalysis.ParameterLocation.HEADER
-                                && FORBIDDEN_HEADERS.contains(headerName.toLowerCase(Locale.ROOT))) {
-                            throw new IllegalArgumentException("인증·세션 header는 parameter 선언으로 저장하지 않습니다.");
-                        }
-                        String fieldPath = canonicalFieldPath(location, rawFieldPath, pathTemplate);
+                        String fieldPath = canonicalFieldPath(location, rawFieldPath, pathTemplate, path);
                         String displayName = optionalText(parameter, "display_name", 512);
                         SurfaceAnalysis.Requirement requirement = enumValue(SurfaceAnalysis.Requirement.class,
                                 parameter.path("requirement").asText("UNKNOWN"));
@@ -517,6 +545,11 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                         parameters.add(new RouteCandidate.DeclaredParameter(location, fieldPath,
                                 displayName, requirement, evidenceId, Source.LLM, runId, adapter, reason,
                                 ParameterCoordinates.CoordinateVersion.FLOW_V2));
+                        } catch (IllegalArgumentException invalid) {
+                            rejectedParameters.addObject().put("discovery_index", discoveryIndex)
+                                    .put("parameter_index", parameterIndex)
+                                    .put("error", TextLimits.truncate(invalid.getMessage(), 500));
+                        }
                     }
                 }
                 if (provenance.isEmpty() && parameters.isEmpty()) {
@@ -533,6 +566,10 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 List<String> concretePaths = path.contains("{") ? List.of() : List.of(path);
                 accepted.add(new RouteCandidate(service, method, pathTemplate, concretePaths, false, false,
                         provenance, RouteCandidate.Applicability.REVIEW, reason, parameters));
+                } catch (IllegalArgumentException invalid) {
+                    rejectedDiscoveries.addObject().put("discovery_index", discoveryIndex)
+                            .put("error", TextLimits.truncate(invalid.getMessage(), 500));
+                }
             }
             if (discoveryProvenanceKeys.size() + newProvenanceKeys.size() > MAX_DISCOVERIES) {
                 return error(429, "Explorer run 선언 상한에 도달했습니다.");
@@ -553,6 +590,12 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     .put("duplicate_parameters", duplicateParameters)
                     .put("run_endpoint_total", declaredEndpointKeys.size())
                     .put("run_parameter_total", declaredParameterKeys.size());
+            result.set("rejected_discoveries", rejectedDiscoveries);
+            result.set("rejected_parameters", rejectedParameters);
+            if (accepted.isEmpty() && rejectedDiscoveries.size() > 0) {
+                result.put("success", false).put("error", "모든 발견 항목이 거부됐습니다.");
+                return json(400, result);
+            }
             return json(200, result);
         } catch (IllegalArgumentException error) {
             return error(400, TextLimits.truncate(error.getMessage(), 1_000));
@@ -604,7 +647,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
      * 추정해야 하는 입력은 거부해 모델이 canonical pointer로 다시 보내게 한다(추정 join 없음).
      */
     private static String canonicalFieldPath(SurfaceAnalysis.ParameterLocation location, String raw,
-                                             String pathTemplate) {
+                                             String pathTemplate, String declaredPath) {
         switch (location) {
             case PATH -> {
                 if (raw.matches("/segments/\\d+")) {
@@ -613,8 +656,19 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                     }
                     return raw;
                 }
-                return ParameterCoordinates.legacyToCanonical(location, raw, pathTemplate).orElseThrow(() ->
-                        new IllegalArgumentException("PATH field_path는 /segments/N 또는 template 위치의 path[i] 형식이어야 합니다."));
+                var legacy = ParameterCoordinates.legacyToCanonical(location, raw, pathTemplate);
+                if (legacy.isPresent()) return legacy.get();
+                String name = raw.startsWith("{") && raw.endsWith("}") ? raw.substring(1, raw.length() - 1) : raw;
+                String[] segments = java.util.Arrays.stream(declaredPath.split("/"))
+                        .filter(value -> !value.isEmpty()).toArray(String[]::new);
+                int match = -1;
+                for (int index = 0; index < segments.length; index++) {
+                    if (!segments[index].equals("{" + name + "}")) continue;
+                    if (match >= 0) throw new IllegalArgumentException("PATH field_path가 여러 위치에 있어 모호합니다.");
+                    match = index;
+                }
+                if (match >= 0) return "/segments/" + match;
+                throw new IllegalArgumentException("PATH field_path는 URL의 placeholder 이름, /segments/N 또는 path[i]여야 합니다.");
             }
             case JSON_BODY, GRAPHQL_VARIABLE, XML_PATH -> {
                 if (raw.startsWith("/")) {
@@ -739,7 +793,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     }
 
     @Override public synchronized void close() {
-        artifacts.close();
+        if (ownsArtifacts) artifacts.close();
         requestKeys.clear();
         responseEvidenceIds.clear();
         discoveryProvenanceKeys.clear();
