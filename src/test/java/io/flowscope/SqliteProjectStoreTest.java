@@ -43,6 +43,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class SqliteProjectStoreTest {
     @TempDir Path temp;
 
+    @Test void passiveSubdomainTrafficSurvivesDatabaseReopenWithoutBecomingCoverage() throws Exception {
+        var record = new RequestRecord(Source.HUMAN, "https://api.example.test:443", "GET", "/api/orders", 200, "anon");
+        record.hasResponse = true;
+        record.passiveSubdomainTraffic = true;
+        record.sourceDetail = SourceDetail.BROWSER;
+        record.phase = RunPhase.EXPLORATION;
+        record.responseContentType = "application/json";
+        var store = new SqliteProjectStore(new ProjectStore());
+        Path db = temp.resolve("passive.db");
+        store.save(db, List.of(record), new AnalysisConfig(), List.of(), List.of(), Set.of(), List.of());
+        var restored = store.load(db).records();
+        assertTrue(restored.getFirst().passiveSubdomainTraffic);
+        assertEquals(record.service, restored.getFirst().service);
+        assertTrue(Pipeline.run(restored).coverageRecords.isEmpty());
+    }
+
     @Test
     void apiMarksUpdateInPlaceWithoutTouchingTrafficAndRollbackTogether() throws Exception {
         var record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders", 200, "anon");
@@ -255,6 +271,18 @@ final class SqliteProjectStoreTest {
         assertEquals("https://api.test:443", rule.origin());
         assertEquals("/me", rule.path());
         assertEquals("\"id\":\"acct-a\"", rule.expectedSubject());
+    }
+
+    @Test
+    void llmFindingsRoundTripThroughSqlite() throws Exception {
+        Path database = temp.resolve("llm-findings.flowscope.db");
+        String finding = "{\"id\":\"llm:GET /orders/{id}:acct-a:\",\"verdict\":\"IDOR 의심\"}";
+        AnalysisConfig config = new AnalysisConfig().withLlmFinding("llm:GET /orders/{id}:acct-a:", finding);
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(database, List.of(), config, List.of(), List.of(), Set.of(), List.of());
+
+        assertEquals(java.util.Map.of("llm:GET /orders/{id}:acct-a:", finding),
+                store.load(database).config().llmFindings());
     }
 
     @Test

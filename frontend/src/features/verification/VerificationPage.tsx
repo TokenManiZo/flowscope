@@ -20,13 +20,13 @@ function replayStatus(session: ManagedSession | undefined): ReplayAccount["statu
 }
 
 function workspace(children: ReactNode) {
-  return <ReferenceAnalysisWorkspace ariaLabel="교차 신원 검증 작업 영역" context={null} inspector={null}>{children}</ReferenceAnalysisWorkspace>
+  return <ReferenceAnalysisWorkspace ariaLabel="교차 계정 검증 작업 영역" context={null} inspector={null}>{children}</ReferenceAnalysisWorkspace>
 }
 
 export function VerificationPage() {
   const snapshot = useSnapshotQuery()
-  if (snapshot.isLoading) return workspace(<section className="p-3" aria-label="교차 신원 검증 콘텐츠">불러오는 중…</section>)
-  if (snapshot.isError) return workspace(<Alert className="m-3" variant="destructive" aria-label={errorMessage(snapshot.error) ?? "교차 신원 검증 상태를 불러오지 못했습니다."}><AlertDescription>{errorMessage(snapshot.error) ?? "교차 신원 검증 상태를 불러오지 못했습니다."}</AlertDescription></Alert>)
+  if (snapshot.isLoading) return workspace(<section className="p-3" aria-label="교차 계정 검증 콘텐츠">불러오는 중…</section>)
+  if (snapshot.isError) return workspace(<Alert className="m-3" variant="destructive" aria-label={errorMessage(snapshot.error) ?? "교차 계정 검증 상태를 불러오지 못했습니다."}><AlertDescription>{errorMessage(snapshot.error) ?? "교차 계정 검증 상태를 불러오지 못했습니다."}</AlertDescription></Alert>)
 
   const accounts = snapshot.data?.accounts ?? []
   const managedByAccount = new Map((snapshot.data?.managedSessions ?? []).map((session) => [session.accountId, session]))
@@ -41,7 +41,7 @@ export function VerificationPage() {
 
   return workspace(<section className="space-y-4 p-3" aria-labelledby="verification-title">
     <div>
-      <h1 id="verification-title" className="text-2xl font-semibold">교차 신원 검증</h1>
+      <h1 id="verification-title" className="text-2xl font-semibold">교차 계정 검증</h1>
       <p className="text-sm text-muted-foreground">등록 계정의 관리 세션 상태를 기준으로 실행합니다. 계정 등록과 세션 캡처는 계정·세션 화면에서 합니다.</p>
     </div>
     <LiveAuthorizationReplayCard accounts={replayAccounts} />

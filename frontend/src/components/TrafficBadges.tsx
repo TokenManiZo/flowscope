@@ -28,6 +28,6 @@ export function HttpStatusBadge({ status }: { status: string | number }) {
 }
 
 export function SourceMarks({ sources }: { sources: readonly string[] }) {
-  const labels = [["human", "H", "HUMAN", "text-sky-800 dark:text-sky-300"], ["scanner", "S", "SCANNER", "text-red-800 dark:text-red-300"], ["llm", "L", "LLM", "text-amber-800 dark:text-amber-300"]]
+  const labels = [["human", "H", "사람", "text-sky-800 dark:text-sky-300"], ["scanner", "S", "스캐너", "text-red-800 dark:text-red-300"], ["llm", "L", "LLM", "text-amber-800 dark:text-amber-300"]]
   return <span className="inline-flex items-center gap-2 font-mono text-xs font-semibold" aria-label={labels.filter(([source]) => sources.some((item) => item.toLowerCase() === source)).map(([, , name]) => name).join(" · ") || "관측 없음"}>{labels.map(([source, mark, name, color]) => <span key={source} title={name} className={sources.some((item) => item.toLowerCase() === source) ? color : "text-muted-foreground/40"}>{mark}</span>)}</span>
 }

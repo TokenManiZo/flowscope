@@ -2,6 +2,7 @@ package io.flowscope.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
@@ -86,6 +87,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
         AnalysisConfig config();
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
+        /** LLM 교차 검증 소견(추천). 판정 엔진 결과와 분리된 참고 자료다. */
+        default List<io.flowscope.core.LlmFinding> findings() { return List.of(); }
+        /** LLM 소견을 저장(같은 id면 덮어쓰기)하고 프로젝트 파일에 영속한다. */
+        default void submitFinding(io.flowscope.core.LlmFinding finding) {
+            throw new UnsupportedOperationException("LLM 소견 저장을 사용할 수 없습니다.");
+        }
+        /** 보내는 계정(accountId) 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+        default LlmVerifyState startLlmVerify(String accountId) {
+            throw new UnsupportedOperationException("LLM 검증 실행을 사용할 수 없습니다.");
+        }
+        /** 현재 LLM 검증 실행 상태. */
+        default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
+        /** 실행 중인 LLM 검증을 중단한다. */
+        default LlmVerifyState cancelLlmVerify() { return llmVerifyState(); }
         RunContextRegistry contexts();
         default void humanRunStarted(String runId) {}
         default void humanRunStopped(String runId) {}
@@ -95,7 +110,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default long otherHumanListenerRequests(String runId) { return 0; }
         void rebuild();
         void loadSample();
-        BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception;
         BurpXmlParser.ParseResult importHar(byte[] har) throws Exception;
         RequestRecord openInRepeater(String evidenceId, String request,
                                      CredentialMode credentialMode, String accountId);
@@ -110,6 +124,11 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default RequestLabResult sendRequestLab(String evidenceId, String request,
                                                 CredentialMode credentialMode, String accountId) {
+            throw new UnsupportedOperationException("request lab is unavailable");
+        }
+        /** 캡처된 요청이 없는 경로 후보를 대상 서비스(host)만으로 처음 전송한다. 원본 모드는 쓸 수 없다. */
+        default RequestLabResult sendRequestLabForService(String service, String request,
+                                                          CredentialMode credentialMode, String accountId) {
             throw new UnsupportedOperationException("request lab is unavailable");
         }
         default CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(String itemId, boolean armed) {
@@ -160,6 +179,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("ZAP account session refresh is unavailable");
         }
         default List<String> scopeEntries() { return List.of(); }
+        default List<String> discoveredOrigins() { return List.of(); }
+        default List<String> observedOrigins() { return List.of(); }
         default ProjectWorkspace.Status projectStatus() {
             return new ProjectWorkspace.Status("", null, List.of());
         }
@@ -257,6 +278,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
 
+    /** LLM 교차 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
+    public record LlmVerifyState(String status, String accountId, String message,
+                                 Long startedAt, Long endedAt) {
+        public static LlmVerifyState idle() { return new LlmVerifyState("IDLE", "", "실행 대기", null, null); }
+    }
+
     /** Live header values for the current editor only; never stored or snapshotted. */
     public record RequestLabCredentialHeader(String name, String value) {}
 
@@ -267,6 +294,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private static final int REQUEST_LAB_OPERATION_LIMIT = 256;
     private final State state;
     private final String capabilityToken = randomCapabilityToken();
+    private final String mcpToken = randomCapabilityToken();
+    private FlowScopeMcp mcp;
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
     private final ClasspathWebAssets webAssets = new ClasspathWebAssets();
@@ -282,11 +311,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
         this.state = state;
         this.server = bindAvailable(requestedPort);
+        this.mcp = new FlowScopeMcp(state, mcpToken, server.port());
     }
 
     public void start() { server.start(); }
     public int port() { return server.port(); }
     public String url() { return "http://127.0.0.1:" + port() + "/"; }
+    /** Codex가 접속할 MCP 엔드포인트 URL. loopback 전용. */
+    public String mcpUrl() { return "http://127.0.0.1:" + port() + "/mcp"; }
+    /** MCP Bearer 토큰. 자식 프로세스 환경변수로만 전달하고 화면·로그·프로젝트에 넣지 않는다. */
+    public String mcpToken() { return mcpToken; }
 
     private LoopbackHttpServer bindAvailable(int requestedPort) throws IOException {
         IOException last = null;
@@ -313,6 +347,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return error(403, "localhost 요청만 허용됩니다.");
         }
         if (path.equals("/app")) return appRedirect(request);
+        // MCP는 자체 Bearer 토큰(Authorization 헤더)으로 인증하므로 UI capability 토큰 검사(authorized) 밖에 둔다.
+        if (path.equals("/mcp")) return mcp.handle(request);
         Optional<ClasspathWebAssets.Asset> asset = webAssets.resolve(target.getRawPath());
         if (asset.isPresent()) return staticAsset(request, asset.orElseThrow());
         if (staticPath(target.getRawPath())) return staticError(request, 404, "Not found");
@@ -353,9 +389,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/explorer-models" -> explorerModels(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
             case "/api/identity-reset" -> identityReset(request);
-            case "/api/import-xml" -> importXml(request, target);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
+            case "/api/llm-findings" -> llmFindings(request);
+            case "/api/llm-verify" -> llmVerify(request);
             default -> error(404, "Not found");
         };
     }
@@ -505,12 +542,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (mode == CredentialMode.ACCOUNT && accountId.isBlank()) {
                 throw new IllegalArgumentException("등록 계정 모드에는 계정 선택이 필요합니다.");
             }
-            String eventId = required(values, "eventId");
+            String eventId = values.getOrDefault("eventId", "").trim();
+            String service = values.getOrDefault("service", "").trim();
+            if (eventId.isBlank() == service.isBlank()) {
+                throw new IllegalArgumentException("eventId 또는 service 중 하나만 지정해야 합니다.");
+            }
+            if (!service.isBlank() && mode == CredentialMode.ORIGINAL) {
+                throw new IllegalArgumentException("원본 모드는 캡처된 요청에만 쓸 수 있습니다.");
+            }
             String operationId = required(values, "operationId");
             if (!operationId.matches("[A-Za-z0-9_-]{16,120}")) {
                 throw new IllegalArgumentException("operationId 형식이 올바르지 않습니다.");
             }
-            RequestLabResult result = executeRequestLabOnce(operationId, eventId, rawRequest, mode, accountId);
+            RequestLabResult result = executeRequestLabOnce(operationId,
+                    eventId.isBlank() ? null : eventId, service.isBlank() ? null : service, rawRequest, mode, accountId);
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("eventId", result.eventId());
@@ -519,7 +564,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             body.put("durationMs", result.durationMs());
             body.put("requestBytes", result.requestBytes());
             body.put("responseBytes", result.responseBytes());
-            body.put("message", "응답을 받았으며 HUMAN 검증 Evidence로 분리 기록했습니다.");
+            body.put("message", "응답을 받았으며 HUMAN 검증 요청 기록으로 따로 저장했습니다.");
             return json(200, body);
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
@@ -612,7 +657,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
             body.put("message", result.sent() > 0
-                    ? "안전 재전송 응답을 CONTROLLED Evidence로 기록했습니다."
+                    ? "안전 재전송 응답을 CONTROLLED 요청 기록으로 저장했습니다."
                     : result.drafted() > 0
                     ? "상태 변경 요청을 Burp Repeater 초안으로 열었습니다. 자동 전송하지 않았습니다."
                     : "자동 전송 없이 재전송 런을 종료했습니다.");
@@ -691,14 +736,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return sources;
     }
 
-    private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String request,
+    private RequestLabResult executeRequestLabOnce(String operationId, String eventId, String service, String request,
                                                    CredentialMode mode, String accountId) {
-        String signature = requestLabSignature(eventId, request, mode.name(), accountId);
+        String signature = requestLabSignature(eventId, service, request, mode.name(), accountId);
         RequestLabOperation proposed = new RequestLabOperation(signature, new CompletableFuture<>());
         RequestLabOperation operation = requestLabOperations.putIfAbsent(operationId, proposed);
         if (operation == null) {
             try {
-                RequestLabResult result = state.sendRequestLab(eventId, request, mode, accountId);
+                RequestLabResult result = eventId != null
+                        ? state.sendRequestLab(eventId, request, mode, accountId)
+                        : state.sendRequestLabForService(service, request, mode, accountId);
                 proposed.result().complete(result);
                 RequestLabResult compact = new RequestLabResult(result.eventId(), result.status(),
                         "동일 operationId의 중복 전송을 차단하고 최초 실행 결과를 재사용했습니다.",
@@ -816,8 +863,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private LoopbackHttpServer.Response projectStatus(ProjectWorkspace.Status status) throws IOException {
+        long dataset = state.datasetRevision();
+        List<String> discovered = state.discoveredOrigins();
+        List<String> observed = state.observedOrigins();
+        if (dataset != state.datasetRevision()) { discovered = List.of(); observed = List.of(); }
         ObjectNode body = json.createObjectNode();
         body.put("directory", status.directory());
+        body.set("discoveredOrigins", json.valueToTree(discovered));
+        body.set("observedOrigins", json.valueToTree(observed));
+        body.put("datasetRevision", dataset);
         body.put("saveState", status.saveState());
         body.put("lastSavedAt", status.lastSavedAt());
         body.put("saveError", status.saveError());
@@ -1058,6 +1112,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String target = !operation.isEmpty() && !resource.isEmpty()
                     ? AnalysisConfig.operationObjectPolicyKey(operation, resource) : required(form, "target");
             ResourcePolicy policy = ResourcePolicy.valueOf(required(form, "policy").toUpperCase(Locale.ROOT));
+            if (resource.contains(" observed-object:")) {
+                boolean observed = state.snapshot().objects.observations().stream()
+                        .anyMatch(object -> operation.equals(object.operation())
+                                && resource.equals(object.operation().split(" ")[0] + " observed-object:" + object.objectKey()));
+                if (!observed) throw new IllegalArgumentException("관측된 API와 객체를 선택하세요.");
+                String method = operation.split(" ")[1];
+                if (policy == ResourcePolicy.PUBLIC && !method.equals("GET") && !method.equals("HEAD"))
+                    throw new IllegalArgumentException("조회 API만 공개로 설정할 수 있습니다.");
+            }
             state.config().withResourcePolicy(target, policy);
             state.rebuild();
             return success(policy == ResourcePolicy.UNKNOWN
@@ -1079,7 +1142,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             bindReviewPolicy(itemId, evidenceIds);
             state.config().attachReviewValidation(itemId, validationIds);
             state.rebuild();
-            return success("Evidence에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
+            return success("요청 기록에 묶인 사람 감사·오버라이드 기록을 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
@@ -1100,29 +1163,41 @@ public final class FlowScopeWebServer implements AutoCloseable {
     }
 
     private void bindReviewPolicy(String itemId, List<String> evidenceIds) {
-        state.snapshot().records.stream().filter(record -> evidenceIds.contains(record.evidenceId))
-                .forEach(record -> state.config().bindReviewPolicy(itemId, record.idn, record.op, record.resource));
+        state.snapshot().analysis.findings().stream().filter(finding -> finding.id().equals(itemId)).forEach(finding -> {
+            var target = finding.cell();
+            state.config().bindReviewPolicy(itemId, target.identity(), target.operation(), target.resource());
+            bindBasisReviewPolicy(itemId, evidenceIds, target.resource());
+        });
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
-        matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell ->
-                state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), null));
-        matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell ->
-                state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), cell.resource()));
+        matrix.functions().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell -> {
+            state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), null);
+            bindBasisReviewPolicy(itemId, evidenceIds, null);
+        });
+        matrix.objects().stream().filter(cell -> cell.id().equals(itemId)).forEach(cell -> {
+            state.config().bindReviewPolicy(itemId, cell.identity(), cell.operation(), cell.resource());
+            bindBasisReviewPolicy(itemId, evidenceIds, cell.resource());
+        });
+    }
+
+    private void bindBasisReviewPolicy(String itemId, List<String> evidenceIds, String targetResource) {
+        state.snapshot().records.stream().filter(record -> evidenceIds.contains(record.evidenceId))
+                .forEach(record -> state.config().bindReviewPolicy(itemId, record.idn, record.op, targetResource));
     }
 
     /** Attach only explicitly selected, stored manual responses for this exact matrix target. */
     private List<String> reviewValidation(String itemId, List<String> basisIds, String requested) {
         if (requested.isBlank()) return List.of();
         List<String> ids = requested.lines().filter(id -> !id.isBlank()).distinct().toList();
-        if (ids.size() > 20) throw new IllegalArgumentException("검증 Evidence는 최대 20건까지 연결할 수 있습니다.");
+        if (ids.size() > 20) throw new IllegalArgumentException("검증 요청 기록은 최대 20건까지 연결할 수 있습니다.");
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
         for (String id : ids) {
             RequestRecord record = state.snapshot().records.stream().filter(value -> id.equals(value.evidenceId))
-                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 Evidence가 아닙니다."));
+                    .findFirst().orElseThrow(() -> new IllegalArgumentException("저장된 검증 요청 기록이 아닙니다."));
             boolean target = matrix.functions().stream().anyMatch(cell -> cell.id().equals(itemId)
                     && cell.identity().equals(record.idn) && cell.operation().equals(record.op))
                     || matrix.objects().stream().anyMatch(cell -> cell.id().equals(itemId)
                     && cell.identity().equals(record.idn) && cell.operation().equals(record.op)
-                    && cell.resource().equals(record.resource));
+                    && state.snapshot().objects.matchesInput(record, cell.resource()));
             if (!target || record.source != io.flowscope.core.Source.HUMAN
                     || record.phase != io.flowscope.core.RunPhase.VALIDATION
                     || record.executionTrust != io.flowscope.core.ExecutionTrust.CONTROLLED
@@ -1139,7 +1214,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         try {
             String from = required(form, "from");
             String into = required(form, "into");
-            if (from.equals(into)) throw new IllegalArgumentException("서로 다른 두 신원을 선택하세요.");
+            if (from.equals(into)) throw new IllegalArgumentException("서로 다른 두 계정을 선택하세요.");
             AccountProfile target = state.config().account(into)
                     .orElseThrow(() -> new IllegalArgumentException("유지할 대상을 먼저 테스트 계정으로 등록하세요."));
             List<RequestRecord> matching = state.snapshot().records.stream().filter(r -> from.equals(r.idn))
@@ -1449,6 +1524,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (line.isBlank()) continue;
             if (definitions.size() >= 20) throw new IllegalArgumentException("API 정의는 최대 20개까지 입력할 수 있습니다.");
             String[] parts = line.split("\\s+", 3);
+            // 형식 이름 없이 주소만 적은 줄은 OpenAPI 명세로 본다. 다른 형식은 앞에 이름을 붙인다.
+            String first = parts[0].toLowerCase(Locale.ROOT);
+            if (parts.length == 1 && (first.startsWith("http://") || first.startsWith("https://"))) {
+                definitions.add(new ZapCampaign.ZapDefinition(ZapCampaign.ZapDefinitionType.OPENAPI, parts[0], ""));
+                continue;
+            }
             ZapCampaign.ZapDefinitionType type;
             try { type = ZapCampaign.ZapDefinitionType.valueOf(parts[0].toUpperCase(Locale.ROOT)); }
             catch (RuntimeException error) {
@@ -1663,27 +1744,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (state.sessions() != null) state.sessions().close();
         state.config().clearSessionBindings();
         state.rebuild();
-        return success("계정 카드와 Evidence는 유지하고 메모리 세션과 신원 매핑만 초기화했습니다.");
-    }
-
-    private LoopbackHttpServer.Response importXml(LoopbackHttpServer.Request request, URI target) throws IOException {
-        if (!request.method().equals("POST")) return method("POST");
-        try {
-            Map<String, String> query = form(target.getRawQuery());
-            Source source = switch (query.getOrDefault("source", "").toLowerCase(Locale.ROOT)) {
-                case "human" -> Source.HUMAN;
-                case "scanner" -> Source.SCANNER;
-                case "llm" -> Source.LLM;
-                default -> throw new IllegalArgumentException("Human, Scanner, LLM 소스 중 하나를 선택하세요.");
-            };
-            BurpXmlParser.ParseResult result = state.importXml(request.body(), source);
-            ObjectNode body = json.createObjectNode();
-            body.put("success", true);
-            body.put("imported", result.records.size());
-            body.put("candidates", result.records.stream().filter(record -> !record.hasResponse).count());
-            body.put("failed", result.skipped.size());
-            return json(200, body);
-        } catch (Exception error) { return error(400, error.getMessage()); }
+        return success("계정 카드와 요청 기록은 유지하고 메모리 세션과 계정 연결만 초기화했습니다.");
     }
 
     private LoopbackHttpServer.Response importHar(LoopbackHttpServer.Request request, URI target) throws IOException {
@@ -1710,20 +1771,69 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String resource = required(form, "resource");
             String identity = form.getOrDefault("identity", "").trim();
             if (!identity.isEmpty()) {
-                RequestRecord target = state.snapshot().records.stream().filter(record -> resource.equals(record.resource)
-                                || record.resourceReferences.stream().anyMatch(reference -> resource.equals(reference.resource())))
+                var records = state.snapshot().records;
+                String observedEvent = state.snapshot().objects.observations().stream()
+                        .filter(object -> resource.equals(object.operation().split(" ")[0] + " observed-object:" + object.objectKey()))
+                        .map(io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation::eventId).findFirst().orElse(null);
+                RequestRecord target = records.stream().filter(record -> record.evidenceId.equals(observedEvent))
                         .findFirst().orElseThrow(() -> new IllegalArgumentException("관측된 리소스를 선택하세요."));
                 boolean sameService = state.config().account(identity)
                         .map(account -> account.service().equals(target.service)).orElse(false)
                         || state.snapshot().records.stream().anyMatch(record -> identity.equals(record.idn)
                                 && target.service.equals(record.service)
                                 && record.authState == io.flowscope.core.AuthState.ACCOUNT_BOUND);
-                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정·신원을 선택하세요.");
+                if (!sameService) throw new IllegalArgumentException("같은 서비스의 확인된 계정을 선택하세요.");
             }
             state.config().withResourceOwner(resource, identity);
             state.rebuild();
             return success("소유자를 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    /** LLM 교차 검증 소견 목록(읽기). 프로젝트에 영속된 추천을 그대로 돌려준다. */
+    private LoopbackHttpServer.Response llmFindings(LoopbackHttpServer.Request request) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        ObjectNode body = json.createObjectNode();
+        ArrayNode list = body.putArray("findings");
+        for (io.flowscope.core.LlmFinding finding : state.findings()) {
+            ObjectNode node = list.addObject();
+            node.put("id", finding.id());
+            node.put("operation", finding.operation());
+            node.put("identity", finding.identity());
+            if (finding.resource() != null) node.put("resource", finding.resource());
+            node.put("verdict", finding.verdict());
+            node.put("confidence", finding.confidence());
+            node.put("note", finding.note());
+            node.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
+            node.put("createdAt", finding.createdAt());
+        }
+        return json(200, body);
+    }
+
+    /** LLM 검증 실행 시작(POST accountId)·상태 조회(GET). */
+    private LoopbackHttpServer.Response llmVerify(LoopbackHttpServer.Request request) throws IOException {
+        try {
+            LlmVerifyState verifyState;
+            if (request.method().equals("POST")) {
+                Map<String, String> form = postForm(request);
+                if (form == null) return invalidForm(request);
+                verifyState = "cancel".equals(form.getOrDefault("action", "").trim())
+                        ? state.cancelLlmVerify() : state.startLlmVerify(required(form, "accountId"));
+            } else if (request.method().equals("GET")) {
+                verifyState = state.llmVerifyState();
+            } else {
+                return method("GET, POST");
+            }
+            ObjectNode body = json.createObjectNode();
+            body.put("status", verifyState.status());
+            body.put("accountId", verifyState.accountId());
+            body.put("message", verifyState.message());
+            if (verifyState.startedAt() != null) body.put("startedAt", verifyState.startedAt());
+            if (verifyState.endedAt() != null) body.put("endedAt", verifyState.endedAt());
+            return json(200, body);
+        } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
+            return error(400, error.getMessage());
+        }
     }
 
     private LoopbackHttpServer.Response trafficOverride(LoopbackHttpServer.Request request) throws IOException {
@@ -1738,8 +1848,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     : value == TrafficOverride.INCLUDE
                     ? "자동 보조 트래픽을 분석에 포함했습니다. discovery 신뢰 경계는 유지됩니다."
                     : value == TrafficOverride.REVIEW
-                    ? "같은 API의 관측 기록을 검토 필요로 표시했습니다. Evidence는 보존됩니다."
-                    : "기본 분석에서 숨겼습니다. Evidence는 보존됩니다.");
+                    ? "같은 API의 요청 기록을 검토 필요로 표시했습니다. 기록은 지우지 않습니다."
+                    : "기본 분석에서 숨겼습니다. 기록은 지우지 않습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 

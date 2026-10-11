@@ -5,7 +5,7 @@ import { beforeEach, expect, it, vi } from "vitest"
 import { normalizeScopeEntry } from "./ProjectManagerDialog"
 import { SidebarNav } from "./SidebarNav"
 
-const state = vi.hoisted(() => ({ projects: {} as Record<string, unknown> }))
+const state = vi.hoisted(() => ({ projects: {} as Record<string, unknown>, updateError: null as Error | null }))
 const mutate = vi.hoisted(() => ({ open: vi.fn(), start: vi.fn(), update: vi.fn(), reset: vi.fn(), remove: vi.fn() }))
 const pending = { isPending: false, error: null }
 
@@ -17,7 +17,7 @@ vi.mock("@/lib/query/hooks", () => ({
   useProjectsQuery: () => state.projects,
   useOpenProjectMutation: () => ({ mutate: mutate.open, ...pending }),
   useStartProjectMutation: () => ({ mutate: mutate.start, ...pending }),
-  useUpdateProjectMutation: () => ({ mutate: mutate.update, ...pending }),
+  useUpdateProjectMutation: () => ({ mutate: mutate.update, ...pending, error: state.updateError }),
   useResetProjectTrafficMutation: () => ({ mutate: mutate.reset, ...pending }),
   useDeleteProjectMutation: () => ({ mutate: mutate.remove, ...pending }),
 }))
@@ -27,6 +27,7 @@ const archive = { id: "archive", name: "지난 진단", scope: ["https://old.exa
 
 beforeEach(() => {
   Object.values(mutate).forEach(fn => fn.mockReset())
+  state.updateError = null
   state.projects = { data: { directory: "/tmp/projects", active: app, projects: [app, archive], saveState: "SAVED" }, isPending: false, isError: false }
 })
 
@@ -54,6 +55,53 @@ it("normalizes typed scope entries to scheme://host:port[/path]", () => {
   expect(normalizeScopeEntry("http://127.0.0.1:8888/")).toEqual({ entry: "http://127.0.0.1:8888" })
   expect(normalizeScopeEntry("https://shop.example.com/api/?q=1")).toEqual({ entry: "https://shop.example.com:443/api", note: "쿼리와 뒷부분은 제외하고 등록했습니다." })
   expect(normalizeScopeEntry("ftp://x").entry).toBeNull()
+  expect(normalizeScopeEntry("Example.COM").entry).toBe("https://example.com:443")
+  expect(normalizeScopeEntry("https://user:pass@example.com").entry).toBeNull()
+  expect(normalizeScopeEntry("127.0.0.1").entry).toBeNull()
+  expect(normalizeScopeEntry("*.example.com").entry).toBeNull()
+})
+
+it("creates a project from a bare root domain using the existing exact URL scope", async () => {
+  const dialog = await openDialog()
+  await userEvent.click(within(dialog).getByRole("tab", { name: "새 프로젝트" }))
+  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "example.test{Enter}")
+  await userEvent.click(within(dialog).getByRole("button", { name: "프로젝트 만들고 열기" }))
+  expect(mutate.start).toHaveBeenCalledWith({ name: "example.test-443", scope: "https://example.test:443" }, expect.anything())
+})
+
+it("stages discovered origins once and saves them through the existing project update", async () => {
+  state.projects = { data: { active: app, projects: [app], discoveredOrigins: ["https://api.app.example.test:443", "https://static.app.example.test:443"] }, isPending: false, isError: false }
+  const dialog = await openDialog()
+  const first = within(dialog).getByRole("button", { name: "https://api.app.example.test:443 범위에 추가" })
+  await userEvent.click(first)
+  expect(first).toBeDisabled()
+  expect(mutate.update).not.toHaveBeenCalled()
+  await userEvent.click(within(dialog).getByRole("button", { name: "https://static.app.example.test:443 범위에 추가" }))
+  await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }))
+  expect(mutate.update).toHaveBeenCalledWith({ name: "App", scope: "https://app.example.test:443\nhttps://api.app.example.test:443\nhttps://static.app.example.test:443" }, expect.anything())
+})
+
+it("keeps rejected changes editable and shows the save error next to the save controls", async () => {
+  state.updateError = new Error("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.")
+  const dialog = await openDialog()
+  await userEvent.click(within(dialog).getByRole("button", { name: "수정" }))
+  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "https://auth.example.test{Enter}")
+  await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }))
+  const alert = within(dialog).getByLabelText("프로젝트 변경 저장 실패")
+  expect(alert).toHaveTextContent("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.")
+  expect(alert.nextElementSibling).toContainElement(within(dialog).getByRole("button", { name: "변경 저장" }))
+  expect(within(dialog).getByRole("list", { name: "등록한 점검 대상 주소" })).toHaveTextContent("auth.example.test:443")
+  expect(within(dialog).queryByText(/프로젝트 정보를 저장했습니다/)).not.toBeInTheDocument()
+})
+
+it("rejects a duplicate root scope when the stored URL has a trailing slash", async () => {
+  const rooted = { ...app, scope: ["https://app.example.test:443/"] }
+  state.projects = { data: { active: rooted, projects: [rooted] }, isPending: false, isError: false }
+  const dialog = await openDialog()
+  await userEvent.click(within(dialog).getByRole("button", { name: "수정" }))
+  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "app.example.test{Enter}")
+  expect(within(dialog).getByText("이미 등록된 대상입니다.")).toBeInTheDocument()
+  expect(within(within(dialog).getByRole("list", { name: "등록한 점검 대상 주소" })).getAllByRole("listitem")).toHaveLength(1)
 })
 
 it("creates a project from a typed name and scope list", async () => {

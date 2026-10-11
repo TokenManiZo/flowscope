@@ -65,7 +65,7 @@ it("opens API details on every click, including the same row after collapsing th
 })
 
 it("shows server-provided endpoint and parameter deltas without inventing coverage percentages", async () => {
-  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "ONE_SOURCE_OBSERVED", parameters: [{ location: "JSON_BODY", fieldPath: "/product_id", displayName: "product_id", requirement: "UNKNOWN", observedShapes: ["INTEGER"], observedSources: ["HUMAN"], observationEvidenceIds: ["ev-human"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200, shape: "INTEGER", valueType: "INTEGER", presence: "PRESENT", byteLength: 3 }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", canonicalPath: "/product_id", observedValueTypes: ["INTEGER"], distinctValueCount: 1, coordinateResolved: true, distinctValueTruncated: false }] }] } }
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [surfaceEvent], evidenceOrdinals: { "ev-human": 5 }, surface: { extractions: [], probes: [], endpoints: [{ key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/api/order/search" }, observedSources: ["HUMAN"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200 }], declarations: [{ evidenceId: "ev-js", source: "HUMAN", runId: "human-1", type: "JAVASCRIPT", adapter: "fetch", reason: "static call" }], deltaState: "ONE_SOURCE_OBSERVED", parameters: [{ location: "JSON_BODY", fieldPath: "/product_id", displayName: "product_id", requirement: "UNKNOWN", observedShapes: ["INTEGER"], observedSources: ["HUMAN"], observationEvidenceIds: ["ev-human"], observations: [{ evidenceId: "ev-human", source: "HUMAN", runId: "human-1", identity: "user-a", status: 200, shape: "INTEGER", valueType: "INTEGER", presence: "PRESENT", byteLength: 3 }], declarations: [], deltaState: "ONE_SOURCE_OBSERVED", canonicalPath: "/product_id", observedValueTypes: ["INTEGER"], distinctValueCount: 1, coordinateResolved: true, distinctValueTruncated: false }] }] } }
 
   render(<AppProviders><SurfacePage /></AppProviders>)
 
@@ -76,9 +76,10 @@ it("shows server-provided endpoint and parameter deltas without inventing covera
   screen.getByRole("button", { name: /API 상세$/ }).click()
   expect((await screen.findAllByText(/product_id/))[0]).toBeVisible()
   await userEvent.click(screen.getByText("기록 연결 정보"))
-  expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("ev-human")
-  await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
-  await userEvent.setup().click(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · 비로그인 · HTTP 200/ }))
+  expect(screen.getByText("기록 연결 정보").parentElement).toHaveTextContent("#5")
+  expect(screen.getByText("기록 연결 정보").parentElement).not.toHaveTextContent("ev-human")
+  await userEvent.click(screen.getByRole("tab", { name: "요청 기록" }))
+  await userEvent.setup().click(screen.getByRole("button", { name: /요청 기록 상세 · #5 · H · 비로그인 · HTTP 200/ }))
   expect(screen.getByRole("button", { name: "Request Lab 열기" })).toBeVisible()
   expect(screen.queryByRole("button", { name: "현재 세션으로 Repeater 준비" })).not.toBeInTheDocument()
 })
@@ -219,14 +220,14 @@ it("opens existing observations when inputs are empty and makes linked ordinals 
   expect(inputComparisonStatus(endpoint)).toBe("선언 근거 없음")
   expect(inputComparisonStatus({ ...endpoint, observations: [] })).toBe("미관측")
   await user.click(screen.getByRole("button", { name: /API 상세$/ }))
-  expect(screen.getByRole("tab", { name: "관측 기록" })).toHaveAttribute("aria-selected", "true")
-  expect(screen.getAllByRole("button", { name: /관측 기록 상세/ })).toHaveLength(7)
+  expect(screen.getByRole("tab", { name: "요청 기록" })).toHaveAttribute("aria-selected", "true")
+  expect(screen.getAllByRole("button", { name: /요청 기록 상세/ })).toHaveLength(7)
   await user.click(screen.getByRole("tab", { name: "입력 비교" }))
   expect(screen.getByText("비교할 입력 필드가 추출되지 않았습니다.")).toBeVisible()
-  await user.click(screen.getByRole("button", { name: "관측 기록 7건 보기" }))
-  expect(screen.getByRole("tab", { name: "관측 기록" })).toHaveAttribute("aria-selected", "true")
+  await user.click(screen.getByRole("button", { name: "요청 기록 7건 보기" }))
+  expect(screen.getByRole("tab", { name: "요청 기록" })).toHaveAttribute("aria-selected", "true")
   await user.click(screen.getByText("기록 연결 정보"))
-  await user.click(screen.getByRole("button", { name: "연결 관측 기록 #703 보기" }))
+  await user.click(screen.getByRole("button", { name: "연결 요청 기록 #703 보기" }))
   expect(openEvidenceSelection).toHaveBeenLastCalledWith("ev-703", surfaceEvent.op, snapshotFixture.datasetRevision ?? snapshotFixture.identityRevision ?? 0)
 })
 
@@ -245,7 +246,37 @@ it("preserves a registered account named anon instead of calling it 비로그인
   }
   render(<AppProviders><SurfacePage /></AppProviders>)
   await userEvent.click(screen.getByRole("button", { name: /API 상세$/ }))
-  await userEvent.click(screen.getByRole("tab", { name: "관측 기록" }))
-  expect(screen.getByRole("button", { name: /관측 기록 상세 · ev-human · H · anon · HTTP 200/ })).toBeVisible()
-  expect(screen.queryByRole("button", { name: /관측 기록 상세.*비로그인/ })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("tab", { name: "요청 기록" }))
+  expect(screen.getByRole("button", { name: /요청 기록 상세 · ev-human · H · anon · HTTP 200/ })).toBeVisible()
+  expect(screen.queryByRole("button", { name: /요청 기록 상세.*비로그인/ })).not.toBeInTheDocument()
+})
+
+it("exports the visible API list as a URL text file, or only the checked rows", async () => {
+  ;(globalThis as { surfaceFixture?: Snapshot }).surfaceFixture = { ...snapshotFixture, events: [], surface: {
+    extractions: [], probes: [], endpoints: [
+      { key: { service: "https://api.example.test:443", method: "POST", pathTemplate: "/identity/api/auth/signup" }, observedSources: [], observations: [], declarations: [{ evidenceId: "d1", source: "LLM", runId: "llm-1", type: "ROUTE", adapter: "javascript-ast", reason: "fetch AST call-site" }], parameters: [], deltaState: "DECLARED_NOT_OBSERVED", kinds: ["ARTIFACT_API"] },
+      { key: { service: "https://api.example.test:443", method: "GET", pathTemplate: "/community/api/v2/community/posts/recent" }, observedSources: [], observations: [], declarations: [{ evidenceId: "d2", source: "LLM", runId: "llm-1", type: "ROUTE", adapter: "javascript-ast", reason: "fetch AST call-site" }], parameters: [], deltaState: "DECLARED_NOT_OBSERVED", kinds: ["ARTIFACT_API"] },
+    ],
+  } }
+  const blobs: Blob[] = []
+  const createObjectURL = vi.fn((blob: Blob) => { blobs.push(blob); return "blob:mock" })
+  vi.stubGlobal("URL", Object.assign(function () {}, URL, { createObjectURL, revokeObjectURL: vi.fn() }))
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined)
+  try {
+    const user = userEvent.setup()
+    render(<AppProviders><SurfacePage /></AppProviders>)
+    await user.click(screen.getByRole("button", { name: /URL 내보내기 2/ }))
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    const anchor = document.querySelector("a[download]") as HTMLAnchorElement | null
+    expect((anchor ?? clickSpy.mock.instances[0] as HTMLAnchorElement)?.download ?? "").toMatch(/^flowscope-urls-\d{8}-\d{4}\.txt$/)
+    expect(await blobs[0].text()).toBe("https://api.example.test:443/community/api/v2/community/posts/recent\nhttps://api.example.test:443/identity/api/auth/signup\n")
+
+    // 한 행만 체크하면 그 URL만 내보낸다.
+    await user.click(screen.getByRole("checkbox", { name: "POST /identity/api/auth/signup 선택" }))
+    await user.click(screen.getByRole("button", { name: /URL 내보내기 1/ }))
+    expect(await blobs[1].text()).toBe("https://api.example.test:443/identity/api/auth/signup\n")
+  } finally {
+    clickSpy.mockRestore()
+    vi.unstubAllGlobals()
+  }
 })

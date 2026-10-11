@@ -26,7 +26,7 @@ public final class LaneCompletionPolicy {
                 .filter(record -> SourceTrustPolicy.allows(record, SourceTrustPolicy.Use.LANE_COMPLETION))
                 .toList();
         if (responses.isEmpty()) {
-            return denied("exploration run needs at least one trusted in-scope response Evidence");
+            return denied("탐색 실행에 범위 안의 신뢰할 수 있는 응답 기록이 하나 이상 있어야 합니다.");
         }
         long coverage = snapshot.coverageRecords.stream()
                 .filter(record -> record.source == source && runId.equals(record.runId))
@@ -36,7 +36,7 @@ public final class LaneCompletionPolicy {
         List<String> evidenceIds = responses.stream().map(record -> record.evidenceId)
                 .filter(value -> value != null && !value.isBlank()).distinct().sorted().toList();
         if (evidenceIds.isEmpty()) {
-            return denied("exploration Evidence IDs have not been assigned yet");
+            return denied("탐색 요청 기록이 아직 저장되지 않았습니다.");
         }
         return new Decision(true, "동일 run의 신뢰 가능한 exploration 응답을 확인했습니다.",
                 evidenceIds, responses.size(), coverage);

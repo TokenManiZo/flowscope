@@ -34,15 +34,15 @@ export function AnonymousAutoVerification() {
   const skippedAfterQueue = live ? Math.max(0, live.skipped - (live.observed - live.eligible)) : 0
   const pending = live ? (live.pending ?? Math.max(0, live.queued - live.sent - live.drafted - skippedAfterQueue)) : 0
 
-  return <section aria-label="비로그인 자동 검증" className="space-y-3 rounded-xl border border-border p-4">
+  return <section aria-label="비로그인으로 자동 재전송" className="space-y-3 rounded-xl border border-border p-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <div className="flex items-center gap-1"><h2 className="font-semibold">비로그인 자동 검증</h2><InfoHint label="비로그인 자동 검증">계정에서 방문한 GET API를 로그인 없이 다시 확인해요. 같은 URL과 쿼리는 한 번만 확인하고, 켠 뒤 새로 수집한 요청부터 적용돼요.</InfoHint></div>
+        <div className="flex items-center gap-1"><h2 className="font-semibold">비로그인으로 자동 재전송</h2><InfoHint label="비로그인으로 자동 재전송">계정에서 방문한 GET API를 로그인 없이 다시 확인해요. 같은 URL과 쿼리는 한 번만 확인하고, 켠 뒤 새로 수집한 요청부터 적용돼요.</InfoHint></div>
       </div>
       <Button
         type="button"
         role="switch"
-        aria-label="비로그인 자동 검증"
+        aria-label="비로그인으로 자동 재전송"
         aria-checked={enabled}
         variant="outline"
         className="h-10 gap-3 px-3"

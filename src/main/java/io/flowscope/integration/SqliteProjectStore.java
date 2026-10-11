@@ -517,6 +517,7 @@ public final class SqliteProjectStore {
             writePolicyEntries(policy, "resource_owners", policyRoot.path("resource_owners"));
             writePolicyEntries(policy, "resource_policies", policyRoot.path("resource_policies"));
             writePolicyEntries(policy, "traffic_overrides", policyRoot.path("traffic_overrides"));
+            writePolicyEntries(policy, "llm_findings", policyRoot.path("llm_findings"));
             for (JsonNode value : policyRoot.path("accounts")) {
                 account.setString(1, required(value, "id"));
                 account.setString(2, required(value, "label"));
@@ -617,6 +618,7 @@ public final class SqliteProjectStore {
         readPolicyEntries(connection, policy, "resource_owners");
         readPolicyEntries(connection, policy, "resource_policies");
         readPolicyEntries(connection, policy, "traffic_overrides");
+        readPolicyEntries(connection, policy, "llm_findings");
         ArrayNode accounts = policy.putArray("accounts");
         try (Statement statement = connection.createStatement();
              ResultSet values = statement.executeQuery(

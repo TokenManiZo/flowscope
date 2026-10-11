@@ -50,7 +50,7 @@ export interface SourcePassLayoutProps {
 }
 
 /**
- * HUMAN·ZAP·LLM 세 단계가 같은 틀(제목·한 문장 카드 + 선택적 오른쪽 카드 + 작업 피드)로 보이게 하는 공통 레이아웃.
+ * HUMAN·ZAP·LLM 세 단계가 같은 틀(제목·한 문장 카드 + 선택적 오른쪽 카드 + 요청 목록)로 보이게 하는 공통 레이아웃.
  * 카드 안 모든 줄은 같은 왼쪽 선과 16px 간격을 쓴다.
  */
 export function SourcePassLayout({

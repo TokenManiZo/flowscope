@@ -102,7 +102,7 @@ export function HumanAccountTab({ settings, draft, patch, pathError, markError, 
 }) {
   const [openCandidate, setOpenCandidate] = useState<string | null>(null);
   const tiles: Array<[string, string, boolean]> = [
-    ["인증값", settings.human.credentialConflict ? "자격 충돌" : HUMAN_STATUS_META[settings.human.status].label, false],
+    ["인증값", settings.human.credentialConflict ? "다른 계정 로그인 정보 섞임" : HUMAN_STATUS_META[settings.human.status].label, false],
     ["마지막 기록", settings.human.lastRecordedAt ? clock(settings.human.lastRecordedAt) : "—", true],
     ["마지막 API", settings.human.lastRecordedApi || "—", true],
   ];

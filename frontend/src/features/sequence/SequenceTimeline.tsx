@@ -25,7 +25,7 @@ function TimelineRow({ entry, onSelect }: { entry: SequenceLink; onSelect(entry:
     <article className="grid gap-3 rounded-md bg-muted/30 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Badge variant="outline" className={source.lineClass}>{source.short} · {source.label} · {source.line}</Badge>
-        <Tooltip><TooltipTrigger asChild><button type="button" className="rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted" aria-label="흐름 링크 관측 기록 열기" onClick={() => onSelect(entry)}>연결 관측 기록 상세</button></TooltipTrigger><TooltipContent>생산·소비 관측 기록의 구조화된 선택을 엽니다.</TooltipContent></Tooltip>
+        <Tooltip><TooltipTrigger asChild><button type="button" className="rounded-md border bg-background px-3 py-2 text-sm hover:bg-muted" aria-label="흐름 링크 요청 기록 열기" onClick={() => onSelect(entry)}>연결 요청 기록 상세</button></TooltipTrigger><TooltipContent>생산·소비 요청 기록의 구조화된 선택을 엽니다.</TooltipContent></Tooltip>
       </div>
       <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
         <section className="min-w-0"><h3 className="text-xs font-medium text-muted-foreground">1. 생산</h3><p className="break-all font-medium">{boundedOperation(entry.link.fromOp, operationExpanded)}</p></section>
@@ -41,5 +41,5 @@ export function SequenceTimeline({ group, onSelect }: { group: SequenceGroup; on
   const [identityExpanded, setIdentityExpanded] = useState(false)
   const longIdentity = group.identity.length > IDENTITY_LIMIT
   const identity = identityExpanded || !longIdentity ? group.identity : `${group.identity.slice(0, IDENTITY_LIMIT)}…`
-  return <Card><section aria-label="데이터 의존 타임라인"><CardHeader><CardTitle>관측 신원</CardTitle><p className="break-all text-sm font-medium">{identityLabel(identity)}</p>{longIdentity && <button type="button" className="w-fit text-xs underline" onClick={() => setIdentityExpanded((current) => !current)}>{identityExpanded ? "신원 접기" : "신원 더 보기"}</button>}<CardDescription>서버 flowLinks가 보고한 순서와 값 표시합니다.</CardDescription></CardHeader><CardContent><ol className="grid gap-3">{group.links.map((entry) => <TimelineRow entry={entry} key={entry.key} onSelect={onSelect} />)}</ol></CardContent></section></Card>
+  return <Card><section aria-label="데이터 의존 타임라인"><CardHeader><CardTitle>요청한 계정</CardTitle><p className="break-all text-sm font-medium">{identityLabel(identity)}</p>{longIdentity && <button type="button" className="w-fit text-xs underline" onClick={() => setIdentityExpanded((current) => !current)}>{identityExpanded ? "계정 접기" : "계정 더 보기"}</button>}<CardDescription>서버 flowLinks가 보고한 순서와 값 표시합니다.</CardDescription></CardHeader><CardContent><ol className="grid gap-3">{group.links.map((entry) => <TimelineRow entry={entry} key={entry.key} onSelect={onSelect} />)}</ol></CardContent></section></Card>
 }

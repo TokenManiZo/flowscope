@@ -36,7 +36,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
     const place = () => {
       const rect = input.current?.getBoundingClientRect()
       if (!rect) return
-      const width = Math.min(480, window.innerWidth - 32)
+      const width = Math.min(rect.width, Math.max(0, window.innerWidth - 32))
       const top = rect.bottom + 4
       const next = { left: Math.max(16, Math.min(rect.left, window.innerWidth - width - 16)), top, width, height: Math.max(80, Math.min(320, window.innerHeight - top - 88)) }
       setBounds(current => current.left === next.left && current.top === next.top && current.width === next.width && current.height === next.height ? current : next)
@@ -45,6 +45,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
     window.addEventListener("resize", place)
     window.addEventListener("scroll", place, true)
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place)
+    if (root.current) observer?.observe(root.current)
     if (root.current?.parentElement) observer?.observe(root.current.parentElement)
     const outside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node) && !popup.current?.contains(event.target as Node)) setOpen(false) }
     document.addEventListener("pointerdown", outside)
@@ -61,7 +62,7 @@ export function GraphSearchInput({ query, results, disabled, searching, canvas, 
     <div className="relative">
       <Search className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-muted-foreground" aria-hidden="true" />
       <Input ref={input} role="combobox" aria-label="프로젝트 전체 노드 검색" aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? `${id}-results` : undefined}
-        aria-activedescendant={expanded && active >= 0 ? `${id}-result-${active}` : undefined} value={query} placeholder="서비스, API, 객체 ID, 신원 검색" className="h-9 bg-[var(--flowscope-pane)] pl-8 pr-8 text-sm"
+        aria-activedescendant={expanded && active >= 0 ? `${id}-result-${active}` : undefined} value={query} placeholder="서비스, API, 객체 ID, 계정 검색" className="h-9 bg-[var(--flowscope-pane)] pl-8 pr-8 text-sm"
         onFocus={() => setOpen(true)} onChange={event => { onQuery(event.target.value); setActiveKey(null); setOpen(true) }}
         onKeyDown={event => {
           if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return

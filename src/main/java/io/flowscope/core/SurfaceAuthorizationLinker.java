@@ -54,6 +54,9 @@ final class SurfaceAuthorizationLinker {
     private record DecisionKey(AuthorizationAnalysis.CellKey cell, String evidence, Source source) {}
 
     private final AuthorizationAnalysis authorization;
+    private final ObservedObjectIndex objects;
+    private final Map<String, List<io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation>> objectsByEvidence = new HashMap<>();
+    private final Map<String, List<RequestRecord>> rowsByPath = new HashMap<>();
     private final Map<RoleKey, Set<AccessRole>> roles = new HashMap<>();
     private final Map<Row, Map<String, List<ResourceReference>>> references = new IdentityHashMap<>();
     private final Map<Row, TreeSet<String>> resources = new IdentityHashMap<>();
@@ -63,14 +66,20 @@ final class SurfaceAuthorizationLinker {
     /** 호출당 입력 범위의 색인. 레코드·원문 projection 입력은 결과로 새지 않는다. */
     SurfaceAuthorizationLinker(Collection<List<Row>> endpointRows, AuthorizationAnalysis authorization) {
         this.authorization = authorization == null ? AuthorizationAnalysis.empty() : authorization;
+        List<RequestRecord> records = endpointRows.stream().flatMap(List::stream).map(Row::record).toList();
+        this.objects = ObservedObjectIndex.build(records);
+        for (var object : objects.observations()) objectsByEvidence.computeIfAbsent(object.eventId(), ignored -> new ArrayList<>()).add(object);
+        records.forEach(record -> rowsByPath.computeIfAbsent(record.service + "\0" + record.path, ignored -> new ArrayList<>()).add(record));
         Map<String, Row> byEvidence = new HashMap<>();
         for (List<Row> rows : endpointRows) {
             for (Row row : rows) {
                 RequestRecord r = row.record();
                 byEvidence.put(r.evidenceId, row);
                 if (knownRole(r.role)) {
-                    roles.computeIfAbsent(new RoleKey(r.op, r.resource, null), ignored -> new TreeSet<>()).add(r.role);
-                    roles.computeIfAbsent(new RoleKey(r.op, r.resource, r.idn), ignored -> new TreeSet<>()).add(r.role);
+                    for (String target : objects.resources(r.evidenceId)) {
+                        roles.computeIfAbsent(new RoleKey(r.op, target, null), ignored -> new TreeSet<>()).add(r.role);
+                        roles.computeIfAbsent(new RoleKey(r.op, target, r.idn), ignored -> new TreeSet<>()).add(r.role);
+                    }
                 }
                 Map<String, List<ResourceReference>> refs = new HashMap<>();
                 TreeSet<String> targets = new TreeSet<>();
@@ -214,9 +223,42 @@ final class SurfaceAuthorizationLinker {
                 ? List.of() : references.get(row).getOrDefault(observation.value().digest(), List.of());
         List<String> exact = matching.stream().filter(ref -> exact(row.record(), observation, parameter, ref))
                 .map(ResourceReference::resource).distinct().toList();
-        if (exact.size() == 1) return new Relation(row, exact.getFirst(), Confidence.OBSERVED);
+        if (exact.size() == 1) return canonicalRelation(row, observation, parameter, exact.getFirst(), Confidence.OBSERVED);
         TreeSet<String> targets = resources.get(row);
-        if (exact.isEmpty() && targets.size() == 1) return new Relation(row, targets.first(), Confidence.INFERRED);
+        if (exact.isEmpty() && targets.size() == 1) return canonicalRelation(row, observation, parameter, targets.first(), Confidence.INFERRED);
+        return new Relation(row, null, Confidence.UNKNOWN);
+    }
+
+    /** Semantic field extraction remains metadata; only an existing core OBJ can carry authority. */
+    private Relation canonicalRelation(Row row, ParameterObservation observation, Parameter parameter,
+                                       String semanticReference, Confidence confidence) {
+        var record = row.record();
+        String kind = switch (parameter.location()) {
+            case PATH -> "PATH"; case QUERY -> "QUERY";
+            case JSON_BODY, FORM_BODY, MULTIPART_BODY, GRAPHQL_VARIABLE, XML_PATH -> "REQUEST_BODY";
+            default -> "";
+        };
+        var candidates = objectsByEvidence.getOrDefault(record.evidenceId, List.of());
+        List<String> direct = candidates.stream().filter(object -> object.kind().equals(kind)
+                && object.fields().contains(observation.key().canonicalPath()))
+                .map(ObservedObjectIndex::resource).distinct().toList();
+        if (confidence == Confidence.OBSERVED && direct.size() == 1) return new Relation(row, direct.getFirst(), confidence);
+        Set<String> scope = new LinkedHashSet<>(objects.resources(record.evidenceId));
+        if (record.phase == RunPhase.VALIDATION) for (RequestRecord original : rowsByPath.getOrDefault(record.service + "\0" + record.path, List.of()))
+            if (original.method.equals(record.method)) {
+                scope.addAll(objects.resources(original.evidenceId));
+                // Validation may refer to an existing input tuple, but cannot create a new OBJ or borrow its verdict.
+                if (Objects.equals(original.query, record.query) && Objects.equals(original.reqBody, record.reqBody)) {
+                    List<String> sameInput = objectsByEvidence.getOrDefault(original.evidenceId, List.of()).stream()
+                            .filter(object -> object.kind().equals(kind)
+                                    && object.fields().contains(observation.key().canonicalPath()))
+                            .map(ObservedObjectIndex::resource).distinct().toList();
+                    if (sameInput.size() == 1) return new Relation(row, sameInput.getFirst(), confidence);
+                }
+            }
+        List<String> targets = scope.stream().filter(key -> semanticReference.equals(objects.reference(key))).toList();
+        if (targets.size() == 1) return new Relation(row, targets.getFirst(), confidence);
+        if (confidence == Confidence.INFERRED && direct.size() == 1) return new Relation(row, direct.getFirst(), confidence);
         return new Relation(row, null, Confidence.UNKNOWN);
     }
 

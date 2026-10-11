@@ -14,17 +14,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDeleteProjectMutation, useOpenProjectMutation, useProjectsQuery, useResetProjectTrafficMutation, useStartProjectMutation, useUpdateProjectMutation } from "@/lib/query/hooks"
 import { cn } from "@/lib/utils"
 
-/** 점검 대상 주소를 서버 exact scope 형식(scheme://host:port[/path])으로 맞춘다. 쿼리·조각은 뺀다. */
+/** Bare DNS names default to HTTPS; the server still receives an exact URL scope. */
 export function normalizeScopeEntry(raw: string): { entry: string | null; note?: string } {
   const value = raw.trim()
   if (!value) return { entry: null }
   try {
-    const url = new URL(value)
+    const bareDomain = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i.test(value)
+      && !/^[0-9.]+$/.test(value)
+    const url = new URL(bareDomain ? `https://${value}` : value)
+    if (url.username || url.password) return { entry: null, note: "사용자정보가 포함된 주소는 등록할 수 없습니다." }
     if (url.protocol !== "http:" && url.protocol !== "https:") return { entry: null, note: "http 또는 https 주소만 등록할 수 있습니다." }
     const port = url.port || (url.protocol === "https:" ? "443" : "80")
     const path = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")
     const entry = `${url.protocol}//${url.hostname}:${port}${path}`
-    return url.search || url.hash ? { entry, note: "쿼리와 뒷부분은 제외하고 등록했습니다." } : { entry }
+    return bareDomain ? { entry, note: "HTTPS로 등록했습니다. 브라우저에서 사용한 하위 도메인을 자동으로 발견합니다." }
+      : url.search || url.hash ? { entry, note: "쿼리와 뒷부분은 제외하고 등록했습니다." } : { entry }
   } catch {
     return { entry: null, note: "주소 형식이 올바르지 않습니다. 예: http://127.0.0.1:8888" }
   }
@@ -67,6 +71,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   const resetTraffic = useResetProjectTrafficMutation()
   const deleteProject = useDeleteProjectMutation()
   const active = projects.data?.active ?? null
+  const discovered = projects.data?.discoveredOrigins ?? []
   const list = projects.data?.projects ?? []
   const others = list.filter(project => project.id !== active?.id && project.readable && project.managed)
   const busy = openProject.isPending || startProject.isPending || updateProject.isPending || resetTraffic.isPending || deleteProject.isPending
@@ -91,6 +96,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   const [nameTouched, setNameTouched] = useState(false)
 
   useEffect(() => { if (!open) { setNotice(null); setEditOpen(false); setSwitchId(null); setQuery("") } }, [open])
+  useEffect(() => { setEditOpen(false); setEditScopes([]); setEditNote(null) }, [active?.id])
   useEffect(() => { if (!others.some(project => project.id === fallbackId)) setFallbackId(others[0]?.id ?? "") }, [others, fallbackId])
 
   const deleteTarget = list.find(project => project.id === deleteId)
@@ -108,7 +114,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   const addTo = (draft: string, current: readonly string[], onAdd: (entry: string) => void, onNote: (note: string | null, failed: boolean) => void) => {
     const { entry, note } = normalizeScopeEntry(draft)
     if (!entry) return onNote(note ?? "대상 주소를 입력하세요.", true)
-    if (current.includes(entry)) return onNote("이미 등록된 대상입니다.", true)
+    if (current.some(scope => normalizeScopeEntry(scope).entry === entry)) return onNote("이미 등록된 대상입니다.", true)
     onAdd(entry)
     onNote(note ?? null, false)
   }
@@ -119,6 +125,15 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
     setEditDraft("")
     setEditNote(null)
     setEditOpen(true)
+  }
+  const addDiscovered = (origin: string) => {
+    if (!active) return
+    const { entry } = normalizeScopeEntry(origin)
+    if (!entry) return
+    const current = editOpen ? editScopes : [...active.scope]
+    if (!editOpen) beginEdit()
+    setEditScopes(current.some(scope => normalizeScopeEntry(scope).entry === entry) ? [...current] : [...current, entry])
+    setEditNote("점검 범위에 추가했습니다. 변경 저장을 눌러 적용하세요.")
   }
   const saveEdit = () => {
     const nextName = editName.trim()
@@ -163,7 +178,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
                 <AlertDialog>
                   <AlertDialogTrigger asChild><Button variant="outline" size="sm" disabled={!active || busy}><RotateCcw className="me-1 size-3.5" aria-hidden="true" />기록 비우기</Button></AlertDialogTrigger>
                   <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>현재 트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 관측 기록과 실행 기록은 복구할 수 없습니다. 프로젝트, 점검 범위, 계정과 정책은 유지됩니다.</AlertDialogDescription></AlertDialogHeader>
+                    <AlertDialogHeader><AlertDialogTitle>현재 트래픽을 초기화할까요?</AlertDialogTitle><AlertDialogDescription>수집된 요청 기록과 실행 기록은 복구할 수 없습니다. 프로젝트, 점검 범위, 계정과 정책은 유지됩니다.</AlertDialogDescription></AlertDialogHeader>
                     <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => resetTraffic.mutate(undefined, { onSuccess: () => setNotice(`"${active?.name}" 프로젝트의 기록을 비웠습니다.`) })}>기록 비우기</AlertDialogAction></AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
@@ -180,6 +195,20 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
               </div>
             </div>
 
+            {active && <section aria-label="발견한 서브도메인" className="mt-4 space-y-2 border-t border-border pt-4">
+              <h3 className="text-sm font-semibold">발견한 서브도메인</h3>
+              <p className="text-xs text-muted-foreground">방문한 서브도메인과 트래픽이 자동으로 표시됩니다.</p>
+              {discovered.length ? <ul className="space-y-1">
+                {discovered.map(origin => {
+                  const staged = editOpen && editScopes.some(scope => normalizeScopeEntry(scope).entry === normalizeScopeEntry(origin).entry)
+                  return <li key={origin} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
+                    <span className="break-all font-mono text-xs">{origin}</span>
+                    <Button size="sm" variant="secondary" disabled={busy || staged} onClick={() => addDiscovered(origin)} aria-label={`${origin} 범위에 추가`}>{staged ? "저장 대기" : "범위에 추가"}</Button>
+                  </li>
+                })}
+              </ul> : null}
+            </section>}
+
             {editOpen && active && <div className="mt-4 space-y-4 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold">프로젝트 수정</h3>
@@ -192,21 +221,22 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
               <div className="space-y-2">
                 <Label htmlFor="edit-scope-input">점검 대상 주소</Label>
                 <div className="flex gap-2">
-                  <Input id="edit-scope-input" value={editDraft} placeholder="https://service.example.com:443" className="font-mono text-xs"
+                  <Input id="edit-scope-input" value={editDraft} placeholder="example.com 또는 https://service.example.com:443" className="font-mono text-xs"
                     onChange={event => { setEditDraft(event.target.value); setEditNote(null) }}
                     onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTo(editDraft, editScopes, entry => { setEditScopes(current => [...current, entry]); setEditDraft("") }, note => setEditNote(note)) } }} />
                   <Button variant="secondary" onClick={() => addTo(editDraft, editScopes, entry => { setEditScopes(current => [...current, entry]); setEditDraft("") }, note => setEditNote(note))}>추가</Button>
                 </div>
                 <ScopeList scopes={editScopes} onRemove={scope => setEditScopes(current => current.filter(item => item !== scope))} />
-                <p className={cn("text-xs", editNote ? "text-destructive" : "text-muted-foreground")}>{editNote ?? "범위를 바꾸면 이후 수집은 새 범위를 따르고, 이미 모은 기록은 그대로 둡니다."}</p>
+                <p className={cn("text-xs", editNote ? "text-destructive" : "text-muted-foreground")}>{editNote ?? "루트 도메인만 입력하면 HTTPS로 등록하고 하위 도메인을 자동 발견합니다. 범위 변경은 이후 수집에 적용됩니다."}</p>
               </div>
+              {errorMessage(updateProject.error) && <Alert variant="destructive" aria-label="프로젝트 변경 저장 실패"><AlertDescription>변경 사항을 저장하지 못했습니다. {errorMessage(updateProject.error)}</AlertDescription></Alert>}
               <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between">
                 <AlertDialog>
                   <AlertDialogTrigger asChild><Button variant="outline" className="text-destructive hover:text-destructive" disabled={busy}><Trash2 className="me-1 size-3.5" aria-hidden="true" />프로젝트 삭제</Button></AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>{active.name} 프로젝트를 삭제할까요?</AlertDialogTitle>
-                      <AlertDialogDescription>프로젝트 DB와 관측 기록이 영구 삭제되며 복구할 수 없습니다. 열려 있는 프로젝트는 지울 수 없어, 아래 프로젝트로 먼저 전환한 뒤 삭제합니다.</AlertDialogDescription>
+                      <AlertDialogDescription>프로젝트 DB와 요청 기록이 영구 삭제되며 복구할 수 없습니다. 열려 있는 프로젝트는 지울 수 없어, 아래 프로젝트로 먼저 전환한 뒤 삭제합니다.</AlertDialogDescription>
                     </AlertDialogHeader>
                     {others.length ? <select aria-label="삭제 후 열 프로젝트" className={selectClass} value={fallbackId} onChange={event => setFallbackId(event.target.value)}>
                       {others.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
@@ -255,7 +285,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
             </ul> : <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">{needle ? "검색과 일치하는 프로젝트가 없습니다." : "다른 프로젝트가 없습니다. \"새 프로젝트\" 탭에서 만들 수 있습니다."}</p>}
             <AlertDialog open={Boolean(deleteTarget)} onOpenChange={next => { if (!next) setDeleteId(null) }}>
               <AlertDialogContent>
-                <AlertDialogHeader><AlertDialogTitle>{deleteTarget?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 관측 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
+                <AlertDialogHeader><AlertDialogTitle>{deleteTarget?.name} 프로젝트를 삭제할까요?</AlertDialogTitle><AlertDialogDescription>프로젝트 DB와 저장된 요청 기록이 영구 삭제되며 복구할 수 없습니다.</AlertDialogDescription></AlertDialogHeader>
                 <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { const target = deleteTarget; if (target) deleteProject.mutate(target.id, { onSuccess: () => setNotice(`"${target.name}" 프로젝트를 삭제했습니다.`) }) }}>프로젝트 삭제</AlertDialogAction></AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -271,18 +301,18 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
           <section className="space-y-2 rounded-lg border border-border p-3">
             <Label htmlFor="scope-input" className="text-sm font-semibold">점검 대상 주소</Label>
             <div className="flex gap-2">
-              <Input id="scope-input" value={scopeDraft} placeholder="http://127.0.0.1:8888" className="font-mono text-xs"
+              <Input id="scope-input" value={scopeDraft} placeholder="example.com 또는 http://127.0.0.1:8888" className="font-mono text-xs"
                 onChange={event => { setScopeDraft(event.target.value); setScopeNote(null); setScopeError(false) }}
                 onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTo(scopeDraft, scopes, entry => { setScopes(current => [...current, entry]); setScopeDraft("") }, (note, failed) => { setScopeNote(note); setScopeError(failed) }) } }} />
               <Button variant="secondary" onClick={() => addTo(scopeDraft, scopes, entry => { setScopes(current => [...current, entry]); setScopeDraft("") }, (note, failed) => { setScopeNote(note); setScopeError(failed) })}>추가</Button>
             </div>
             <ScopeList scopes={scopes} onRemove={scope => setScopes(current => current.filter(item => item !== scope))} />
-            <p className={cn("text-xs", scopeError ? "text-destructive" : "text-muted-foreground")}>{scopeNote ?? "한 줄에 하나씩 추가합니다. 주소와 포트까지 정확히 적어 주세요. 현재 프로젝트는 저장된 채로 보존됩니다."}</p>
+            <p className={cn("text-xs", scopeError ? "text-destructive" : "text-muted-foreground")}>{scopeNote ?? "루트 도메인만 입력하면 HTTPS로 등록합니다. 실제 브라우저 요청에서 발견한 하위 도메인은 현재 프로젝트에 표시됩니다."}</p>
           </section>
           <DialogFooter className="sm:justify-end"><Button disabled={!canCreate} onClick={createProject}>프로젝트 만들고 열기</Button></DialogFooter>
         </TabsContent>
       </Tabs>
-      {error && <Alert variant="destructive" aria-label={error}><AlertDescription>{error}</AlertDescription></Alert>}
+      {error && !(editOpen && updateProject.error) && <Alert variant="destructive" aria-label={error}><AlertDescription>{error}</AlertDescription></Alert>}
     </DialogContent>
   </Dialog>
 }

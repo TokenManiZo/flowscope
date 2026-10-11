@@ -4,6 +4,7 @@
   "version": "1.0.1",
   "type": "module",
   "scripts": {
+    "preview:matrix": "node scripts/start-matrix-preview.mjs",
     "build": "node scripts/clean-react-output.mjs && vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --exclude scripts/generate-notices.test.mjs",

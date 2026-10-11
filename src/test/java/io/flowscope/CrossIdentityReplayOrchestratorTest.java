@@ -280,8 +280,10 @@ final class CrossIdentityReplayOrchestratorTest {
         assertEquals(ToolKind.BURP, replay.tool);
         assertEquals("user-a", replay.replayBasisIdentity);
         assertEquals("user-b", replay.laneAccountId);
-        assertEquals(Verdict.SUSPICIOUS, cross.overall());
-        assertFalse(result.analysis.findings().isEmpty());
+        assertEquals(Verdict.ALLOW, cross.overall());
+        assertNull(cross.key().resource(), "Replay records retain function coverage but do not create collected OBJ targets");
+        assertTrue(result.objects.resources(replay.evidenceId).isEmpty());
+        assertTrue(result.analysis.findings().isEmpty());
         assertTrue(config.reviews().isEmpty(), "controlled replay may create a candidate, never a human confirmation");
         assertEquals(1, run.sent());
     }

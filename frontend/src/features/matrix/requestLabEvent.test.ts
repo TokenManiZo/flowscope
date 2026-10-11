@@ -1,9 +1,17 @@
 import { expect, it } from "vitest"
 import type { EventRecord } from "@/lib/api/types"
-import { requestLabEvent } from "./requestLabEvent"
+import { latestOperationEvent, requestLabEvent } from "./requestLabEvent"
 
 const op = "https://api.test:443 GET /api/orders/{id}"
 const event = (eventId: string, extra: Partial<EventRecord> = {}) => ({ eventId, op, idn: "a", resource: "https://api.test:443 orders:101", timestamp: 1, phase: "EXPLORATION", sourceDetail: "BROWSER", clusterEvidenceIds: [eventId], ...extra }) as EventRecord
+
+it("opens the latest API request across accounts and includes replay traffic without preferring older raw", () => {
+  const events = [event("old", { rawAvailable: true, lastSeen: 100 }),
+    event("latest", { timestamp: 9, idn: "anonymous", phase: "VALIDATION" }),
+    event("other-api", { timestamp: 20, op: "GET /other" })]
+  expect(latestOperationEvent(events, op)?.eventId).toBe("latest")
+  expect(latestOperationEvent(events, "missing")).toBeUndefined()
+})
 
 it("keeps the basis record while its raw request is still in memory", () => {
   const events = [event("basis", { rawAvailable: true }), event("newer", { rawAvailable: true, timestamp: 9 })]
@@ -32,4 +40,13 @@ it("never substitutes a resent record and falls back to the basis record when no
   expect(requestLabEvent(events, op, "basis", null)?.eventId).toBe("basis")
   // 근거 기록을 못 찾아도 같은 API의 원본 기록을 연다(다시 보낸 기록은 고르지 않는다).
   expect(requestLabEvent(events, op, undefined, null)?.eventId).toBe("basis")
+})
+
+
+it("limits an OBJ API link to that row's captured evidence", () => {
+  const events = [event("basis", { timestamp: 1 }), event("other-obj", { timestamp: 99 }),
+    event("cluster", { timestamp: 2, clusterEvidenceIds: ["same-obj"] })]
+  expect(latestOperationEvent(events, op, ["basis", "same-obj"])?.eventId).toBe("cluster")
+  expect(latestOperationEvent(events, op, ["missing"])).toBeUndefined()
+  expect(requestLabEvent(events, op, "basis", "https://api.test:443 observed-object:obj:sha256:abc")?.eventId).toBe("basis")
 })

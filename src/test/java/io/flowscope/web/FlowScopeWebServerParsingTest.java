@@ -25,4 +25,25 @@ final class FlowScopeWebServerParsingTest {
         assertThrows(IllegalArgumentException.class,
                 () -> FlowScopeWebServer.parseZapDefinitions("OPENAPI https://a.test/a extra"));
     }
+
+    @Test
+    void treatsABareUrlLineAsAnOpenApiDefinition() {
+        List<ZapCampaign.ZapDefinition> definitions = FlowScopeWebServer.parseZapDefinitions("""
+                http://localhost:8000/api/v2/docs.json
+                HTTPS://api.example.test/openapi.yaml
+                POSTMAN https://api.example.test/collection.json
+                """);
+
+        assertEquals(3, definitions.size());
+        assertEquals(new ZapCampaign.ZapDefinition(ZapCampaign.ZapDefinitionType.OPENAPI,
+                "http://localhost:8000/api/v2/docs.json", ""), definitions.get(0));
+        assertEquals(new ZapCampaign.ZapDefinition(ZapCampaign.ZapDefinitionType.OPENAPI,
+                "HTTPS://api.example.test/openapi.yaml", ""), definitions.get(1));
+        assertEquals(ZapCampaign.ZapDefinitionType.POSTMAN, definitions.get(2).type());
+        // 주소 두 개를 한 줄에 쓰거나 형식 이름이 틀리면 지금처럼 거부한다.
+        assertThrows(IllegalArgumentException.class,
+                () -> FlowScopeWebServer.parseZapDefinitions("https://a.test/a https://a.test/b"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FlowScopeWebServer.parseZapDefinitions("SWAGGER https://a.test/a"));
+    }
 }

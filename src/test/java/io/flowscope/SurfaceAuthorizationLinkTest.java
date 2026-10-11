@@ -92,7 +92,7 @@ final class SurfaceAuthorizationLinkTest {
     void 미확정_소유자나_첫_성공_소유자는_SELF_ALLOW를_만들지_않는다() {
         RequestRecord r = record(Source.HUMAN, "A", "PATCH", 200, "{\"orderId\":101}");
         AuthorizationAnalysis auth = authorization(List.of(r), false);
-        assertFalse(auth.owners().get(r.resource).confirmed());
+        assertFalse(auth.owners().get(CoreObjectFixture.resource(r)).confirmed());
         SurfaceAnalysis result = enrich(List.of(r), auth);
         assertTrue(result.validationCells().stream().noneMatch(c -> c.verdict() == Verdict.ALLOW));
         assertTrue(result.validationCells().stream().filter(c -> c.subjectClass() == SELF).noneMatch(ParameterValidationCell::applicable));
@@ -108,7 +108,10 @@ final class SurfaceAuthorizationLinkTest {
         }
         for (int status : List.of(404, 429, 500)) {
             RequestRecord r = record(Source.HUMAN, "A", "PATCH", status, "{\"orderId\":101}");
-            assertCell(enrich(List.of(r), authorization(List.of(r), true)), r, SELF, Verdict.UNDECIDED);
+            SurfaceAnalysis surface = enrich(List.of(r), authorization(List.of(r), true));
+            assertTrue(surface.validationCells().stream().noneMatch(c -> c.verdict() == Verdict.ALLOW));
+            assertTrue(links(surface, "/orderId").stream().allMatch(l -> l.resource() == null),
+                    "A failed-only input cannot manufacture an authoritative OBJ");
         }
         RequestRecord denied = record(Source.HUMAN, "A", "PATCH", 200, "{\"orderId\":101}");
         denied.body = "{\"error\":\"forbidden\"}";
@@ -139,7 +142,7 @@ final class SurfaceAuthorizationLinkTest {
         AuthorizationAnalysis auth = authorization(List.of(self), true);
         SurfaceAnalysis result = enrich(List.of(self), auth);
         assertTrue(result.validationCells().stream().anyMatch(c -> c.subjectClass() == ANONYMOUS && c.verdict() == Verdict.UNTESTED));
-        assertTrue(result.validationCells().stream().filter(c -> c.verdict() == Verdict.UNTESTED)
+        assertTrue(result.validationCells().stream().filter(c -> c.verdict() == Verdict.UNTESTED && c.canonicalPath().equals("/orderId"))
                 .allMatch(c -> c.evidenceIds().isEmpty() && c.basisEvidenceIds().contains(self.evidenceId)));
         assertTrue(result.parameterGaps().stream().anyMatch(g -> g.type() == GapType.AUTH_VARIANT_UNTESTED
                 && g.evidenceIds().contains(self.evidenceId) && g.canonicalPath().equals("/orderId")
@@ -191,7 +194,7 @@ final class SurfaceAuthorizationLinkTest {
     void 미확정_subject는_basis만_갖고_다른_source의_판정을_빌리지_않는다() {
         RequestRecord a = record(Source.HUMAN, "A", "PATCH", 200, "{\"orderId\":101}");
         SurfaceAnalysis noOwner = enrich(List.of(a), authorization(List.of(a), false));
-        assertTrue(noOwner.validationCells().stream().filter(c -> c.subjectClass() == SELF || c.subjectClass() == OTHER_OWNER)
+        assertTrue(noOwner.validationCells().stream().filter(c -> c.canonicalPath().equals("/orderId") && (c.subjectClass() == SELF || c.subjectClass() == OTHER_OWNER))
                 .allMatch(c -> !c.applicable() && c.verdict() == Verdict.UNTESTED && c.evidenceIds().isEmpty()
                         && c.basisEvidenceIds().contains(a.evidenceId)));
         RequestRecord scanner = record(Source.SCANNER, "A", "PATCH", 200, a.reqBody);
@@ -292,7 +295,7 @@ final class SurfaceAuthorizationLinkTest {
         List<AuthorizationTargetLink> corroborated = links(second, "/status").stream()
                 .filter(l -> l.confidence() == Confidence.CORROBORATED).toList();
         assertEquals(1, corroborated.size());
-        assertEquals(a.resource, corroborated.getFirst().resource());
+        assertEquals(CoreObjectFixture.resource(a), corroborated.getFirst().resource());
         assertTrue(corroborated.getFirst().evidenceIds().containsAll(List.of(a.evidenceId, c.evidenceId)));
     }
 
@@ -373,7 +376,8 @@ final class SurfaceAuthorizationLinkTest {
                 "{\"status\":\"READY\",\"orderId\":101}");
         AnalysisConfig config = new AnalysisConfig();
         Pipeline.Result probe = Pipeline.runIsolated(List.of(owner, other), config);
-        String resource = probe.records.getFirst().resource;
+        String resource = probe.objects.observations().stream().filter(o -> o.eventId().equals(probe.records.getFirst().evidenceId)
+                && o.kind().equals("PATH")).map(io.flowscope.core.ObservedObjectIndex::resource).findFirst().orElseThrow();
         String ownerIdentity = probe.records.getFirst().idn;
         config = new AnalysisConfig().withResourceOwner(resource, ownerIdentity)
                 .withIdentityRole(ownerIdentity, AccessRole.USER)
@@ -398,33 +402,35 @@ final class SurfaceAuthorizationLinkTest {
         assertFalse(serialized.contains("READY-SECRET"));
         assertFalse(serialized.contains("\"digest\""));
         String withoutSignatures = serialized.replaceAll("ctx:v1:sha256:[0-9a-f]+", "")
-                .replaceAll("pg:(?:v1|auth):sha256:[0-9a-f]+", "");
+                .replaceAll("pg:(?:v1|auth):sha256:[0-9a-f]+", "")
+                .replaceAll("observed-object:.*?sha256:[0-9a-f]+", "");
         assertFalse(withoutSignatures.contains("sha256:"));
     }
 
     @Test
     void nestedPathSlotsReferenceTheirOwnResourcePrefixes() {
-        assertNestedPathLinks("11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222");
+        assertNestedPathLinks("a1111111-1111-4111-8111-111111111111", "b2222222-2222-4222-8222-222222222222");
     }
 
     @Test
     void repeatedNestedIdsRemainSeparatedByPathPosition() {
-        assertNestedPathLinks("11111111-1111-4111-8111-111111111111", "11111111-1111-4111-8111-111111111111");
+        assertNestedPathLinks("a1111111-1111-4111-8111-111111111111", "a1111111-1111-4111-8111-111111111111");
     }
 
     private static void assertNestedPathLinks(String parentId, String childId) {
         RequestRecord record = pipelineRecord(Source.HUMAN, "anon", "GET",
                 "/api/orders/" + parentId + "/items/" + childId, 200, null);
         record.body = "{\"id\":\"" + childId + "\"}";
-        Pipeline.Result result = Pipeline.runIsolated(List.of(record), new AnalysisConfig());
+        Pipeline.Result result = CoreObjectFixture.run(List.of(record), new AnalysisConfig());
         List<io.flowscope.core.ResourceReference> originalReferences = List.copyOf(result.records.getFirst().resourceReferences);
         SurfaceAnalysis surface = SurfaceAnalyzer.analyze(result.records, result.coverageRecords, List.of(), result.analysis);
 
         AuthorizationTargetLink parent = link(surface, "/segments/2");
-        AuthorizationTargetLink child = link(surface, "/segments/4");
-        assertEquals(record.service + " orders:" + parentId, parent.resource());
-        assertEquals(parent.resource() + "/items:" + childId, child.resource());
-        assertEquals(Confidence.OBSERVED, parent.confidence());
+        AuthorizationTargetLink child = links(surface, "/segments/4").stream()
+                .filter(target -> target.evidenceIds().contains(record.evidenceId)).findFirst().orElseThrow();
+        assertNull(parent.resource(), "Parent path metadata is not a separate recognized OBJ");
+        assertEquals(CoreObjectFixture.resource(record), child.resource());
+        assertEquals(Confidence.UNKNOWN, parent.confidence());
         assertEquals(Confidence.OBSERVED, child.confidence());
         assertEquals(originalReferences, result.records.getFirst().resourceReferences,
                 "Surface linking must not change the stored references or the authorization core");
@@ -535,6 +541,8 @@ final class SurfaceAuthorizationLinkTest {
     }
 
     private static SurfaceAnalysis enrich(List<RequestRecord> records, AuthorizationAnalysis auth) {
+        if (records.stream().map(r -> r.evidenceId).distinct().count() == records.size())
+            records = CoreObjectFixture.corroborated(records);
         List<RequestRecord> coverage = records.stream().filter(r -> r.source != Source.UNKNOWN
                 && r.phase != RunPhase.VALIDATION && r.phase != RunPhase.COACH_PROBE
                 && r.trafficClassification.coverageEligible()).toList();
@@ -566,8 +574,9 @@ final class SurfaceAuthorizationLinkTest {
         Normalizer.normalizeAll(records);
         AnalysisConfig config = new AnalysisConfig();
         for (RequestRecord r : records) config = config.withIdentityRole(r.idn, "C".equals(r.fp) ? AccessRole.ADMIN : AccessRole.USER);
-        if (owner) config = config.withResourceOwner(records.getFirst().resource, records.getFirst().idn);
-        return AuthorizationAnalyzer.analyze(records, config);
+        var projected = CoreObjectFixture.run(records, config);
+        if (owner) for (String resource : projected.objects.targets().keySet()) config.withResourceOwner(resource, records.getFirst().idn);
+        return CoreObjectFixture.run(records, config).analysis;
     }
 
     private static RequestRecord record(Source source, String fp, String method, int status, String requestBody) {

@@ -23,10 +23,6 @@ public final class SampleProject {
                 .bindSession(SERVICE, "sess:demo-a-rotated", userA.id())
                 .bindSession(SERVICE, "sess:demo-b", userB.id())
                 .bindSession(SERVICE, "sess:demo-admin", admin.id())
-                .withResourceOwner(SERVICE + " orders:101", userA.id())
-                .withResourceOwner(SERVICE + " orders:202", userB.id())
-                .withResourceOwner(SERVICE + " posts:301", userA.id())
-                .withResourceOwner(SERVICE + " posts:302", userB.id())
                 .withEndpointRequirement(SERVICE + " GET /api/admin/users", AccessRole.ADMIN)
                 .withEndpointRequirement(SERVICE + " POST /api/admin/invites", AccessRole.ADMIN);
 
@@ -80,6 +76,12 @@ public final class SampleProject {
                     null, "ready", 18 + i);
             polling.responseContentType = "text/plain";
             records.add(polling);
+        }
+        var result = Pipeline.run(records, config);
+        for (var object : result.objects.observations()) {
+            RequestRecord record = result.coverageByEvidence.get(object.eventId());
+            if (record.path.equals("/api/orders/101") || record.path.equals("/api/posts/301")) config.withResourceOwner(ObservedObjectIndex.resource(object), userA.id());
+            if (record.path.equals("/api/orders/202") || record.path.equals("/api/posts/302")) config.withResourceOwner(ObservedObjectIndex.resource(object), userB.id());
         }
         return new Data(List.copyOf(records), config);
     }

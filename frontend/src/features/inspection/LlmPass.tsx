@@ -9,6 +9,7 @@ import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
 import { useExplorerDisplay } from "./useExplorerDisplay"
 import { Input } from "@/components/ui/input"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { withEvidenceOrdinals, withoutUnnumberedEvidence } from "@/lib/display/operationLabel"
 import { runStatusLabel } from "@/lib/display/runStatus"
 import {
   useExplorerBrowserCompleteMutation,
@@ -52,8 +53,10 @@ function DeclarationCounts({ endpoints, parameters }: { endpoints: number; param
  * 점검 시작의 LLM 스텝. 계정은 계정·세션의 등록 계정을 고르고, 세션은 FlowScope가 띄운 브라우저 창에서 사용자가
  * 직접 로그인한 뒤 [로그인 완료]로 가져온다. 그 창은 Burp를 거치지 않아 HUMAN 수집에 섞이지 않는다.
  */
-export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFocusChange }: {
+export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOrdinals, onRecordFocusChange }: {
   onRecordFocusChange?(focused: boolean): void
+  /** 진행 기록의 기록 ID(ev-…)를 #N으로 바꾸는 데 쓴다. */
+  evidenceOrdinals?: Readonly<Record<string, number>>
   datasetRevision?: number
   target: string
   /** 대상 서비스의 등록 계정. */
@@ -103,7 +106,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
     badge: item.kind,
     title: item.title,
     status: item.durationMillis == null ? item.status : `${item.status} · ${item.durationMillis}ms`,
-    detail: item.detail,
+    detail: item.detail && withoutUnnumberedEvidence(withEvidenceOrdinals(item.detail, evidenceOrdinals)),
   }))
 
   const notices = <>
@@ -230,7 +233,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, onRecordFo
             <span className="text-xs" title={item.badge === "HTTP" ? "LLM" : undefined}>{item.badge === "HTTP" ? "L" : ""}</span>
             <span className="text-right font-mono text-[11px] text-muted-foreground">{http ? <HttpStatusBadge status={http} /> : item.status}</span>
           </article>
-        }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비·HTTP 요청·기록 번호가 여기에 순서대로 표시됩니다.</p>}
+        }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비, HTTP 요청과 요청 기록(#번호)이 여기에 순서대로 표시됩니다.</p>}
       </div>}
       <div className="max-h-[40%] shrink-0 overflow-y-auto border-t">{feedFooter}</div>
     </CardContent>

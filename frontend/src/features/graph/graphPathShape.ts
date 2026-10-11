@@ -1,10 +1,11 @@
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-function isIdSegment(segment: string) {
-  return /^\d+$/.test(segment) || UUID.test(segment) || (segment.length >= 16 && /^[a-z0-9]+$/i.test(segment) && /[a-z]/i.test(segment) && /\d/.test(segment))
+function isIdSegment(raw: string) {
+  let segment: string
+  try { segment = decodeURIComponent(raw) } catch { return false }
+  if (/^v\d+(?:\.\d+)?$/i.test(segment)) return false
+  return /^\d+$/.test(segment) || (/^[a-z0-9._~-]+$/i.test(segment) && /[a-z]/i.test(segment) && /\d/.test(segment))
 }
 
-/** 숫자·UUID·16자 이상 영문+숫자 토큰 구간을 `{id}`로 바꾼 경로 형식. API 목록 표와 그래프의 API 묶음이 같은 기준을 쓴다. */
+/** 숫자·영문+숫자 토큰 구간을 `{id}`로 바꾼 경로 형식. API 목록 표와 그래프의 API 묶음이 같은 기준을 쓴다. */
 export function pathShape(path: string) {
   return path.split("/").map(segment => isIdSegment(segment) ? "{id}" : segment).join("/")
 }

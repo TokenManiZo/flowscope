@@ -12,6 +12,22 @@ export interface TrafficStats {
   humanApiOutsideRun?: number
 }
 
+/** Graph-only observations; these keys never identify matrix cells or replay requests. */
+export interface DisplayObject {
+  eventId: string
+  operation: string
+  apiKey: string
+  apiFamily?: string | null
+  groupKey: string
+  objectKey: string
+  kind: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  fields: readonly string[]
+  legacyResource: string | null
+  ordinal: number
+  integerLabel?: string | null
+  displayOrdinal?: number
+}
+
 export interface EventObject {
   resource: string
   evidence: string
@@ -231,6 +247,28 @@ export interface ObservedSession {
   lastSeen: number
   registered: boolean
   service: string
+}
+
+/** LLM 교차 검증 소견(추천). 판정 엔진 결과가 아니라 사람 검토용 참고 자료다. */
+export interface LlmFinding {
+  id: string
+  operation: string
+  identity: string
+  resource?: string
+  verdict: string
+  confidence: string
+  note: string
+  evidenceIds: readonly string[]
+  createdAt: number
+}
+
+/** LLM 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
+export interface LlmVerifyState {
+  status: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED"
+  accountId: string
+  message: string
+  startedAt?: number
+  endedAt?: number
 }
 
 export interface ManagedSession {
@@ -470,6 +508,8 @@ export interface RunExecutionSummary {
   failures: number
   quality: "NOT_ATTEMPTED" | "ALL_FAILED" | "PARTIAL_FAILURE" | "RESPONSES_OBSERVED"
   outcomes: Readonly<Record<string, number>>
+  /** 첫 시도 시각(epoch ms). 시도가 없거나 이전 서버면 0·없음. */
+  startedAt?: number
 }
 
 export interface LegacyLlm {
@@ -479,6 +519,7 @@ export interface LegacyLlm {
 }
 
 export interface Snapshot {
+  displayObjects?: readonly DisplayObject[]
   apiMarks?: Readonly<Record<string, { color: string; registered: boolean; evidenceIds: readonly string[] }>>
   legacyLlm?: LegacyLlm
   revision: number
@@ -495,6 +536,8 @@ export interface Snapshot {
   owners: Readonly<Record<string, string>>
   /** 사용자가 직접 지정한 소유자. 자동 추정보다 우선한다. */
   ownerOverrides?: Readonly<Record<string, string>>
+  /** API·객체별 직접 지정한 접근 정책. */
+  resourcePolicyOverrides?: Readonly<Record<string, string>>
   /** Request Lab로 보낸 HUMAN 검증 응답. 탐색 관측과 분리돼 원본 Evidence에 연결된다. */
   manualVerifications?: readonly ManualVerification[]
   requiredRoles: Readonly<Record<string, string>>
@@ -928,6 +971,9 @@ export interface ProjectEntry {
 }
 
 export interface ProjectStatus {
+  discoveredOrigins?: readonly string[]
+  observedOrigins?: readonly string[]
+  datasetRevision?: number
   directory: string
   active: ProjectEntry | null
   projects: readonly ProjectEntry[]
@@ -944,11 +990,4 @@ export interface ApiErrorBody {
 export interface AccountSaveResult extends ApiSuccess {
   id: string
   rebound: number
-}
-
-export interface ImportXmlResult {
-  success: true
-  imported: number
-  candidates: number
-  failed: number
 }

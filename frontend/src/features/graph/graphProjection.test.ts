@@ -18,7 +18,7 @@ function snapshot(events: readonly EventRecord[], routeCandidates: Snapshot["rou
 }
 
 describe("projectGraph", () => {
-  it("preserves canonical cell keys and all 관측 기록 when collapsing different resources", () => {
+  it("preserves canonical cell keys and all 요청 기록 when collapsing different resources", () => {
     const first = snapshot([]).cells[0]
     const second = { ...first, resource: null, evidenceIds: ["objectless", "ev-human-1"] }
     expect(graphCellKey(first)).toBe('["alice","GET /orders/{id}","order:101"]')
@@ -56,7 +56,7 @@ describe("projectGraph", () => {
     expect(graphRouteCandidateId(first)).not.toBe(graphRouteCandidateId(delimiterCollision))
   })
 
-  it("keeps INCLUDE identity-resource-operation paths, preserves source semantics, verdict text, repeat labels, and exact 관측 기록 selection", () => {
+  it("keeps INCLUDE identity-resource-operation paths, preserves source semantics, verdict text, repeat labels, and exact 요청 기록 selection", () => {
     const data = snapshot([
       event({ eventId: "ev-human-1", source: "human", repeatCount: 2, clusterEvidenceIds: ["ev-human-1", "ev-human-2"] }),
       event({ eventId: "ev-scanner-1", source: "scanner", idn: "alice", verdict: "deny", repeatCount: 1 }),
@@ -70,10 +70,10 @@ describe("projectGraph", () => {
 
     expect(graph.operations.map((item) => item.label)).toEqual(["GET /orders/{id}", "POST /login"])
     expect(graph.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ relation: "identity-resource", source: "human", line: "solid", color: "#2563eb", sourceText: "HUMAN", countLabel: "×2" }),
-      expect.objectContaining({ relation: "identity-resource", source: "scanner", line: "dashed", color: "#dc2626", sourceText: "SCANNER" }),
+      expect.objectContaining({ relation: "identity-resource", source: "human", line: "solid", color: "#2563eb", sourceText: "사람", countLabel: "×2" }),
+      expect.objectContaining({ relation: "identity-resource", source: "scanner", line: "dashed", color: "#dc2626", sourceText: "스캐너" }),
       expect.objectContaining({ relation: "identity-resource", source: "llm", line: "dotted", color: "#e4e4e7", sourceText: "LLM" }),
-      expect.objectContaining({ relation: "identity-operation", source: "unknown", sourceText: "UNKNOWN" }),
+      expect.objectContaining({ relation: "identity-operation", source: "unknown", sourceText: "미확인" }),
     ]))
     expect(graph.operations.find((item) => item.label === "GET /orders/{id}")).toMatchObject({ verdict: "allow", verdictText: "ALLOW", verdictColor: "#15803d" })
     expect(graph.operations.find((item) => item.label === "POST /login")).toMatchObject({ verdict: "undecided", verdictText: "확인 필요" })

@@ -21,7 +21,7 @@ export function hasInputDifference(parameters: readonly SurfaceParameter[]) {
   return parameters.some(parameter => ["선언만", "관측만", "형식 차이"].includes(parameterComparison(parameter)))
 }
 
-export function SurfaceParameterComparison({ parameters, ordinal, onEvidence, disabled }: { parameters: readonly SurfaceParameter[]; ordinal(id: string): string; onEvidence(id: string): void; disabled: boolean }) {
+export function SurfaceParameterComparison({ parameters, ordinal, onEvidence, disabled }: { parameters: readonly SurfaceParameter[]; /** 번호가 없는 기록이면 빈 문자열. */ ordinal(id: string): string; onEvidence(id: string): void; disabled: boolean }) {
   return <div className="grid min-w-0 gap-3">{parameters.map(parameter => {
     const comparison = parameterComparison(parameter)
     const declarations = [...new Set(parameter.declarations.map(item => item.declaredType || item.declaredShape).filter(Boolean))]
@@ -34,8 +34,8 @@ export function SurfaceParameterComparison({ parameters, ordinal, onEvidence, di
         <p className="break-all font-mono text-[11px] text-muted-foreground">{parameter.canonicalPath} · {parameter.requirement}</p>
         {parameter.coordinateResolved === false && <p className="text-xs text-amber-800 dark:text-amber-300">선언 좌표 미확정 · 관측 비교 제외</p>}
         <p className="text-muted-foreground">관측 값의 형식과 근거를 표시합니다. 실제 값은 근거 원문에서 확인하세요.</p>
-        {parameter.observations.map((item, index) => <Button key={`${item.evidenceId}:${index}`} type="button" variant="outline" className="h-auto min-w-0 w-full justify-start gap-2 border-border/80 bg-muted/20 px-3 py-2.5 text-xs hover:bg-muted/60" disabled={disabled} onClick={() => onEvidence(item.evidenceId)} aria-label={`입력 근거 기록 ${ordinal(item.evidenceId)} 보기`}><SourceMarks sources={[item.source]} /><span className="break-all whitespace-normal font-mono">{item.valueType || item.shape || "형식 미상"}</span><span className="text-muted-foreground">{item.presence || ""}</span><span className="ml-auto shrink-0 font-mono">{ordinal(item.evidenceId)}</span><ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /></Button>)}
-        {parameter.declarations.map((item,index) => <p key={`${item.evidenceId}:${index}`} className="break-words text-[11px] text-muted-foreground">선언 · {item.type} · {item.adapter} · {item.declaredType || item.declaredShape || "형식 미지정"} · {ordinal(item.evidenceId)}</p>)}
+        {parameter.observations.map((item, index) => <Button key={`${item.evidenceId}:${index}`} type="button" variant="outline" className="h-auto min-w-0 w-full justify-start gap-2 border-border/80 bg-muted/20 px-3 py-2.5 text-xs hover:bg-muted/60" disabled={disabled} onClick={() => onEvidence(item.evidenceId)} aria-label={`요청 기록 ${ordinal(item.evidenceId)} 보기`}><SourceMarks sources={[item.source]} /><span className="break-all whitespace-normal font-mono">{item.valueType || item.shape || "형식 미상"}</span><span className="text-muted-foreground">{item.presence || ""}</span><span className="ml-auto shrink-0 font-mono">{ordinal(item.evidenceId)}</span><ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /></Button>)}
+        {parameter.declarations.map((item,index) => <p key={`${item.evidenceId}:${index}`} className="break-words text-[11px] text-muted-foreground">{["선언", item.type, item.adapter, item.declaredType || item.declaredShape || "형식 미지정", ordinal(item.evidenceId)].filter(Boolean).join(" · ")}</p>)}
       </div>
     </details>
   })}</div>

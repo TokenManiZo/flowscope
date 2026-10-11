@@ -75,7 +75,7 @@ it("does not invalidate the new policy editor when an old-context save succeeds 
   expect(screen.getByLabelText("필수 역할")).toHaveValue("ADMIN")
 })
 
-it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same 관측 기록 in another dataset", async kind => {
+it.each(["evidence"] as const)("preserves %s policy edits on ordinary revisions but resets them for the same 요청 기록 in another dataset", async kind => {
   let finish!: (response: Response) => void
   const fetch = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/requirement"
     ? new Promise<Response>(resolve => { finish = resolve })
@@ -132,11 +132,11 @@ it.each(["evidence", "graph"] as const)("preserves %s Request Lab requests/lates
   await userEvent.click(screen.getByRole("button", { name: labButton(kind) }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   const edited = "GET /edited HTTP/1.1\nHost: api.example.test\n\n"
   await userEvent.type(screen.getByLabelText("Request Lab 요청 원문"), edited)
-  await userEvent.click(screen.getByRole("combobox", { name: "전송 인증" }))
+  await userEvent.click(screen.getByRole("combobox", { name: "전송 계정" }))
   await userEvent.click(await screen.findByRole("option", { name: "비로그인" }))
   await waitFor(() => expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled())
   await userEvent.click(screen.getByRole("button", { name: "요청 재전송" }))
@@ -173,7 +173,7 @@ it.each([loadSample, () => openProject("missing"), resetProjectTraffic, () => st
   await userEvent.click(screen.getByRole("button", { name: "Request Lab 열기" }))
   const editor = await screen.findByLabelText("Request Lab 요청 원문")
   // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
   await userEvent.clear(editor)
   await userEvent.type(editor, "unsaved operator edit")
 

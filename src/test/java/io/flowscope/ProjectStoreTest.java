@@ -21,6 +21,32 @@ final class ProjectStoreTest {
     @TempDir Path temp;
 
     @Test
+    void reopeningLegacyStaticApiReclassifiesWithoutLosingEvidence() throws Exception {
+        var record = new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/images/123/photo.jpg", 200, "anon");
+        record.hasResponse = true; record.responseContentType = "image/jpeg";
+        record.reqText = "GET /images/123/photo.jpg HTTP/1.1\r\nHost: t\r\n\r\n";
+        Normalizer.normalizeAll(List.of(record));
+        EvidenceIds.assign(List.of(record));
+        record.trafficClassification = new TrafficClassification(TrafficClassification.TrafficClass.API,
+                TrafficClassification.Disposition.INCLUDE, List.of("OBJECT_SIGNAL"), false);
+        Path file = temp.resolve("legacy-static.json");
+        var store = new ProjectStore();
+        store.save(file, List.of(record), new AnalysisConfig(), List.of());
+        var json = new ObjectMapper();
+        var old = json.readTree(file.toFile());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) old).put("traffic_classifier_version", 9);
+        json.writeValue(file.toFile(), old);
+        var loaded = store.load(file);
+        var result = Pipeline.runIsolated(loaded.records(), loaded.config());
+        assertEquals(1, result.records.size());
+        assertTrue(result.coverageRecords.isEmpty());
+        assertTrue(result.analysis.cells().isEmpty());
+        assertEquals(TrafficClassification.TrafficClass.STATIC_ASSET, result.records.getFirst().trafficClassification.trafficClass());
+        assertEquals(record.evidenceId, result.records.getFirst().evidenceId);
+        assertEquals(record.reqText, result.records.getFirst().requestTextForEvidence());
+    }
+
+    @Test
     void collectionCardSurvivesAnalysisAndReopenWithoutChangingCredentials() throws Exception {
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://shop.test:443",
                 "GET", "/api/items", 200, Fingerprints.of(null, "tracking=present"));
@@ -119,6 +145,9 @@ final class ProjectStoreTest {
                 .withIdentityRole("user-a", AccessRole.USER)
                 .withEndpointRequirement(record.op, AccessRole.LV1)
                 .withResourceOwner(record.resource, "user-a")
+                .withResourceOwner(record.service + " observed-object:obj-v1-persisted", "user-a")
+                .withLlmFinding("llm:finding-1", "{\"verdict\":\"IDOR 의심\"}")
+                .withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(record.op, record.service + " observed-object:obj-v1-persisted"), ResourcePolicy.PUBLIC)
                 .withResourcePolicy(record.resource, ResourcePolicy.OWNER_ONLY)
                 .withTrafficOverride(record.op, TrafficOverride.INCLUDE).withTrafficOverride(record.service + " GET /api/review", TrafficOverride.REVIEW);
         AccountProfile account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
@@ -170,6 +199,9 @@ final class ProjectStoreTest {
         assertEquals(TrafficOverride.REVIEW, loaded.config().trafficOverride(record.service + " GET /api/review"));
         assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
         assertEquals("user-a", loaded.config().resourceOwner(record.resource));
+        assertEquals("user-a", loaded.config().resourceOwner(record.service + " observed-object:obj-v1-persisted"));
+        assertEquals(java.util.Map.of("llm:finding-1", "{\"verdict\":\"IDOR 의심\"}"), loaded.config().llmFindings());
+        assertEquals(ResourcePolicy.PUBLIC, loaded.config().resourcePolicy(record.op, record.service + " observed-object:obj-v1-persisted"));
         assertEquals(ResourcePolicy.OWNER_ONLY, loaded.config().resourcePolicy(record.op, record.resource));
         assertEquals("USER A", loaded.config().account("acct-a").orElseThrow().label());
         assertEquals("acct-a", loaded.config().boundAccount(record.service, restored.fp).orElseThrow().id());

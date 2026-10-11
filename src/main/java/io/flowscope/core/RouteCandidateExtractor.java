@@ -62,7 +62,7 @@ public final class RouteCandidateExtractor {
         Map<String, Mutable> candidates = new LinkedHashMap<>();
         List<RequestRecord> safeRecords = records == null ? List.of() : records;
         for (RequestRecord record : safeRecords) {
-            if (!record.hasResponse) continue;
+            if (!record.hasResponse || record.passiveSubdomainTraffic) continue;
             boolean inScope = scope.allows(record.service + record.path);
             boolean supportingScript = !inScope && record.source != Source.UNKNOWN
                     && record.supportingPageUrl != null

@@ -25,10 +25,8 @@ final class SampleProjectTest {
         assertTrue(result.analysis.findings().stream()
                 .anyMatch(finding -> finding.type() == AuthorizationAnalysis.FindingType.BFLA));
         // PR #11 sample expansion: identity-bound APIs without a dummy Object and a second object-backed group.
-        assertEquals("acct-demo-user-a", sample.config().resourceOwner(
-                "https://demo.flowscope.test:443 posts:301"));
-        assertEquals("acct-demo-user-b", sample.config().resourceOwner(
-                "https://demo.flowscope.test:443 posts:302"));
+        assertTrue(result.objects.targets().keySet().stream().allMatch(key -> key.contains(" observed-object:")));
+        assertTrue(sample.config().resourceOwners().keySet().stream().allMatch(key -> key.contains(" observed-object:")));
         assertTrue(result.coverageRecords.stream().anyMatch(record -> record.op.endsWith("GET /api/profile")));
         assertTrue(result.coverageRecords.stream().anyMatch(record -> record.op.endsWith("GET /api/account")));
         assertTrue(result.coverageRecords.stream().anyMatch(record -> record.op.endsWith("GET /api/posts/{id}")));
@@ -63,6 +61,7 @@ final class SampleProjectTest {
                 result.records, ScopePolicy.parse(services), List.of());
         var current = json.readTree(new SnapshotJsonWriter().write(
                 1, 0, result, sample.config(), List.of(), List.of(), List.of(), routes, 0, List.of()));
+        if (Boolean.getBoolean("flowscope.updateSampleFixture")) Files.writeString(Path.of("frontend/src/test/sample/sample-snapshot.json"), json.writeValueAsString(current) + "\n");
         var fixture = json.readTree(Files.readAllBytes(
                 Path.of("frontend/src/test/sample/sample-snapshot.json")));
 

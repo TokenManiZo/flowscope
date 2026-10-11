@@ -90,7 +90,7 @@ describe("project relationship search", () => {
   })
 
   it("can select an automatic API summary even when both members were outside the limit", () => {
-    const cells = [cell({ op: `${service} GET /api/orders/901` }), cell({ op: `${service} GET /api/orders/902` }), ...Array.from({ length: 18 }, (_, index) => cell({ op: `${service} POST /api/orders/name-${index}`, overall: "suspicious" }))]
+    const cells = [cell({ op: `${service} GET /api/orders/901` }), cell({ op: `${service} GET /api/orders/902` }), ...Array.from({ length: 18 }, (_, index) => cell({ op: `${service} POST /api/orders/name-${String.fromCharCode(97 + index)}`, overall: "suspicious" }))]
     const snapshot = targetSnapshot({ cells }), index = buildGraphSearchIndex(cells)
     const destination = searchDestination(index.byKey.get(searchKey("operation-group", service, `${service} GET /api/orders/{id}`))!, initial, projectHierarchy(snapshot, filters, initial), false)
     const graph = projectHierarchy(snapshot, filters, destination.navigation, destination.reveal)
@@ -153,7 +153,10 @@ it("indexes and reveals off-page observed functions using their actual node IDs"
 it("indexes only graph-eligible records and keeps one searchable card per operation", () => {
   const snapshot = targetSnapshot({ cells: [cell()], events: [captured(), captured({ eventId: "poll", trafficClass: "POLLING" }), captured({ eventId: "hidden", op: `${service} GET /api/orders/hidden`, classificationOverride: true, classificationReasons: ["USER_EXCLUDE"], trafficDisposition: "EXCLUDE" }), captured({ eventId: "asset", op: `${service} GET /api/orders/app.js`, trafficClass: "STATIC_ASSET" }), captured({ eventId: "replay", op: `${service} POST /api/orders/replay`, phase: "VALIDATION" })] })
   const index = snapshotSearchIndex(snapshot, { ...filters, includeSupportTraffic: true })
-  expect(index.entries.filter(entry => ["operation", "observed-operation", "support-operation"].includes(entry.kind))).toEqual([expect.objectContaining({ kind: "operation", value: operation })])
+  const operations = index.entries.filter(entry => ["operation", "observed-operation", "support-operation"].includes(entry.kind))
+  expect(operations).toHaveLength(2)
+  expect(operations).toContainEqual(expect.objectContaining({ kind: "operation", value: operation }))
+  expect(operations.filter(entry => entry.value.startsWith("static-api:"))).toHaveLength(1)
   expect(index.byKey.has(searchKey("identity", service, "USER B"))).toBe(true)
 })
 

@@ -69,7 +69,7 @@ class SelectedSessionIdentityTest {
         assertEquals(List.of(b), RecordMerge.missing(List.of(a), List.of(b), 10));
         Pipeline.Result result = Pipeline.run(List.of(a, b));
         assertEquals(2, result.records.stream().map(value -> value.evidenceId).distinct().count());
-        assertEquals(2, result.analysis.cells().size());
+        assertEquals(2, result.analysis.cells().stream().filter(cell -> cell.key().resource() == null).count());
     }
 
     @Test
@@ -102,8 +102,8 @@ class SelectedSessionIdentityTest {
         create.responseContentType = "application/json";
         create.body = "{\"id\":101}";
         RequestRecord read = record(Source.HUMAN, "a", "tok:a");
-        var result = Pipeline.run(List.of(create, read));
-        var owner = result.analysis.owners().get(read.resource);
+        var result = CoreObjectFixture.run(List.of(create, read));
+        var owner = result.analysis.owners().get(CoreObjectFixture.resource(read));
         assertFalse(owner.basis().contains("생성 요청자"));
         assertFalse(owner.confirmed());
     }

@@ -520,14 +520,14 @@ public final class ExplorerCoordinator implements AutoCloseable {
             closeGateway();
             Status status = limitations.isEmpty() ? Status.COMPLETED : Status.COMPLETED_WITH_LIMITATIONS;
             String summary = "Explorer 완료 · HTTP 시도 " + snapshot.attempts()
-                    + "건 · 응답 Evidence " + snapshot.responses()
+                    + "건 · 응답 기록 " + snapshot.responses()
                     + "건 · 선언 endpoint " + snapshot.endpointDeclarations()
                     + "건 · 선언 parameter " + snapshot.parameterDeclarations()
                     + "건 · OPTIONS probe " + snapshot.capabilityProbes() + "건";
             snapshot = terminal(status, summary, limitations);
             addActivity("SYSTEM", "Explorer 완료", status == Status.COMPLETED
-                    ? "응답 Evidence와 종료 조건을 확인했습니다."
-                    : "응답 Evidence를 보존하고 미해결 항목을 함께 남겼습니다.", status.name(), null);
+                    ? "응답 기록과 종료 조건을 확인했습니다."
+                    : "응답 기록을 남기고 미해결 항목도 함께 남겼습니다.", status.name(), null);
         } catch (Exception error) {
             contexts.abort(Source.LLM, runId);
             closeGateway();
@@ -589,7 +589,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 snapshot.unresolved(), snapshot.activities(), snapshot.model());
         addActivity("DISCOVERY", "산출물 선언 저장",
                 "endpoint " + newEndpoints + "건 · parameter " + newParameters
-                        + "건을 현재 run Evidence에 연결했습니다.", "COMPLETED", null);
+                        + "건을 현재 실행의 요청 기록에 연결했습니다.", "COMPLETED", null);
     }
 
     private synchronized void addActivity(String kind, String title, String detail,

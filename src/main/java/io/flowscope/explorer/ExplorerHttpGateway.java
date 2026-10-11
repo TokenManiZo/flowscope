@@ -198,7 +198,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                 synchronized (this) { responseEvidenceIds.add(response.evidenceId()); }
             }
             emit("HTTP_RESPONSE", accountId, method, target, response.status(), response.evidenceId(),
-                    response.durationMillis(), "응답 Evidence 저장");
+                    response.durationMillis(), "응답 기록 저장");
             ObjectNode result = JSON.createObjectNode();
             result.put("status", response.status());
             result.put("url", response.url());

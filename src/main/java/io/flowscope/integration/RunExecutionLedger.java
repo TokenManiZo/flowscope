@@ -72,10 +72,16 @@ public final class RunExecutionLedger {
         }
     }
 
+    /** startedAt은 남아 있는 첫 시도 시각(epoch ms)이다. 화면이 실행 ID 대신 "도구 · 시각"으로 보여 줄 때 쓴다. 시도가 없으면 0. */
     public record Summary(Source source, String runId, long attempted, long responses, long failures,
-                          Quality quality, Map<Outcome, Long> outcomes) {
+                          Quality quality, Map<Outcome, Long> outcomes, long startedAt) {
         public Summary {
             outcomes = Map.copyOf(outcomes == null ? Map.of() : outcomes);
+        }
+
+        public Summary(Source source, String runId, long attempted, long responses, long failures,
+                       Quality quality, Map<Outcome, Long> outcomes) {
+            this(source, runId, attempted, responses, failures, quality, outcomes, 0);
         }
     }
 
@@ -134,9 +140,12 @@ public final class RunExecutionLedger {
         EnumMap<Outcome, Long> outcomes = new EnumMap<>(Outcome.class);
         long attempted = 0;
         long responses = 0;
+        long startedAt = 0;
         for (Attempt attempt : attempts) {
             if (attempt.source() != source || !attempt.runId().equals(runId)) continue;
             attempted++;
+            long at = attempt.attemptedAt().toEpochMilli();
+            if (startedAt == 0 || at < startedAt) startedAt = at;
             outcomes.merge(attempt.outcome(), 1L, Long::sum);
             if (attempt.outcome() == Outcome.HTTP_RESPONSE) responses++;
         }
@@ -146,7 +155,7 @@ public final class RunExecutionLedger {
                 : failures > 0 ? Quality.PARTIAL_FAILURE
                 : Quality.RESPONSES_OBSERVED;
         return new Summary(source, runId == null ? "" : runId, attempted, responses, failures,
-                quality, outcomes);
+                quality, outcomes, startedAt);
     }
 
     public synchronized List<Summary> summaries() {

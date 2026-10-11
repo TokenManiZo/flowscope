@@ -46,12 +46,20 @@ public final class AuthorizationMatrixAnalyzer {
         for (AuthorizationAnalysis.CoverageCell cell : result.analysis.cells()) {
             cells.put(key(cell.key().identity(), cell.key().operation(), cell.key().resource()), cell);
         }
+        Map<String, List<AuthorizationAnalysis.CoverageCell>> cellsByOperation = new LinkedHashMap<>();
+        Map<String, List<AuthorizationAnalysis.CoverageCell>> cellsByObject = new LinkedHashMap<>();
+        for (var cell : result.analysis.cells()) {
+            cellsByOperation.computeIfAbsent(cell.key().operation(), ignored -> new ArrayList<>()).add(cell);
+            if (cell.key().resource() != null) cellsByObject.computeIfAbsent(cell.key().operation() + "\0" + cell.key().resource(), ignored -> new ArrayList<>()).add(cell);
+        }
         Map<String, RequestRecord> recordsByEvidence = new LinkedHashMap<>();
         for (RequestRecord record : result.records) recordsByEvidence.put(record.evidenceId, record);
 
         Map<String, ValidationDecision> validationByCell = validationsByCell(result.analysis, history);
         Set<String> operations = new LinkedHashSet<>(policy.endpointRequirements().keySet());
         result.analysis.cells().forEach(cell -> operations.add(cell.key().operation()));
+        result.objects.observations().forEach(object -> operations.add(object.operation()));
+        operations.removeIf(StaticResourcePolicy::matchesOperation);
         Map<String, Set<String>> identityServices = identityServices(result, policy);
         Set<String> matrixServices = operations.stream().map(AuthorizationMatrixAnalyzer::operationService)
                 .filter(value -> !value.isBlank()).collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
@@ -68,7 +76,7 @@ public final class AuthorizationMatrixAnalyzer {
                 AuthorizationAnalysis.CoverageCell cell = cells.get(key(identity.id(), operation, null));
                 // 기능 인가는 객체와 무관하다. 객체 없는 cell이 없으면 같은 신원·operation의 관측 객체 cell을 모아
                 // 원 Evidence를 바꾸지 않고 집계한다. BFLA 여부는 정본 Decision의 roleViolation만 쓴다(BOLA 의심이 섞이지 않게).
-                List<AuthorizationAnalysis.CoverageCell> sameOperation = result.analysis.cells().stream()
+                List<AuthorizationAnalysis.CoverageCell> sameOperation = cellsByOperation.getOrDefault(operation, List.of()).stream()
                         .filter(value -> value.key().identity().equals(identity.id())
                                 && value.key().operation().equals(operation)).toList();
                 if (cell == null && !sameOperation.isEmpty()) cell = aggregate(identity.id(), operation, sameOperation);
@@ -76,13 +84,12 @@ public final class AuthorizationMatrixAnalyzer {
                         .anyMatch(AuthorizationAnalysis.Decision::roleViolation);
                 functions.add(functionCell(identity, operation, cell, roleViolation, result, policy,
                         validationByCell.get(key(identity.id(), operation, cell == null ? null : cell.key().resource())),
-                        recordsByEvidence));
+                        recordsByEvidence, cellsByOperation.getOrDefault(operation, List.of())));
             }
         }
 
         Set<OperationResource> objectRows = new LinkedHashSet<>();
-        result.analysis.cells().stream().filter(cell -> cell.key().resource() != null)
-                .forEach(cell -> objectRows.add(new OperationResource(cell.key().operation(), cell.key().resource())));
+        result.objects.observations().forEach(object -> objectRows.add(new OperationResource(object.operation(), ObservedObjectIndex.resource(object))));
         List<ObjectCell> objects = new ArrayList<>();
         objectRows.stream().sorted(Comparator.comparing(OperationResource::operation)
                         .thenComparing(OperationResource::resource))
@@ -91,7 +98,7 @@ public final class AuthorizationMatrixAnalyzer {
                                 .contains(operationService(row.operation())))
                         .forEach(identity -> objects.add(objectCell(identity, row,
                                 cells.get(key(identity.id(), row.operation(), row.resource())), result, policy,
-                                validationByCell.get(key(identity.id(), row.operation(), row.resource())), recordsByEvidence))));
+                                validationByCell.get(key(identity.id(), row.operation(), row.resource())), recordsByEvidence, cellsByObject.getOrDefault(row.operation() + "\0" + row.resource(), List.of())))));
 
         List<EvidenceRow> evidence = evidenceRows(result, functions, objects);
         Summary summary = summary(functions, objects);
@@ -152,7 +159,7 @@ public final class AuthorizationMatrixAnalyzer {
                                              AuthorizationAnalysis.CoverageCell cell, boolean roleViolation,
                                              Pipeline.Result result, AnalysisConfig config,
                                              ValidationDecision validation,
-                                             Map<String, RequestRecord> recordsByEvidence) {
+                                             Map<String, RequestRecord> recordsByEvidence, List<AuthorizationAnalysis.CoverageCell> candidates) {
         EndpointRequirementInference.Requirement requirement = EndpointRequirementInference.resolve(
                 operation, identity.id(), result.coverageRecords, config);
         AccessRole required = requirement.role();
@@ -174,7 +181,7 @@ public final class AuthorizationMatrixAnalyzer {
         List<Gate> gates = gates(identity, operation, records, oracle, baseline);
         Status status = functionStatus(expected, actual, policy, gates, roleViolation);
         TestRecommendation recommendation = functionRecommendation(identity, operation, actual, result, config,
-                recordsByEvidence, required);
+                recordsByEvidence, required, candidates);
         if (recommendation != null && status == Status.COVERAGE_GAP) status = Status.BFLA_TEST_RECOMMENDED;
         else if (recommendation != null && actual == Actual.SUCCESS
                 && (status == Status.UNKNOWN_POLICY || status == Status.POLICY_CONFIRMATION_REQUIRED)) {
@@ -193,7 +200,7 @@ public final class AuthorizationMatrixAnalyzer {
                                          AuthorizationAnalysis.CoverageCell cell,
                                          Pipeline.Result result, AnalysisConfig config,
                                          ValidationDecision validation,
-                                         Map<String, RequestRecord> recordsByEvidence) {
+                                         Map<String, RequestRecord> recordsByEvidence, List<AuthorizationAnalysis.CoverageCell> candidates) {
         AuthorizationAnalysis.OwnerInfo owner = result.analysis.owners().get(row.resource());
         Confidence ownership = ownership(owner);
         String ownerId = owner == null ? null : owner.identity();
@@ -208,7 +215,7 @@ public final class AuthorizationMatrixAnalyzer {
         Expected expected = expected(expectation.combined());
         List<RequestRecord> records = records(cell, recordsByEvidence);
         Actual actual = actual(cell, records);
-        Oracle oracle = oracle(row.operation(), records, true, row.resource(), ownerId);
+        Oracle oracle = oracle(row.operation(), records, true, result.objects.reference(row.resource()), ownerId);
         BaselineComparison baseline = baselineComparison(cell, records, result, config, oracle, true, ownerId,
                 config.endpointRequirement(row.operation()));
         Confidence evidence = evidenceConfidence(cell, records, baseline);
@@ -221,14 +228,12 @@ public final class AuthorizationMatrixAnalyzer {
         Status status = objectStatus(expected, actual, policy, ownership, gates,
                 authoritySuspicious, authorityRoleViolation, resourcePolicy);
         TestRecommendation recommendation = objectRecommendation(identity, row, actual, result, config,
-                recordsByEvidence);
+                recordsByEvidence, candidates);
         if (recommendation != null && status == Status.COVERAGE_GAP) status = Status.BOLA_IDOR_TEST_RECOMMENDED;
         else if (recommendation != null && actual == Actual.SUCCESS && status == Status.OWNERSHIP_UNKNOWN) {
             status = Status.BOLA_IDOR_REVIEW_REQUIRED;
         }
-        List<RequestRecord> techniqueRecords = recommendation == null ? records
-                : recommendation.basisEvidenceIds().stream().map(recordsByEvidence::get).filter(Objects::nonNull).toList();
-        List<String> techniques = techniques(techniqueRecords, row.resource());
+        List<String> techniques = result.objects.reference(row.resource()) == null ? List.of("BOLA") : List.of("IDOR", "BOLA");
         String id = stableId("object", identity.id(), row.operation(), row.resource());
         List<String> reviewEvidence = reviewEvidence(evidenceIds(cell), recommendation);
         ReviewDecision review = config.review(id, reviewEvidence).orElse(null);
@@ -244,14 +249,14 @@ public final class AuthorizationMatrixAnalyzer {
     private static TestRecommendation functionRecommendation(Identity target, String operation, Actual actual,
                                                              Pipeline.Result result, AnalysisConfig config,
                                                              Map<String, RequestRecord> recordsByEvidence,
-                                                             AccessRole required) {
+                                                             AccessRole required, List<AuthorizationAnalysis.CoverageCell> candidates) {
         if (actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
         AccessRole targetRole = config.identityRole(target.id());
         if (targetRole == AccessRole.UNKNOWN || targetRole == AccessRole.ADMIN) return null;
         boolean strongPolicyMismatch = required != AccessRole.UNKNOWN && !targetRole.isKnownAndAtLeast(required);
         if (actual == Actual.SUCCESS && !strongPolicyMismatch && !looksPrivileged(operation)) return null;
 
-        return result.analysis.cells().stream()
+        return candidates.stream().filter(cell -> cell.key().resource() == null)
                 .filter(cell -> !cell.key().identity().equals(target.id()) && cell.key().operation().equals(operation))
                 // BFLA 기준 신원은 접근 계층에서 대상보다 엄격히 높은 KNOWN 역할이어야 한다. UNKNOWN은 제외한다.
                 .filter(cell -> {
@@ -266,8 +271,8 @@ public final class AuthorizationMatrixAnalyzer {
                 .map(basis -> {
                     String basisId = basis.cell().key().identity();
                     String reason = strongPolicyMismatch
-                            ? "명시된 요구 역할보다 낮은 신원의 실행 결과를 확인해야 합니다."
-                            : "상위 역할에서 관측된 기능이 이 신원에서는 충분히 비교되지 않았습니다.";
+                            ? "명시된 요구 역할보다 낮은 계정의 실행 결과를 확인해야 합니다."
+                            : "상위 역할에서 관측된 기능이 이 계정에서는 충분히 비교되지 않았습니다.";
                     return new TestRecommendation("BFLA", basisId, config.identityLabel(basisId),
                             target.id(), target.label(), reason,
                             target.label() + " 세션으로 같은 기능 요청을 Burp Repeater에서 수동 실행하세요.",
@@ -277,7 +282,7 @@ public final class AuthorizationMatrixAnalyzer {
 
     private static TestRecommendation objectRecommendation(Identity target, OperationResource row, Actual actual,
                                                            Pipeline.Result result, AnalysisConfig config,
-                                                           Map<String, RequestRecord> recordsByEvidence) {
+                                                           Map<String, RequestRecord> recordsByEvidence, List<AuthorizationAnalysis.CoverageCell> candidates) {
         if (config.identityRole(target.id()) == AccessRole.ADMIN
                 || actual == Actual.DENIED || actual == Actual.CONFLICT) return null;
         // 판정 가능한 O2/O3 소유자 자신은 자기 객체의 교차 테스트 대상이 아니다(D-166·D-167).
@@ -289,7 +294,7 @@ public final class AuthorizationMatrixAnalyzer {
                 owner != null && owner.decisionGrade()) == AuthorizationPolicy.LayerDecision.ALLOW) return null;
         if (owner != null && owner.decisionGrade() && target.id().equals(owner.identity())) return null;
         AccessRole targetRole = config.identityRole(target.id());
-        return result.analysis.cells().stream()
+        return candidates.stream()
                 .filter(cell -> !cell.key().identity().equals(target.id()))
                 .filter(cell -> cell.key().operation().equals(row.operation())
                         && Objects.equals(cell.key().resource(), row.resource()))
@@ -302,14 +307,14 @@ public final class AuthorizationMatrixAnalyzer {
                 .map(basis -> {
                     String basisId = basis.cell().key().identity();
                     boolean direct = basis.records().stream().anyMatch(
-                            AuthorizationMatrixAnalyzer::hasDirectObjectReference);
+                            record -> result.objects.reference(row.resource()) != null);
                     String type = direct ? "BOLA/IDOR" : "BOLA";
                     String reason = config.resourceOwner(row.resource()) != null
-                            ? "다른 신원에 연결된 객체를 교차 접근하는 조합입니다."
-                            : "이 객체의 최초 관측 신원을 소유자 가설로 두고 교차 접근을 확인해야 합니다.";
+                            ? "다른 계정에 연결된 객체를 교차 접근하는 조합입니다."
+                            : "이 객체를 처음 요청한 계정을 소유자로 가정하고 교차 접근을 확인해야 합니다.";
                     return new TestRecommendation(type, basisId, config.identityLabel(basisId),
                             target.id(), target.label(), reason,
-                            target.label() + " 세션으로 객체 " + row.resource()
+                            target.label() + " 세션으로 객체 " + result.objects.targets().get(row.resource()).label()
                                     + " 요청을 Burp Repeater에서 수동 실행하세요.",
                             isStateChanging(row.operation()), basis.cell().evidenceIds());
                 }).findFirst().orElse(null);
@@ -409,7 +414,7 @@ public final class AuthorizationMatrixAnalyzer {
     private static Confidence evidenceConfidence(AuthorizationAnalysis.CoverageCell cell,
                                                  List<RequestRecord> records,
                                                  BaselineComparison baseline) {
-        if (cell == null || records.isEmpty()) return e(0, "미실행", "대상 조합의 응답 Evidence가 없음");
+        if (cell == null || records.isEmpty()) return e(0, "미점검", "대상 조합의 응답 기록이 없음");
         if (baseline.matched()) return e(2, "비통제 관측 차등", baseline.basis());
         return e(1, "단일 관측", baseline.basis());
     }
@@ -418,7 +423,7 @@ public final class AuthorizationMatrixAnalyzer {
                                     Oracle oracle, BaselineComparison baseline) {
         List<Gate> out = new ArrayList<>();
         boolean attributed = records.stream().allMatch(record -> identity.id().equals(record.selectedIdentity()));
-        out.add(new Gate("session", "테스트 신원 유효", attributed ? GateState.PASS : GateState.FAIL,
+        out.add(new Gate("session", "테스트 계정 유효", attributed ? GateState.PASS : GateState.FAIL,
                 attributed ? "요청이 선택한 수집 세션으로 귀속됨" : "요청과 선택한 수집 세션이 일치하지 않음"));
 
         out.add(new Gate("baseline", "정상 기준선", baseline.matched() ? GateState.PASS : GateState.UNKNOWN,
@@ -431,7 +436,7 @@ public final class AuthorizationMatrixAnalyzer {
                 read ? "읽기 요청에는 쓰기 상태 전제조건을 적용하지 않음"
                         : "CSRF·nonce·선행 상태 준비 여부를 자동 증명하지 않음"));
         out.add(new Gate("oracle", "결과 오라클", oracle.satisfied() ? GateState.PASS : GateState.UNKNOWN,
-                oracle.satisfied() ? oracle.requirement() : "후속 상태 또는 의미 응답 증거가 더 필요함"));
+                oracle.satisfied() ? oracle.requirement() : "후속 상태 또는 의미 있는 응답 기록이 더 필요함"));
         return List.copyOf(out);
     }
 
@@ -443,7 +448,7 @@ public final class AuthorizationMatrixAnalyzer {
                                                          boolean objectMatrix,
                                                          String ownerId,
                                                          AccessRole effectiveRequirement) {
-        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 Evidence가 없음");
+        if (cell == null || targets.isEmpty()) return BaselineComparison.missing("대상 조합의 응답 기록이 없음");
         if (!oracle.satisfied()) {
             return BaselineComparison.missing("대상 응답의 의미 오라클이 충족되지 않아 정상 기준선과 차등 비교하지 않음");
         }
@@ -458,12 +463,12 @@ public final class AuthorizationMatrixAnalyzer {
                         + "이며 O2/O3 판정 등급에 미달함");
             }
             if (ownerId.equals(cell.key().identity())) {
-                return BaselineComparison.missing("소유자 자신의 응답은 교차 신원 차등 기준선으로 중복 사용하지 않음");
+                return BaselineComparison.missing("소유자 자신의 응답은 교차 계정 차등 기준선으로 중복 사용하지 않음");
             }
             provenance = owner.confidence() >= 100 ? "O3 명시 소유자" : "O2 " + owner.basis();
-            baselines = result.coverageRecords.stream().filter(record -> ownerId.equals(record.idn)
+            baselines = result.objects.targets().get(cell.key().resource()).evidenceIds().stream().map(result.coverageByEvidence::get).filter(Objects::nonNull).filter(record -> ownerId.equals(record.idn)
                     && cell.key().operation().equals(record.op)
-                    && Objects.equals(cell.key().resource(), record.resource)
+                    && result.objects.contains(record.evidenceId, cell.key().resource())
                     && ResponseEvidence.successful(record)).toList();
         } else {
             AccessRole required = effectiveRequirement == null ? AccessRole.UNKNOWN : effectiveRequirement;
@@ -471,13 +476,13 @@ public final class AuthorizationMatrixAnalyzer {
                 return BaselineComparison.missing("요구 역할이 미정이라 권한 보유자 기준선을 선택할 수 없음");
             }
             provenance = required.label() + " 이상 권한 보유자";
-            baselines = result.coverageRecords.stream().filter(record -> !cell.key().identity().equals(record.idn)
+            baselines = result.coverageByOperation.getOrDefault(cell.key().operation(), List.of()).stream().filter(record -> !cell.key().identity().equals(record.idn)
                     && cell.key().operation().equals(record.op)
                     && config.identityRole(record.idn).isKnownAndAtLeast(required)
                     && ResponseEvidence.successful(record)).toList();
         }
         if (baselines.isEmpty()) {
-            return BaselineComparison.missing(provenance + "의 동일 작업 성공 Evidence가 없음");
+            return BaselineComparison.missing(provenance + "의 동일 작업 성공 기록이 없음");
         }
 
         List<RequestRecord> successfulTargets = targets.stream().filter(ResponseEvidence::successful).toList();
@@ -492,7 +497,7 @@ public final class AuthorizationMatrixAnalyzer {
                 long delta = Math.abs(target.timestamp - baseline.timestamp);
                 if (delta > BASELINE_OBSERVATION_WINDOW_MS) continue;
                 ResponseComparison comparison = compareResponses(target, baseline, objectMatrix,
-                        cell.key().resource(), ownerId);
+                        objectMatrix ? result.objects.reference(cell.key().resource()) : null, ownerId);
                 if (comparison.matched()) {
                     return BaselineComparison.matched("비통제 관측 차등 · " + provenance
                             + " · 현재 계정 결박 및 관측 시각 확인 · 대상 ID·응답 구조·정규화 길이 일치"
@@ -715,31 +720,6 @@ public final class AuthorizationMatrixAnalyzer {
         return "CROSS_ROLE_FOREIGN";
     }
 
-    private static List<String> techniques(List<RequestRecord> records, String resource) {
-        Set<String> out = new LinkedHashSet<>();
-        for (RequestRecord record : records) {
-            boolean direct = hasDirectObjectReference(record);
-            if (direct) out.add("IDOR");
-            if (resource != null) out.add("BOLA");
-        }
-        return out.isEmpty() ? List.of("BOLA") : List.copyOf(out);
-    }
-
-    /** 정규화된 경로·쿼리·본문에 직접 객체 참조 이름이 있는지만 본다. 값은 읽지 않는다. */
-    private static boolean hasDirectObjectReference(RequestRecord record) {
-        if (record == null) return false;
-        if (record.resourceReferences != null && !record.resourceReferences.isEmpty()) return true;
-        String operation = record.op == null ? "" : record.op;
-        if (operation.matches("(?i).*\\{[^}]*?(?:^|[_-])?(?:id|uuid|guid)[^}]*}.*")) return true;
-        return containsObjectReferenceName(record.query) || containsObjectReferenceName(record.requestBodyForAnalysis());
-    }
-
-    private static boolean containsObjectReferenceName(String value) {
-        if (value == null || value.isBlank()) return false;
-        return value.matches("(?is).*(?:^|[&{,\\s\"'])(?:[A-Za-z0-9_.-]*?(?:[_-]id|Id|UUID|Uuid|GUID|Guid)|id)"
-                + "\\s*(?:=|:).*?");
-    }
-
     private static List<EvidenceRow> evidenceRows(Pipeline.Result result,
                                                    List<FunctionCell> functions,
                                                    List<ObjectCell> objects) {
@@ -858,7 +838,7 @@ public final class AuthorizationMatrixAnalyzer {
             case UNKNOWN_POLICY -> "응답 관측 · 기대 정책 미정";
             case OWNERSHIP_UNKNOWN -> "소유권 미확정";
             case INVALID_EXPERIMENT -> "실험 무효";
-            case COVERAGE_GAP -> "교차 실행 공백";
+            case COVERAGE_GAP -> "미점검";
             case UNTESTED -> "미검증";
         };
     }
@@ -949,10 +929,10 @@ public final class AuthorizationMatrixAnalyzer {
 
     private static List<LegendItem> evidenceLegend() {
         return List.of(
-                new LegendItem("E3", "통제 재현", "정상 대조·유효 신원·의미 오라클·독립 반복이 검증된 상태. 현재는 자동 부여하지 않으며 사람 확정 검토로만 기록"),
-                new LegendItem("E2", "차등 비교", "유효 신원의 동일 대상 비교와 의미 응답이 있음"),
+                new LegendItem("E3", "통제 재현", "정상 대조·유효 계정·의미 오라클·독립 반복이 검증된 상태. 현재는 자동 부여하지 않으며 사람 확정 검토로만 기록"),
+                new LegendItem("E2", "차등 비교", "유효 계정의 동일 대상 비교와 의미 응답이 있음"),
                 new LegendItem("E1", "단일 관측", "응답 한 건 또는 통제되지 않은 탐색 관측"),
-                new LegendItem("E0", "미실행", "해당 신원·기능·객체 조합의 응답 없음"));
+                new LegendItem("E0", "미점검", "해당 계정·기능·객체 조합의 응답 없음"));
     }
 
     private static List<LegendItem> ownershipLegend() {

@@ -6,7 +6,6 @@ import type {
   EvidencePage,
   HumanRun,
   LiveAuthorizationReplayEnvelope,
-  ImportXmlResult,
   ManualAttempt,
   ReplayResult,
   AuthorizationReplayResult,
@@ -24,6 +23,8 @@ import type {
   ExplorerAccountSaveResult,
   ReviewStatus,
   ProjectStatus,
+  LlmFinding,
+  LlmVerifyState,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
@@ -129,11 +130,17 @@ export const completeExplorerBrowserLogin = (id: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-complete", id })
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
-export const importXml = (source: "human" | "scanner" | "llm", name: string, xml: string | ArrayBuffer, signal?: AbortSignal) =>
-  apiFetch<ImportXmlResult>(`/api/import-xml?${new URLSearchParams({ source, name })}` as `/api/${string}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/xml;charset=UTF-8" },
-    body: xml,
-    ...formSignal(signal),
-  })
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })
+
+/** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
+export const getLlmFindings = (signal?: AbortSignal) =>
+  apiFetch<{ findings: readonly LlmFinding[] }>("/api/llm-findings", formSignal(signal))
+/** 보내는 계정 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+export const startLlmVerify = (accountId: string) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { accountId })
+/** 실행 중인 LLM 검증을 중단한다. */
+export const cancelLlmVerify = () =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })
+/** 현재 LLM 검증 실행 상태. */
+export const getLlmVerifyState = (signal?: AbortSignal) =>
+  apiFetch<LlmVerifyState>("/api/llm-verify", formSignal(signal))

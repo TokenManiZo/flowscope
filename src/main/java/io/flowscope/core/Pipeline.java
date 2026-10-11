@@ -15,6 +15,9 @@ public final class Pipeline {
     public static final class Result {
         public final FlowGraph graph;
         public final AuthorizationAnalysis analysis;
+        public final ObservedObjectIndex objects;
+        public final java.util.Map<String, RequestRecord> coverageByEvidence;
+        public final java.util.Map<String, List<RequestRecord>> coverageByOperation;
         /** 정규화된 분석 대상 레코드. 커버리지·갭(F-12~15)의 데이터 공급원이므로 폐기하지 않는다. */
         public final List<RequestRecord> records;
         /** 그래프·인가·3-way 커버리지에 실제로 사용한 부분집합. */
@@ -22,11 +25,21 @@ public final class Pipeline {
         public final int excludedCount;
         public final int reviewCount;
         Result(FlowGraph graph, AuthorizationAnalysis analysis, List<RequestRecord> records,
-               List<RequestRecord> coverageRecords, int excludedCount, int reviewCount) {
+               List<RequestRecord> coverageRecords, int excludedCount, int reviewCount, ObservedObjectIndex objects) {
             this.graph = graph;
             this.analysis = analysis;
+            this.objects = objects;
             this.records = List.copyOf(records);
             this.coverageRecords = List.copyOf(coverageRecords);
+            var byEvidence = new java.util.LinkedHashMap<String, RequestRecord>();
+            var byOperation = new java.util.LinkedHashMap<String, List<RequestRecord>>();
+            for (RequestRecord record : coverageRecords) {
+                byEvidence.putIfAbsent(record.evidenceId, record);
+                byOperation.computeIfAbsent(record.op, ignored -> new ArrayList<>()).add(record);
+            }
+            byOperation.replaceAll((key, value) -> List.copyOf(value));
+            this.coverageByEvidence = java.util.Map.copyOf(byEvidence);
+            this.coverageByOperation = java.util.Map.copyOf(byOperation);
             this.excludedCount = excludedCount;
             this.reviewCount = reviewCount;
         }
@@ -97,9 +110,10 @@ public final class Pipeline {
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.EXCLUDE) excluded++;
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW) review++;
         }
-        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, effectiveConfig);
+        ObservedObjectIndex objects = ObservedObjectIndex.build(coverage);
+        AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, effectiveConfig, objects);
         FlowGraph graph = FlowGraphBuilder.build(coverage, analysis, effectiveConfig);
-        return new Result(graph, analysis, records, coverage, excluded, review);
+        return new Result(graph, analysis, records, coverage, excluded, review, objects);
     }
 
     private static boolean strongCorroboratingEvidence(RequestRecord record) {

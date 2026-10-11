@@ -115,6 +115,12 @@ public final class ZapClient {
     public String addRequestHeaderRule(String description, String urlRegex,
                                        String headerName, String replacement,
                                        java.util.List<Integer> initiators) {
+        return addRequestHeaderRule(description, urlRegex, headerName, replacement, initiators, false);
+    }
+    /** sensitive면 실패 응답 본문을 예외에 넣지 않는다. 주입 인증값처럼 값이 비밀일 때 쓴다. */
+    public String addRequestHeaderRule(String description, String urlRegex,
+                                       String headerName, String replacement,
+                                       java.util.List<Integer> initiators, boolean sensitive) {
         if (description == null || description.isBlank() || urlRegex == null || urlRegex.isBlank()
                 || headerName == null || headerName.isBlank() || replacement == null || replacement.isBlank()
                 || initiators == null || initiators.isEmpty()) {
@@ -122,10 +128,12 @@ public final class ZapClient {
         }
         String initiatorList = initiators.stream().map(String::valueOf)
                 .collect(java.util.stream.Collectors.joining(","));
-        return post("/JSON/replacer/action/addRule/", "description=" + enc(description)
+        String form = "description=" + enc(description)
                 + "&enabled=true&matchType=REQ_HEADER&matchRegex=false&matchString=" + enc(headerName)
                 + "&replacement=" + enc(replacement) + "&url=" + enc(urlRegex)
-                + "&initiators=" + enc(initiatorList));
+                + "&initiators=" + enc(initiatorList);
+        return sensitive ? postSensitive("/JSON/replacer/action/addRule/", form)
+                : post("/JSON/replacer/action/addRule/", form);
     }
     public String removeReplacerRule(String description) {
         if (description == null || description.isBlank()) {

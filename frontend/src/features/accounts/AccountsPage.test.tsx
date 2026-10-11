@@ -71,11 +71,11 @@ describe("account and session management", () => {
     expect(await screen.findByRole("heading", { name: "계정·세션" })).toBeVisible()
     expect(screen.queryByText("관측된 세션")).not.toBeInTheDocument()
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
-    await waitFor(() => expect(lanes).toHaveTextContent(/Human\s*수집 대기\s*0건/))
+    await waitFor(() => expect(lanes).toHaveTextContent(/사람\s*수집 대기\s*0건/))
     expect(lanes).toHaveTextContent(/LLM\s*사용 안 함/)
     expect(screen.queryByLabelText("등록 계정 표시 이름")).not.toBeInTheDocument()
     expect(screen.queryByText("고급 세션 진단")).not.toBeInTheDocument()
-    expect(screen.queryByText("세션·신원 매핑 초기화")).not.toBeInTheDocument()
+    expect(screen.queryByText("세션·계정 매핑 초기화")).not.toBeInTheDocument()
     expect(document.body.textContent).not.toContain(rawSecret)
     expect(document.body.textContent).not.toContain("never-render-this")
   })
@@ -149,7 +149,7 @@ describe("account and session management", () => {
     renderAccounts({}, data)
     const lanes = await screen.findByLabelText("계정 A 연결 상태")
     await waitFor(() => expect(lanes).toHaveTextContent(/LLM\s*사용 안 함\s*1건/))
-    expect(lanes).toHaveTextContent(/Human\s*수집 대기\s*1건/)
+    expect(lanes).toHaveTextContent(/사람\s*수집 대기\s*1건/)
     expect(lanes).toHaveTextContent(/ZAP[\s\S]*1건/)
   })
 
@@ -280,7 +280,7 @@ describe("account and session management", () => {
     // Scope entries end with "/"; the form fills the bare origin so it validates without editing.
     await waitFor(() => expect(within(dialog).getByLabelText("대상 서비스")).toHaveValue("http://127.0.0.1:9000"))
     expect(within(dialog).queryByRole("alert")).not.toBeInTheDocument()
-    expect(within(dialog).queryByRole("combobox", { name: "같은 서비스 관측 신원" })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole("combobox", { name: "같은 서비스 요청한 계정" })).not.toBeInTheDocument()
     await user.type(within(dialog).getByLabelText("표시 이름"), "새 계정")
     await user.click(within(dialog).getByRole("button", { name: "LV1" }))
     await user.click(within(dialog).getByRole("button", { name: "등록" }))
@@ -300,7 +300,7 @@ describe("account and session management", () => {
     for (const tab of [/^기본 정보/, /^HUMAN/, /^ZAP 로그인/]) expect(await within(sheet).findByRole("tab", { name: tab })).toBeVisible()
     // LLM 세션은 점검의 LLM 단계에서 브라우저 로그인으로 만든다.
     expect(within(sheet).queryByRole("tab", { name: /^LLM/ })).not.toBeInTheDocument()
-    expect(within(sheet).queryByRole("button", { name: /관측 신원 연결/ })).not.toBeInTheDocument()
+    expect(within(sheet).queryByRole("button", { name: /요청한 계정 연결/ })).not.toBeInTheDocument()
   })
 
   it("deletes an account only after the confirmation dialog", async () => {

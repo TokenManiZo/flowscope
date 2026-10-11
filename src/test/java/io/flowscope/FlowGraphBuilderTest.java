@@ -30,7 +30,8 @@ class FlowGraphBuilderTest {
         all.forEach(record -> record.collectionAccountId = record.source == Source.SCANNER ? "user-c"
                 : record.path.contains("admin") ? "user-b" : "user-a");
         Normalizer.normalizeAll(all);
-        return FlowGraphBuilder.build(all);
+        all.forEach(record -> record.responseContentType = "application/json");
+        return io.flowscope.core.Pipeline.run(all).graph;
     }
 
     @Test
@@ -38,9 +39,9 @@ class FlowGraphBuilderTest {
         FlowGraph g = sampleGraph();
         // 신원 3: user-a(AAA), user-b(ADM), user-c(BBB)
         assertEquals(3, g.nodeCount(FlowGraph.NodeType.IDENTITY));
-        // 자원 4: orders:101, orders:303, orders:202, products:1
+        // Core PATH OBJ: orders 101, 303, 202; singleton products path is not corroborated
         // (admin/invites, admin/users 는 객체가 없어 자원 노드를 만들지 않음 — F-06/F-07)
-        assertEquals(4, g.nodeCount(FlowGraph.NodeType.RESOURCE));
+        assertEquals(3, g.nodeCount(FlowGraph.NodeType.RESOURCE));
         // 오퍼레이션 7
         assertEquals(7, g.nodeCount(FlowGraph.NodeType.OPERATION));
     }
@@ -52,7 +53,7 @@ class FlowGraphBuilderTest {
         FlowGraph g = sampleGraph();
         List<FlowGraph.Edge> callsTo101 = g.edges().stream()
                 .filter(e -> e.type == FlowGraph.EdgeType.CALLS)
-                .filter(e -> e.from.contains("orders:101"))
+                .filter(e -> e.from.startsWith("R:") && e.to.contains("orders") && g.edges().stream().filter(x -> x.from.equals(e.from) && x.type == FlowGraph.EdgeType.CALLS).map(x -> x.idn).distinct().count() == 2)
                 .toList();
         assertFalse(callsTo101.isEmpty(), "orders:101 CALLS 엣지가 있어야 한다");
         for (FlowGraph.Edge e : callsTo101) {
@@ -69,8 +70,10 @@ class FlowGraphBuilderTest {
         List<RequestRecord> recs = new ArrayList<>();
         recs.add(new RequestRecord(Source.HUMAN, "https://t:443", "GET", "/api/orders/7", 200, "SAME"));
         recs.add(new RequestRecord(Source.SCANNER, "https://t:443", "GET", "/api/orders/7", 200, "SAME"));
+        recs.forEach(record -> { record.hasResponse = true; record.body = "{\"id\":7}";
+            record.responseContentType = "application/json"; });
         Normalizer.normalizeAll(recs);
-        FlowGraph g = FlowGraphBuilder.build(recs);
+        FlowGraph g = io.flowscope.core.Pipeline.run(recs).graph;
         FlowGraph.Edge e = g.edges().stream()
                 .filter(x -> x.type == FlowGraph.EdgeType.ACCESS).findFirst().orElseThrow();
         assertEquals(2, e.sources.size(), "같은 신원·같은 조합이면 겹침");
@@ -82,7 +85,7 @@ class FlowGraphBuilderTest {
         // products:1 은 스캐너만 관측
         FlowGraph g = sampleGraph();
         FlowGraph.Edge scannerOnly = g.edges().stream()
-                .filter(e -> e.from.contains("products:1"))
+                .filter(e -> e.to.contains("products") && e.from.startsWith("I:"))
                 .findFirst().orElseThrow();
         assertEquals(1, scannerOnly.sources.size());
         assertTrue(scannerOnly.sources.contains(Source.SCANNER));

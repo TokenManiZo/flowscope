@@ -50,3 +50,25 @@ export function durationLabel(seconds?: number): string {
   const remainder = seconds % 60
   return minutes > 0 ? `${minutes}분 ${remainder}초` : `${remainder}초`
 }
+
+/** 실행 ID 앞부분으로 도구를 고른다. 서버가 쓰는 접두어: zap-, llm-explorer-, human-, (live-)authorization-replay-, live-<source>, proxy-history-<source>, project-import. */
+const runKinds: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^zap-/i, "ZAP 실행"],
+  [/^(live-)?authorization-replay-/i, "자동 검증"],
+  [/^(llm-|live-llm$|proxy-history-llm$)/i, "LLM 실행"],
+  [/^(live-scanner$|proxy-history-scanner$)/i, "스캐너 실행"],
+  [/^(human-|live-human$|proxy-history-human$)/i, "수집"],
+  [/^project-import$/i, "가져오기"],
+]
+const sourceRunKinds: Record<string, string> = { HUMAN: "수집", SCANNER: "스캐너 실행", LLM: "LLM 실행" }
+
+const pad = (value: number) => String(value).padStart(2, "0")
+
+/** 긴 실행 ID 대신 "ZAP 실행 · 10/07 14:32"처럼 도구와 시작 시각으로 보여 준다. 시각을 모르면 도구만 쓴다. */
+export function runLabel(runId: string, source?: string, startedAt?: number): string {
+  const kind = runKinds.find(([pattern]) => pattern.test(runId))?.[1] ?? sourceRunKinds[source?.toUpperCase() ?? ""] ?? "실행"
+  const at = startedAt && startedAt > 0 ? startedAt : Number(runId.match(/(?:^|-)(\d{13})(?=-|$)/)?.[1] ?? 0)
+  if (!(at > 0)) return kind
+  const time = new Date(at)
+  return `${kind} · ${pad(time.getMonth() + 1)}/${pad(time.getDate())} ${pad(time.getHours())}:${pad(time.getMinutes())}`
+}

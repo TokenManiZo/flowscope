@@ -49,10 +49,10 @@ export function isStrongVerification(source: string | undefined): boolean {
 }
 
 export const VERIFICATION_SOURCE_LABEL: Record<string, string> = {
-  OPERATOR_ASSERTED: "운영자 확인",
-  RULE_MATCHED: "규칙 확인",
-  LEGACY_RESPONSE: "약검증",
-  NONE: "미검증",
+  OPERATOR_ASSERTED: "직접 확인",
+  RULE_MATCHED: "규칙으로 확인",
+  LEGACY_RESPONSE: "로그인 추정",
+  NONE: "확인 안 됨",
 };
 
 export interface LiveAuthorizationReplayCardProps {
@@ -78,7 +78,7 @@ const STATUS_LABEL: Record<ReplayAccount["status"], string> = {
 
 /** 고를 수 없는 계정의 이유. 상태 값 대신 사용자가 해야 할 일을 짧게 말한다. */
 function unavailableReason(account: ReplayAccount): string {
-  if (account.credentialConflict) return "자격 충돌";
+  if (account.credentialConflict) return "다른 계정 로그인 정보 섞임";
   if (account.status !== "ACTIVE") return "세션 없음";
   return "세션 확인 필요";
 }
@@ -89,8 +89,8 @@ const BASIS_SOURCES: Array<{
   detail: string;
   icon: typeof UserRound;
 }> = [
-  { id: "HUMAN", label: "HUMAN", detail: "Burp", icon: UserRound },
-  { id: "SCANNER", label: "ZAP", detail: "Scanner", icon: RadioTower },
+  { id: "HUMAN", label: "사람", detail: "Burp", icon: UserRound },
+  { id: "SCANNER", label: "스캐너", detail: "Scanner", icon: RadioTower },
   { id: "LLM", label: "LLM", detail: "Explorer", icon: Cpu },
 ];
 
@@ -180,7 +180,7 @@ export function LiveAuthorizationReplayCard({
   // 시작 버튼이 꺼져 있을 때 무엇이 빠졌는지 한 줄로 알려 준다.
   const startHint = pending || state !== "STOPPED" ? null
     : basisSources.length === 0 ? "기준 요청 출처를 1개 이상 선택하세요."
-      : effectiveSelection.length === 0 && !includeAnonymous ? "대상 신원을 1개 이상 선택하세요."
+      : effectiveSelection.length === 0 && !includeAnonymous ? "대상 계정을 1개 이상 선택하세요."
         : !acknowledged ? "3번 안전 재전송을 허용하세요." : null;
 
   const toggleSource = (source: LiveReplayBasisSource) => {
@@ -238,10 +238,10 @@ export function LiveAuthorizationReplayCard({
           <div className="space-y-1.5">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Radio className="size-4 text-primary" aria-hidden="true" />
-              라이브 교차 신원 검증
+              라이브 교차 계정 검증
             </CardTitle>
             <CardDescription>
-              HUMAN·ZAP·LLM에서 관측한 요청을 선택한 신원으로 안전하게 교차 검증합니다.
+              HUMAN·ZAP·LLM에서 관측한 요청을 선택한 계정으로 안전하게 교차 검증합니다.
             </CardDescription>
           </div>
           <Badge
@@ -295,7 +295,7 @@ export function LiveAuthorizationReplayCard({
             <fieldset className="space-y-2">
               <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                 <legend className="text-xs font-medium text-muted-foreground">
-                  2. 교차 검증 대상 신원
+                  2. 교차 검증 대상 계정
                 </legend>
                 {selectable.length < accounts.length && (
                   <span className="text-xs text-muted-foreground">
@@ -355,10 +355,10 @@ export function LiveAuthorizationReplayCard({
                   checked={includeAnonymous}
                   onCheckedChange={(value) => setIncludeAnonymous(value === true)}
                   disabled={pending || isRunning}
-                  aria-label="비로그인(ANON) 포함"
+                  aria-label="비로그인 포함"
                 />
                 <Ban className="size-4 text-muted-foreground" aria-hidden="true" />
-                <span className="text-sm font-medium">비로그인(ANON) 포함</span>
+                <span className="text-sm font-medium">비로그인 포함</span>
               </label>
             </fieldset>
 

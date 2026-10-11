@@ -86,8 +86,8 @@ export function projectMatrix(snapshot: Snapshot, mode: MatrixMode, gapsOnly: bo
 export const sourceOrder: readonly Source[] = ["human", "scanner", "llm", "unknown"]
 
 export function sourcePresentation(source: Source) {
-  if (source === "human") return { short: "H", label: "HUMAN", line: "실선", lineClass: "border-solid" }
-  if (source === "scanner") return { short: "S", label: "SCANNER", line: "파선", lineClass: "border-dashed" }
+  if (source === "human") return { short: "H", label: "사람", line: "실선", lineClass: "border-solid" }
+  if (source === "scanner") return { short: "S", label: "스캐너", line: "파선", lineClass: "border-dashed" }
   if (source === "llm") return { short: "L", label: "LLM", line: "점선", lineClass: "border-dotted" }
-  return { short: "?", label: "UNKNOWN", line: "실선", lineClass: "border-solid" }
+  return { short: "?", label: "미확인", line: "실선", lineClass: "border-solid" }
 }

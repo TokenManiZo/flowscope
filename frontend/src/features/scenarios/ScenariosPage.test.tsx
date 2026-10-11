@@ -26,7 +26,7 @@ function scenario(id: string, values: Partial<Snapshot["scenarios"][number]> = {
 }
 
 function snapshot(revision = 1, scenarios: Snapshot["scenarios"] = [scenario("rule-1")]): Snapshot {
-  return { ...snapshotFixture, revision, events: [event("candidate-event"), event("validation-event"), event("control-event")], scenarios }
+  return { ...snapshotFixture, revision, events: [event("candidate-event"), event("validation-event"), event("control-event")], evidenceOrdinals: { "candidate-event": 1, "validation-event": 2, "control-event": 3 }, scenarios }
 }
 
 
@@ -60,25 +60,31 @@ it("keeps restored LLM verdicts in a read-only archive, never in the current can
   expect(screen.getByText("이전 프로젝트에서 가져온 읽기 전용 기록입니다.")).toBeVisible()
   expect(document.querySelector("img")).toBeNull()
   expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
+  // 지금 프로젝트에 없는 기록(missing)과 실행 ID는 보이지 않고, 남은 기록만 #번호로 보인다.
+  expect(document.body).not.toHaveTextContent("missing")
+  expect(document.body).not.toHaveTextContent("retired-run")
+  // 옛 평가는 남은 기록이 없어 요청 기록 칸이 아예 없고, 옛 판정만 1건을 보여 준다.
+  expect([...document.querySelectorAll("summary")].map((item) => item.textContent).filter((text) => text?.startsWith("요청 기록"))).toEqual(["요청 기록 1건"])
+  expect(document.body).not.toHaveTextContent("없음")
 })
 
-it("opens exact candidate 관측 기록 and clears selection when revision changes", async () => {
+it("opens exact candidate 요청 기록 and clears selection when revision changes", async () => {
   const view = renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
-  await userEvent.click(screen.getByRole("button", { name: "관측 기록 열기" }))
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  await userEvent.click(screen.getByRole("button", { name: "요청 기록 #1 열기" }))
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("요청 기록 1건#1")
   currentSnapshot = snapshot(2, [])
   view.refresh()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
 })
 
-it("keeps the open 관측 기록 when new traffic only bumps the revision", async () => {
+it("keeps the open 요청 기록 when new traffic only bumps the revision", async () => {
   const view = renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
-  await userEvent.click(screen.getByRole("button", { name: "관측 기록 열기" }))
+  await userEvent.click(screen.getByRole("button", { name: "요청 기록 #1 열기" }))
   currentSnapshot = snapshot(2)
   view.refresh()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("요청 기록 1건#1")
   currentSnapshot = { ...snapshot(3), datasetRevision: 9 }
   view.refresh()
   expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
@@ -113,14 +119,14 @@ it("reports snapshot failure without inventing an empty successful analysis", ()
   expect(screen.queryByText("규칙에 해당하는 후보가 없습니다.")).not.toBeInTheDocument()
 })
 
-it("retains an open 관측 기록 detail but suspends its actions during a refresh failure", async () => {
+it("retains an open 요청 기록 detail but suspends its actions during a refresh failure", async () => {
   const view = renderPage()
   await userEvent.click(screen.getByRole("button", { name: /규칙 후보/ }))
-  await userEvent.click(screen.getByRole("button", { name: "관측 기록 열기" }))
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  await userEvent.click(screen.getByRole("button", { name: "요청 기록 #1 열기" }))
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("요청 기록 1건#1")
   snapshotError = true
   view.refresh()
-  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("candidate-event")
+  expect(screen.getByRole("complementary", { name: "선택 상세" })).toHaveTextContent("요청 기록 1건#1")
   expect(screen.getByLabelText("필수 역할")).toBeDisabled()
 })
 

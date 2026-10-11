@@ -12,7 +12,7 @@ import { EvidencePage } from "./EvidencePage"
 vi.mock("@/features/graph/useGraphWorkspace", async () => ({ useGraphWorkspace: (await import("@/test/graphWorkspace")).useMemoryGraphWorkspace }))
 
 vi.mock("@/features/graph/CytoscapeGraph", () => ({
-  CytoscapeGraph: ({ onSelect }: { onSelect(selection: GraphSelection, id: string): void }) => <button onClick={() => onSelect({ operation: "https://demo.test:443 PATCH /orders/{id}", resource: "https://demo.test:443 orders:101", identity: "USER A", source: "human", evidenceIds: ["actual-a"] }, "selected-evidence")}>캔버스 관측 기록 선택</button>,
+  CytoscapeGraph: ({ onSelect }: { onSelect(selection: GraphSelection, id: string): void }) => <button onClick={() => onSelect({ operation: "https://demo.test:443 PATCH /orders/{id}", resource: "https://demo.test:443 orders:101", identity: "USER A", source: "human", evidenceIds: ["actual-a"] }, "selected-evidence")}>캔버스 요청 기록 선택</button>,
 }))
 
 const event = actualEvent()
@@ -46,7 +46,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     await userEvent.click(within(await screen.findByRole("region", { name: "공격면 API 목록" })).getByRole("button", { name: /ORDERS APIs/ }))
   }
   const select = async () => {
-    if (kind === "graph-canvas") await userEvent.click(screen.getByRole("button", { name: "캔버스 관측 기록 선택" }))
+    if (kind === "graph-canvas") await userEvent.click(screen.getByRole("button", { name: "캔버스 요청 기록 선택" }))
     else if (kind === "graph-list") {
       // 목록 표에서는 객체 칩으로 객체 목록을 펼친 뒤 객체 줄을 고른다.
       await userEvent.click(screen.getByRole("button", { name: /^orders 객체 \d+개 펼치기/ }))
@@ -55,8 +55,8 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
     else {
       await userEvent.click(await screen.findByRole("button", { name: kind === "surface" ? /API 상세$/ : /상세 보기$/ }))
       if (kind === "surface") {
-        await userEvent.click(screen.getByRole("tab", { name: /^관측 기록/ }))
-        await userEvent.click(await screen.findByRole("button", { name: /관측 기록 상세 .* H .* HTTP 200/ }))
+        await userEvent.click(screen.getByRole("tab", { name: /^요청 기록/ }))
+        await userEvent.click(await screen.findByRole("button", { name: /요청 기록 상세 .* H .* HTTP 200/ }))
       }
     }
   }
@@ -64,7 +64,7 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await userEvent.click(await screen.findByRole("button", { name: kind.startsWith("graph") ? "Request Lab에서 보내기" : "Request Lab 열기" }))
   const request = await screen.findByLabelText("Request Lab 요청 원문")
   // 비로그인으로 점검 중이면 열자마자 비로그인 편집본이 준비된다.
-  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인"))
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인"))
   await userEvent.clear(request)
   await userEvent.type(request, "EDITED-DRAFT")
 
@@ -89,9 +89,9 @@ it.each(["evidence", "surface", "graph-list", "graph-canvas"] as const)("suspend
   await waitFor(() => expect(screen.queryByText("snapshot unavailable")).not.toBeInTheDocument())
   expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("EDITED-DRAFT")
   expect(screen.getByLabelText("Request Lab 요청 원문")).toBeEnabled()
-  expect(screen.getByRole("combobox", { name: "전송 인증" })).toBeEnabled()
+  expect(screen.getByRole("combobox", { name: "전송 계정" })).toBeEnabled()
   // 복구되면 열 때 정한 비로그인 그대로 다시 보낼 수 있다.
-  expect(screen.getByRole("combobox", { name: "전송 인증" })).toHaveTextContent("비로그인")
+  expect(screen.getByRole("combobox", { name: "전송 계정" })).toHaveTextContent("비로그인")
   expect(screen.getByRole("button", { name: "요청 재전송" })).toBeEnabled()
   await waitFor(() => expect(fetch.mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?"))).toHaveLength(2))
 })

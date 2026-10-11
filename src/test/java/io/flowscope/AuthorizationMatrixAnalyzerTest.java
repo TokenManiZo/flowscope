@@ -35,7 +35,7 @@ class AuthorizationMatrixAnalyzerTest {
     @Test
     void 한_계정이_관측한_객체는_다른_동일역할_계정의_BOLA_IDOR_수동테스트로_추천한다() {
         AnalysisConfig config = users();
-        Pipeline.Result result = Pipeline.run(List.of(record(Source.HUMAN, "tok:user-a",
+        Pipeline.Result result = CoreObjectFixture.run(List.of(record(Source.HUMAN, "tok:user-a",
                 "GET", "/api/orders/24", 200, "{\"id\":24}")), config);
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
@@ -58,13 +58,13 @@ class AuthorizationMatrixAnalyzerTest {
                 .filter(cell -> cell.id().equals(recommendation.id())).findFirst().orElseThrow();
         assertEquals("CONFIRMED", confirmed.reviewStatus());
         assertEquals(1, reviewed.summary().humanConfirmed());
-        assertEquals(0, reviewed.summary().bolaIdorTestRecommendations(), "사람이 판정한 추천은 열린 추천에서 빠진다");
+        assertEquals(matrix.summary().bolaIdorTestRecommendations() - 1, reviewed.summary().bolaIdorTestRecommendations(), "사람이 판정한 추천은 열린 추천에서 빠진다");
     }
 
     @Test
     void 상위역할에서만_관측한_기능은_하위역할의_BFLA_수동테스트로_추천한다() {
         AnalysisConfig config = userAndAdmin();
-        Pipeline.Result result = Pipeline.run(List.of(record(Source.HUMAN, "tok:admin",
+        Pipeline.Result result = CoreObjectFixture.run(List.of(record(Source.HUMAN, "tok:admin",
                 "GET", "/api/admin/export", 200, "{\"rows\":1}")), config);
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
@@ -91,7 +91,7 @@ class AuthorizationMatrixAnalyzerTest {
                         "{\"error\":\"forbidden\"}"),
                 record(Source.SCANNER, "tok:user-b", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"));
 
-        Pipeline.Result result = Pipeline.run(records, config);
+        Pipeline.Result result = CoreObjectFixture.run(records, config);
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
         AuthorizationMatrix.FunctionCell target = matrix.functions().stream()
                 .filter(cell -> cell.identity().equals("user-b") && !cell.evidenceIds().isEmpty())
@@ -118,11 +118,11 @@ class AuthorizationMatrixAnalyzerTest {
                 record(Source.HUMAN, "tok:user-a", "GET", "/api/reports/quarterly", 403,
                         "{\"error\":\"forbidden\"}"),
                 record(Source.SCANNER, "tok:user-b", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"));
-        Pipeline.run(records, config);
+        CoreObjectFixture.run(records, config);
         config.withEndpointRequirement(records.getFirst().op, AccessRole.USER);
 
         AuthorizationMatrix.FunctionCell target = AuthorizationMatrixAnalyzer.analyze(
-                        Pipeline.run(records, config), config, List.of()).functions().stream()
+                        CoreObjectFixture.run(records, config), config, List.of()).functions().stream()
                 .filter(cell -> cell.identity().equals("user-b") && !cell.evidenceIds().isEmpty())
                 .findFirst().orElseThrow();
 
@@ -146,7 +146,7 @@ class AuthorizationMatrixAnalyzerTest {
                 record(Source.SCANNER, "tok:user-b", "GET", "/api/reports/quarterly", 200, "{\"rows\":1}"));
 
         AuthorizationMatrix.FunctionCell target = AuthorizationMatrixAnalyzer.analyze(
-                        Pipeline.run(records, config), config, List.of()).functions().stream()
+                        CoreObjectFixture.run(records, config), config, List.of()).functions().stream()
                 .filter(cell -> cell.identity().equals("user-b") && !cell.evidenceIds().isEmpty())
                 .findFirst().orElseThrow();
 
@@ -160,11 +160,11 @@ class AuthorizationMatrixAnalyzerTest {
         List<RequestRecord> records = new ArrayList<>();
         records.add(record(Source.HUMAN, "tok:admin", "GET", "/api/export", 200, "{\"rows\":1}"));
         records.add(record(Source.SCANNER, "tok:user-a", "GET", "/api/export", 200, "{\"rows\":1}"));
-        Pipeline.Result preliminary = Pipeline.run(records, config);
+        Pipeline.Result preliminary = CoreObjectFixture.run(records, config);
         String operation = preliminary.records.getFirst().op;
         config.withEndpointRequirement(operation, AccessRole.ADMIN);
 
-        Pipeline.Result result = Pipeline.run(records, config);
+        Pipeline.Result result = CoreObjectFixture.run(records, config);
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
         AuthorizationMatrix.FunctionCell cell = matrix.functions().stream()
                 .filter(value -> value.identity().equals("user-a") && value.operation().equals(operation))
@@ -188,7 +188,7 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord attacker = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/101", 200,
                 "{\"id\":101,\"ownerId\":\"user-a\",\"updatedAt\":\"2026-09-16T01:00:01Z\",\"token\":\"masked-b\"}");
 
-        Pipeline.Result result = Pipeline.run(List.of(owner, attacker), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(owner, attacker), config);
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
         AuthorizationMatrix.ObjectCell cell = matrix.objects().stream()
                 .filter(value -> value.identity().equals("user-b") && !value.evidenceIds().isEmpty())
@@ -205,7 +205,7 @@ class AuthorizationMatrixAnalyzerTest {
         assertTrue(cell.techniques().contains("IDOR"));
         assertEquals(AuthorizationMatrix.Status.BOLA_IDOR_CANDIDATE, cell.status());
         assertEquals(Verdict.SUSPICIOUS, result.analysis.cells().stream()
-                .filter(value -> value.key().identity().equals("user-b")).findFirst().orElseThrow().overall(),
+                .filter(value -> value.key().resource() != null && value.key().identity().equals("user-b")).findFirst().orElseThrow().overall(),
                 "후보는 정본 cell의 SUSPICIOUS와 같은 판단이다");
         assertEquals(0, matrix.summary().bflaCandidates(), "BOLA 의심은 BFLA 후보로 새지 않는다");
         assertTrue(matrix.functions().stream().noneMatch(value -> value.status() == AuthorizationMatrix.Status.BFLA_CANDIDATE));
@@ -218,14 +218,14 @@ class AuthorizationMatrixAnalyzerTest {
                 "{\"id\":801,\"ownerId\":\"user-a\",\"published\":true}");
         RequestRecord reader = record(Source.SCANNER, "tok:user-b", "GET", "/api/catalog/801", 200,
                 "{\"id\":801,\"ownerId\":\"user-a\",\"published\":true}");
-        Pipeline.run(List.of(owner, reader), config);
+        CoreObjectFixture.run(List.of(owner, reader), config);
         config.withEndpointRequirement(reader.op, AccessRole.USER)
-                .withResourcePolicy(reader.resource, ResourcePolicy.PUBLIC);
+                .withResourcePolicy(CoreObjectFixture.resource(reader), ResourcePolicy.PUBLIC);
 
-        Pipeline.Result result = Pipeline.run(List.of(owner, reader), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(owner, reader), config);
         AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
                 .objects().stream().filter(value -> value.identity().equals("user-b")
-                        && value.resource().equals(reader.resource)).findFirst().orElseThrow();
+                        && value.resource().equals(CoreObjectFixture.resource(reader))).findFirst().orElseThrow();
 
         assertEquals("PUBLIC", cell.resourcePolicy());
         assertEquals(AuthorizationMatrix.Expected.ALLOW, cell.expected());
@@ -241,11 +241,11 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord ownerRead = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/902", 200,
                 "{\"id\":902,\"ownerId\":\"user-a\"}");
         RequestRecord ownerDelete = record(Source.HUMAN, "tok:user-a", "DELETE", "/api/orders/902", 204, "");
-        Pipeline.run(List.of(ownerRead, ownerDelete), config);
+        CoreObjectFixture.run(List.of(ownerRead, ownerDelete), config);
         config.withEndpointRequirement(ownerDelete.op, AccessRole.ADMIN)
-                .withResourcePolicy(ownerDelete.resource, ResourcePolicy.OWNER_ONLY);
+                .withResourcePolicy(CoreObjectFixture.resource(ownerDelete), ResourcePolicy.OWNER_ONLY);
 
-        Pipeline.Result result = Pipeline.run(List.of(ownerRead, ownerDelete), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(ownerRead, ownerDelete), config);
         AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
                 .objects().stream().filter(value -> value.identity().equals("user-a")
                         && value.operation().equals(ownerDelete.op)).findFirst().orElseThrow();
@@ -266,9 +266,9 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord attacker = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/101", 200,
                 "{\"ok\":true}");
 
-        Pipeline.Result result = Pipeline.run(List.of(owner, attacker), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(owner, attacker), config);
         AuthorizationAnalysis.CoverageCell authority = result.analysis.cells().stream()
-                .filter(value -> value.key().identity().equals("user-b")).findFirst().orElseThrow();
+                .filter(value -> value.key().resource() != null && value.key().identity().equals("user-b")).findFirst().orElseThrow();
         assertEquals(Verdict.UNDECIDED, authority.overall(), "정본은 본문 오라클 없이 SUSPICIOUS를 만들지 않는다(D-004)");
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
@@ -291,7 +291,7 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord first = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/24", 200, "{\"id\":24}");
         RequestRecord second = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/24", 200, "{\"id\":24}");
 
-        Pipeline.Result result = Pipeline.run(List.of(first, second), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(first, second), config);
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
         AuthorizationMatrix.ObjectCell cell = matrix.objects().stream()
                 .filter(value -> value.identity().equals("user-b") && !value.evidenceIds().isEmpty())
@@ -313,7 +313,7 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord denied = record(Source.SCANNER, "tok:user-b", "GET", "/api/orders/105", 200,
                 "{\"error\":\"forbidden\"}");
 
-        Pipeline.Result result = Pipeline.run(List.of(owner, denied), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(owner, denied), config);
         AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
                 .objects().stream().filter(value -> value.identity().equals("user-b")
                         && !value.evidenceIds().isEmpty()).findFirst().orElseThrow();
@@ -332,7 +332,7 @@ class AuthorizationMatrixAnalyzerTest {
                 "{\"id\":106,\"ownerId\":\"user-a\"}");
         owner.timestamp = 0;
 
-        Pipeline.Result result = Pipeline.run(List.of(owner, attacker), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(owner, attacker), config);
         AuthorizationMatrix.ObjectCell cell = AuthorizationMatrixAnalyzer.analyze(result, config, List.of())
                 .objects().stream().filter(value -> value.identity().equals("user-b")
                         && !value.evidenceIds().isEmpty()).findFirst().orElseThrow();
@@ -344,7 +344,7 @@ class AuthorizationMatrixAnalyzerTest {
     @Test
     void 정책과_실행이_없으면_안전으로_표시하지_않고_P0_E0_공백으로_남긴다() {
         SampleProject.Data sample = SampleProject.create();
-        Pipeline.Result result = Pipeline.run(sample.records(), sample.config());
+        Pipeline.Result result = CoreObjectFixture.run(sample.records(), sample.config());
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, sample.config(), List.of());
         AuthorizationMatrix.FunctionCell cell = matrix.functions().stream()
                 .filter(value -> value.policy().code().equals("P0") && value.actual() == AuthorizationMatrix.Actual.UNTESTED)
@@ -358,7 +358,7 @@ class AuthorizationMatrixAnalyzerTest {
     @Test
     void 과거_검증_이력은_표시만_하고_E3나_재현_상태로_승격하지_않는다() {
         SampleProject.Data sample = SampleProject.create();
-        Pipeline.Result result = Pipeline.run(sample.records(), sample.config());
+        Pipeline.Result result = CoreObjectFixture.run(sample.records(), sample.config());
         AuthorizationAnalysis.Finding finding = result.analysis.findings().stream()
                 .filter(value -> value.type() == AuthorizationAnalysis.FindingType.BOLA)
                 .findFirst().orElseThrow();
@@ -391,7 +391,7 @@ class AuthorizationMatrixAnalyzerTest {
     @Test
     void 상태변경은_후속확인_없이는_오라클충족이나_E3가_아니다() {
         SampleProject.Data sample = SampleProject.create();
-        Pipeline.Result result = Pipeline.run(sample.records(), sample.config());
+        Pipeline.Result result = CoreObjectFixture.run(sample.records(), sample.config());
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, sample.config(), List.of());
         AuthorizationMatrix.EvidenceRow write = matrix.evidence().stream()
                 .filter(value -> value.operation().contains(" PATCH ") || value.operation().contains(" POST "))
@@ -407,7 +407,7 @@ class AuthorizationMatrixAnalyzerTest {
     void recommendationsStayWithinTheRegisteredAccountService() {
         AnalysisConfig config = users().upsertAccount(new AccountProfile("foreign-user", "Foreign user",
                 "https://other.test:443", AccessRole.USER));
-        Pipeline.Result result = Pipeline.run(List.of(record(Source.HUMAN, "tok:user-a",
+        Pipeline.Result result = CoreObjectFixture.run(List.of(record(Source.HUMAN, "tok:user-a",
                 "GET", "/api/orders/24", 200, "{\"id\":24}")), config);
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
@@ -440,7 +440,7 @@ class AuthorizationMatrixAnalyzerTest {
                 "unobserved", "Unobserved account", "https://unobserved.test:443", AccessRole.USER));
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(
-                Pipeline.run(List.of(), config), config, List.of());
+                CoreObjectFixture.run(List.of(), config), config, List.of());
 
         assertTrue(matrix.configurationWarnings().isEmpty(),
                 "비교할 관측·정책 서비스 자체가 없으면 서비스 오타나 불일치를 추론하지 않는다");
@@ -458,7 +458,7 @@ class AuthorizationMatrixAnalyzerTest {
                 .withEndpointRequirement(operation, AccessRole.ADMIN);
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(
-                Pipeline.run(List.of(), config), config, List.of());
+                CoreObjectFixture.run(List.of(), config), config, List.of());
 
         assertTrue(matrix.configurationWarnings().isEmpty());
         assertTrue(matrix.identities().stream().anyMatch(identity -> identity.id().equals("policy-user")));
@@ -474,7 +474,7 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord local = record(Source.HUMAN, "tok:user-a", "GET", "/api/orders/24", 200, "{\"id\":24}");
         RequestRecord foreign = record(otherService, Source.HUMAN, "tok:foreign",
                 "GET", "/api/orders/24", 200, "{\"id\":24}");
-        Pipeline.Result result = Pipeline.run(List.of(local, foreign), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(local, foreign), config);
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
 
@@ -492,7 +492,7 @@ class AuthorizationMatrixAnalyzerTest {
         RequestRecord anonymous = record("https://public.test:443", Source.HUMAN, "anon",
                 "GET", "/api/news", 200, "{\"news\":[]}");
         AnalysisConfig config = users();
-        Pipeline.Result result = Pipeline.run(List.of(local, anonymous), config);
+        Pipeline.Result result = CoreObjectFixture.run(List.of(local, anonymous), config);
 
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
 

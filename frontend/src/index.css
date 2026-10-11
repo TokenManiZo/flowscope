@@ -40,14 +40,14 @@ html.flowscope-density-90 {
   --secondary: oklch(0.968 0.007 247.896);
   --secondary-foreground: oklch(0.208 0.042 265.755);
   --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
+  --muted-foreground: oklch(0.46 0.035 257);
   --accent: oklch(0.968 0.007 247.896);
   --accent-foreground: oklch(0.208 0.042 265.755);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.9 0.014 255);
-  --input: oklch(0.9 0.014 255);
-  --ring: oklch(0.704 0.04 256.788);
+  --border: oklch(0.82 0.018 255);
+  --input: oklch(0.66 0.025 255);
+  --ring: oklch(0.5 0.11 255);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -66,6 +66,7 @@ html.flowscope-density-90 {
   /* 그래프 캔버스·페인·구분선. 다크에만 있으면 라이트에서 값이 비어 경계와 바탕이 사라진다. */
   --flowscope-pane: var(--background);
   --flowscope-canvas: var(--background);
+  --flowscope-inspector: var(--card);
   --flowscope-grid: rgba(15, 23, 42, 0.045);
   --flowscope-divider: var(--border);
 }
@@ -156,14 +157,14 @@ html.flowscope-density-90 {
   --secondary: oklch(0.279 0.041 260.031);
   --secondary-foreground: oklch(0.984 0.003 247.858);
   --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
+  --muted-foreground: oklch(0.77 0.025 257);
   --accent: oklch(0.279 0.041 260.031);
   --accent-foreground: oklch(0.984 0.003 247.858);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
+  --border: oklch(0.4 0.025 257);
+  --input: oklch(0.52 0.025 257);
+  --ring: oklch(0.76 0.09 255);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -183,6 +184,7 @@ html.flowscope-density-90 {
   /* 그래프 캔버스·페인은 페이지 베이스(--background 네이비)와 같은 색을 공유한다. 사이드바·카드는 한 단계 elevation. */
   --flowscope-pane: oklch(0.129 0.042 264.695);
   --flowscope-canvas: oklch(0.129 0.042 264.695);
+  --flowscope-inspector: oklch(0.205 0.032 264);
   --flowscope-grid: rgba(255, 255, 255, 0.025);
   --flowscope-divider: #24323d;
   --flowscope-human: #60a5fa;
@@ -205,6 +207,10 @@ html.flowscope-density-90 {
   }
   html {
     @apply bg-background font-sans;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--ring) 28%, var(--background));
+    color: var(--foreground);
   }
   a, button {
     @apply focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50;
@@ -272,4 +278,31 @@ html.flowscope-density-90 {
   [data-slot="card"] {
     @apply border border-border/70;
   }
+}
+
+/* Shared detail panels use a distinct surface and readable native form controls in both themes. */
+.flowscope-inspector {
+  color-scheme: light;
+  background: var(--flowscope-inspector);
+}
+.dark .flowscope-inspector { color-scheme: dark; }
+.flowscope-inspector select {
+  border-color: var(--input);
+  background: var(--card);
+  color: var(--foreground);
+  min-height: 2.5rem;
+}
+.flowscope-inspector select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.flowscope-inspector select:disabled {
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
+.flowscope-inspector [data-slot="button"]:disabled {
+  opacity: 1;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
 }

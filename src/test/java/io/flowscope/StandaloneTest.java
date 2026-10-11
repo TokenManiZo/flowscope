@@ -96,7 +96,7 @@ final class StandaloneTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> state.requestLabDraft("ev-0000000000000000"));
 
-        assertEquals("해당 Evidence를 찾을 수 없습니다.", error.getMessage());
+        assertEquals("해당 요청 기록을 찾을 수 없습니다.", error.getMessage());
     }
 
     @Test

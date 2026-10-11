@@ -249,6 +249,29 @@ final class FlowScopeWebServerTest {
         assertEquals("https://app.example.test/", state.startedProjectScope);
         assertEquals(200, listed.statusCode());
         assertEquals(1, JSON.readTree(listed.body()).path("projects").size());
+        assertTrue(JSON.readTree(listed.body()).path("discoveredOrigins").isArray());
+    }
+
+    @Test void projectsExposesObservedOriginMetadataThroughExistingAuthenticatedApi() throws Exception {
+        state.discoveredOrigins = List.of("https://api.example.test:443");
+        start();
+        assertEquals(403, get("/api/projects", "wrong-token", null).statusCode());
+        var body = JSON.readTree(get("/api/projects", token, null).body());
+        assertEquals("https://api.example.test:443", body.path("discoveredOrigins").get(0).asText());
+        assertEquals("https://api.example.test:443", body.path("observedOrigins").get(0).asText());
+        assertEquals(state.datasetRevision(), body.path("datasetRevision").asLong());
+    }
+
+    @Test void discardsHostMetadataIfProjectDatasetChangesWhileBuildingResponse() throws Exception {
+        state.discoveredOrigins = List.of("https://old.example.test:443");
+        state.replaceDatasetDuringDiscovery = true;
+        long before = state.datasetRevision();
+        start();
+        var body = JSON.readTree(get("/api/projects", token, null).body());
+        assertEquals(before, body.path("datasetRevision").asLong());
+        assertEquals(before + 1, state.datasetRevision());
+        assertTrue(body.path("observedOrigins").isEmpty());
+        assertTrue(body.path("discoveredOrigins").isEmpty());
     }
 
     @Test
@@ -339,10 +362,46 @@ final class FlowScopeWebServerTest {
     @Test
     void retiredLlmAndMcpRoutesAreNotExposed() throws Exception {
         start();
-        for (String path : List.of("/api/llm-run", "/api/ai-preview", "/api/ai-scenarios", "/mcp")) {
+        for (String path : List.of("/api/llm-run", "/api/ai-preview", "/api/ai-scenarios")) {
             assertEquals(404, get(path, token, null).statusCode(), path);
             assertEquals(404, post(path, "action=start&role=JUDGE", token).statusCode(), path);
         }
+    }
+
+    @Test
+    void mcpRequiresItsOwnBearerTokenAndResendsOnlyGetAsTheSendingAccount() throws Exception {
+        start();
+        String list = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}";
+        // UI capability 토큰이나 토큰 없음으로는 MCP에 들어올 수 없다.
+        assertEquals(401, mcp(list, token).statusCode());
+        assertEquals(401, mcp(list, null).statusCode());
+        assertEquals(405, get("/mcp", null, null).statusCode());
+
+        JsonNode tools = json(mcp(list, server.mcpToken()));
+        assertEquals(5, tools.at("/result/tools").size());
+
+        String send = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_cross_send_get\",\"arguments\":{\"evidence_id\":\"" + state.record.evidenceId + "\",\"account_id\":\"user-b\"}}}";
+        JsonNode sent = json(mcp(send, server.mcpToken()));
+        assertFalse(sent.at("/result/isError").asBoolean(), sent.toString());
+        assertEquals(FlowScopeWebServer.CredentialMode.ACCOUNT, state.manualCredentialMode);
+        assertEquals("user-b", state.manualAccountId);
+        assertTrue(state.manualRequest.startsWith("GET "));
+        assertFalse(sent.toString().contains("raw-session-secret"), "보낸 요청의 인증값을 MCP 응답에 싣지 않는다");
+
+        // 쓰기 요청인 기록은 보내지 않고 거부한다.
+        state.draftRequest = "POST /v1/orders HTTP/1.1\r\nHost: api.example.test\r\n\r\n{}";
+        int before = state.manualRequestCount.get();
+        JsonNode refused = json(mcp(send, server.mcpToken()));
+        assertTrue(refused.at("/result/isError").asBoolean());
+        assertEquals(before, state.manualRequestCount.get());
+
+        String finding = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_finding\",\"arguments\":{\"operation\":\"GET /v1/orders/{id}\",\"identity\":\"user-b\",\"verdict\":\"IDOR 의심\",\"evidence_ids\":[\"ev-manual\"]}}}";
+        assertFalse(json(mcp(finding, server.mcpToken())).at("/result/isError").asBoolean());
+        assertEquals(1, state.findings.size());
+        assertEquals("IDOR 의심", state.findings.get(0).verdict());
+        JsonNode listed = json(get("/api/llm-findings", token, origin()));
+        assertEquals("user-b", listed.at("/findings/0/identity").asText());
+        assertEquals("ev-manual", listed.at("/findings/0/evidenceIds/0").asText());
     }
 
     @Test
@@ -527,8 +586,8 @@ final class FlowScopeWebServerTest {
         JsonNode body = JSON.readTree(snapshot.body());
         assertEquals(1, body.path("events").size());
         assertEquals(1, body.path("cells").size());
-        assertEquals("untested", body.at("/cells/0/overall").asText());
-        assertEquals("untested", body.at("/cells/0/perSource/human").asText());
+        assertEquals("allow", body.at("/cells/0/overall").asText());
+        assertEquals("allow", body.at("/cells/0/perSource/human").asText());
         assertEquals("human", body.at("/activeSources/0").asText());
         assertEquals(1, body.at("/trafficStats/captured").asInt());
         assertEquals(0, body.at("/trafficStats/dropped").asInt());
@@ -561,6 +620,13 @@ final class FlowScopeWebServerTest {
         assertEquals("FULL", evidence.at("/records/0/requestPayload/retention").asText());
         assertTrue(evidence.at("/records/0/requestPayload/bytes").asInt() > 0);
         assertEquals(64, evidence.at("/records/0/requestPayload/digest").asText().length());
+    }
+
+    @Test
+    void removedXmlImportEndpointDoesNotAcceptTraffic() throws Exception {
+        start();
+        assertEquals(404, postRaw("/api/import-xml?source=human&name=unused.xml",
+                "<items />", "application/xml", token).statusCode());
     }
 
     @Test
@@ -1135,6 +1201,8 @@ final class FlowScopeWebServerTest {
     @Test
     void editsServiceBoundAccountPolicyAndHumanReview() throws Exception {
         start();
+        state.record.query = "order_id=7";
+        state.rebuild();
         JsonNode account = json(post("/api/account-save", "label=USER+A&role=User&target=https%3A%2F%2Fapi.example.test", token));
         String accountId = account.path("id").asText();
         assertFalse(accountId.isBlank());
@@ -1154,7 +1222,8 @@ final class FlowScopeWebServerTest {
         String operation = state.snapshot().records.getFirst().op;
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=Admin", token).statusCode());
         assertEquals("Admin", state.config.endpointRequirement(operation).label());
-        String resource = state.snapshot().records.getFirst().resource;
+        String resource = state.snapshot().objects.observations().stream().filter(o -> o.kind().equals("QUERY"))
+                .map(io.flowscope.core.ObservedObjectIndex::resource).findFirst().orElseThrow();
         assertEquals(200, post("/api/resource-policy", "target=" + encode(resource)
                 + "&policy=PUBLIC", token).statusCode());
         assertEquals(io.flowscope.core.ResourcePolicy.PUBLIC, state.config.resourcePolicy(operation, resource));
@@ -1183,7 +1252,7 @@ final class FlowScopeWebServerTest {
                 + "&value=AUTO", token).statusCode());
 
         state.config.upsertAccount(new AccountProfile("owner", "OWNER", state.record.service, AccessRole.USER));
-        state.config.withResourceOwner(state.snapshot().records.getFirst().resource, "owner");
+        state.config.withResourceOwner(resource, "owner");
         state.rebuild();
         String findingId = state.snapshot().analysis.findings().getFirst().id();
         assertEquals(200, post("/api/review", "itemId=" + encode(findingId)
@@ -1201,7 +1270,7 @@ final class FlowScopeWebServerTest {
                 "BFLA_CANDIDATE", "BFLA_REVIEW_REQUIRED", "BOLA_IDOR_CANDIDATE", "BOLA_IDOR_REVIEW_REQUIRED");
         for (JsonNode cell : matrix.path("objects")) {
             boolean hasRec = !cell.path("recommendation").isMissingNode() && !cell.path("recommendation").isNull();
-            if (hasRec || reviewableStatus.contains(cell.path("status").asText())) { reviewable = cell; break; }
+            if (cell.path("identity").asText().equals(accountId) && (hasRec || reviewableStatus.contains(cell.path("status").asText()))) { reviewable = cell; break; }
         }
         assertNotNull(reviewable, "사람 검토가 가능한(추천 또는 후보) 객체 cell이 있어야 한다");
         String cellId = reviewable.path("id").asText();
@@ -1232,6 +1301,7 @@ final class FlowScopeWebServerTest {
         manual.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
         manual.originEvidenceId = state.record.evidenceId;
         manual.body = state.record.body;
+        manual.query = state.record.query;
         manual.hasResponse = true;
         manual.timestamp = 2;
         state.records.add(manual);
@@ -1239,6 +1309,19 @@ final class FlowScopeWebServerTest {
         assertEquals(200, post("/api/review", "itemId=" + encode(ownFunction)
                 + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token).statusCode());
         assertEquals(List.of(manual.evidenceId), state.config.reviews().get(ownFunction).validationEvidenceIds());
+        var objectValidationResponse = post("/api/review", "itemId=" + encode(cellId)
+                + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token);
+        assertEquals(200, objectValidationResponse.statusCode(), objectValidationResponse.body());
+        manual.query = "order_id=8"; state.rebuild();
+        assertEquals(400, post("/api/review", "itemId=" + encode(cellId)
+                + "&status=CONFIRMED&validationEvidenceIds=" + encode(manual.evidenceId), token).statusCode(),
+                "An altered OBJ input cannot be attached to the original object's review");
+        manual.query = state.record.query; state.rebuild();
+        state.config.withResourceOwner(resource, accountId);
+        assertEquals(io.flowscope.core.ReviewDecision.Status.UNRESOLVED,
+                state.config.reviewStatus(cellId, state.config.reviews().get(cellId).evidenceIds()),
+                "Changing new OBJ ownership invalidates the object review bound to that OBJ");
+
         assertEquals(200, post("/api/requirement", "operation=" + encode(operation) + "&role=USER", token).statusCode());
         assertEquals(io.flowscope.core.ReviewDecision.Status.UNRESOLVED,
                 state.config.reviewStatus(ownFunction, state.config.reviews().get(ownFunction).evidenceIds()));
@@ -1246,19 +1329,77 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void savesObservedPublicReadPolicyAndRejectsWrongObjectOrWriteApi() throws Exception {
+        start();
+        String service = state.record.service;
+        RequestRecord read = new RequestRecord(Source.HUMAN, service, "GET", "/lookup", 200, "fp");
+        read.query = "report_id=2"; read.hasResponse = true;
+        RequestRecord write = new RequestRecord(Source.HUMAN, service, "POST", "/lookup", 200, "fp");
+        write.reqBody = "{\"content\":\"hello\"}"; write.hasResponse = true;
+        state.records.add(read); state.records.add(write); state.rebuild();
+        var objects = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records);
+        var readObject = objects.stream().filter(object -> object.eventId().equals(read.evidenceId)).findFirst().orElseThrow();
+        var writeObject = objects.stream().filter(object -> object.eventId().equals(write.evidenceId)).findFirst().orElseThrow();
+        String resource = service + " observed-object:" + readObject.objectKey();
+        String form = "operation=" + encode(readObject.operation()) + "&resource=" + encode(resource) + "&policy=";
+        assertEquals(200, post("/api/resource-policy", form + "PUBLIC", token).statusCode());
+        String key = AnalysisConfig.operationObjectPolicyKey(readObject.operation(), resource);
+        assertEquals("PUBLIC", json(get("/api/snapshot", token, origin())).path("resourcePolicyOverrides").path(key).asText());
+        assertEquals(200, post("/api/resource-policy", form + "UNKNOWN", token).statusCode());
+        assertFalse(state.config.resourcePolicies().containsKey(key));
+        assertEquals(400, post("/api/resource-policy", "operation=" + encode(readObject.operation()) + "&resource=" + encode(service + " observed-object:invented") + "&policy=PUBLIC", token).statusCode());
+        assertEquals(400, post("/api/resource-policy", "operation=" + encode(writeObject.operation()) + "&resource=" + encode(service + " observed-object:" + writeObject.objectKey()) + "&policy=PUBLIC", token).statusCode());
+    }
+
+    @Test
+    void assignsOwnersToObservedObjectsWithoutLegacyResources() throws Exception {
+        start();
+        String service = state.record.service;
+        state.config.upsertAccount(new AccountProfile("same", "Same", service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
+        RequestRecord observed = new RequestRecord(Source.HUMAN, service, "POST", "/lookup/abc123", 200, "fp");
+        observed.query = "limit=5&offset=0";
+        observed.reqBody = "{\"content\":\"hello\"}";
+        observed.hasResponse = true;
+        state.records.add(observed);
+        RequestRecord corroboration = new RequestRecord(Source.HUMAN, service, "POST", "/lookup/def456", 200, "fp");
+        corroboration.hasResponse = true;
+        state.records.add(corroboration);
+        state.rebuild();
+        var objects = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records).stream()
+                .filter(object -> object.eventId().equals(observed.evidenceId)).toList();
+        assertEquals(java.util.Set.of("PATH", "QUERY", "REQUEST_BODY"), objects.stream().map(object -> object.kind()).collect(java.util.stream.Collectors.toSet()));
+        for (var object : objects) {
+            assertNull(object.legacyResource());
+            String resource = service + " observed-object:" + object.objectKey();
+            String body = "resource=" + encode(resource) + "&identity=";
+            assertEquals(400, post("/api/owner", body + "foreign", token).statusCode());
+            assertEquals(200, post("/api/owner", body + "same", token).statusCode());
+            assertEquals("same", state.config.resourceOwners().get(resource));
+            assertEquals("same", json(get("/api/snapshot", token, origin())).path("ownerOverrides").path(resource).asText());
+            assertEquals(200, post("/api/owner", body, token).statusCode());
+            assertFalse(state.config.resourceOwners().containsKey(resource));
+        }
+        assertEquals(400, post("/api/owner", "resource=" + encode(service + " observed-object:invented") + "&identity=same", token).statusCode());
+    }
+
+    @Test
     void restrictsOwnersToSameServiceIdentities() throws Exception {
         start();
+        state.record.query = "order_id=7";
+        state.rebuild();
         RequestRecord record = state.snapshot().records.getFirst();
         state.config.upsertAccount(new AccountProfile("same", "Same", record.service, AccessRole.USER));
         state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
-        String body = "resource=" + encode(record.resource) + "&identity=";
+        String resource = io.flowscope.core.ObservedObjectIndex.resource(state.snapshot().objects.observations().getFirst());
+        String body = "resource=" + encode(resource) + "&identity=";
         for (String invalid : List.of("public", "other", "foreign", "unknown-owner")) {
             assertEquals(400, post("/api/owner", body + invalid, token).statusCode());
         }
         assertEquals(200, post("/api/owner", body + "same", token).statusCode(), "owner need not have an active login session");
-        assertEquals("same", state.config.resourceOwners().get(record.resource));
+        assertEquals("same", state.config.resourceOwners().get(resource));
         assertEquals(200, post("/api/owner", body, token).statusCode());
-        assertFalse(state.config.resourceOwners().containsKey(record.resource));
+        assertFalse(state.config.resourceOwners().containsKey(resource));
         assertTrue(json(get("/api/manual-attempts", token, origin())).isArray());
     }
 
@@ -1452,6 +1593,33 @@ final class FlowScopeWebServerTest {
                 + encode(editedRequest + "changed"), token);
         assertEquals(400, collision.statusCode());
         assertEquals(1, state.manualRequestCount.get());
+    }
+
+    @Test
+    void requestLabFirstSendForCandidateServiceUsesServicePath() throws Exception {
+        start();
+        String candidate = "GET /api/v2/users/42/export HTTP/1.1\r\nHost: api.example.test\r\n\r\n";
+        // service만 주면 캡처된 요청 없이 후보 경로로 처음 보낸다(직접 입력).
+        HttpResponse<String> sent = post("/api/request-lab", "action=send&operationId=request-lab-candidate-0001"
+                + "&service=" + encode("https://api.example.test")
+                + "&credentialMode=RAW&accountId=&request=" + encode(candidate), token);
+        assertEquals(200, sent.statusCode(), sent.body());
+        JsonNode result = JSON.readTree(sent.body());
+        assertEquals("ev-candidate", result.path("eventId").asText());
+        assertEquals("https://api.example.test", state.manualService);
+        assertEquals(candidate, state.manualRequest);
+        assertEquals("RAW", state.manualCredentialMode.name());
+
+        // eventId와 service를 둘 다 주거나 둘 다 안 주면 거부한다.
+        assertEquals(400, post("/api/request-lab", "action=send&operationId=request-lab-candidate-0002"
+                + "&credentialMode=RAW&accountId=&request=" + encode(candidate), token).statusCode());
+        assertEquals(400, post("/api/request-lab", "action=send&operationId=request-lab-candidate-0003"
+                + "&eventId=ev&service=" + encode("https://api.example.test")
+                + "&credentialMode=RAW&accountId=&request=" + encode(candidate), token).statusCode());
+        // 후보(service)에는 캡처 원문이 없으므로 원본 모드를 쓸 수 없다.
+        assertEquals(400, post("/api/request-lab", "action=send&operationId=request-lab-candidate-0004"
+                + "&service=" + encode("https://api.example.test")
+                + "&credentialMode=ORIGINAL&accountId=&request=" + encode(candidate), token).statusCode());
     }
 
     @Test
@@ -1652,6 +1820,14 @@ final class FlowScopeWebServerTest {
     }
 
     private String origin() { return server.url().substring(0, server.url().length() - 1); }
+
+    private HttpResponse<String> mcp(String body, String bearer) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(origin() + "/mcp"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (bearer != null) request.header("Authorization", "Bearer " + bearer);
+        return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
     private static JsonNode json(HttpResponse<String> response) throws Exception {
         assertEquals(200, response.statusCode(), response.body());
         return JSON.readTree(response.body());
@@ -1666,6 +1842,13 @@ final class FlowScopeWebServerTest {
     }
 
     private static final class TestState implements FlowScopeWebServer.State {
+        private List<String> discoveredOrigins = List.of();
+        private boolean replaceDatasetDuringDiscovery;
+        @Override public List<String> discoveredOrigins() { return discoveredOrigins; }
+        @Override public List<String> observedOrigins() {
+            if (replaceDatasetDuringDiscovery) { datasetEpoch++; replaceDatasetDuringDiscovery = false; }
+            return discoveredOrigins;
+        }
         private final AnalysisConfig config = new AnalysisConfig();
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();
@@ -1699,8 +1882,12 @@ final class FlowScopeWebServerTest {
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
+        private volatile String manualService = "";
         private volatile boolean rawAvailable;
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private volatile String manualAccountId = "";
+        private volatile String draftRequest;
+        private final List<io.flowscope.core.LlmFinding> findings = new ArrayList<>();
         private volatile int credentialPreviewCount;
         private volatile boolean rejectCredentialPreview;
         private volatile boolean changeDatasetDuringPreview;
@@ -1900,12 +2087,6 @@ final class FlowScopeWebServerTest {
             return humanAnalysis == null ? FlowScopeWebServer.State.super.humanCompletionSnapshot(runId) : humanAnalysis;
         }
         @Override public void loadSample() { }
-        @Override public BurpXmlParser.ParseResult importXml(byte[] xml, Source source) throws Exception {
-            BurpXmlParser.ParseResult parsed = BurpXmlParser.parseDetailed(xml, source);
-            records.addAll(parsed.records);
-            rebuild();
-            return parsed;
-        }
         @Override public BurpXmlParser.ParseResult importHar(byte[] har) {
             BurpXmlParser.ParseResult parsed = HarParser.parseDetailed(har);
             BurpXmlParser.retainInScope(parsed, ScopePolicy.parse(String.join("\n", scannerScope)));
@@ -1924,11 +2105,16 @@ final class FlowScopeWebServerTest {
             return value;
         }
         @Override public boolean requestLabRawAvailable(RequestRecord record) { return rawAvailable; }
+        @Override public List<io.flowscope.core.LlmFinding> findings() { return List.copyOf(findings); }
+        @Override public void submitFinding(io.flowscope.core.LlmFinding finding) {
+            findings.removeIf(value -> value.id().equals(finding.id()));
+            findings.add(finding);
+        }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
             RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId))
                     .findFirst().orElseThrow();
             return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
-                    "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
+                    draftRequest != null ? draftRequest : "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
                     "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
                     "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문", "user-a");
         }
@@ -1944,6 +2130,7 @@ final class FlowScopeWebServerTest {
                                                                             String accountId) {
             manualRequest = request;
             manualCredentialMode = mode;
+            manualAccountId = accountId;
             manualRequestCount.incrementAndGet();
             if (blockManualRequest) {
                 manualRequestEntered.countDown();
@@ -1958,6 +2145,17 @@ final class FlowScopeWebServerTest {
             }
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
+        }
+        @Override public FlowScopeWebServer.RequestLabResult sendRequestLabForService(String service, String request,
+                                                                                      FlowScopeWebServer.CredentialMode mode,
+                                                                                      String accountId) {
+            manualService = service;
+            manualRequest = request;
+            manualCredentialMode = mode;
+            manualAccountId = accountId;
+            manualRequestCount.incrementAndGet();
+            return new FlowScopeWebServer.RequestLabResult("ev-candidate", 200,
+                    "HTTP/1.1 200 OK\r\n\r\n", 15, request.length(), 19);
         }
         @Override public CrossIdentityReplayOrchestrator.RunResult runAuthorizationReplay(
                 String itemId, boolean armed) {

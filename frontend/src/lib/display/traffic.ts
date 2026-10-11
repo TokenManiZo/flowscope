@@ -2,7 +2,7 @@
 export const trafficClassLabels: Record<string, string> = {
   API: "API",
   AUTH_SESSION: "인증·세션 준비",
-  UNKNOWN: "판단 보류",
+  UNKNOWN: "분류 보류",
   TELEMETRY_CANDIDATE: "텔레메트리 후보",
   POLLING: "반복 조회",
   BACKGROUND: "반복 백그라운드",

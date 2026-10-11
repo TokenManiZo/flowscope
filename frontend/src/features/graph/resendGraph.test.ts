@@ -51,7 +51,7 @@ it("draws sender identity, resent API per tool and object with tool-coloured das
 
   const labOnly = projectResendGraph(snapshot(), navigateHierarchy(initial, "site"), "source", ["lab"])
   expect(labOnly.nodes.some(node => node.kind === "resend-operation" && node.resend?.tool === "repeater")).toBe(false)
-  expect(projectResendGraph(snapshot(), initial, "source", []).nodes).toEqual([])
+  expect(projectResendGraph(snapshot(), initial, "source", []).nodes.every(node => node.kind === "identity")).toBe(true)
 })
 
 it("shows the original-to-resend comparison for Request Lab and only the response for Repeater on cards", () => {

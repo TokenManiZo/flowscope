@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { EvidencePage } from "./EvidencePage"
-import { ImportXmlDialog } from "./ImportXmlDialog"
 import { renderWithQueryClient } from "@/test/render"
 import { observedTimeLabel } from "@/lib/display/operationLabel"
 import type { EvidencePage as EvidencePageData, EventRecord, Snapshot } from "@/lib/api/types"
@@ -100,15 +99,15 @@ describe("EvidencePage", () => {
     const user = userEvent.setup()
     renderWithQueryClient(<EvidencePage />)
     await screen.findByRole("checkbox", { name: "event-1 기록 선택" })
-    await user.click(screen.getByRole("checkbox", { name: "스캐너 S" }))
+    await user.click(screen.getByRole("checkbox", { name: "스캐너" }))
     await user.click(screen.getByRole("checkbox", { name: "event-1 기록 선택" }))
-    expect(screen.getByText("관측 기록 2건 선택")).toBeVisible()
-    await user.click(screen.getByRole("checkbox", { name: "반복 관측 기록 펼치기" }))
+    expect(screen.getByText("요청 기록 2건 선택")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "반복 요청 기록 펼치기" }))
     await user.click(screen.getByRole("checkbox", { name: "event-1 기록 선택" }))
-    expect(screen.getByText("관측 기록 1건 선택")).toBeVisible()
-    await user.click(screen.getByRole("checkbox", { name: "표시된 관측 기록 모두 선택" }))
-    expect(screen.getByText("관측 기록 2건 선택")).toBeVisible()
-    await user.click(screen.getByRole("checkbox", { name: "표시된 관측 기록 모두 선택" }))
+    expect(screen.getByText("요청 기록 1건 선택")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "표시된 요청 기록 모두 선택" }))
+    expect(screen.getByText("요청 기록 2건 선택")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "표시된 요청 기록 모두 선택" }))
     expect(screen.queryByRole("button", { name: "선택 기록 삭제" })).not.toBeInTheDocument()
   })
 
@@ -118,13 +117,13 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
 
     // 필터는 왼쪽 패널이 아니라 표 위 한 줄 도구 모음이다.
-    const context = await screen.findByRole("group", { name: "관측 기록 표시 필터" })
-    expect(within(context).getByRole("checkbox", { name: "사람 H" })).toBeVisible()
+    const context = await screen.findByRole("group", { name: "요청 기록 표시 필터" })
+    expect(within(context).getByRole("checkbox", { name: "사람" })).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "분석 필터" })).not.toBeInTheDocument()
-    expect(screen.getByRole("region", { name: "관측 기록 분석 영역" })).toBeVisible()
+    expect(screen.getByRole("region", { name: "요청 기록 분석 영역" })).toBeVisible()
     expect(screen.queryByRole("complementary", { name: "선택 상세" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "선택 상세 패널 열기" })).toBeVisible()
-    await userEvent.click(within(context).getByRole("checkbox", { name: "사람 H" }))
+    await userEvent.click(within(context).getByRole("checkbox", { name: "사람" }))
     expect(screen.queryByText("workspace-evidence")).not.toBeInTheDocument()
   })
 
@@ -133,18 +132,18 @@ describe("EvidencePage", () => {
     renderWithQueryClient(<EvidencePage />)
     const row = (await screen.findByText("outside-evidence")).closest("tr")!
     expect(within(row).getAllByRole("cell")).toHaveLength(10)
-    for (const name of ["#", "소스", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
+    for (const name of ["#", "출처", "Method", "API", "HTTP", "계정", "분류", "반복", "관측 시각"]) expect(screen.getByRole("columnheader", { name })).toBeVisible()
     await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
-    const detail = await screen.findByRole("region", { name: "관측 기록 상세" })
+    const detail = await screen.findByRole("region", { name: "요청 기록 상세" })
     fireEvent.pointerDown(detail)
-    expect(screen.getByText("선택 관측 기록: outside-evidence")).toBeVisible()
-    fireEvent.pointerDown(screen.getByRole("heading", { name: "관측 기록" }))
-    expect(screen.queryByText("선택 관측 기록: outside-evidence")).not.toBeInTheDocument()
+    expect(screen.getByText("요청 기록 outside-evidence")).toBeVisible()
+    fireEvent.pointerDown(screen.getByRole("heading", { name: "요청 기록" }))
+    expect(screen.queryByText("요청 기록 outside-evidence")).not.toBeInTheDocument()
     await userEvent.click(within(row).getByRole("button", { name: /상세 보기$/ }))
-    expect(await screen.findByText("선택 관측 기록: outside-evidence")).toBeVisible()
+    expect(await screen.findByText("요청 기록 outside-evidence")).toBeVisible()
   })
 
-  it("splits 관측 기록 into main, review and hidden tabs with counts, and filters by source, class and search", async () => {
+  it("splits 요청 기록 into main, review and hidden tabs with counts, and filters by source, class and search", async () => {
     installFetch([
       event({ eventId: "human-api", source: "human", trafficClass: "API" }),
       event({ eventId: "scanner-review", source: "scanner", trafficClass: "UNKNOWN", trafficDisposition: "REVIEW", clusterId: "scanner-cluster", classificationReasons: ["AMBIGUOUS_KEEP"] }),
@@ -166,7 +165,7 @@ describe("EvidencePage", () => {
     const reviewRow = screen.getByText("scanner-review").closest("tr") as HTMLTableRowElement
     expect(within(reviewRow).getByText("검토 필요")).toBeVisible()
     expect(within(reviewRow).getByText("API인지 판단할 근거가 부족함")).toBeVisible()
-    await user.click(screen.getByRole("checkbox", { name: "스캐너 S" }))
+    await user.click(screen.getByRole("checkbox", { name: "스캐너" }))
     expect(screen.queryByText("scanner-review")).not.toBeInTheDocument()
     expect(screen.getByText("검토할 트래픽이 없습니다.")).toBeVisible()
 
@@ -178,7 +177,7 @@ describe("EvidencePage", () => {
     expect(await screen.findByText("llm-hidden")).toBeVisible()
 
     await user.click(screen.getByRole("tab", { name: "전체 4" }))
-    await user.type(screen.getByRole("searchbox", { name: "번호·경로·계정 검색" }), "zzz-no-match")
+    await user.type(screen.getByRole("searchbox", { name: "#번호, 경로, 계정 검색" }), "zzz-no-match")
     expect(screen.queryByText("human-api")).not.toBeInTheDocument()
   })
 
@@ -225,14 +224,14 @@ describe("EvidencePage", () => {
     expect(screen.queryByText("event-2")).not.toBeInTheDocument()
     expect(screen.getByText("반복 요청 1건은 한 줄로 묶음")).toBeVisible()
     expect(within(screen.getByText("event-1").closest("tr") as HTMLTableRowElement).getByTitle(observedTimeLabel(101, 202))).toBeVisible()
-    await userEvent.click(screen.getByRole("checkbox", { name: "반복 관측 기록 펼치기" }))
+    await userEvent.click(screen.getByRole("checkbox", { name: "반복 요청 기록 펼치기" }))
     expect(await screen.findByText("event-2")).toBeVisible()
     const eventTwoRow = screen.getByText("event-2").closest("tr")
     expect(eventTwoRow).not.toBeNull()
     const detail = within(eventTwoRow as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ })
     expect(detail).not.toHaveAccessibleName(/event-2/)
     await userEvent.click(detail)
-    expect(await screen.findByText("선택 관측 기록: event-2")).toBeVisible()
+    expect(await screen.findByText("요청 기록 event-2")).toBeVisible()
     // 선택 식별자는 유지하고 요청·응답 위의 중복 메타데이터는 표시하지 않는다.
     expect(screen.getAllByText(/\/orders\/2$/)).toHaveLength(1)
   })
@@ -302,11 +301,11 @@ describe("EvidencePage", () => {
     expect(row).not.toBeNull()
     await userEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ }))
     const live = document.querySelector("[aria-live='polite']")
-    expect(live).toHaveTextContent("선택한 관측 기록 상세를")
+    expect(live).toHaveTextContent("선택한 요청 기록 상세를")
     expect(live).not.toHaveTextContent("private-selected-id")
   })
 
-  it("restores the same selected 관측 기록 after a successful policy invalidates the snapshot", async () => {
+  it("restores the same selected 요청 기록 after a successful policy invalidates the snapshot", async () => {
     let snapshots = 0
     const selected = event({ eventId: "restored-event" })
     const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>((input) => {
@@ -324,7 +323,7 @@ describe("EvidencePage", () => {
     await user.selectOptions(await screen.findByLabelText("필수 역할 지정"), "Admin")
     await user.click(screen.getByRole("button", { name: "필수 역할 저장" }))
     await waitFor(() => expect(snapshots).toBeGreaterThan(1))
-    expect(screen.getByText("선택 관측 기록: restored-event")).toBeVisible()
+    expect(screen.getByText("요청 기록 restored-event")).toBeVisible()
   })
 
   it("preserves stored role casing and registered custom roles until explicitly saved", async () => {
@@ -370,83 +369,13 @@ describe("EvidencePage", () => {
     act(() => { client.setQueryData(["snapshot"], { ...snapshot([]), revision: 2 }) })
 
     await waitFor(() => {
-      expect(screen.queryByText("선택 관측 기록: stale-event")).not.toBeInTheDocument()
+      expect(screen.queryByText("요청 기록 stale-event")).not.toBeInTheDocument()
       expect(screen.queryByRole("button", { name: "Request Lab 열기" })).not.toBeInTheDocument()
     })
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/request-lab?")).length).toBe(1))
   })
 
-  it("imports every selected XML file independently with its encoded name and keeps per-file server errors", async () => {
-    const fetch = installFetch([event({ eventId: "imported-event" })])
-    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL, _init?: RequestInit) => {
-      const path = String(input)
-      if (path === "/api/snapshot") return Promise.resolve(json(snapshot([event({ eventId: "imported-event" })])))
-      if (path.includes("first+file.xml")) return Promise.resolve(json({ success: true, imported: 3, candidates: 1, failed: 0 }))
-      if (path.includes("second+file.xml")) return Promise.resolve(json({ success: false, message: "두 번째 XML 형식 오류" }, 400))
-      return Promise.resolve(json({ records: [], total: 0, offset: 0, limit: 200, hasMore: false }))
-    })
-    renderWithQueryClient(<EvidencePage />)
-    const user = userEvent.setup({ applyAccept: false })
-    await user.click(await screen.findByRole("button", { name: "XML 가져오기" }))
-    await user.selectOptions(screen.getByLabelText("가져올 소스"), "scanner")
-    const input = screen.getByLabelText("XML 파일 선택")
-    const first = new File(["<items />"], "first file.xml", { type: "application/xml" })
-    const second = new File(["<items />"], "second file.xml", { type: "application/xml" })
-    Object.defineProperty(first, "text", { value: async () => "<items />" })
-    Object.defineProperty(second, "text", { value: async () => "<items />" })
-    await user.upload(input, [
-      first,
-      second,
-    ])
-    await user.click(screen.getByRole("button", { name: "XML 가져오기 실행" }))
-
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/import-xml?source=scanner&name=first+file.xml",
-      expect.objectContaining({ method: "POST", headers: expect.any(Headers), body: "<items />" }),
-    ))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      "/api/import-xml?source=scanner&name=second+file.xml",
-      expect.objectContaining({ method: "POST", headers: expect.any(Headers), body: "<items />" }),
-    ))
-    const imports = vi.mocked(fetch).mock.calls.filter(([input]) => String(input).startsWith("/api/import-xml"))
-    expect(new Headers(imports[0]?.[1]?.headers).get("Content-Type")).toBe("application/xml;charset=UTF-8")
-    expect(await screen.findByText("가져옴 3 · 응답 없음 1 · 실패 0")).toBeVisible()
-    expect(screen.getByText("second file.xml: 두 번째 XML 형식 오류")).toBeVisible()
-  })
-
-  it("rejects unsupported files before any XML transport begins", async () => {
-    const fetch = installFetch([event({ eventId: "event-1" })])
-    renderWithQueryClient(<EvidencePage />)
-    const user = userEvent.setup({ applyAccept: false })
-    await user.click(await screen.findByRole("button", { name: "XML 가져오기" }))
-    const unsupported = new File(["not xml"], "notes.txt", { type: "text/plain" })
-    await user.upload(screen.getByLabelText("XML 파일 선택"), unsupported)
-    await user.click(screen.getByRole("button", { name: "XML 가져오기 실행" }))
-
-    expect(await screen.findByText("XML 파일만 선택하세요.")).toBeVisible()
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).startsWith("/api/import-xml"))).toBe(false)
-  })
-
-  it("keeps XML import pending until the snapshot acknowledgement settles", async () => {
-    let acknowledge!: () => void
-    const acknowledgement = new Promise<void>((resolve) => { acknowledge = resolve })
-    const importFile = vi.fn().mockResolvedValue({ success: true, imported: 1, candidates: 0, failed: 0 })
-    renderWithQueryClient(<ImportXmlDialog importFile={importFile} afterImport={() => acknowledgement} />)
-    const user = userEvent.setup({ applyAccept: false })
-    await user.click(screen.getByRole("button", { name: "XML 가져오기" }))
-    const file = new File(["<items />"], "one.xml", { type: "application/xml" })
-    Object.defineProperty(file, "text", { value: async () => "<items />" })
-    await user.upload(screen.getByLabelText("XML 파일 선택"), file)
-    await user.click(screen.getByRole("button", { name: "XML 가져오기 실행" }))
-
-    expect(await screen.findByRole("button", { name: "XML 가져오는 중" })).toBeDisabled()
-    await user.click(screen.getByRole("button", { name: "XML 가져오는 중" }))
-    expect(importFile).toHaveBeenCalledTimes(1)
-    acknowledge()
-    expect(await screen.findByRole("button", { name: "XML 가져오기 실행" })).toBeEnabled()
-  })
-
-  it.each([600, 390])("keeps 관측 기록 filters and selected detail functional at compact %ipx", async (width) => {
+  it.each([600, 390])("keeps 요청 기록 filters and selected detail functional at compact %ipx", async (width) => {
     const previousMatchMedia = window.matchMedia
     window.matchMedia = vi.fn((query: string) => ({ matches: query.startsWith("(max-width:") && width <= Number(query.match(/\d+/)?.[0]), media: query, onchange: null, addEventListener: vi.fn(), removeEventListener: vi.fn(), dispatchEvent: () => true })) as unknown as typeof window.matchMedia
     installFetch([event({ eventId: "compact-evidence" })])
@@ -455,19 +384,19 @@ describe("EvidencePage", () => {
 
     expect(screen.queryByRole("button", { name: "분석 필터 열기" })).not.toBeInTheDocument()
     const inspectorTrigger = screen.getByRole("button", { name: "선택 상세 열기" })
-    await user.click(screen.getByRole("checkbox", { name: "사람 H" }))
-    expect(await screen.findByText("현재 필터에 맞는 관측 기록이 없습니다.")).toBeVisible()
+    await user.click(screen.getByRole("checkbox", { name: "사람" }))
+    expect(await screen.findByText("현재 필터에 맞는 요청 기록이 없습니다.")).toBeVisible()
     await user.click(inspectorTrigger)
     expect(screen.getByRole("dialog", { name: "선택 상세" })).toHaveTextContent("분석 결과에서 항목을 선택하면")
     await user.click(within(screen.getByRole("dialog", { name: "선택 상세" })).getByRole("button", { name: "Close" }))
-    await user.click(screen.getByRole("checkbox", { name: "사람 H" }))
+    await user.click(screen.getByRole("checkbox", { name: "사람" }))
     const row = (await screen.findByText("compact-evidence")).closest("tr")
     expect(row).not.toBeNull()
     await user.click(within(row as HTMLTableRowElement).getByRole("button", { name: /상세 보기$/ }))
     const inspector = await screen.findByRole("dialog", { name: "선택 상세" })
-    expect(within(inspector).getByText("선택 관측 기록: compact-evidence")).toBeVisible()
+    expect(within(inspector).getByText("요청 기록 compact-evidence")).toBeVisible()
     await user.click(within(inspector).getByRole("button", { name: "Close" }))
-    expect(screen.queryByText("선택 관측 기록: compact-evidence")).not.toBeInTheDocument()
+    expect(screen.queryByText("요청 기록 compact-evidence")).not.toBeInTheDocument()
     expect(inspectorTrigger).toHaveFocus()
     window.matchMedia = previousMatchMedia
   })

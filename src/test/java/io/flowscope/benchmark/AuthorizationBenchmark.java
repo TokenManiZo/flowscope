@@ -242,17 +242,36 @@ final class AuthorizationBenchmark {
         int hardenedSignals = 0;
 
         for (Scenario scenario : scenarios) {
-            scenario.labels().stream()
-                    .filter(label -> label.resourcePolicy() != ResourcePolicy.UNKNOWN)
-                    .forEach(label -> scenario.config().withResourcePolicy(
-                            label.coordinate().resource() == null
-                                    ? label.coordinate().operation() : label.coordinate().resource(),
-                            label.resourcePolicy()));
+            // Corpus labels remain readable business references; resolve them against the real recognized OBJ index.
+            List<RequestRecord> records = new ArrayList<>(scenario.records());
+            Pipeline.Result initial = Pipeline.runIsolated(records, scenario.config());
+            for (RequestRecord record : initial.records) {
+                if (!record.path.matches(".*/[0-9]+") || !initial.objects.resources(record.evidenceId).isEmpty()) continue;
+                RequestRecord corroboration = record(record.source == Source.HUMAN ? Source.SCANNER : Source.HUMAN,
+                        record.collectionAccountId, record.method, record.path, record.status, record.body, 100);
+                corroboration.sourceDetail = SourceDetail.XML_IMPORT;
+                corroboration.evidenceId = null; corroboration.timestamp += 100;
+                records.add(corroboration);
+            }
+            Pipeline.Result probe = Pipeline.runIsolated(records, scenario.config());
+            Map<String, String> semanticByObj = new LinkedHashMap<>();
+            probe.objects.targets().forEach((key, target) -> semanticByObj.put(key, target.responseReference()));
+            scenario.labels().stream().filter(label -> label.resourcePolicy() != ResourcePolicy.UNKNOWN)
+                    .forEach(label -> {
+                        if (label.coordinate().resource() == null) scenario.config().withResourcePolicy(label.coordinate().operation(), label.resourcePolicy());
+                        else semanticByObj.forEach((key, reference) -> {
+                            if (label.coordinate().resource().equals(reference)) scenario.config().withResourcePolicy(key, label.resourcePolicy());
+                        });
+                    });
             scenario.labels().stream().filter(label -> label.minimumSignal() != SignalLevel.NONE)
                     .forEach(label -> expected.put(label.coordinate(), label));
-            Pipeline.Result result = Pipeline.runIsolated(scenario.records(), scenario.config());
+            Pipeline.Result result = Pipeline.runIsolated(records, scenario.config());
             AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(result, scenario.config(), List.of());
-            List<ObservedSignal> signals = extract(scenario.id(), matrix);
+            List<ObservedSignal> signals = extract(scenario.id(), matrix).stream().map(signal -> {
+                Coordinate c = signal.coordinate();
+                return new ObservedSignal(new Coordinate(c.scenarioId(), c.technique(), c.identity(), c.operation(),
+                        c.resource() == null ? null : semanticByObj.getOrDefault(c.resource(), c.resource())), signal.level());
+            }).toList();
             signals.forEach(signal -> actual.merge(signal.coordinate(), signal,
                     (left, right) -> right.level().rank > left.level().rank ? right : left));
             scenarioResults.add(new ScenarioResult(scenario.id(), result.analysis.findings().size(), signals,

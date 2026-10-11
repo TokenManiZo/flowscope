@@ -43,6 +43,23 @@ public final class SnapshotJsonWriter {
     private Pipeline.Result surfaceResult;
     private List<RouteCandidate> surfaceCandidates;
     private SurfaceAnalysis cachedSurface;
+    private List<RouteCandidate> staticPolicySource;
+    private List<RouteCandidate> staticPolicyVisible;
+    private Pipeline.Result objectResult;
+    private List<io.flowscope.core.graph.ObservedObjectProjection.ObjectObservation> objectProjection;
+
+    /** Keep list identity stable so repeated polls do not invalidate the surface cache. */
+    private synchronized List<RouteCandidate> visibleRouteCandidates(List<RouteCandidate> source) {
+        if (staticPolicySource != source) {
+            staticPolicyVisible = source.stream()
+                    .filter(candidate -> !io.flowscope.core.StaticResourcePolicy.matchesPath(candidate.pathTemplate()))
+                    .toList();
+            staticPolicyVisible = staticPolicyVisible.size() == source.size() ? source
+                    : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(staticPolicyVisible));
+            staticPolicySource = source;
+        }
+        return staticPolicyVisible;
+    }
 
     public byte[] write(long revision, Pipeline.Result result, AnalysisConfig config,
                         List<LegacyAssessment> assessments,
@@ -115,9 +132,15 @@ public final class SnapshotJsonWriter {
         root.put("sampleMode", !result.records.isEmpty() && result.records.stream().allMatch(record ->
                 "https://demo.flowscope.test:443".equals(record.service)
                         && record.runId != null && record.runId.startsWith("demo-")));
+        routeCandidates = visibleRouteCandidates(routeCandidates);
         var apiMarks = io.flowscope.core.ApiManagement.marks(result, config, routeCandidates);
         if (!apiMarks.isEmpty()) root.set("apiMarks", json.valueToTree(apiMarks));
         root.set("events", events(result, rawAvailable, collectionAccount));
+        if (objectResult != result) {
+            objectProjection = result.objects.observations();
+            objectResult = result;
+        }
+        root.set("displayObjects", json.valueToTree(objectProjection));
         root.set("evidenceOrdinals", evidenceOrdinals(result));
         root.set("graphFacts", json.valueToTree(result.coverageRecords.stream()
                 .map(GraphObservationFact::from).toList()));
@@ -145,6 +168,7 @@ public final class SnapshotJsonWriter {
         root.set("roles", roles(result, config));
         root.set("owners", owners(result));
         root.set("ownerOverrides", json.valueToTree(config.resourceOwners()));
+        root.set("resourcePolicyOverrides", json.valueToTree(config.resourcePolicies()));
         ArrayNode manual = root.putArray("manualVerifications");
         for (RequestRecord record : result.records) {
             if (record.source == Source.HUMAN && record.phase == io.flowscope.core.RunPhase.VALIDATION
@@ -314,11 +338,24 @@ public final class SnapshotJsonWriter {
                 object.put("resource", record.resource);
                 object.put("evidence", Normalizer.resourceEvidence(record));
             }
-            String key = new AuthorizationAnalysis.CellKey(
-                    record.idn, record.op, record.resource).stableKey() + "\u0000" + record.source;
-            event.put("verdict", wire(verdicts.getOrDefault(key, Verdict.UNTESTED)));
+            event.put("verdict", wire(eventVerdict(record, result, verdicts)));
         }
         return out;
+    }
+
+    /** Combine only this evidence's function and observed OBJ cells, as graph nodes do. */
+    private static Verdict eventVerdict(RequestRecord record, Pipeline.Result result, Map<String, Verdict> verdicts) {
+        var candidates = java.util.EnumSet.noneOf(Verdict.class);
+        String functionKey = new AuthorizationAnalysis.CellKey(record.idn, record.op, null).stableKey();
+        candidates.add(verdicts.getOrDefault(functionKey + "\u0000" + record.source, Verdict.UNTESTED));
+        for (String resource : result.objects.resources(record.evidenceId)) {
+            String objectKey = new AuthorizationAnalysis.CellKey(record.idn, record.op, resource).stableKey();
+            candidates.add(verdicts.getOrDefault(objectKey + "\u0000" + record.source, Verdict.UNTESTED));
+        }
+        for (Verdict verdict : List.of(Verdict.SUSPICIOUS, Verdict.UNDECIDED, Verdict.DENY, Verdict.ALLOW, Verdict.UNTESTED)) {
+            if (candidates.contains(verdict)) return verdict;
+        }
+        return Verdict.UNTESTED;
     }
 
     /**

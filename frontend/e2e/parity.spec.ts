@@ -84,13 +84,6 @@ async function deleteAccountIfPresent(page: Page, label: string) {
   await page.getByRole("button", { name: "계정 삭제 확인" }).click()
   await expect(remove).toHaveCount(0)
 }
-function xmlFixture() {
-  const newline = String.fromCharCode(10)
-  const request = ["GET /metadata-only HTTP/1.1", "Host: e2e.invalid", `X-Test-Request-Marker: ${rawRequestMarker}`, ""].join(newline)
-  const response = ["HTTP/1.1 200 OK", "Content-Type: text/plain", "", rawResponseMarker].join(newline)
-  return `<?xml version="1.0"?><items><item><host>e2e.invalid</host><port>443</port><protocol>https</protocol><method>GET</method><path>/metadata-only</path><status>200</status><request base64="false"><![CDATA[${request}]]></request><response base64="false"><![CDATA[${response}]]></response></item></items>`
-}
-
 test.describe.configure({ mode: "serial" })
 test.beforeEach(async ({ page }) => {
   const monitor: Monitor = { consoleErrors: [], external: [], forbidden: [], pageErrors: [] }
@@ -148,7 +141,7 @@ test("keeps dashboard gap counts without percentages and enters the Gap graph", 
   if (await loadSample.count() > 0) await loadSample.click()
   const dashboard = page.locator('section[aria-labelledby="dashboard-title"]')
   await expect(dashboard).not.toContainText("%")
-  for (const label of ["집중할 API", "미관측 파라미터", "권한 변형 미검증", "검토 필요"]) await expect(dashboard.getByRole("group", { name: label })).toBeVisible()
+  for (const label of ["집중할 API", "미점검 파라미터", "권한 변형 미점검", "검토 필요"]) await expect(dashboard.getByRole("group", { name: label })).toBeVisible()
   await expect(dashboard.getByRole("group", { name: "집중할 API" }).locator("p").first()).toHaveText(/^\d+$/)
   const captured = page.getByRole("complementary", { name: "분석 필터" }).getByText("수집", { exact: true }).locator("..")
   await expect(captured.getByText(/^\d+건$/)).toBeVisible()
@@ -180,7 +173,7 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   await graphWorkspace.getByRole("button", { name: "API 목록 보기" }).click()
   await drillIntoOrders(page)
   await graphWorkspace.getByRole("button", { name: "그래프 보기" }).click()
-  await expect(laneHeadings).toHaveText(["IDENTITY", "API", "OBJECT"])
+  await expect(laneHeadings).toHaveText(["계정", "API", "OBJECT"])
   const initialGeometry = await readGraphGeometry(graphCanvas)
   expectGraphNodesInLanes(initialGeometry)
   const relationshipCards = await graphCanvas.evaluate((element) => {
@@ -282,7 +275,7 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   await expect(inspector.locator("dd").nth(1)).toHaveText(selectedIdentity)
   await expect(inspector.locator("dd").nth(2)).toHaveText(selectedResource)
   await graphWorkspace.getByRole("button", { name: "그래프 보기" }).click()
-  await expect(laneHeadings).toHaveText(["IDENTITY", "API", "OBJECT"])
+  await expect(laneHeadings).toHaveText(["계정", "API", "OBJECT"])
   await expect(inspector.locator("dd").nth(0)).toHaveText(selectedOperation)
   await expect(inspector.locator("dd").nth(1)).toHaveText(selectedIdentity)
   await expect(inspector.locator("dd").nth(2)).toHaveText(selectedResource)
@@ -290,7 +283,7 @@ test("keeps graph lanes through zoom and fit, then selects real matrix, sequence
   await page.setViewportSize({ width: 600, height: 420 })
   const matrixViewport = page.getByRole("region", { name: "권한 매트릭스 표" })
   await expect(matrixViewport).toBeVisible()
-  await expect(matrixViewport.getByRole("columnheader", { name: "신원 / 역할" })).toBeVisible()
+  await expect(matrixViewport.getByRole("columnheader", { name: "계정 / 역할" })).toBeVisible()
   const stickyBefore = await readMatrixStickyGeometry(matrixViewport)
   const matrixScroll = await matrixViewport.evaluate((element) => {
     element.scrollLeft = element.scrollWidth
@@ -416,7 +409,7 @@ test("shows the judgment matrix with server recommendations and a server-bound r
   const inspector = page.getByRole("complementary", { name: "선택 상세" })
   await expect(inspector.getByRole("region", { name: "독립 신뢰도 축" })).toBeVisible()
   await expect(inspector.getByRole("region", { name: "테스트 유효성 게이트" })).toBeVisible()
-  await expect(inspector.getByRole("region", { name: "사람 최종 판정" })).toBeVisible()
+  await expect(inspector.getByRole("region", { name: "취약점 확인" })).toBeVisible()
   await expect(inspector.getByRole("button", { name: "판정 저장" })).toBeEnabled()
   await expect(inspector).not.toContainText("E3")
 })
@@ -536,7 +529,7 @@ test("keeps ZAP setup and the independent Explorer while removing obsolete Judge
   await expect(zapPanel.getByText(/^ZAP 상태 · /)).toBeVisible()
   await zapPanel.getByRole("tab", { name: "실행 설정" }).click()
   await expect(zapPanel.getByText(/^UNAVAILABLE · (?:ZAP 연결 확인 기능을 사용할 수 없습니다\.|연결 상태 확인 중)$/)).toBeVisible()
-  await expect(page.getByRole("button", { name: "신원별 격리 ZAP 기준선 시작" })).toBeDisabled()
+  await expect(page.getByRole("button", { name: "계정별 격리 ZAP 기준선 시작" })).toBeDisabled()
   await navigate(page, "실행 상태", "실행 상태")
   await expect(page.getByRole("tab", { name: "LLM" })).toBeVisible()
   await page.getByRole("tab", { name: "LLM" }).click()
@@ -548,21 +541,12 @@ test("keeps ZAP setup and the independent Explorer while removing obsolete Judge
   await expect(page.getByRole("tab", { name: "ZAP" })).toBeVisible()
 })
 
-test("imports an in-memory XML fixture and reports the aggregate without persisting its raw marker", async ({ page }) => {
-  await openDashboard(page); await navigate(page, "Evidence", "Evidence")
-  await page.getByRole("button", { name: "XML 가져오기" }).click()
-  await page.getByLabel("XML 파일 선택").setInputFiles({ name: "metadata-only.xml", mimeType: "application/xml", buffer: Buffer.from(xmlFixture()) })
-  await page.getByRole("button", { name: "XML 가져오기 실행" }).click()
-  await expect(page.getByText("가져오기 결과")).toBeVisible()
-  await expect(page.getByText(/가져옴 1 · 응답 없음 0 · 실패 0/)).toBeVisible()
-})
-
 test("keeps the reference frame current-route semantics, Sheets, and layout usable at desktop, 900px, and 600px", async ({ page }) => {
   const routes = [["대시보드", "보안 점검 대시보드"], ["점검 시작", "점검 시작"], ["점검 Gap 그래프", "권한·파라미터 Gap 그래프"], ["권한 매트릭스", "권한 매트릭스"], ["흐름 순서", "흐름 순서"], ["취약점 시나리오", "취약점 시나리오"], ["Evidence", "Evidence"], ["계정·세션", "계정·세션 관리"], ["실행 상태", "실행 상태"]] as const
   await page.setViewportSize({ width: 1280, height: 720 }); await openDashboard(page)
   await navigate(page, "계정·세션", "계정·세션 관리")
   const longWorkspace = page.getByRole("region", { name: "계정·세션 작업 영역" })
-  const finalControl = page.getByRole("button", { name: "세션·신원 매핑 초기화" })
+  const finalControl = page.getByRole("button", { name: "세션·계정 매핑 초기화" })
   await expect(finalControl).not.toBeInViewport()
   await longWorkspace.focus()
   await page.keyboard.press("End")

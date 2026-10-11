@@ -18,8 +18,8 @@ it("counts distinct prioritized API coordinates, open unobserved keys, open auth
   })
   const snapshot = { ...base, trafficStats: { ...base.trafficStats, review: 17 } }
   expect(dashboardCounts(snapshot).map(({ label, value }) => ({ label, value }))).toEqual([
-    { label: "우선 점검 API", value: 2 }, { label: "미관측 파라미터", value: 4 },
-    { label: "권한 변형 미검증", value: 1 }, { label: "검토 필요", value: 17 },
+    { label: "우선 점검 API", value: 2 }, { label: "미점검 파라미터", value: 4 },
+    { label: "권한 변형 미점검", value: 1 }, { label: "검토 필요", value: 17 },
   ])
 })
 

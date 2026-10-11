@@ -36,7 +36,7 @@ it("starts explicitly armed anonymous GET verification from the account session 
   const user = userEvent.setup()
   renderWithQueryClient(<AnonymousAutoVerification />)
 
-  const toggle = await screen.findByRole("switch", { name: "비로그인 자동 검증" })
+  const toggle = await screen.findByRole("switch", { name: "비로그인으로 자동 재전송" })
   expect(toggle).toHaveAttribute("aria-checked", "false")
   await user.click(toggle)
 
@@ -67,7 +67,7 @@ it("shows pending requests and click help without detailed exclusion counters", 
   expect(screen.getByText("대기").parentElement).toHaveTextContent("2건")
   expect(screen.getByText("실패").parentElement).toHaveTextContent("1건")
   expect(screen.queryByText(/계정에서 방문한 GET API를 로그인 없이 다시 확인해요/)).not.toBeInTheDocument()
-  await user.click(screen.getByRole("button", { name: "비로그인 자동 검증 설명" }))
+  await user.click(screen.getByRole("button", { name: "비로그인으로 자동 재전송 설명" }))
   expect(screen.getByText(/계정에서 방문한 GET API를 로그인 없이 다시 확인해요/)).toBeVisible()
   await user.keyboard("{Escape}")
   expect(screen.queryByText(/전송 예약|최근 제외|검증 상세/)).not.toBeInTheDocument()
@@ -92,5 +92,5 @@ it("shows the exact pending count and capacity exclusions without stopping verif
   renderWithQueryClient(<AnonymousAutoVerification />)
   expect(await screen.findByText("검증 대기 한도 초과 3건 · 일반 수집은 계속됩니다.")).toBeVisible()
   expect(screen.getByText("대기").parentElement).toHaveTextContent("200건")
-  expect(screen.getByRole("switch", { name: "비로그인 자동 검증" })).toHaveAttribute("aria-checked", "true")
+  expect(screen.getByRole("switch", { name: "비로그인으로 자동 재전송" })).toHaveAttribute("aria-checked", "true")
 })

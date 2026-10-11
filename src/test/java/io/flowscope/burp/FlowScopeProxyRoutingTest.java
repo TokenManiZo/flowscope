@@ -32,6 +32,43 @@ import static org.junit.jupiter.api.Assertions.*;
 class FlowScopeProxyRoutingTest {
     private static final String TARGET = "https://app.test:443/api";
 
+    @Test void browserSubdomainResponseIsRetainedUnderItsOwnServiceWithoutScopeRegistration() throws Exception {
+        try (var f = new Fixture()) {
+            var child = request(201, 8080, "https://api.app.test/orders", Map.of(), "");
+            f.requests.handleRequestReceived(child);
+            f.responses.handleResponseReceived(response(201, child));
+            @SuppressWarnings("unchecked")
+            var records = (java.util.List<RequestRecord>) get(f.extension, "records");
+            assertEquals(1, records.size());
+            assertEquals("https://api.app.test:443", records.getFirst().service);
+            assertTrue(records.getFirst().passiveSubdomainTraffic);
+            assertTrue(Pipeline.run(records).coverageRecords.isEmpty());
+            assertFalse(((ScopePolicy) get(f.extension, "scope")).allows(child.url()));
+            f.responses.handleResponseReceived(response(201, child));
+            assertEquals(1, records.size(), "one response is retained once");
+            var unrelated = request(202, 8080, "https://unrelated.test/orders", Map.of(), "");
+            f.requests.handleRequestReceived(unrelated);
+            f.responses.handleResponseReceived(response(202, unrelated));
+            assertEquals(1, records.size());
+        }
+    }
+
+    @Test void browserRequestDiscoversRelatedHostWithoutExpandingActiveScope() throws Exception {
+        try (var f = new Fixture()) {
+            String api = "https://api.app.test/orders?token=secret";
+            assertEquals(MessageReceivedAction.CONTINUE,
+                    f.requests.handleRequestReceived(request(100, 8080, api, Map.of(), "")).action());
+            var discovery = (PassiveHostDiscovery) get(f.extension, "hostDiscovery");
+            var scope = (ScopePolicy) get(f.extension, "scope");
+            assertEquals(java.util.List.of("https://api.app.test:443"), discovery.candidates(0, scope));
+            assertFalse(scope.allows(api));
+            assertFalse(ActiveTrafficGuard.allowsCapture(scope, api));
+            assertEquals(MessageReceivedAction.DROP,
+                    f.requests.handleRequestReceived(request(101, 8082, "https://llm.app.test/orders", Map.of(), "")).action());
+            assertEquals(java.util.List.of("https://api.app.test:443"), discovery.candidates(0, scope));
+        }
+    }
+
     @Test void ownedLlmBrowserPreservesAuthAndRestoresAgentWithoutProxyEvidence() throws Exception {
         try (var f = new Fixture()) {
             var browserProxy = new ExplorerBrowserProxy(8082);
@@ -136,6 +173,9 @@ class FlowScopeProxyRoutingTest {
             case "url" -> url;
             case "method" -> "GET";
             case "pathWithoutQuery" -> uri.getPath();
+            case "query" -> uri.getRawQuery();
+            case "toByteArray" -> bytes("GET " + uri.getPath() + " HTTP/1.1\r\nHost: " + uri.getHost() + "\r\n\r\n");
+            case "bodyOffset" -> ("GET " + uri.getPath() + " HTTP/1.1\r\nHost: " + uri.getHost() + "\r\n\r\n").length();
             case "annotations" -> annotations(notes);
             case "headerValue" -> headers.entrySet().stream().filter(value -> value.getKey().equalsIgnoreCase((String) args[0]))
                     .map(Map.Entry::getValue).findFirst().orElse(null);
@@ -161,6 +201,30 @@ class FlowScopeProxyRoutingTest {
         return proxy(Annotations.class, (unused, method, args) -> switch (method.getName()) {
             case "notes" -> notes;
             case "withNotes" -> annotations((String) args[0]);
+            default -> throw new AssertionError(method.getName());
+        });
+    }
+
+    private static burp.api.montoya.core.ByteArray bytes(String text) {
+        byte[] data = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return proxy(burp.api.montoya.core.ByteArray.class, (self, method, args) -> switch (method.getName()) {
+            case "length" -> data.length;
+            case "getBytes" -> data.clone();
+            default -> throw new AssertionError(method.getName());
+        });
+    }
+
+    private static InterceptedResponse response(int id, InterceptedRequest request) {
+        String header = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n";
+        return proxy(InterceptedResponse.class, (self, method, args) -> switch (method.getName()) {
+            case "messageId" -> id;
+            case "initiatingRequest" -> request;
+            case "annotations" -> annotations("");
+            case "statusCode" -> (short) 200;
+            case "headerValue" -> "Content-Type".equalsIgnoreCase((String) args[0]) ? "application/json" : null;
+            case "headers" -> java.util.List.of();
+            case "toByteArray" -> bytes(header + "{}");
+            case "bodyOffset" -> header.length();
             default -> throw new AssertionError(method.getName());
         });
     }

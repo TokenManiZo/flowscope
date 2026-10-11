@@ -17,14 +17,14 @@ const GROUP_PREVIEW = 5
 const VERDICT_CHIP: ReadonlyArray<[Verdict, string, string]> = [
   ["allow", "허용", "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"],
   ["suspicious", "후보", "bg-red-500/15 text-red-700 dark:text-red-300"],
-  ["undecided", "확인", "bg-amber-500/15 text-amber-700 dark:text-amber-300"],
+  ["undecided", "근거 부족", "bg-amber-500/15 text-amber-700 dark:text-amber-300"],
   ["deny", "거부", "border border-border text-muted-foreground"],
-  ["untested", "보류", "border border-dashed border-border text-muted-foreground"],
+  ["untested", "미점검", "border border-dashed border-border text-muted-foreground"],
 ]
 const VERDICT_BADGE: Partial<Record<Verdict, [string, string]>> = {
-  allow: ["ALLOW", "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"],
-  deny: ["DENY", "border border-border text-muted-foreground"],
-  untested: ["보류", "border border-dashed border-border text-muted-foreground"],
+  allow: ["허용", "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"],
+  deny: ["거부", "border border-border text-muted-foreground"],
+  untested: ["미점검", "border border-dashed border-border text-muted-foreground"],
 }
 const severity: readonly Verdict[] = ["suspicious", "undecided", "untested", "deny", "allow"]
 const label = (resource: string) => stripOrigin(resource) || resource
@@ -138,8 +138,8 @@ export function GraphScopeSummary({ scope, groups, owners = {}, labelIdentity = 
     </div>}
 
     {identities.length > 0 && <div>
-      <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">신원별 접근</h3>
-      <ul className="grid gap-2" aria-label="신원별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${labelIdentity(identity.idn)} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+      <h3 className="mb-1.5 text-sm font-semibold text-muted-foreground">계정별 접근</h3>
+      <ul className="grid gap-2" aria-label="계정별 접근">{identities.map(identity => <li key={identity.idn} aria-label={`${labelIdentity(identity.idn)} 접근 요약`} className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[15px] font-semibold">{labelIdentity(identity.idn)}</span>
           <span className="ms-auto flex shrink-0 gap-1">{identity.sources.map(source => { const mark = SOURCE_MARK[source]; return <span key={source} role="img" aria-label={mark.label} title={mark.label} className={`inline-flex size-6 items-center justify-center rounded-full border ${mark.className}`}><mark.Icon className="size-3.5" aria-hidden="true" /></span> })}</span>
