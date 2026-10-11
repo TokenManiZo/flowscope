@@ -2364,6 +2364,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
             }
             @Override public boolean explorerRawActive() { return explorer.rawActive(); }
+            @Override public boolean explorerRawRun() { return explorer.rawRun(); }
             @Override public ExplorerCoordinator.Snapshot steerExplorer(String message) {
                 return explorer.steer(message);
             }

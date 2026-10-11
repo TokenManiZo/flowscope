@@ -219,6 +219,8 @@ Burp **FlowScope** 탭 맨 위의 **FlowScope Web UI 열기**를 누릅니다. �
 
 현재 로컬 개발 브랜치의 자유 대화는 FlowScope 전용 도구·자동 지침을 추가하지 않습니다. Codex 셸에는 실행별 Burp 프록시를 설정합니다. 그 프록시를 실제로 지난 범위 안 요청만 LLM 요청 기록·그래프에 들어갑니다. 프록시를 우회한 셸·브라우저 요청은 FlowScope가 차단하거나 기록할 수 없으므로 사용자가 허가 범위를 지켜야 합니다. 프로젝트 DB와 Codex 로컬 대화 기록에는 대상 내용이 남을 수 있습니다. 실제 Burp 실행 검증 전 단계이며 [LLM 대화 계약](docs/reference/llm-chat-backend.md)에 한계를 적었습니다.
 
+자동 탐색과 자유 대화는 같은 탭 안에서 **별도 보기**입니다. 자유 대화에서는 자동 탐색 계정·시작 버튼과 이전 자동 탐색 기록을 숨기고, **자동 탐색 보기**로 다시 전환할 수 있습니다. `하이`처럼 대화만 끝내고 HTTP 응답을 기록하지 않았다면 **Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)**라고 표시합니다. 이는 API 탐색을 완료했다는 뜻이 아닙니다.
+
 이전 로컬 실험본의 자유 대화를 저장해 뒀다면 옛 Codex thread에는 FlowScope 도구 문맥이 남아 있을 수 있습니다. 화면에 안내가 뜨면 **새 채팅**을 눌러 순정 대화를 시작하세요. 기존 요청 기록은 지워지지 않습니다.
 
 HTTPS 대상에서 Codex의 `curl` 등이 인증서 오류를 내면 해당 셸 클라이언트가 [Burp CA 인증서를 신뢰하도록 설정](https://portswigger.net/burp/documentation/desktop/external-browser-config/certificate)해야 합니다. FlowScope는 TLS 검증을 자동으로 끄거나 Burp CA를 OS 전역에 설치하지 않습니다.

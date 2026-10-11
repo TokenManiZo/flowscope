@@ -12,13 +12,16 @@ const idleRun = {
 
 test("chat starts only after a user message and keeps the conversation visible", async ({ page }) => {
   let run = idleRun
+  let rawRun = false
   let messages: Array<{ role: "user" | "assistant"; text: string; runId: string; at: string }> = []
   const starts: string[] = []
   const modes: string[] = []
   const efforts: string[] = []
   await page.route("**/api/explorer-run", async (route) => {
     if (route.request().method() === "GET") {
-      await route.fulfill({ json: { run, messages, rawActive: false, browser: null, accounts: [], scope: [target] } })
+      await route.fulfill({ json: { run, messages, rawActive: false, rawRun,
+        chat: rawRun ? { threadId: "raw-thread", target, model: "", effort: "", rawCodex: true, rawProtocolVersion: 1 } : null,
+        browser: null, accounts: [], scope: [target] } })
       return
     }
     const form = new URLSearchParams(route.request().postData() ?? "")
@@ -27,8 +30,10 @@ test("chat starts only after a user message and keeps the conversation visible",
       starts.push(instruction)
       modes.push(form.get("raw") ?? "")
       efforts.push(form.get("effort") ?? "")
+      rawRun = form.get("raw") === "true"
       run = { ...idleRun, status: "COMPLETED", runId: `chat-${starts.length}`, target,
-        anonymous: true, model: form.get("model") ?? "", effort: form.get("effort") ?? "" }
+        anonymous: true, model: form.get("model") ?? "", effort: form.get("effort") ?? "",
+        message: "Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)" }
       messages = [...messages,
         { role: "user", text: instruction, runId: run.runId, at: "2026-10-10T00:00:00Z" },
         { role: "assistant", text: "샘플 응답: 실제 수집은 Burp에서 확인하세요.", runId: run.runId, at: "2026-10-10T00:00:01Z" },
@@ -53,15 +58,21 @@ test("chat starts only after a user message and keeps the conversation visible",
   }
   await page.getByRole("combobox", { name: "추론 강도" }).selectOption("high")
   await page.getByRole("button", { name: "Codex 자유 대화" }).click()
-  await expect(page.getByRole("button", { name: /^탐색할 계정/ })).toHaveAttribute("aria-expanded", "false")
+  await expect(page.getByRole("button", { name: /^탐색할 계정/ })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "탐색 시작" })).toHaveCount(0)
   expect(starts).toHaveLength(0)
   await expect(page.getByRole("textbox", { name: "LLM에게 메시지" })).toBeVisible()
-  await page.getByRole("textbox", { name: "LLM에게 메시지" }).fill("이 범위의 공개 API를 살펴봐")
+  await page.getByRole("textbox", { name: "LLM에게 메시지" }).fill("하이")
   await page.getByRole("button", { name: "메시지 전송" }).click()
-  await expect(page.getByRole("log", { name: "LLM 대화" })).toContainText("이 범위의 공개 API를 살펴봐")
+  await expect(page.getByRole("log", { name: "LLM 대화" })).toContainText("하이")
   await expect(page.getByRole("log", { name: "LLM 대화" })).toContainText("샘플 응답")
+  await expect(page.getByText(/Codex 대화\s+답변 완료/)).toBeVisible()
+  await expect(page.getByText("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)")).toBeVisible()
+  await expect(page.getByRole("button", { name: "탐색 시작" })).toHaveCount(0)
   await expect(page.getByRole("textbox", { name: "LLM에게 메시지" })).toHaveValue("")
-  expect(starts).toEqual(["이 범위의 공개 API를 살펴봐"])
+  const bubble = await page.getByText("하이", { exact: true }).locator("..").boundingBox()
+  expect(bubble?.width ?? 0).toBeGreaterThanOrEqual(96)
+  expect(starts).toEqual(["하이"])
   expect(modes).toEqual(["true"])
   expect(efforts).toEqual(["high"])
   if (process.env.FLOWSCOPE_CHAT_PREVIEW === "1") {

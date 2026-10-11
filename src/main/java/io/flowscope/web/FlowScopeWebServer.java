@@ -214,6 +214,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
         default List<ExplorerCoordinator.ChatMessage> explorerChatMessages() { return List.of(); }
         default boolean explorerRawActive() { return false; }
+        default boolean explorerRawRun() { return false; }
         default io.flowscope.explorer.ExplorerChatState explorerChatState() {
             return io.flowscope.explorer.ExplorerChatState.empty();
         }
@@ -1576,6 +1577,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ObjectNode body = json.createObjectNode();
             body.set("run", explorerSnapshot(state.explorerStatus()));
             body.put("rawActive", state.explorerRawActive());
+            body.put("rawRun", state.explorerRawRun());
             var messages = body.putArray("messages");
             state.explorerChatMessages().forEach(item -> messages.addObject()
                     .put("role", item.role()).put("text", item.text())

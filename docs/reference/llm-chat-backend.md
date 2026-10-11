@@ -1,8 +1,8 @@
 # LLM 자동 탐색·자유 대화 계약 (로컬 검증 중)
 
-> 자동 검증 완료·Burp 실물 gate 대기 (2026-10-11): `v1.0.2` 기반 로컬 브랜치의 자유 대화에서 FlowScope 전용 도구·지침·대상 URL 주입을 제거하고, 실행별 Burp 프록시만 셸 환경에 연결했습니다. 실제 Burp 재로드·실대상 수집은 아직 검증하지 않았습니다.
+> 표시 수정 자동 검증 완료·Burp 실물 gate 대기 (2026-10-11): `v1.0.2` 기반 로컬 브랜치에서 자유 대화와 자동 탐색 보기를 분리하고, 답변 완료와 HTTP 수집 완료를 구분합니다. 사용자가 화면에서 자유 대화를 실행한 사실은 확인했지만, 수정 JAR의 실대상 프록시·HTTPS 수집은 아직 검증하지 않았습니다.
 
-이 문서는 `v1.0.2` 기반 로컬 작업의 두 실행 방식을 설명합니다. **탐색 시작**은 계정·비로그인 lane을 선택하는 기존 자동 Explorer입니다. 카드 제목 옆 **Codex 자유 대화**는 입력창만 열며 네트워크 실행은 시작하지 않습니다. 저장된 프로젝트에서 첫 메시지를 전송하면 별도의 turn을 시작하고, 완료 뒤의 메시지는 저장된 Codex thread를 재개합니다. 추천 문장을 자동 실행하지 않습니다.
+이 문서는 `v1.0.2` 기반 로컬 작업의 두 실행 방식을 설명합니다. **탐색 시작**은 계정·비로그인 lane을 선택하는 기존 자동 Explorer입니다. 카드 제목 옆 **Codex 자유 대화**는 자동 탐색 컨트롤을 숨기고 별도 대화 보기를 열며, 버튼만으로 네트워크 실행을 시작하지 않습니다. 저장된 프로젝트에서 첫 메시지를 전송하면 별도의 turn을 시작하고, 완료 뒤의 메시지는 저장된 Codex thread를 재개합니다. 추천 문장을 자동 실행하지 않습니다.
 
 ## 의도와 경계
 
@@ -14,7 +14,7 @@ Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 
 
 기존 Web capability·Host·Origin 검사 아래의 `/api/explorer-run`을 사용합니다.
 
-- `GET`: 기존 `run`, `browser`, `accounts`, `scope`와 함께 `messages: [{role,text,runId,at}]`와 `rawActive`를 반환합니다. 모델 출력 delta도 실행 중 이 배열의 마지막 assistant 메시지에 이어 붙습니다.
+- `GET`: 기존 `run`, `browser`, `accounts`, `scope`와 함께 `messages: [{role,text,runId,at}]`, 진행 중 자유 대화 여부 `rawActive`, 마지막 실행의 자유 대화 여부 `rawRun`을 반환합니다. 모델 출력 delta도 실행 중 이 배열의 마지막 assistant 메시지에 이어 붙습니다.
 - `POST action=start`: 기존 자동 Explorer는 `target`, `accounts`, `anonymous`, `model`, `effort`를 보내며 `message`·`raw`는 생략합니다. 자유 대화는 `raw=true`, `message`를 보내며 계정 handle을 전달하지 않습니다. 계정을 함께 보내면 서버가 거부합니다. 첫 메시지는 지속 Codex thread를 만들고, 후속 메시지는 저장된 thread를 재개합니다. 프록시 포트와 작업 폴더는 Web 입력에서 받지 않고 확장이 정합니다. `target`은 실행·수집 범위 검사용이지 Codex 메시지에 삽입하는 문장이 아닙니다.
 - `POST action=steer`: 실행 중 turn에 지시를 추가하고 화면 대화에 기록합니다. 끝난 turn에는 새 `action=start&message=...`를 사용합니다.
 - `POST action=cancel`: 현재 turn을 중단합니다. 저장된 대화와 기존 Evidence는 유지됩니다.
@@ -40,6 +40,8 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 프록시 환경은 표준 HTTP(S) 클라이언트의 기본 경로일 뿐 OS 방화벽이 아닙니다. 프록시를 무시하는 프로그램, 명시적 `--noproxy`, 브라우저의 자체 네트워크 경로는 FlowScope가 막거나 기록할 수 없습니다. 따라서 자유 대화의 **모든** 요청이 exact scope에 묶이거나 그래프에 나타난다고 주장하지 않습니다. 범위 안 응답도 실제 Burp 프록시를 거쳐 저장된 경우에만 LLM Evidence입니다. 이 한계 때문에 자유 대화를 자동 Explorer의 범위 보장·계정 비교 성과와 혼동하지 않아야 합니다. 대화 turn에는 기존 500 HTTP 요청·300 브라우저 행동·3,000 브라우저 교환의 강제 종료 상한이 없지만 전역 기록 20,000건·프로젝트 파일 100MiB 등은 남아 있습니다.
 
+두 방식은 `Source.LLM`의 실행 문맥을 공유하므로 동시에 돌리는 별도 엔진으로 만들지 않았습니다. 대신 Web 응답의 `rawRun`으로 마지막 실행의 방식을 구분하고, React는 해당 방식의 컨트롤·기록만 표시합니다. 이전 구현은 자유 대화에도 공통 `Explorer 완료` 요약과 모델 메모를 보여 답변만 한 turn이 탐색 완료처럼 보였습니다. 자유 대화는 **Codex 답변 완료**와 실제 기록된 HTTP 응답 수를 표시하고, 0건이면 **대화만 완료**라고 명시합니다. Codex 최종 답변은 채팅에 한 번만 보여 주며 별도의 `Explorer 모델 메모` 활동으로 복제하지 않습니다. 자동 Explorer의 완료 게이트와 요약은 그대로 유지합니다.
+
 HTTPS 요청은 클라이언트가 Burp CA를 신뢰해야 합니다. FlowScope는 `curl -k` 같은 TLS 검증 우회나 OS 전역 인증서 설치를 자동으로 수행하지 않습니다. 필요한 경우 [PortSwigger의 CA 설치 안내](https://portswigger.net/burp/documentation/desktop/external-browser-config/certificate)에 따라 셸 클라이언트의 신뢰 저장소를 준비해야 합니다.
 
 기존 자동 Explorer의 `flowscope_record_discoveries`는 유효한 선언은 저장하고 잘못된 발견·파라미터의 인덱스와 이유를 `rejected_discoveries`·`rejected_parameters`로 돌려줍니다. 자유 대화에는 이 도구를 제공하지 않으므로 선언 저장은 실제로 프록시에서 캡처한 응답을 기존 파서가 분석하는 범위에 한정됩니다.
@@ -52,5 +54,6 @@ HTTPS 요청은 클라이언트가 Burp CA를 신뢰해야 합니다. FlowScope�
 - 수정 범위: `ExplorerProvider`·`CodexAppServerProvider`·`ExplorerCoordinator`·`ExplorerHttpGateway`, Web API, 프로젝트 JSON/SQLite 메타데이터, React `LlmPass`와 API 타입·훅, 단위·브라우저 회귀 테스트. 다른 화면의 구조는 바꾸지 않았습니다.
 - RED→GREEN: 두 번째 turn의 `thread/resume`, HTTP 0건 대화 답변, 불완전 Evidence의 대화 보존, JSON/SQLite 재열기, 잘못된 선언 일부 거부, 500/300/3,000 이전 상한 초과를 각각 재현 후 수정했습니다.
 - 이전 커밋 `097521e`의 자동 검증: 2026-10-11 `mvn clean verify` 통과(React 888/888, Java 986건 중 실패·오류 0, opt-in 8건 skip). 그때의 자유 대화에는 FlowScope 전용 도구·대상 URL 접두 문구·네트워크 차단이 남아 있었으므로 이 수치를 현재 수정본의 검증으로 전용하지 않습니다.
-- 현재 수정본 검증: 2026-10-11 `mvn clean verify` 통과(React 889/889, Java 986건 중 실패·오류 0, opt-in 8건 skip). raw app-server 프로토콜 회귀에서 전용 도구·개발자 지침 부재, 사용자 메시지 원문 전달, 프록시 설정, 승인 중 진행 표시를 확인했습니다. 구버전 raw thread 자동 재개 차단과 JSON/SQLite 버전 재열기도 회귀로 확인했습니다. opt-in 실물 Codex app-server가 네이티브 `curl` 요청을 로컬 모의 프록시로 보내는 시험과 Playwright 자유 대화 화면 1건을 별도로 통과했습니다. 로컬 CLI 대조 실험에서는 네트워크 차단 시 loopback 접속 실패, 네트워크 허용+프록시 환경 시 모의 프록시 도달을 확인했습니다. 실제 Burp 프록시·HTTPS CA·실대상 수집은 미검증입니다.
+- 이전 커밋 `8dfaed7` 검증: 2026-10-11 `mvn clean verify` 통과(React 889/889, Java 986건 중 실패·오류 0, opt-in 8건 skip). opt-in 실물 Codex app-server가 네이티브 `curl` 요청을 로컬 모의 프록시로 보내는 시험과 Playwright 자유 대화 화면 1건을 별도로 통과했습니다. 현재 UI·상태 문구 수정의 최종 검증으로 전용하지 않습니다.
+- 이번 표시 수정 검증: 2026-10-11 `mvn clean verify` 통과(React 890/890, Java 988건 중 실패·오류 0, opt-in 8건 skip). raw 답변 0건·1건의 완료 문구, 자동 Explorer 문구 보존, raw 모델 메모 중복 제거, Web `rawRun`, 두 보기 전환과 짧은 말풍선 회귀를 추가했습니다. 수정 JAR의 별도 포트 Standalone에서 Playwright 자유 대화 화면 1건을 통과했고 `하이` 말풍선의 실제 너비가 최소 96px 이상임을 확인했습니다. 사용자 Burp의 실제 프록시·HTTPS CA·대상 수집은 여전히 미검증입니다.
 - 다음 gate: 실제 Burp에서 비로그인/두 계정의 후속 turn까지 수집·그래프 확인, 전역 저장 상한 제거를 위한 디스크 기반 기록 설계.

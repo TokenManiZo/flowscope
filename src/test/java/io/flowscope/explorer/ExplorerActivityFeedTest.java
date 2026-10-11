@@ -65,6 +65,20 @@ final class ExplorerActivityFeedTest {
     }
 
     @Test
+    void rawChatDoesNotDuplicateAssistantTextOrUseExplorerLabels() {
+        ExplorerProvider.Activity started = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"turn/started\",\"params\":{}}"), true);
+        assertEquals("Codex 대화 시작", started.title());
+        assertNull(CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\","
+                        + "\"text\":\"안녕하세요\"}}}"), true));
+        ExplorerProvider.Activity shell = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"commandExecution\","
+                        + "\"status\":\"completed\"}}}"), true);
+        assertEquals("Codex 셸 명령", shell.title());
+    }
+
+    @Test
     void serviceModelRerouteIsNotMistakenForTheRequestedModel() {
         ExplorerProvider.Activity reroute = CodexAppServerProvider.activityFor(frame(
                 "{\"method\":\"model/rerouted\",\"params\":{\"fromModel\":\"gpt-6.1-sol\","

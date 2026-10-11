@@ -315,7 +315,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     listener.completed(result);
                 }
             } catch (Exception error) {
-                if (!cancelled.get()) listener.failed("Codex Explorer 실패: " + safe(error.getMessage()));
+                if (!cancelled.get()) listener.failed((request.rawCodex()
+                        ? "Codex 대화 실패: " : "Codex Explorer 실패: ") + safe(error.getMessage()));
             } finally {
                 terminate(process);
                 if (temporaryWorkspace) deleteWorkspace(workspace);
@@ -415,7 +416,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     && message.path("params").path("item").path("type").asText("").equals("agentMessage")) {
                 finalMessage = message.path("params").path("item").path("text").asText(finalMessage);
             }
-            Activity activity = activityFor(message);
+            Activity activity = activityFor(message, request.rawCodex());
             if (activity != null) listener.activity(activity);
         }
 
@@ -541,7 +542,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         @Override public void steer(String message) {
             String safe = TextLimits.truncate(message == null ? "" : message.trim(), 4_000);
             if (safe.isBlank() || threadId.isBlank() || turnId.isBlank() || cancelled.get()) {
-                throw new IllegalStateException("진행 중인 Explorer turn이 없습니다.");
+                throw new IllegalStateException(request.rawCodex()
+                        ? "진행 중인 Codex 대화 turn이 없습니다." : "진행 중인 Explorer turn이 없습니다.");
             }
             ObjectNode params = JSON.createObjectNode();
             params.put("threadId", threadId);
@@ -834,10 +836,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
      * {@code ACTIVITY_LIMIT}. Only what nothing else records survives here.
      */
     static Activity activityFor(JsonNode message) {
+        return activityFor(message, false);
+    }
+
+    static Activity activityFor(JsonNode message, boolean rawCodex) {
         String method = message.path("method").asText("");
         JsonNode item = message.path("params").path("item");
         if (method.equals("turn/started")) {
-            return activity("SYSTEM", "탐색 시작", "독립 Explorer turn이 시작됐습니다.", "RUNNING", null);
+            return rawCodex ? activity("SYSTEM", "Codex 대화 시작", "사용자 메시지를 처리 중입니다.", "RUNNING", null)
+                    : activity("SYSTEM", "탐색 시작", "독립 Explorer turn이 시작됐습니다.", "RUNNING", null);
         }
         // item/started says only that something began; item/completed says the same and says when.
         if (method.equals("item/completed")) {
@@ -847,7 +854,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             Long duration = item.has("durationMs") ? item.path("durationMs").asLong() : null;
             if (type.equals("commandExecution")) {
                 // Sandbox analysis never reaches the gateway, so this is its only record.
-                return activity("TOOL", "응답 산출물 분석", ok ? "명령 완료" : "명령 " + status,
+                return activity("TOOL", rawCodex ? "Codex 셸 명령" : "응답 산출물 분석",
+                        ok ? "명령 완료" : "명령 " + status,
                         ok ? "COMPLETED" : "FAILED", duration);
             }
             if (type.equals("dynamicToolCall")) {
@@ -857,6 +865,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 return null;
             }
             if (type.equals("agentMessage")) {
+                if (rawCodex) return null; // The chat transcript already shows the answer.
                 return activity("MODEL", "Explorer 모델 메모 (비집계)",
                         displaySummary(item.path("text").asText("")), "COMPLETED", null);
             }

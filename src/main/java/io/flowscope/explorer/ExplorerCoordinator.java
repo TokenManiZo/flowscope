@@ -264,7 +264,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         browserEndedAt = 0;
         browserDeadline = 0;
         snapshot = new Snapshot(Status.AUTHENTICATING, runId, request.target(), Instant.now(), null,
-                0, "Explorer 계정과 세션을 준비하는 중입니다.", readiness,
+                0, request.rawCodex() ? "Codex 대화를 준비하는 중입니다." : "Explorer 계정과 세션을 준비하는 중입니다.", readiness,
                 request.accountIds(),
                 request.rawCodex() || request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
                 request.model(), request.effort());
@@ -277,7 +277,9 @@ public final class ExplorerCoordinator implements AutoCloseable {
             chatMessages.add(new ChatMessage("user", request.userMessage(), runId, Instant.now()));
             chatChanged.run();
         }
-        addActivity("SYSTEM", "Explorer 준비", "exact scope와 Codex 로그인을 확인했습니다.", "RUNNING", null);
+        addActivity("SYSTEM", request.rawCodex() ? "Codex 대화 준비" : "Explorer 준비",
+                request.rawCodex() ? "Codex 연결을 확인했습니다." : "exact scope와 Codex 로그인을 확인했습니다.",
+                "RUNNING", null);
         if (request.rawCodex()) rawRunStarted.accept(runId);
         worker.execute(() -> prepareAndStart(request, runId));
         return current();
@@ -305,6 +307,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     public boolean rawActive() { return rawModeActive && active(snapshot.status()); }
+
+    public boolean rawRun() { return rawModeActive && snapshot.status() != Status.IDLE; }
 
     public void rawRunEnded(Consumer<String> handler) {
         rawRunEnded = handler == null ? ignored -> { } : handler;
@@ -541,9 +545,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
         stopBrowserRecording();
         contexts.abort(Source.LLM, snapshot.runId());
         closeGateway();
-        snapshot = terminal(Status.CANCELLED, "사용자가 Explorer를 중단했습니다.", snapshot.unresolved());
+        snapshot = terminal(Status.CANCELLED, rawModeActive
+                ? "사용자가 Codex 대화를 중단했습니다." : "사용자가 Explorer를 중단했습니다.", snapshot.unresolved());
         if (rawModeActive) rawRunEnded.accept(snapshot.runId());
-        addActivity("SYSTEM", "Explorer 중단", "실행과 gateway를 종료했습니다.", "CANCELLED", null);
+        addActivity("SYSTEM", rawModeActive ? "Codex 대화 중단" : "Explorer 중단",
+                rawModeActive ? "대화 turn과 전용 프록시를 종료했습니다." : "실행과 gateway를 종료했습니다.",
+                "CANCELLED", null);
         return current();
     }
 
@@ -663,7 +670,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
                         providerListener(runId, limitations, !request.userMessage().isBlank()));
             }
         } catch (Exception error) {
-            fail(runId, "Explorer 시작 실패: " + safe(error.getMessage()), limitations);
+            fail(runId, (request.rawCodex() ? "Codex 대화 시작 실패: " : "Explorer 시작 실패: ")
+                    + safe(error.getMessage()), limitations);
         }
     }
 
@@ -784,21 +792,27 @@ public final class ExplorerCoordinator implements AutoCloseable {
             }
             closeGateway();
             Status status = limitations.isEmpty() ? Status.COMPLETED : Status.COMPLETED_WITH_LIMITATIONS;
-            String summary = "Explorer 완료 · HTTP 시도 " + snapshot.attempts()
+            String summary = rawModeActive
+                    ? snapshot.responses() == 0
+                    ? "Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)"
+                    : "Codex 답변 완료 · FlowScope HTTP 응답 " + snapshot.responses() + "건"
+                    : "Explorer 완료 · HTTP 시도 " + snapshot.attempts()
                     + "건 · 응답 기록 " + snapshot.responses()
                     + "건 · 선언 endpoint " + snapshot.endpointDeclarations()
                     + "건 · 선언 parameter " + snapshot.parameterDeclarations()
                     + "건 · OPTIONS probe " + snapshot.capabilityProbes() + "건";
             snapshot = terminal(status, summary, limitations);
-            addActivity("SYSTEM", "Explorer 완료", status == Status.COMPLETED
-                    ? "응답 기록과 종료 조건을 확인했습니다."
-                    : "응답 기록을 남기고 미해결 항목도 함께 남겼습니다.", status.name(), null);
+            addActivity("SYSTEM", rawModeActive ? "Codex 답변 완료" : "Explorer 완료",
+                    rawModeActive ? "대화 turn을 마쳤습니다. HTTP 수집 여부는 기록 수로 확인하세요."
+                            : status == Status.COMPLETED ? "응답 기록과 종료 조건을 확인했습니다."
+                            : "응답 기록을 남기고 미해결 항목도 함께 남겼습니다.", status.name(), null);
         } catch (Exception error) {
             contexts.abort(Source.LLM, runId);
             closeGateway();
-            snapshot = terminal(Status.FAILED,
-                    "Explorer 완료 gate 실패: " + safe(error.getMessage()), limitations);
-            addActivity("ERROR", "완료 gate 실패", snapshot.message(), "FAILED", null);
+            snapshot = terminal(Status.FAILED, (rawModeActive
+                    ? "Codex 대화 종료 확인 실패: " : "Explorer 완료 gate 실패: ") + safe(error.getMessage()), limitations);
+            addActivity("ERROR", rawModeActive ? "대화 종료 확인 실패" : "완료 gate 실패",
+                    snapshot.message(), "FAILED", null);
         }
         if (rawModeActive) rawRunEnded.accept(runId);
     }
@@ -812,8 +826,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
         closeGateway();
         snapshot = terminal(Status.FAILED, safe(message), limitations);
         if (rawModeActive) rawRunEnded.accept(runId);
-        addActivity("ERROR", "Explorer 실패", snapshot.message(), "FAILED", null);
-        logger.accept("FlowScope Explorer 실패: " + snapshot.message());
+        addActivity("ERROR", rawModeActive ? "Codex 대화 실패" : "Explorer 실패",
+                snapshot.message(), "FAILED", null);
+        logger.accept((rawModeActive ? "FlowScope Codex 대화 실패: " : "FlowScope Explorer 실패: ")
+                + snapshot.message());
     }
 
     private synchronized void gatewayEvent(ExplorerHttpGateway.Event event) {

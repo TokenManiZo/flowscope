@@ -418,6 +418,7 @@ final class FlowScopeWebServerTest {
         start();
         String target = state.record.service + "/";
         assertFalse(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
+        assertFalse(json(get("/api/explorer-run", token, origin())).path("rawRun").asBoolean());
         assertEquals(400, post("/api/explorer-run", "action=start&target=" + encode(target)
                 + "&raw=true&accounts=human-a&message=Inspect", token).statusCode());
         HttpResponse<String> started = post("/api/explorer-run",
@@ -425,6 +426,7 @@ final class FlowScopeWebServerTest {
         assertEquals(202, started.statusCode());
         assertTrue(state.explorerRaw);
         assertTrue(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
+        assertTrue(json(get("/api/explorer-run", token, origin())).path("rawRun").asBoolean());
     }
 
     @Test
@@ -2050,6 +2052,7 @@ final class FlowScopeWebServerTest {
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
         @Override public boolean explorerRawActive() { return explorerRaw; }
+        @Override public boolean explorerRawRun() { return explorerRaw; }
         @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
             return List.copyOf(explorerMessages);
         }

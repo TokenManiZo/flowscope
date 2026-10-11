@@ -80,9 +80,39 @@ final class ExplorerCoordinatorTest {
             provider.listener.get().threadReady("raw-thread");
             provider.listener.get().completed(new ExplorerProvider.Result("Done", List.of(), "raw-thread"));
             await(() -> !activeStatus(coordinator));
+            assertTrue(coordinator.rawRun(), "terminal raw turns must remain distinguishable from automatic Explorer");
+            assertEquals("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)", coordinator.current().message());
+            assertTrue(coordinator.current().activities().stream().noneMatch(activity ->
+                    activity.title().contains("Explorer") || activity.detail().contains("Explorer")));
             assertEquals("raw-thread", coordinator.chatState().threadId());
             assertEquals("Done", coordinator.chatMessages().getLast().text());
             assertNull(contexts.completedRun(Source.LLM), "answer-only turns are not evidence coverage");
+        }
+    }
+
+    @Test
+    void rawChatWithOneTrustedResponseReportsCollectionWithoutExplorerWording(@TempDir Path temp) throws Exception {
+        FakeProvider provider = new FakeProvider();
+        AtomicReference<Pipeline.Result> published = new AtomicReference<>(Pipeline.run(List.of()));
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("native proxy traffic is captured outside this transport"); },
+                provider, new RunContextRegistry(), url -> url.startsWith("https://app.example.test/"),
+                published::get, ignored -> { })) {
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true,
+                    "", "", "Inspect", true, 19417, temp.resolve("raw").toString()));
+            await(() -> provider.request.get() != null);
+            RequestRecord evidence = new RequestRecord(Source.LLM, "https://app.example.test:443",
+                    "GET", "/api/items", 200, "anon");
+            evidence.hasResponse = true;
+            evidence.body = "{\"items\":[]}";
+            evidence.phase = RunPhase.EXPLORATION;
+            evidence.runId = provider.request.get().runId();
+            evidence.executionTrust = ExecutionTrust.CONTROLLED;
+            published.set(Pipeline.run(List.of(evidence)));
+            provider.listener.get().completed(new ExplorerProvider.Result("Found items", List.of(), "raw-thread"));
+            await(() -> !activeStatus(coordinator));
+            assertEquals("Codex 답변 완료 · FlowScope HTTP 응답 1건", coordinator.current().message());
+            assertTrue(coordinator.current().activities().stream().noneMatch(item -> item.title().contains("Explorer")));
         }
     }
 
