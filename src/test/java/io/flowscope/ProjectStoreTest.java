@@ -26,7 +26,7 @@ final class ProjectStoreTest {
         ExplorerChatState chat = new ExplorerChatState("thread-1", "https://app.example.test/",
                 List.of(new ExplorerChatState.Message("user", "Find APIs", "llm-run-1", "2026-10-10T00:00:00Z"),
                         new ExplorerChatState.Message("assistant", "Found one request", "llm-run-1",
-                                "2026-10-10T00:00:01Z")), "gpt-6.1-sol", "high", true);
+                                "2026-10-10T00:00:01Z")), "gpt-6.1-sol", "high", true, 1);
         ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("chat project",
                 List.of("https://app.example.test/"), Instant.parse("2026-10-10T00:00:00Z"), chat);
         Path file = temp.resolve("chat.flowscope.json");
@@ -35,6 +35,11 @@ final class ProjectStoreTest {
 
         assertEquals(chat, store.load(file).context().chat());
         var malformed = new ObjectMapper().readTree(file.toFile());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/llm_chat"))
+                .remove("rawProtocolVersion");
+        new ObjectMapper().writeValue(file.toFile(), malformed);
+        assertEquals(0, store.load(file).context().chat().rawProtocolVersion(),
+                "older raw projects must not be mistaken for harness-free threads");
         ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/llm_chat/messages/0"))
                 .put("at", "not-a-time");
         new ObjectMapper().writeValue(file.toFile(), malformed);

@@ -136,6 +136,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private String conversationModel = "";
     private String conversationEffort = "";
     private boolean conversationRaw;
+    private int conversationRawProtocolVersion;
     private volatile boolean chatModeActive;
     private volatile boolean rawModeActive;
     private volatile Consumer<String> rawRunEnded = ignored -> { };
@@ -209,9 +210,15 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (request.rawCodex() && request.userMessage().isBlank()) {
             throw new IllegalArgumentException("raw Codex 메시지가 필요합니다.");
         }
+        if (request.rawCodex() && !request.accountIds().isEmpty()) {
+            throw new IllegalArgumentException("Codex 자유 대화에는 Explorer 계정 handle을 전달하지 않습니다.");
+        }
         if (!request.userMessage().isBlank() && !conversationThreadId.isBlank()
                 && conversationRaw != request.rawCodex()) {
             throw new IllegalStateException("다른 대화 방식에서는 새 채팅을 시작하세요.");
+        }
+        if (request.rawCodex() && !conversationThreadId.isBlank() && conversationRawProtocolVersion < 1) {
+            throw new IllegalStateException("이전 자유 대화에는 FlowScope 도구 문맥이 남아 있습니다. 순정 Codex로 시작하려면 새 채팅을 선택하세요.");
         }
         if (!request.userMessage().isBlank() && !conversationTarget.isBlank()
                 && !conversationTarget.equals(request.target())) {
@@ -220,12 +227,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (!request.rawCodex() && !request.includeAnonymous() && request.accountIds().isEmpty()) {
             throw new IllegalArgumentException("비로그인 또는 하나 이상의 Explorer 계정을 선택하세요.");
         }
-        request.accountIds().forEach(id -> {
-            ExplorerAccountVault.View view = vault.view(id);
-            if (request.rawCodex() && view.status() != ExplorerAccountVault.AuthStatus.READY) {
-                throw new IllegalStateException("자유 대화에 선택한 계정은 브라우저 로그인 완료가 필요합니다: " + view.label());
-            }
-        });
+        if (!request.rawCodex()) request.accountIds().forEach(vault::view);
         String readiness = provider.readiness();
         if (!"READY".equals(readiness)) throw new IllegalStateException(readiness);
         if (!request.rawCodex() && contexts.current(Source.SCANNER) != null) {
@@ -269,6 +271,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (!request.userMessage().isBlank()) {
             conversationTarget = request.target();
             conversationRaw = request.rawCodex();
+            conversationRawProtocolVersion = request.rawCodex() ? 1 : 0;
             if (!request.model().isBlank()) conversationModel = request.model();
             if (!request.effort().isBlank()) conversationEffort = request.effort();
             chatMessages.add(new ChatMessage("user", request.userMessage(), runId, Instant.now()));
@@ -328,7 +331,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         return new ExplorerChatState(conversationThreadId, conversationTarget,
                 chatMessages.stream().map(item -> new ExplorerChatState.Message(
                         item.role(), item.text(), item.runId(), item.at().toString())).toList(),
-                conversationModel, conversationEffort, conversationRaw);
+                conversationModel, conversationEffort, conversationRaw, conversationRawProtocolVersion);
     }
 
     public synchronized void restoreChatState(ExplorerChatState restored) {
@@ -346,6 +349,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         conversationModel = state.model();
         conversationEffort = state.effort();
         conversationRaw = state.rawCodex();
+        conversationRawProtocolVersion = state.rawProtocolVersion();
         chatMessages.clear();
         chatMessages.addAll(parsed);
     }
@@ -563,6 +567,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         conversationModel = "";
         conversationEffort = "";
         conversationRaw = false;
+        conversationRawProtocolVersion = 0;
     }
 
     public synchronized Snapshot newChat() {
@@ -583,19 +588,11 @@ public final class ExplorerCoordinator implements AutoCloseable {
         List<ExplorerProvider.Unresolved> limitations = new ArrayList<>();
         try {
             if (request.rawCodex()) {
-                ExplorerHttpGateway created = new ExplorerHttpGateway(vault, transport, exactScope, runId,
-                        this::gatewayEvent, candidates -> acceptDiscoveries(runId, candidates), true);
-                created.restrictAccounts(request.accountIds());
                 synchronized (this) {
-                    if (!sameActiveRun(runId)) {
-                        created.close();
-                        return;
-                    }
-                    gateway = created;
+                    if (!sameActiveRun(runId)) return;
                     snapshot = update(Status.RUNNING, "Codex 자유 대화가 진행 중입니다.", limitations, null);
                     providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
-                            List.of(request.target()), request.accountIds(), gateway.url(), gateway.discoveriesUrl(),
-                            gateway.token(), "", request.model(),
+                            List.of(request.target()), List.of(), "", "", "", "", request.model(),
                             request.effort(), conversationThreadId, request.userMessage(), true,
                             request.rawProxyPort(), request.rawWorkspace()), providerListener(runId, limitations, true));
                 }

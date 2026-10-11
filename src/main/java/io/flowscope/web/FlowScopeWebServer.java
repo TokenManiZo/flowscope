@@ -1607,9 +1607,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     List<String> accounts = java.util.Arrays.stream(form.getOrDefault("accounts", "").split(","))
                             .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
                     boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
+                    boolean raw = Boolean.parseBoolean(form.getOrDefault("raw", "false"));
+                    if (raw && !accounts.isEmpty()) {
+                        throw new IllegalArgumentException("Codex 자유 대화에는 Explorer 계정을 전달하지 않습니다.");
+                    }
                     snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
                             form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
-                            form.getOrDefault("message", ""), Boolean.parseBoolean(form.getOrDefault("raw", "false"))));
+                            form.getOrDefault("message", ""), raw));
                     status = 202;
                 }
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));

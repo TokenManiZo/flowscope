@@ -7,6 +7,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.time.Instant;
 import java.nio.file.Path;
+import java.net.InetSocketAddress;
+import com.sun.net.httpserver.HttpServer;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -20,34 +22,37 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfSystemProperty(named = "flowscope.harness", matches = "true")
 final class CodexAppServerProviderHarnessTest {
     @Test
-    void rawCodexUsesTheScopedHttpBridgeWithoutAnExplorerPrompt(@TempDir Path temp) throws Exception {
-        AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
-        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), request -> {
-                    captured.set(request);
-                    return new ExplorerTransport.Response(200, request.url(), "", "application/json",
-                            Map.of(), "{\"ok\":true}", false, "ev-raw-harness", 1, Instant.now());
-                }, url -> url.equals("https://provider-harness.invalid/"), "raw-harness", ignored -> { });
-             CodexAppServerProvider provider = new CodexAppServerProvider()) {
+    void rawCodexNativeCurlUsesThePerRunProxyWithoutFlowScopeTools(@TempDir Path temp) throws Exception {
+        AtomicReference<String> captured = new AtomicReference<>();
+        HttpServer proxy = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        proxy.createContext("/", exchange -> {
+            captured.set(exchange.getRequestURI().toString());
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        });
+        proxy.start();
+        try (CodexAppServerProvider provider = new CodexAppServerProvider()) {
             assertEquals("READY", provider.readiness());
             String model = provider.models().configuredModel();
             if (model.isBlank()) model = provider.models().models().getFirst().id();
             CountDownLatch done = new CountDownLatch(1);
             AtomicReference<String> failure = new AtomicReference<>();
             provider.start(new ExplorerProvider.Request("raw-harness", "https://provider-harness.invalid/",
-                    List.of("https://provider-harness.invalid/"), List.of(), gateway.url(),
-                    gateway.discoveriesUrl(), gateway.token(), "", model, "", "",
-                    "Use flowscope_http_request exactly once: account empty, method GET, url "
-                            + "https://provider-harness.invalid/, headers empty object, body empty string. "
-                            + "Do not use shell or visit any other URL. Then answer briefly.",
-                    true, 19417, temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
+                    List.of("https://provider-harness.invalid/"), List.of(), "", "", "", "",
+                    model, "", "", "Run exactly one shell command: curl -sS -o /dev/null -w '%{http_code}' "
+                            + "http://provider-harness.invalid/probe. Do not access any other URL or write files. "
+                            + "Report the exact command output.", true, proxy.getAddress().getPort(),
+                    temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
                 @Override public void activity(ExplorerProvider.Activity activity) { }
                 @Override public void completed(ExplorerProvider.Result result) { done.countDown(); }
                 @Override public void failed(String message) { failure.set(message); done.countDown(); }
             });
             assertTrue(done.await(3, TimeUnit.MINUTES), "raw Codex turn timed out");
             assertNull(failure.get(), failure.get());
-            assertNotNull(captured.get(), "raw Codex did not call the scoped HTTP bridge");
-            assertEquals("https://provider-harness.invalid/", captured.get().url());
+            assertEquals("http://provider-harness.invalid/probe", captured.get(),
+                    "native curl did not pass through the configured local proxy");
+        } finally {
+            proxy.stop(0);
         }
     }
 

@@ -270,7 +270,7 @@ final class CodexAppServerProtocolTest {
     }
 
     @Test
-    void rawCodexThreadKeepsNativeToolsAndScopedBridgeWithoutExplorerInstructions(@TempDir Path temp) throws Exception {
+    void rawCodexThreadKeepsNativeToolsWithoutFlowScopeInstructionsOrTools(@TempDir Path temp) throws Exception {
         AtomicReference<FakeCodex> process = new AtomicReference<>();
         Capture first = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         Capture second = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
@@ -297,16 +297,16 @@ final class CodexAppServerProtocolTest {
             JsonNode params = started.path("params");
             assertFalse(params.path("ephemeral").asBoolean(true));
             assertFalse(params.has("developerInstructions"));
-            assertFalse(params.path("dynamicTools").isEmpty());
-            assertEquals("flowscope_http_request", params.path("dynamicTools").get(0).path("name").asText());
+            assertFalse(params.has("dynamicTools"));
             assertEquals("workspace-write", params.path("sandbox").asText());
             assertEquals("on-request", params.path("approvalPolicy").asText());
             assertEquals("http://127.0.0.1:19417", params.at("/config/shell_environment_policy/set/HTTPS_PROXY").asText());
+            assertTrue(params.at("/config/shell_environment_policy/set/ALL_PROXY").isMissingNode());
             JsonNode turn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
-            assertEquals("FlowScope에서 선택한 대상: https://app.example.test/\n사용 가능한 계정 handle: 없음\n\nInspect freely",
+            assertEquals("Inspect freely",
                     turn.path("params").path("input").get(0).path("text").asText());
             assertFalse(turn.path("params").has("outputSchema"));
-            assertFalse(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(true));
+            assertTrue(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(false));
 
             provider.start(new ExplorerProvider.Request("raw-2", base.target(), base.exactScope(),
                     List.of(), "", "", "", "", "gpt-6.1-sol", "high", "t1", "Continue",
@@ -315,8 +315,10 @@ final class CodexAppServerProtocolTest {
             assertNull(second.failure().get());
             JsonNode resumed = process.get().awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
             assertEquals("t1", resumed.path("params").path("threadId").asText());
-            assertFalse(resumed.path("params").path("dynamicTools").isEmpty());
+            assertFalse(resumed.path("params").has("dynamicTools"));
             assertEquals("http://127.0.0.1:19418", resumed.at("/params/config/shell_environment_policy/set/HTTP_PROXY").asText());
+            JsonNode nextTurn = process.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Continue", nextTurn.at("/params/input/0/text").asText());
         }
     }
 
@@ -378,10 +380,11 @@ final class CodexAppServerProtocolTest {
     }
 
     @Test
-    void rawCodexCommandApprovalRequiresTheOperatorInsteadOfAutoAccepting(@TempDir Path temp) throws Exception {
+    void rawCodexCommandApprovalFollowsTheOperatorDecision(@TempDir Path temp) throws Exception {
         AtomicReference<FakeCodex> codex = new AtomicReference<>();
         Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         List<String> approvals = new CopyOnWriteArrayList<>();
+        List<ExplorerProvider.Activity> activities = new CopyOnWriteArrayList<>();
         try (CodexAppServerProvider provider = new CodexAppServerProvider(
                 (command, cwd, environment) -> {
                     FakeCodex fake = new FakeCodex((self, turn) -> {
@@ -399,18 +402,30 @@ final class CodexAppServerProtocolTest {
                     return fake;
                 }, ignored -> { }, (action, reason) -> {
                     approvals.add(action + " | " + reason);
-                    return false;
+                    return action.contains("https://app.example.test/");
                 })) {
             ExplorerProvider.Request base = request();
             provider.start(new ExplorerProvider.Request("raw-approval", base.target(), base.exactScope(),
                     List.of(), "", "", "", "", "", "", "", "Inspect", true,
-                    19417, temp.resolve("raw").toString()), listener(capture));
+                    19417, temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity value) { activities.add(value); }
+                @Override public void completed(ExplorerProvider.Result value) { capture.done().countDown(); }
+                @Override public void failed(String value) {
+                    capture.failure().set(value);
+                    capture.done().countDown();
+                }
+            });
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
             JsonNode response = codex.get().awaitWritten(value -> value.path("id").asInt() == 9010);
-            assertEquals("decline", response.at("/result/decision").asText());
+            assertEquals("accept", response.at("/result/decision").asText());
             JsonNode network = codex.get().awaitWritten(value -> value.path("id").asInt() == 9011);
             assertEquals("decline", network.at("/result/decision").asText());
-            assertTrue(approvals.isEmpty(), "native command escalation must not bypass exact scope");
+            assertEquals(List.of("curl https://app.example.test/ | network request",
+                    "curl https://outside.test/ | 네트워크 권한 요청 · "), approvals);
+            assertTrue(activities.stream().anyMatch(item -> item.kind().equals("APPROVAL")
+                    && item.status().equals("WAITING")));
+            assertTrue(activities.stream().noneMatch(item -> item.detail().contains("outside.test")),
+                    "command text must not be duplicated into the persisted activity feed");
         }
     }
 

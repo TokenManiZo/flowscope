@@ -89,6 +89,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
   const chatMessages = data?.messages ?? []
+  const legacyRawChat = Boolean(data?.chat?.threadId && data.chat.rawCodex
+    && !data.chat.rawProtocolVersion)
   const chatVisible = (chatOpen || chatMessages.length > 0 || Boolean(data?.rawActive))
     && (!active || Boolean(data?.rawActive))
   useEffect(() => {
@@ -132,6 +134,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
 
   const notices = <>
     {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>Explorer 요청 실패</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
+    {legacyRawChat && <Alert><AlertTitle>이전 자유 대화는 새 채팅이 필요합니다</AlertTitle><AlertDescription>이전 Codex thread에는 FlowScope 도구 문맥이 남아 있습니다. 아래의 새 채팅을 눌러 순정 대화로 시작하세요. 저장된 요청 기록은 유지됩니다.</AlertDescription></Alert>}
     {run && !providerReady ? <Alert variant="destructive"><AlertTitle>Codex 준비가 필요합니다</AlertTitle><AlertDescription className="space-y-3">
       <p>{run.providerReadiness}</p>
       <ol className="list-decimal space-y-1 pl-5">
@@ -192,7 +195,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   })
   const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
         <Button type="button" size="sm" variant="outline" disabled={!providerReady || active || !target}
-          onClick={() => setChatOpen(true)}><MessageSquare className="size-4" />Codex 자유 대화</Button>
+          onClick={() => { setAccountsOpen(false); setChatOpen(true) }}><MessageSquare className="size-4" />Codex 자유 대화</Button>
         <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
         {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
           value={nextModel} disabled={!providerReady || !catalog?.models.length}
@@ -220,7 +223,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     {modelUnavailable && canConfigure && <p role="alert" className="text-xs text-destructive">선택 모델이 현재 목록에 없습니다. 다시 고르세요.</p>}
     {effortUnavailable && canConfigure && <p role="alert" className="text-xs text-destructive">선택한 추론 강도는 현재 모델에서 지원되지 않습니다. 다시 고르세요.</p>}
     <section className="rounded-md border">
-      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">탐색할 계정 <span className="ml-2 font-normal text-muted-foreground">{[...(shownAnonymous ? ["비로그인"] : []), ...shownSelected.map((id) => accounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
+      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">탐색할 계정 <span className="font-normal text-muted-foreground">(자동 탐색용)</span><span className="ml-2 font-normal text-muted-foreground">{[...(shownAnonymous ? ["비로그인"] : []), ...shownSelected.map((id) => accounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
       {accountsOpen && <div className="grid gap-2 border-t p-3">
       <AccountLaneTable lane="LLM" rows={rows}
         anonymous={shownAnonymous} onAnonymousChange={setAnonymous} selected={shownSelected}
@@ -238,7 +241,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
           model: nextModel, effort: nextEffort })
       }}><Play className="size-4" />탐색 시작</Button>
-      {chatMessages.length > 0 && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
+      {Boolean(chatMessages.length > 0 || data?.chat?.threadId) && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
         if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
         control.mutate("new-chat", { onSuccess: () => {
           setAnonymous(nextAnonymous); setSelected(nextSelected); setSelectedModel(nextModel); setSelectedEffort(nextEffort)
@@ -247,24 +250,24 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       }}>새 채팅</Button>}
       {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />중단</Button>
         : run && run.status !== "IDLE" && chatMessages.length === 0 ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
-      <span className="text-xs text-muted-foreground">{(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>
+      <span className="text-xs text-muted-foreground">자동 탐색 {(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>
     </div>
   </div>
 
   const sendMessage = () => {
     const text = operatorMessage.trim()
-    if (!text || start.isPending || steer.isPending) return
+    if (!text || legacyRawChat || start.isPending || steer.isPending) return
     setSteerState(null)
     if (run?.status === "RUNNING" && data?.rawActive) {
       steer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     } else if (!active && readyToSend) {
-      start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous || nextSelected.length === 0,
+      start.mutate({ target, accounts: "", anonymous: true,
         model: nextModel, effort: nextEffort, message: text, raw: true },
         { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }
   }
   const sendDisabled = !operatorMessage.trim() || start.isPending || steer.isPending
-    || (active ? !data?.rawActive : !readyToSend)
+    || legacyRawChat || (active ? !data?.rawActive : !readyToSend)
 
   const feedFooter = <>
     {run?.unresolved.length ? <details className="border-t border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs">
@@ -275,10 +278,11 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       <div className="flex items-end gap-2"><Textarea ref={composer} aria-label={run?.status === "RUNNING" ? "Explorer에게 추가 지시" : "LLM에게 메시지"} value={operatorMessage}
         onChange={(event) => setOperatorMessage(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() } }}
-        placeholder={run?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "어떤 API와 화면을 살펴볼지 직접 입력하세요"}
+        placeholder={run?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "대상 URL과 원하는 작업을 직접 입력하세요"}
         className="min-h-18 max-h-48 resize-y" disabled={start.isPending || steer.isPending} />
       <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
-      <p className="text-xs text-muted-foreground">자유 대화는 저장된 프로젝트에서 계정 없이도 시작합니다. 선택한 대상 URL과 준비된 계정 handle을 함께 전달하며, FlowScope를 실제로 거친 범위 안 요청만 LLM 그래프에 반영합니다.</p>
+      <p className="break-all text-xs text-muted-foreground">자유 대화에는 FlowScope 계정·전용 도구·자동 지침을 전달하지 않습니다. 메시지에 대상 URL을 직접 적으세요: <code>{target}</code></p>
+      <p className="text-xs text-amber-700 dark:text-amber-300">Burp 프록시를 우회한 Codex 요청은 FlowScope가 차단하거나 기록하지 못합니다. 범위 안 응답 중 실제로 기록된 것만 LLM 그래프에 반영합니다.</p>
       <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
     </form>}
   </>

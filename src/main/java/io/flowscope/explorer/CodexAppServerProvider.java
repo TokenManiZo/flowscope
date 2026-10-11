@@ -434,14 +434,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 String reason = params.path("reason").asText("");
                 String description = command.isBlank() ? method : command;
                 if (description.length() > 800) description = description.substring(0, 800) + "…";
+                listener.activity(activity("APPROVAL", "Burp에서 Codex 승인 대기",
+                        "명령과 사유는 Burp 승인 창에서 확인하세요.", "WAITING", null));
                 JsonNode networkContext = params.path("networkApprovalContext");
                 boolean network = !networkContext.isMissingNode() && !networkContext.isNull()
                         || params.at("/permissions/network/enabled").asBoolean(false);
-                boolean localFileApproval = method.equals("item/fileChange/requestApproval")
-                        || method.equals("applyPatchApproval")
-                        || method.equals("item/permissions/requestApproval");
-                // A native command approval may escape the sandbox and bypass FlowScope's exact-scope gate.
-                boolean approved = localFileApproval && !network && rawApproval.test(description, reason);
+                boolean approved = rawApproval.test(description,
+                        network ? "네트워크 권한 요청 · " + reason : reason);
+                listener.activity(activity("APPROVAL", "Codex 승인 결과", "이번 요청의 운영자 선택",
+                        approved ? "APPROVED" : "DECLINED", null));
                 ObjectNode response = JSON.createObjectNode();
                 response.set("id", message.get("id"));
                 ObjectNode result = response.putObject("result");
@@ -616,9 +617,6 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (request.rawCodex()) {
                 rawShellProxy(params);
                 params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write");
-                params.putArray("dynamicTools").add(httpTool()).add(artifactListTool())
-                        .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
-                        .add(discoveryTool());
                 return params;
             }
             params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
@@ -633,8 +631,9 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (request.rawProxyPort() == 0) return;
             String proxy = "http://127.0.0.1:" + request.rawProxyPort();
             ObjectNode values = params.putObject("config").putObject("shell_environment_policy").putObject("set");
-            for (String name : List.of("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
-                    "http_proxy", "https_proxy", "all_proxy")) values.put(name, proxy);
+            for (String name : List.of("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")) {
+                values.put(name, proxy);
+            }
             values.put("NO_PROXY", "").put("no_proxy", "");
         }
 
@@ -645,17 +644,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (!request.effort().isBlank()) params.put("effort", request.effort());
             params.putArray("input").addObject().put("type", "text")
                     .put("text", request.rawCodex()
-                            ? "FlowScope에서 선택한 대상: " + request.target()
-                                    + "\n사용 가능한 계정 handle: "
-                                    + (request.accountHandles().isEmpty() ? "없음" : String.join(", ", request.accountHandles()))
-                                    + "\n\n" + request.userMessage()
+                            ? request.userMessage()
                             : request.userMessage().isBlank()
                             ? "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요."
                             : request.userMessage());
             if (request.rawCodex()) {
                 params.put("approvalPolicy", "on-request");
                 params.putObject("sandboxPolicy").put("type", "workspaceWrite")
-                        .put("networkAccess", false).putArray("writableRoots").add(workspace.toString());
+                        .put("networkAccess", true).putArray("writableRoots").add(workspace.toString());
                 return params;
             }
             params.put("approvalPolicy", "on-request");

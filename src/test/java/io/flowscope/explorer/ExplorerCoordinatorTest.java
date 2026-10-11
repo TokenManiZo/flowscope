@@ -17,26 +17,44 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerCoordinatorTest {
     @Test
-    void rawChatOffersOnlyReadySelectedAccountHandles(@TempDir Path temp) throws Exception {
+    void legacyRawThreadIsNotSilentlyResumedWithOldFlowScopeHarness(@TempDir Path temp) throws Exception {
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("raw Codex does not use Explorer transport"); },
+                provider, new RunContextRegistry(), url -> url.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> { })) {
+            ExplorerChatState legacy = new ExplorerChatState("old-raw-thread", "https://app.example.test/",
+                    List.of(new ExplorerChatState.Message("user", "Old instruction", "old-run",
+                            "2026-10-10T00:00:00Z")), "", "", true);
+            coordinator.restoreChatState(legacy);
+            var raw = new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(), true,
+                    "", "", "New instruction", true, 19417, temp.resolve("raw").toString());
+            IllegalStateException blocked = assertThrows(IllegalStateException.class, () -> coordinator.start(raw));
+            assertTrue(blocked.getMessage().contains("새 채팅"));
+            assertEquals("old-raw-thread", coordinator.chatState().threadId());
+            coordinator.newChat();
+            coordinator.start(raw);
+            await(() -> provider.request.get() != null);
+            assertEquals("", provider.request.get().threadId());
+            assertEquals(1, coordinator.chatState().rawProtocolVersion());
+        }
+    }
+
+    @Test
+    void rawChatDoesNotReceiveExplorerAccountHandles(@TempDir Path temp) throws Exception {
         FakeProvider provider = new FakeProvider();
         ExplorerAccountVault vault = new ExplorerAccountVault();
         vault.register("user-a", "USER A", "USER");
-        vault.register("user-b", "USER B", "USER");
         vault.adoptSession("user-a", java.net.URI.create("https://app.example.test/"), List.of(),
                 java.util.Map.of("Authorization", "Bearer test"));
         try (ExplorerCoordinator coordinator = new ExplorerCoordinator(vault,
                 request -> { throw new AssertionError("no HTTP call expected"); }, provider,
                 new RunContextRegistry(), url -> url.startsWith("https://app.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> { })) {
-            assertThrows(IllegalStateException.class, () -> coordinator.start(
-                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-b"),
+            assertThrows(IllegalArgumentException.class, () -> coordinator.start(
+                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
                             false, "", "", "Inspect", true, 19417, temp.resolve("raw").toString())));
-            var run = coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/",
-                    List.of("user-a"), false, "", "", "Inspect", true, 19417,
-                    temp.resolve("raw").toString()));
-            assertEquals(List.of("user-a"), run.accountIds());
-            await(() -> provider.request.get() != null);
-            assertEquals(List.of("user-a"), provider.request.get().accountHandles());
+            assertNull(provider.request.get());
         }
     }
 
@@ -56,7 +74,7 @@ final class ExplorerCoordinatorTest {
             assertEquals(19417, started.rawProxyPort());
             assertEquals(temp.resolve("raw").toString(), started.rawWorkspace());
             assertEquals("", started.prompt());
-            assertTrue(started.gatewayUrl().startsWith("http://127.0.0.1:"));
+            assertEquals("", started.gatewayUrl());
             assertTrue(started.accountHandles().isEmpty());
             assertNotNull(contexts.current(Source.LLM));
             provider.listener.get().threadReady("raw-thread");

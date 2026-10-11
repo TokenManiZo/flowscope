@@ -418,6 +418,8 @@ final class FlowScopeWebServerTest {
         start();
         String target = state.record.service + "/";
         assertFalse(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
+        assertEquals(400, post("/api/explorer-run", "action=start&target=" + encode(target)
+                + "&raw=true&accounts=human-a&message=Inspect", token).statusCode());
         HttpResponse<String> started = post("/api/explorer-run",
                 "action=start&target=" + encode(target) + "&raw=true&message=Inspect", token);
         assertEquals(202, started.statusCode());

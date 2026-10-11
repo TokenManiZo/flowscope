@@ -427,7 +427,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 authorizationReplayWorker);
         explorerAccounts = new ExplorerAccountVault();
         explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
-                new CodexAppServerProvider(api.logging()::logToOutput, this::approveInBurp),
+                new CodexAppServerProvider(api.logging()::logToOutput, this::approveCodexAction),
                 runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput, this::explorerChatChanged);
@@ -2902,6 +2902,24 @@ public final class FlowScopeExtension implements BurpExtension {
             return approved.get();
         } catch (Exception e) {
             api.logging().logToError("FlowScope 승인 대화상자 실패", e);
+            return false;
+        }
+    }
+
+    private boolean approveCodexAction(String action, String reason) {
+        AtomicBoolean approved = new AtomicBoolean(false);
+        String detail = reason == null ? "" : io.flowscope.core.TextLimits.truncate(reason, 500);
+        Runnable prompt = () -> approved.set(JOptionPane.showConfirmDialog(controlTab,
+                "Codex가 다음 작업의 승인을 요청했습니다.\n\n" + action
+                        + (detail.isBlank() ? "" : "\n\n사유: " + detail),
+                "Codex 작업 승인", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE)
+                == JOptionPane.YES_OPTION);
+        try {
+            if (SwingUtilities.isEventDispatchThread()) prompt.run();
+            else SwingUtilities.invokeAndWait(prompt);
+            return approved.get();
+        } catch (Exception error) {
+            api.logging().logToError("FlowScope Codex 승인 대화상자 실패", error);
             return false;
         }
     }

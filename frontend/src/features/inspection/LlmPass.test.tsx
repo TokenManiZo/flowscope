@@ -73,6 +73,20 @@ it("does not offer raw steering while the original Explorer is running", async (
   expect(screen.getByRole("button", { name: "Codex 자유 대화" })).toBeDisabled()
 })
 
+it("warns before resuming an older raw thread that still has Explorer tool context", async () => {
+  const legacy = { ...idle, chat: { threadId: "old-thread", target: "https://app.example.test/",
+    model: "", effort: "", rawCodex: true, rawProtocolVersion: 0 } }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
+    ? catalogResponse() : new Response(JSON.stringify(legacy))))
+  const user = userEvent.setup()
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await user.click(await screen.findByRole("button", { name: "Codex 자유 대화" }))
+  expect(screen.getByText(/이전 Codex thread에는 FlowScope 도구 문맥이 남아 있습니다/)).toBeVisible()
+  expect(screen.getByRole("button", { name: "새 채팅" })).toBeVisible()
+  await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "대상을 확인해줘")
+  expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
+})
+
 it("opens chat without starting a run, then sends the operator's first message", async () => {
   const user = userEvent.setup()
   const posts: string[] = []
@@ -265,8 +279,7 @@ it("reuses only visible ready account choices when restarting a completed run", 
   expect(posts[0]).toContain("model=gpt-6.1-sol")
   await sendFirstMessage(user)
   await waitFor(() => expect(posts).toHaveLength(2))
-  expect(posts[1]).toContain("accounts=user-a")
-  expect(posts[1]).toContain("anonymous=false")
+  expect(posts[1]).toContain("accounts=&anonymous=true")
   expect(posts[1]).toContain("raw=true")
 })
 
@@ -412,6 +425,7 @@ it("opens a login window for a registered account and adopts its session on [로
   await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "API를 살펴봐")
   expect(screen.getByRole("button", { name: "탐색 시작" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
   await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
   expect(posts[1]).toContain("action=browser-complete")
 
@@ -460,7 +474,7 @@ it("shows the browser budget as a ceiling and keeps the stop switch visible whil
   // 다른 화면에 갔다 와도 실행이 들고 있는 선택이 그대로 보여야 한다.
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
-  expect(screen.getByText("1개 선택됨")).toBeInTheDocument()
+  expect(screen.getByText("자동 탐색 1개 선택됨")).toBeInTheDocument()
   expect(screen.getAllByText("gpt-6.1-sol").length).toBeGreaterThan(0)
 })
 

@@ -5,7 +5,7 @@ import java.time.Instant;
 
 /** Visible chat history and the local Codex thread handle; never stores gateway or login credentials. */
 public record ExplorerChatState(String threadId, String target, List<Message> messages,
-                                String model, String effort, boolean rawCodex) {
+                                String model, String effort, boolean rawCodex, int rawProtocolVersion) {
     public record Message(String role, String text, String runId, String at) {
         public Message {
             if (!"user".equals(role) && !"assistant".equals(role)) {
@@ -24,15 +24,21 @@ public record ExplorerChatState(String threadId, String target, List<Message> me
         messages = List.copyOf(messages == null ? List.of() : messages);
         model = model == null ? "" : model;
         effort = effort == null ? "" : effort;
+        if (rawProtocolVersion < 0) throw new IllegalArgumentException("invalid raw protocol version");
     }
 
     public ExplorerChatState(String threadId, String target, List<Message> messages) {
-        this(threadId, target, messages, "", "", false);
+        this(threadId, target, messages, "", "", false, 0);
     }
 
     public ExplorerChatState(String threadId, String target, List<Message> messages, String model, String effort) {
-        this(threadId, target, messages, model, effort, false);
+        this(threadId, target, messages, model, effort, false, 0);
     }
 
-    public static ExplorerChatState empty() { return new ExplorerChatState("", "", List.of(), "", "", false); }
+    public ExplorerChatState(String threadId, String target, List<Message> messages,
+                             String model, String effort, boolean rawCodex) {
+        this(threadId, target, messages, model, effort, rawCodex, 0);
+    }
+
+    public static ExplorerChatState empty() { return new ExplorerChatState("", "", List.of(), "", "", false, 0); }
 }
