@@ -27,6 +27,7 @@ import burp.api.montoya.proxy.http.ProxyResponseToBeSentAction;
 import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
 import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import io.flowscope.core.Fingerprints;
+import io.flowscope.core.EvidenceIds;
 import io.flowscope.core.ActiveTrafficGuard;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.AccountVerificationRule;
@@ -1375,11 +1376,37 @@ public final class FlowScopeExtension implements BurpExtension {
         if (!expected.equals(Path.of(workspace).toAbsolutePath().normalize())) {
             throw new IllegalStateException("현재 프로젝트와 Codex 작업 폴더가 다릅니다.");
         }
-        Pipeline.Result published = latest;
+        List<RequestRecord> published = latest.records;
+        List<RequestRecord> pending = null;
+        synchronized (records) {
+            if (!database.equals(activeProjectDatabase) || !runId.equals(rawProxyRunId)) {
+                throw new IllegalStateException("Evidence를 읽는 동안 프로젝트가 변경됐습니다.");
+            }
+            boolean current = published.size() == records.size();
+            for (int index = 0; current && index < records.size(); index++) {
+                current = published.get(index).runtimeId() == records.get(index).runtimeId();
+            }
+            if (!current) pending = records.stream().map(RequestRecord::analysisCopy).toList();
+        }
+        if (pending == null) {
+            if (!database.equals(activeProjectDatabase) || !runId.equals(rawProxyRunId)) {
+                throw new IllegalStateException("Evidence를 읽는 동안 프로젝트가 변경됐습니다.");
+            }
+            return published;
+        }
+        EvidenceIds.assign(pending);
+        Map<Long, RequestRecord> analyzed = new java.util.HashMap<>();
+        published.forEach(record -> analyzed.put(record.runtimeId(), record));
+        List<RequestRecord> visible = new ArrayList<>(pending.size());
+        for (RequestRecord record : pending) {
+            RequestRecord stable = analyzed.get(record.runtimeId());
+            visible.add(stable != null && java.util.Objects.equals(stable.evidenceId, record.evidenceId)
+                    ? stable : record);
+        }
         if (!database.equals(activeProjectDatabase) || !runId.equals(rawProxyRunId)) {
             throw new IllegalStateException("Evidence를 읽는 동안 프로젝트가 변경됐습니다.");
         }
-        return published.records;
+        return List.copyOf(visible);
     }
 
     private void stopRawProxy(String runId) {

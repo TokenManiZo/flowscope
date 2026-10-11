@@ -12,6 +12,7 @@ import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerChatState;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerProvider;
+import io.flowscope.explorer.ProjectEvidenceReader;
 import burp.api.montoya.MontoyaApi;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -408,6 +409,56 @@ class FlowScopeExtensionLifecycleTest {
             assertEquals(raw, rawChat.chatState());
             assertTrue(explorer.accounts().isEmpty());
         } finally { worker.shutdownNow(); }
+    }
+
+    @Test
+    void rawChatCanReadAResponseBeforeTheDelayedAnalysisPublishes() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        Path database = temp.resolve("active.flowscope.db");
+        String runId = "llm-raw-current";
+        field("activeProjectDatabase").set(extension, database);
+        field("rawProxyRunId").set(extension, runId);
+        RequestRecord published = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                "GET", "/api/previous", 200, "anon");
+        published.hasResponse = true;
+        RequestRecord pending = new RequestRecord(Source.LLM, "https://api.example.test:443",
+                "GET", "/api/new", 200, "anon");
+        pending.hasResponse = true;
+        pending.runId = runId;
+        pending.respText = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"found\":true}";
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        synchronized (records) {
+            records.add(published);
+            records.add(pending);
+        }
+        field("latest").set(extension, Pipeline.runIsolated(List.of(published), new AnalysisConfig()));
+        Method digest = FlowScopeExtension.class.getDeclaredMethod("shortDigest", String.class);
+        digest.setAccessible(true);
+        String workspace = database.getParent().resolve("codex-raw-" + digest.invoke(null, database.toString()))
+                .toString();
+        Method read = FlowScopeExtension.class.getDeclaredMethod("rawEvidenceForRun", String.class, String.class);
+        read.setAccessible(true);
+        try {
+            @SuppressWarnings("unchecked")
+            List<RequestRecord> visible = (List<RequestRecord>) read.invoke(extension, runId, workspace);
+            assertEquals(List.of("/api/previous", "/api/new"), visible.stream().map(record -> record.path).toList());
+            assertEquals(Pipeline.runIsolated(List.of(published, pending), new AnalysisConfig())
+                    .records.getLast().evidenceId, visible.getLast().evidenceId,
+                    "the pending ID must remain the same after publication");
+            ProjectEvidenceReader reader = new ProjectEvidenceReader((ignoredRun, ignoredWorkspace) -> visible);
+            var arguments = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+            assertEquals(2, reader.execute(runId, workspace, "flowscope_evidence_list", arguments)
+                    .path("total").asInt());
+            arguments.put("evidence_id", visible.getLast().evidenceId).put("part", "response");
+            assertTrue(reader.execute(runId, workspace, "flowscope_evidence_read", arguments)
+                    .path("text").asText().contains("{\"found\":true}"));
+            InvocationTargetException wrongRun = assertThrows(InvocationTargetException.class,
+                    () -> read.invoke(extension, "llm-raw-other", workspace));
+            assertInstanceOf(IllegalStateException.class, wrongRun.getCause());
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
     }
 
     @Test

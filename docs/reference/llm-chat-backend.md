@@ -37,6 +37,8 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 두 방식의 HTTP 도구가 만든 큰 응답의 임시 artifact는 각 대화의 turn 사이에 재사용합니다. 자유 대화는 `flowscope_evidence_list/search/read`로 현재 프로젝트의 기존 HUMAN·SCANNER·LLM 요청 기록을 읽고, `flowscope_http_request/browser/artifact_*/record_discoveries`로 새 관측과 선언을 저장할 수 있습니다. 목록·검색에는 메타데이터만, 원문 읽기에는 선택한 Evidence ID의 제한된 구간만 반환합니다. 저장된 원문은 가리지 않으며 미보존·일부 미리보기는 `complete=false`로 알립니다. Codex 네이티브 셸이 작업 폴더에 만든 파일과 Codex 자체 로컬 thread 기록은 별도로 남습니다.
 
+자유 대화가 방금 받은 HTTP 응답은 그래프 재분석이 끝나기 전에도 프로젝트 Evidence 조회에 나타납니다. 이때 증거 ID는 전체 기록과 같은 규칙으로 부여해 재분석 뒤에도 유지하며, 아직 분석되지 않은 요청의 API 분류·operation/resource 메타데이터는 확정값으로 간주하지 않습니다. 이 조회는 자동 Explorer의 대화 thread나 지시문을 자유 대화로 이어받는 기능이 아닙니다.
+
 ## 이번 구현의 범위와 남은 한계
 
 모델 선택지는 설치된 Codex CLI의 `model/list`에서 읽습니다. 화면은 포커스 복귀와 5분 간격으로 목록을 다시 조회하며 서버의 60초 캐시를 사용합니다. `supportedReasoningEfforts`와 `defaultReasoningEffort`를 읽어 모델별 추론 강도 목록을 만들고, 명시적으로 고른 값은 `turn/start.effort`로 보냅니다. 모델이 바뀐 기존 대화에서는 새 모델의 기본 강도를 명시해 앞 모델의 강도가 잘못 이어지지 않게 합니다. 미지원 조합은 실행 전에 거부합니다. 모델 목록은 표시용 catalog이지 계정 사용 권한의 증명이 아닙니다. FlowScope는 Codex CLI 자체를 자동 업데이트하지 않고, 진행 중인 turn의 모델·강도도 자동 변경하지 않습니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)의 `model/list`와 `turn/start` 계약을 따릅니다.
@@ -54,6 +56,8 @@ FlowScope 밖의 별도 브라우저나 자유 대화 셸 클라이언트가 Bur
 이번 자유 대화 변경만으로 API 발견률 상승은 입증되지 않습니다. 사용자 메시지, Codex가 고른 도구, 브라우저 조작 범위에 따라 수집 건수가 달라집니다. 브라우저 로그인을 완료한 등록 계정의 opaque handle은 자유 대화의 HTTP·브라우저 도구에 제공하지만 인증 비밀값은 전달하지 않습니다. 실제 Burp에서 로그인 브라우저·HTTP 도구의 수집·취소·프로젝트 전환을 확인해야 합니다. 기존 로컬 crAPI 비교는 성능 합격 자료로 쓰지 않습니다.
 
 ## 개발·검증 기록
+
+- 2026-10-12 자유 대화의 분석 대기 Evidence 조회: 프록시·브라우저가 응답을 `records`에 저장한 직후 지연 재분석 전에는 `flowscope_evidence_list/read`가 게시된 `latest.records`만 읽어 새 응답을 놓치는 문제를 RED 회귀로 재현했습니다. 매 조회마다 전체 재분석을 강제하는 안은 큰 JS 자산의 분석 비용과 충돌해 기각했습니다. `FlowScopeExtension.rawEvidenceForRun`이 게시된 분석본은 그대로 쓰고 아직 게시되지 않은 기록만 복사해 안정 ID를 부여하도록 바꿨습니다. `FlowScopeExtensionLifecycleTest`는 새 응답의 목록·원문 읽기, 재분석 후 ID 일치, 다른 run 거부를 검사합니다. 최종 `mvn clean verify`는 React 897건·Java 1001건(실패/오류 0, opt-in 9 skip) 및 JAR 검증까지 통과했습니다. 실제 Burp 재로드·HTTP 수집은 후속 gate입니다. 자동 Explorer 대화·로그인 세션과 자유 대화의 분리는 그대로 유지합니다.
 
 - 2026-10-12 raw 대화 정찰·증거 경로 복구: 실제 대화가 loopback HTTP와 Docker 읽기 권한을 자동 거절당하고 FlowScope HTTP 도구도 호출하지 않아 응답 0건으로 끝난 사례를 출발점으로 삼았습니다. 셸 네트워크를 전면 차단한 이전 선택은 raw 정찰을 막아 기각하고, 기존 실행별 Burp 프록시·운영자 승인 경로를 복구하며 HTTP·브라우저 도구는 그대로 둡니다. `CodexAppServerProvider`의 간단한 전송 문맥, `FlowScopeExtension`의 raw listener, `LlmPass` 안내, `CodexAppServerProtocolTest`·`CodexAppServerProviderHarnessTest`와 README·점검 흐름·화면·신뢰·릴리스 문서를 수정했습니다. 프로토콜·프록시 귀속 테스트와 loopback `curl`의 실물 프록시 도착은 통과했습니다. 첫 opt-in 시도는 Codex 로그인 상태 확인이 6초를 초과해 모델 turn 전 실패했고, 즉시 재시도에서는 통과했습니다. 최종 `mvn -o clean verify`는 React 897건·Java 1000건(실패/오류 0, opt-in 9 skip)으로 통과했습니다. 실제 Burp에서 새 JAR 재로드 후 LLM Evidence·그래프 확인은 아직 미검증이며 다음 gate입니다. 프록시 명시 우회 및 Docker 내부 트래픽까지 강제 기록하는 기능은 제공하지 않습니다.
 
