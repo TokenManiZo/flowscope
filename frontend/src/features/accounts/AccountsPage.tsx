@@ -43,6 +43,19 @@ export function AccountsPage() {
 
   const accounts = snapshot.data?.accounts ?? []
   const sessions = snapshot.data?.sessions ?? []
+  // 판정 매트릭스 LLM 탭의 "로그인 필요"가 #accounts/<id>로 보내면 그 계정 설정을 바로 연다.
+  useEffect(() => {
+    const openFromHash = () => {
+      const hash = window.location.hash
+      if (!hash.startsWith("#accounts/")) return
+      const id = decodeURIComponent(hash.slice("#accounts/".length))
+      if (id) setSettingsAccountId(id)
+      window.history.replaceState(null, "", "#accounts")
+    }
+    openFromHash()
+    window.addEventListener("hashchange", openFromHash)
+    return () => window.removeEventListener("hashchange", openFromHash)
+  }, [])
   useEffect(() => {
     let active = true
     void Promise.all(accounts.map(async (account) => [account.id, await settingsAdapter.load(account.id)] as const)).then((entries) => {

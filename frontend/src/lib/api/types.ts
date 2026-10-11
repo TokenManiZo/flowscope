@@ -249,6 +249,28 @@ export interface ObservedSession {
   service: string
 }
 
+/** LLM 교차 검증 소견(추천). 판정 엔진 결과가 아니라 사람 검토용 참고 자료다. */
+export interface LlmFinding {
+  id: string
+  operation: string
+  identity: string
+  resource?: string
+  verdict: string
+  confidence: string
+  note: string
+  evidenceIds: readonly string[]
+  createdAt: number
+}
+
+/** LLM 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
+export interface LlmVerifyState {
+  status: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED"
+  accountId: string
+  message: string
+  startedAt?: number
+  endedAt?: number
+}
+
 export interface ManagedSession {
   handle: string
   accountId: string

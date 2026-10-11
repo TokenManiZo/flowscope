@@ -23,6 +23,8 @@ import type {
   ExplorerAccountSaveResult,
   ReviewStatus,
   ProjectStatus,
+  LlmFinding,
+  LlmVerifyState,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
@@ -129,3 +131,16 @@ export const completeExplorerBrowserLogin = (id: string) =>
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })
+
+/** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
+export const getLlmFindings = (signal?: AbortSignal) =>
+  apiFetch<{ findings: readonly LlmFinding[] }>("/api/llm-findings", formSignal(signal))
+/** 보내는 계정 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+export const startLlmVerify = (accountId: string) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { accountId })
+/** 실행 중인 LLM 검증을 중단한다. */
+export const cancelLlmVerify = () =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })
+/** 현재 LLM 검증 실행 상태. */
+export const getLlmVerifyState = (signal?: AbortSignal) =>
+  apiFetch<LlmVerifyState>("/api/llm-verify", formSignal(signal))

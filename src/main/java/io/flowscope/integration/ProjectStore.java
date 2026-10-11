@@ -704,6 +704,7 @@ public final class ProjectStore {
         policy.set("resource_owners", json.valueToTree(config.resourceOwners()));
         policy.set("resource_policies", json.valueToTree(config.resourcePolicies()));
         policy.set("traffic_overrides", json.valueToTree(config.trafficOverrides()));
+        policy.set("llm_findings", json.valueToTree(config.llmFindings()));
         ArrayNode accounts = policy.putArray("accounts");
         config.accounts().values().stream().sorted(java.util.Comparator.comparing(AccountProfile::id)).forEach(account -> {
             ObjectNode value = accounts.addObject();
@@ -748,6 +749,8 @@ public final class ProjectStore {
                 config.withResourcePolicy(e.getKey(), enumValue(ResourcePolicy.class, e.getValue().asText())));
         value.path("traffic_overrides").properties().forEach(e ->
                 config.withTrafficOverride(e.getKey(), enumValue(TrafficOverride.class, e.getValue().asText())));
+        value.path("llm_findings").properties().forEach(e ->
+                config.withLlmFinding(e.getKey(), e.getValue().asText()));
         JsonNode accounts = value.path("accounts");
         if (accounts.isArray()) {
             for (JsonNode account : accounts) {

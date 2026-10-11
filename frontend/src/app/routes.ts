@@ -39,12 +39,15 @@ export function routeFromHash(hash: string): AppRoute {
   if (candidate === "parameter-map") return "graph"
   if (candidate === "explorer") return "inspection"
   if (candidate === "evidence-review") return "evidence"
+  // #accounts/<id>: 특정 계정 로그인 창을 바로 여는 별칭.
+  if (candidate.startsWith("accounts/")) return "accounts"
   return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "home"
 }
 
-/** 주소창에 남길 hash. 화면 안의 상태를 여는 별칭(#evidence-review)은 그 화면이 읽을 수 있게 지우지 않는다. */
+/** 주소창에 남길 hash. 화면 안의 상태를 여는 별칭(#evidence-review·#accounts/<id>)은 그 화면이 읽을 수 있게 지우지 않는다. */
 export function canonicalHash(hash: string): string {
-  return hash === "#evidence-review" ? hash : routeHash(routeFromHash(hash))
+  if (hash === "#evidence-review" || hash.startsWith("#accounts/")) return hash
+  return routeHash(routeFromHash(hash))
 }
 
 export function routeHash(route: AppRoute): string {

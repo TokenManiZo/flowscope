@@ -390,6 +390,9 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private final AnalysisPublicationGate analysisPublication = new AnalysisPublicationGate();
     private volatile Path activeProjectDatabase;
+    private volatile io.flowscope.explorer.McpVerificationRunner mcpVerificationRunner;
+    private static final com.fasterxml.jackson.databind.ObjectMapper LLM_FINDING_JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
     private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
     private volatile Instant databaseLastSavedAt;
     private volatile String databaseSaveError = "";
@@ -1945,6 +1948,38 @@ public final class FlowScopeExtension implements BurpExtension {
         return databaseSavedRevision.get() != revision.get() || databaseSavedGraphRevision != graphWorkspaceRevision;
     }
 
+    /** 영속된 LLM 소견 JSON을 파싱해 돌려준다. 깨진 항목은 건너뛴다. */
+    private List<io.flowscope.core.LlmFinding> currentLlmFindings() {
+        List<io.flowscope.core.LlmFinding> result = new ArrayList<>();
+        for (String value : analysisConfig.llmFindings().values()) {
+            try { result.add(LLM_FINDING_JSON.readValue(value, io.flowscope.core.LlmFinding.class)); }
+            catch (Exception ignored) { /* 깨진 소견 항목은 무시한다 */ }
+        }
+        return List.copyOf(result);
+    }
+
+    /** LLM 소견을 저장(같은 id면 덮어쓰기)하고 프로젝트 파일에 영속한다. */
+    private void storeLlmFinding(io.flowscope.core.LlmFinding finding) {
+        if (finding == null) return;
+        String value;
+        try { value = LLM_FINDING_JSON.writeValueAsString(finding); }
+        catch (Exception error) { throw new IllegalArgumentException("소견을 직렬화하지 못했습니다: " + error.getMessage()); }
+        analysisConfig.withLlmFinding(finding.id(), value);
+        revision.incrementAndGet();
+        scheduleDatabaseSave();
+    }
+
+    /** 보내는 계정 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+    private FlowScopeWebServer.LlmVerifyState startMcpVerification(String accountId) {
+        if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
+        if (mcpVerificationRunner == null) {
+            mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
+                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker,
+                    message -> api.logging().logToError(message));
+        }
+        return mcpVerificationRunner.start(accountId);
+    }
+
     private void scheduleDatabaseSave() {
         if (shuttingDown.get()) return;
         if (activeProjectDatabase == null || !databaseDirty()) return;
@@ -2136,6 +2171,19 @@ public final class FlowScopeExtension implements BurpExtension {
                 });
             }
             @Override public AnalysisConfig config() { return analysisConfig; }
+            @Override public List<io.flowscope.core.LlmFinding> findings() { return currentLlmFindings(); }
+            @Override public void submitFinding(io.flowscope.core.LlmFinding finding) { storeLlmFinding(finding); }
+            @Override public FlowScopeWebServer.LlmVerifyState startLlmVerify(String accountId) {
+                return startMcpVerification(accountId);
+            }
+            @Override public FlowScopeWebServer.LlmVerifyState llmVerifyState() {
+                return mcpVerificationRunner == null
+                        ? FlowScopeWebServer.LlmVerifyState.idle() : mcpVerificationRunner.state();
+            }
+            @Override public FlowScopeWebServer.LlmVerifyState cancelLlmVerify() {
+                return mcpVerificationRunner == null
+                        ? FlowScopeWebServer.LlmVerifyState.idle() : mcpVerificationRunner.cancel();
+            }
             @Override public List<LegacyAssessment> assessments() {
                 return archivedAssessments;
             }
@@ -2817,6 +2865,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (!shuttingDown.compareAndSet(false, true)) return;
             }
         }
+        if (mcpVerificationRunner != null) mcpVerificationRunner.close();
         if (webServer != null) webServer.close();
         if (explorer != null) explorer.close();
         if (zapCampaign != null) zapCampaign.close();

@@ -274,6 +274,18 @@ final class SqliteProjectStoreTest {
     }
 
     @Test
+    void llmFindingsRoundTripThroughSqlite() throws Exception {
+        Path database = temp.resolve("llm-findings.flowscope.db");
+        String finding = "{\"id\":\"llm:GET /orders/{id}:acct-a:\",\"verdict\":\"IDOR 의심\"}";
+        AnalysisConfig config = new AnalysisConfig().withLlmFinding("llm:GET /orders/{id}:acct-a:", finding);
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(database, List.of(), config, List.of(), List.of(), Set.of(), List.of());
+
+        assertEquals(java.util.Map.of("llm:GET /orders/{id}:acct-a:", finding),
+                store.load(database).config().llmFindings());
+    }
+
+    @Test
     void rejectsUnsupportedStorageSchema() throws Exception {
         Path database = temp.resolve("unsupported.flowscope.db");
         SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());

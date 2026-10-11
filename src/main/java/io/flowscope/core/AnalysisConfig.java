@@ -32,6 +32,8 @@ public final class AnalysisConfig {
     private final Map<String, AccessRole> identityRoles = new LinkedHashMap<>();
     private final Map<String, AccessRole> endpointRequirements = new LinkedHashMap<>();
     private final Map<String, String> resourceOwners = new LinkedHashMap<>();
+    /** LLM 교차 검증 소견. key=finding id, value=소견 JSON 문자열. 판정이 아니라 사람 검토용 참고 자료다. */
+    private final Map<String, String> llmFindings = new LinkedHashMap<>();
     private final Map<String, ResourcePolicy> resourcePolicies = new LinkedHashMap<>();
     private final Map<String, AccountProfile> accounts = new LinkedHashMap<>();
     private final Map<String, String> sessionBindings = new LinkedHashMap<>();
@@ -260,6 +262,15 @@ public final class AnalysisConfig {
 
     public synchronized String resourceOwner(String resource) { return resourceOwners.get(resource); }
 
+    public synchronized AnalysisConfig withLlmFinding(String id, String findingJson) {
+        if (id == null || id.isBlank()) return this;
+        if (findingJson == null || findingJson.isBlank()) llmFindings.remove(id);
+        else llmFindings.put(id, findingJson);
+        return this;
+    }
+
+    public synchronized Map<String, String> llmFindings() { return Map.copyOf(llmFindings); }
+
     /**
      * API 한 개와 객체 한 개 쌍의 정책 키. 그 API로 그 객체를 다룰 때만 적용된다
      * (예: 이 객체 조회만 공개 — 같은 객체의 수정·삭제와 같은 API의 다른 객체는 그대로 판정).
@@ -329,12 +340,14 @@ public final class AnalysisConfig {
         reviews.clear(); reviews.putAll(replacement.reviews());
         trafficOverrides.clear(); trafficOverrides.putAll(replacement.trafficOverrides());
         accountVerificationRules.clear(); accountVerificationRules.putAll(replacement.accountVerificationRules());
+        llmFindings.clear(); llmFindings.putAll(replacement.llmFindings());
     }
 
     private synchronized ConfigSnapshot snapshot() {
         return new ConfigSnapshot(Map.copyOf(identityRoles), Map.copyOf(endpointRequirements),
                 Map.copyOf(resourceOwners), Map.copyOf(resourcePolicies), Map.copyOf(accounts), Map.copyOf(sessionBindings),
-                Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules), apiState);
+                Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules), apiState,
+                Map.copyOf(llmFindings));
     }
 
     private record ConfigSnapshot(
@@ -346,10 +359,11 @@ public final class AnalysisConfig {
             Map<String, String> sessionBindings,
             Map<String, ReviewDecision> reviews,
             Map<String, TrafficOverride> trafficOverrides,
-            Map<String, AccountVerificationRule> accountVerificationRules, ApiState apiState) {
+            Map<String, AccountVerificationRule> accountVerificationRules, ApiState apiState,
+            Map<String, String> llmFindings) {
         static ConfigSnapshot empty() {
             return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-                    Map.of(), ApiState.empty());
+                    Map.of(), ApiState.empty(), Map.of());
         }
     }
 
