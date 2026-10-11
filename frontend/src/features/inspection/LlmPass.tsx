@@ -295,7 +295,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
         rawControl.mutate("new-chat", { onSuccess: () => {
           setSelectedView("raw")
-          setAnonymous(nextAnonymous); setSelected(nextSelected); setSelectedModel(nextModel); setSelectedEffort(nextEffort)
+          setSelectedModel(nextModel); setSelectedEffort(nextEffort)
           setOperatorMessage(""); setChatOpen(true)
         } })
       }}>새 채팅</Button>}
@@ -318,7 +318,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     }
   }
   const sendDisabled = !operatorMessage.trim() || start.isPending || steer.isPending
-    || !rawView || legacyRawChat || (active ? !data?.rawActive : !readyToSend)
+    || !rawView || legacyRawChat || (active ? run?.status !== "RUNNING" || !data?.rawActive : !readyToSend)
 
   const feedFooter = <>
     {visibleRun?.unresolved.length ? <details className="border-t border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs">
@@ -334,7 +334,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
       <p className="break-all text-xs text-muted-foreground">자동 탐색 지침은 붙이지 않습니다. 현재 프로젝트 요청 기록과 준비한 로그인 브라우저를 사용할 수 있습니다. 대상 URL은 메시지에 직접 적으세요: <code>{target}</code></p>
       <p className="text-xs text-amber-700 dark:text-amber-300">Burp 프록시를 우회한 Codex 요청은 FlowScope가 차단하거나 기록하지 못합니다. 범위 안 응답 중 실제로 기록된 것만 LLM 그래프에 반영합니다.</p>
-      <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
+      <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : run?.status === "AUTHENTICATING" ? "Codex 연결 중 · 시작되면 추가 메시지를 보낼 수 있습니다." : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
     </form>}
   </>
   const feed = (view: RecordView) => <Card className={`flex flex-col gap-0 overflow-hidden py-0 ${feedOpen ? "min-h-32 flex-1" : "shrink-0"}`}>

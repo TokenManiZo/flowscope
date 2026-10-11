@@ -1,16 +1,19 @@
 package io.flowscope.explorer;
 
 import io.flowscope.core.ExecutionTrust;
+import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.Source;
+import io.flowscope.integration.ProjectStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -113,6 +116,40 @@ final class ExplorerCoordinatorTest {
             assertEquals("raw-thread", coordinator.chatState().threadId());
             assertEquals("Done", coordinator.chatMessages().getLast().text());
             assertNull(contexts.completedRun(Source.LLM), "answer-only turns are not evidence coverage");
+        }
+    }
+
+    @Test
+    void reopeningProjectsAThenBThenAResumesOnlyEachProjectsCodexThread(@TempDir Path temp) throws Exception {
+        ProjectStore store = new ProjectStore();
+        String a = "https://a.example.test/", b = "https://b.example.test/";
+        ExplorerChatState chatA = new ExplorerChatState("thread-a", a, List.of(), "", "", true, 1);
+        ExplorerChatState chatB = new ExplorerChatState("thread-b", b, List.of(), "", "", true, 1);
+        Path projectA = temp.resolve("a.flowscope.json"), projectB = temp.resolve("b.flowscope.json");
+        store.save(projectA, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(),
+                new ProjectStore.ProjectContext("A", List.of(a), java.time.Instant.now(),
+                        ExplorerChatState.empty(), chatA));
+        store.save(projectB, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(),
+                new ProjectStore.ProjectContext("B", List.of(b), java.time.Instant.now(),
+                        ExplorerChatState.empty(), chatB));
+        FakeProvider provider = new FakeProvider();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no target request expected"); }, provider,
+                new RunContextRegistry(), url -> url.equals(a) || url.equals(b),
+                () -> Pipeline.run(List.of()), ignored -> { })) {
+            for (var step : List.of(new String[] {"A first", a, "thread-a"},
+                    new String[] {"B first", b, "thread-b"},
+                    new String[] {"A again", a, "thread-a"})) {
+                coordinator.resetChatState();
+                coordinator.restoreChatState(store.load(step[1].equals(a) ? projectA : projectB).context().rawChat());
+                coordinator.start(new ExplorerCoordinator.StartRequest(step[1], List.of(), true,
+                        "", "", step[0], true, 19417, temp.resolve(step[1].equals(a) ? "raw-a" : "raw-b").toString()));
+                await(() -> provider.request.get() != null && step[0].equals(provider.request.get().userMessage()));
+                assertEquals(step[2], provider.request.get().threadId());
+                assertTrue(coordinator.accounts().isEmpty(), "login credentials are not restored with a chat thread");
+                provider.listener.get().completed(new ExplorerProvider.Result("answered", List.of(), step[2]));
+                await(() -> !activeStatus(coordinator));
+            }
         }
     }
 

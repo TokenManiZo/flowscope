@@ -7,6 +7,7 @@ import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class RunExecutionLedgerTest {
     @Test
@@ -70,5 +71,22 @@ final class RunExecutionLedgerTest {
         assertEquals(100, ledger.summaries().size());
         assertEquals("run-1", ledger.summaries().getFirst().runId());
         assertEquals("run-100", ledger.summaries().getLast().runId());
+    }
+
+    @Test
+    void staleAttemptCannotEnterALedgerAfterProjectReplacement() {
+        RunExecutionLedger ledger = new RunExecutionLedger();
+        long oldGeneration = ledger.generation();
+        ledger.clear();
+        assertFalse(ledger.recordIfGeneration(oldGeneration, Source.LLM, "old", null, "GET",
+                "https://old.test/api", RunExecutionLedger.Outcome.TIMEOUT, 0, null, Instant.now(), 5));
+        assertTrue(ledger.attempts().isEmpty());
+        long current = ledger.generation();
+        assertTrue(ledger.recordIfGeneration(current, Source.LLM, "new", null, "GET",
+                "https://new.test/api", RunExecutionLedger.Outcome.TIMEOUT, 0, null, Instant.now(), 5));
+        assertEquals("new", ledger.attempts().getFirst().runId());
+        ledger.replace(java.util.List.of());
+        assertFalse(ledger.recordIfGeneration(current, Source.LLM, "new", null, "GET",
+                "https://new.test/api", RunExecutionLedger.Outcome.TIMEOUT, 0, null, Instant.now(), 5));
     }
 }

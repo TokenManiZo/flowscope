@@ -33,6 +33,8 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 계정 로그인 브라우저의 메모리 세션은 같은 Burp 실행 안에서 turn 사이에 유지됩니다. 프로젝트를 다시 열거나 Burp를 재시작하면 로그인 자격은 복원하지 않으므로 다시 로그인해야 합니다. 같은 컴퓨터의 Codex thread가 남아 있으면 `thread/resume`으로 대화를 이어갑니다. 다른 컴퓨터에서 프로젝트를 열어 로컬 Codex thread가 없으면 자동으로 같은 모델 문맥을 꾸며내지 않고 실패를 표시합니다. `action=new-chat`으로 새 thread를 시작할 수 있습니다.
 
+프로젝트 전환은 진행 중인 run을 중단하고 현재 대화를 프로젝트 DB에 저장한 뒤, 선택한 프로젝트의 자동/자유 대화 metadata를 각각 복원합니다. A→B→A 순서로 열면 각 `threadId`를 혼동하지 않고 다음 메시지에서 해당 thread를 재개합니다. 브라우저 로그인은 대화 metadata와 별개이므로 전환 후 진단자가 다시 수행합니다. 이전 run의 HTTP·CDP 응답은 저장 직전 run·데이터셋을 확인해 현재 프로젝트 기록으로 승격하지 않습니다.
+
 두 방식의 HTTP 도구가 만든 큰 응답의 임시 artifact는 각 대화의 turn 사이에 재사용합니다. 자유 대화는 `flowscope_evidence_list/search/read`로 현재 프로젝트의 기존 HUMAN·SCANNER·LLM 요청 기록을 읽고, `flowscope_http_request/browser/artifact_*/record_discoveries`로 새 관측과 선언을 저장할 수 있습니다. 목록·검색에는 메타데이터만, 원문 읽기에는 선택한 Evidence ID의 제한된 구간만 반환합니다. 저장된 원문은 가리지 않으며 미보존·일부 미리보기는 `complete=false`로 알립니다. Codex 네이티브 셸이 작업 폴더에 만든 파일과 Codex 자체 로컬 thread 기록은 별도로 남습니다.
 
 ## 이번 구현의 범위와 남은 한계
@@ -52,6 +54,8 @@ HTTPS 요청은 클라이언트가 Burp CA를 신뢰해야 합니다. FlowScope�
 이번 자유 대화 변경만으로 API 발견률 상승은 입증되지 않습니다. 사용자 메시지, Codex가 고른 도구, 브라우저 조작 범위, 프록시 준수 여부에 따라 수집 건수가 달라집니다. 브라우저 로그인을 완료한 등록 계정의 opaque handle은 자유 대화의 HTTP·브라우저 도구에 제공하지만 인증 비밀값은 전달하지 않습니다. 네이티브 셸 요청에 자격증명이 있더라도 선택 계정으로 추정하지 않습니다. 실제 Burp에서 로그인 브라우저·프록시 경유·우회·취소·프로젝트 전환을 확인해야 합니다. 기존 로컬 crAPI 비교는 성능 합격 자료로 쓰지 않습니다.
 
 ## 개발·검증 기록
+
+- 2026-10-11 프로젝트별 대화 재개·늦은 응답 격리 보강: 이미 구현된 `thread/resume`을 중복 구현하는 대신 A→B→A 프로젝트 저장·재열기와 각각의 thread ID 재개를 회귀로 확인했습니다. 로그인 자격을 프로젝트에 저장하는 안은 기각하고 기존 메모리 폐기·진단자 재로그인을 유지합니다. `FlowScopeExtension`의 LLM HTTP·CDP 저장에 run·dataset 검사를 추가하고 `RunExecutionLedger`의 generation으로 프로젝트 교체 전 시도가 새 원장에 들어오지 않게 했습니다. React `LlmPass`는 연결 중 무반응 전송과 자유 대화의 새 채팅이 자동 Explorer 계정 선택을 덮는 문제를 수정했습니다. 관련 테스트는 `FlowScopeExtensionLifecycleTest`, `ExplorerCoordinatorTest`, `RunExecutionLedgerTest`, `LlmPass.test.tsx`입니다. Java 21의 최종 `mvn clean verify` 통과(React 894, Java 999 중 실패·오류 0, opt-in 9 skip), 새 JAR을 띄운 별도 포트 Playwright 채팅 1건 통과. 실제 Burp 재로드와 프로젝트 전환 중 대상 응답 수신은 아직 미검증이며 다음 gate입니다.
 
 - 2026-10-11 프로젝트 증거·자유 대화 브라우저 연결: 현재 프로젝트 DB에 Evidence가 있어도 빈 `codex-raw` 작업 폴더만 본다는 사용자 재현을 출발점으로 삼았습니다. 프록시만 추가하는 안은 새 요청의 수집만 해결하고 기존 증거 읽기를 해결하지 못하며, DB 파일 링크를 모델 작업 폴더에 두는 안은 스키마·프로젝트 전환·원문 범위 통제를 모델 셸에 떠넘겨 기각했습니다. `ProjectEvidenceReader`와 `CodexAppServerProvider`에 목록·메타 검색·페이지형 원문 읽기를, `ExplorerCoordinator`에 자유 대화 전용 HTTP·브라우저·산출물 gateway를 연결했습니다. `FlowScopeExtension`은 현재 프로젝트·run 작업 폴더를 검사하고 등록 계정의 별도 로그인 창을 열며 같은 `Source.LLM` 기록·그래프 경로로 저장합니다. Web `/api/codex-chat-accounts`, React `LlmPass`·API·훅, 위 README·점검 흐름·화면·신뢰 한계·문제 해결·미배포 변경 문서를 동기화했습니다. 회귀는 빈 작업 폴더와 무관한 Evidence 조회, 원문·부분 보존 표기, 프로젝트 경계 거부, 자동/자유 대화 계정 분리, 로그인 창 교환의 LLM 기록, 익명 요청의 비로그인 귀속, 후속 turn 재사용, 도구 스키마 재개를 확인합니다. 첫 프로토콜 회귀의 모의 서버 스레드 대기는 테스트 자체의 교착이라 수정했고, `202`를 `200`으로 읽던 Web 테스트 기대값도 바로잡았습니다. Java 21의 최종 `mvn clean verify` 통과(React 892, Java 996 중 실패·오류 0, opt-in 9 skip), 새 JAR을 띄운 별도 포트 Playwright 채팅 1건 통과, 실물 Codex app-server의 가짜 프로젝트 Evidence 도구 호출 1회 통과. 실제 Burp JAR 재로드·로그인 Chromium·대상 HTTP 캡처는 아직 미검증이며 다음 gate입니다.
 

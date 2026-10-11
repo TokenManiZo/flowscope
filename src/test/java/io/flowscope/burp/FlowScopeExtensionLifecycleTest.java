@@ -3,6 +3,7 @@ package io.flowscope.burp;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.integration.ProjectStore;
@@ -170,6 +171,39 @@ class FlowScopeExtensionLifecycleTest {
             assertTrue(records.isEmpty());
             assertEquals(false, retained.get());
         } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
+    void lateLlmRecordCannotEnterTheNextProjectOrAStoppedRun() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        RunContextRegistry contexts = (RunContextRegistry) field("runContexts").get(extension);
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        AtomicLong epoch = (AtomicLong) field("datasetEpoch").get(extension);
+        RequestRecord late = new RequestRecord(Source.LLM, "https://api.example.test:443",
+                "GET", "/late", 200, "anon");
+        late.runId = "llm-old";
+        AtomicBoolean retained = new AtomicBoolean(false);
+        try {
+            contexts.activate(Source.LLM, new RunContextRegistry.Context(
+                    io.flowscope.core.SourceDetail.LLM_EXPLORER,
+                    io.flowscope.core.Orchestrator.LLM, io.flowscope.core.ToolKind.CODEX,
+                    io.flowscope.core.RunPhase.EXPLORATION, "llm-old"));
+            contexts.abort(Source.LLM, "llm-old");
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendControlledLlmRecord(late, epoch.get(), () -> retained.set(true)));
+            contexts.activate(Source.LLM, new RunContextRegistry.Context(
+                    io.flowscope.core.SourceDetail.LLM_EXPLORER,
+                    io.flowscope.core.Orchestrator.LLM, io.flowscope.core.ToolKind.CODEX,
+                    io.flowscope.core.RunPhase.EXPLORATION, "llm-new"));
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendControlledLlmRecord(late, epoch.getAndIncrement(), () -> retained.set(true)));
+            assertTrue(records.isEmpty());
+            assertTrue(!retained.get());
+        } finally {
+            contexts.abort(Source.LLM, "llm-new");
             ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
         }
     }

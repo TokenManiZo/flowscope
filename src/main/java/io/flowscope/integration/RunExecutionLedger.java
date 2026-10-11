@@ -89,6 +89,7 @@ public final class RunExecutionLedger {
     private final int limit;
     private final ArrayDeque<Attempt> attempts = new ArrayDeque<>();
     private long nextSequence = 1;
+    private long generation;
 
     public RunExecutionLedger() {
         this(DEFAULT_LIMIT);
@@ -103,6 +104,19 @@ public final class RunExecutionLedger {
                                        String target, Outcome outcome, int status, String evidenceId,
                                        Instant attemptedAt, long durationMillis) {
         return record(source, runId, accountId, method, target, outcome, status, evidenceId, attemptedAt, durationMillis, null);
+    }
+
+    public synchronized long generation() { return generation; }
+
+    /** A response from an earlier project cannot repopulate the ledger after clear or replace. */
+    public synchronized boolean recordIfGeneration(long expectedGeneration, Source source, String runId,
+                                                    String accountId, String method, String target, Outcome outcome,
+                                                    int status, String evidenceId, Instant attemptedAt,
+                                                    long durationMillis) {
+        if (generation != expectedGeneration) return false;
+        record(source, runId, accountId, method, target, outcome, status, evidenceId,
+                attemptedAt, durationMillis);
+        return true;
     }
 
     public synchronized Attempt record(Source source, String runId, String accountId, String method,
@@ -122,6 +136,7 @@ public final class RunExecutionLedger {
     }
 
     public synchronized void replace(List<Attempt> values) {
+        generation++;
         attempts.clear();
         nextSequence = 1;
         for (Attempt value : values == null ? List.<Attempt>of() : values) {
@@ -132,6 +147,7 @@ public final class RunExecutionLedger {
     }
 
     public synchronized void clear() {
+        generation++;
         attempts.clear();
         nextSequence = 1;
     }

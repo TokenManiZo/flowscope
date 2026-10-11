@@ -76,6 +76,48 @@ it("shows the separate raw session but blocks sending while automatic Explorer i
   expect(screen.queryByText("Earlier raw chat")).not.toBeInTheDocument()
 })
 
+it("does not offer a no-op send while a free-chat turn is still connecting", async () => {
+  const preparing = { ...idle, rawActive: true, rawRun: true,
+    run: { ...idle.run, status: "AUTHENTICATING", runId: "raw-connecting" } }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
+    ? catalogResponse() : new Response(JSON.stringify(String(input) === "/api/codex-chat" ? preparing : idle))))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  const user = userEvent.setup()
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
+  await user.type(await screen.findByRole("textbox", { name: "LLM에게 메시지" }), "이어서 확인해")
+  expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
+})
+
+it("starting a new free chat does not overwrite automatic Explorer account selection", async () => {
+  const user = userEvent.setup()
+  vi.stubGlobal("confirm", vi.fn(() => true))
+  const ready = (id: string, label: string) => ({ id, label, status: "READY", browserOpen: true })
+  const automatic = { ...idle, accounts: [ready("user-a", "USER A"), ready("user-b", "USER B")] }
+  let raw = { ...idle, rawRun: true, accounts: [ready("user-b", "USER B")],
+    run: { ...idle.run, status: "COMPLETED", runId: "raw-old" },
+    chat: { threadId: "thread-raw", target: "https://app.example.test/", rawCodex: true, rawProtocolVersion: 1 },
+    messages: [{ role: "user", text: "Earlier", runId: "raw-old", at: "2026-10-11T00:00:00Z" }] }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/explorer-models") return catalogResponse()
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
+      raw = { ...raw, run: { ...idle.run }, messages: [], chat: { ...raw.chat, threadId: "" } }
+      return new Response(JSON.stringify({ run: raw.run }))
+    }
+    return new Response(JSON.stringify(String(input) === "/api/codex-chat" ? raw : automatic))
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[
+    { id: "user-a", label: "USER A" }, { id: "user-b", label: "USER B" },
+  ]} />)
+  await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
+  await user.click(screen.getByRole("checkbox", { name: "USER A" }))
+  expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
+  await user.click(await screen.findByRole("button", { name: "새 채팅" }))
+  await user.click(screen.getByRole("button", { name: "자동 탐색 보기" }))
+  await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
+  expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
+})
+
 it("separates a completed Codex conversation from automatic Explorer controls", async () => {
   const user = userEvent.setup()
   const raw = { ...idle, rawRun: true, rawActive: false,

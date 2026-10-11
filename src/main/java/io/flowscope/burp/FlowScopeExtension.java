@@ -3505,6 +3505,8 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private ExplorerTransport.Response executeExplorerRequest(ExplorerTransport.Request input) throws Exception {
+        long requestEpoch = datasetEpoch.get();
+        long ledgerGeneration = executionLedger.generation();
         URI target;
         try { target = URI.create(input.url()); }
         catch (RuntimeException error) { throw new IllegalArgumentException("Explorer 대상 URL이 올바르지 않습니다."); }
@@ -3560,8 +3562,9 @@ public final class FlowScopeExtension implements BurpExtension {
             burp.api.montoya.http.message.HttpRequestResponse exchange = api.http().sendRequest(request, options);
             long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
             if (exchange == null || !exchange.hasResponse() || exchange.response() == null) {
-                if (!input.sessionSetup()) {
-                    executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
+                if (!input.sessionSetup() && requestEpoch == datasetEpoch.get()
+                        && runContexts.current(Source.LLM, input.runId()) != null) {
+                    executionLedger.recordIfGeneration(ledgerGeneration, Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
                             input.url(), RunExecutionLedger.Outcome.NO_RESPONSE, 0, null, attemptedAt, duration);
                 }
                 throw new IllegalStateException("대상에서 HTTP 응답을 받지 못했습니다.");
@@ -3597,22 +3600,29 @@ public final class FlowScopeExtension implements BurpExtension {
             record.laneAccountId = emptyToNull(input.accountId());
             record.collectionAccountId = record.laneAccountId == null ? "anon" : record.laneAccountId;
             record.supportingPageUrl = input.supportingPageUrl();
-            appendControlledToolRecord(record, () -> retainRawExchange(record, exchange.request(), response));
+            appendControlledLlmRecord(record, requestEpoch,
+                    () -> retainRawExchange(record, exchange.request(), response));
             rebuildImmediately();
             RequestRecord published = latest.records.stream().filter(value -> value.runtimeId() == record.runtimeId())
                     .findFirst().orElseThrow(() -> new IllegalStateException("Explorer 요청 기록 저장에 실패했습니다."));
-            executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
-                    input.url(), RunExecutionLedger.Outcome.HTTP_RESPONSE, response.statusCode(),
-                    published.evidenceId, attemptedAt, duration);
+            if (requestEpoch == datasetEpoch.get()
+                    && runContexts.current(Source.LLM, input.runId()) != null) {
+                executionLedger.recordIfGeneration(ledgerGeneration, Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
+                        input.url(), RunExecutionLedger.Outcome.HTTP_RESPONSE, response.statusCode(),
+                        published.evidenceId, attemptedAt, duration);
+            }
             return new ExplorerTransport.Response(response.statusCode(), exchange.request().url(),
                     response.headerValue("Location"), response.headerValue("Content-Type"), responseHeaders,
                     decoded, copiedBody < responseBody.length(), published.evidenceId, duration, Instant.now());
         } catch (Exception error) {
+            if (error instanceof DatasetReplacedException) throw error;
             long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
-            if (!input.sessionSetup() && (executionLedger.summarize(Source.LLM, input.runId()).attempted() == 0
+            if (!input.sessionSetup() && requestEpoch == datasetEpoch.get()
+                    && runContexts.current(Source.LLM, input.runId()) != null
+                    && (executionLedger.summarize(Source.LLM, input.runId()).attempted() == 0
                     || executionLedger.attempts().stream().noneMatch(value -> value.runId().equals(input.runId())
                     && value.attemptedAt().equals(attemptedAt)))) {
-                executionLedger.record(Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
+                executionLedger.recordIfGeneration(ledgerGeneration, Source.LLM, input.runId(), emptyToNull(input.accountId()), input.method(),
                         input.url(), executionOutcome(error), 0, null, attemptedAt, duration);
             }
             throw error;
@@ -3627,6 +3637,7 @@ public final class FlowScopeExtension implements BurpExtension {
      */
     private void recordBrowserExchange(ExplorerCoordinator.BrowserExchange exchange) {
         if (shuttingDown.get()) return;
+        long exchangeEpoch = datasetEpoch.get();
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
                 recordDroppedAtCapacity();
@@ -3648,8 +3659,10 @@ public final class FlowScopeExtension implements BurpExtension {
             record.runId = exchange.runId();
             record.laneAccountId = emptyToNull(exchange.accountId());
             record.collectionAccountId = record.laneAccountId == null ? "anon" : record.laneAccountId;
-            appendControlledToolRecord(record, () -> retainRawExchange(record, request, response));
+            appendControlledLlmRecord(record, exchangeEpoch, () -> retainRawExchange(record, request, response));
             scheduleRebuildForNewRecords();
+        } catch (DatasetReplacedException ignored) {
+            // A cancelled run or replaced project cannot receive a late CDP exchange.
         } catch (Exception error) {
             api.logging().logToError("FlowScope 브라우저 탐색 수집 실패: " + exchange.method() + " "
                     + exchange.url(), error);
@@ -3729,6 +3742,16 @@ public final class FlowScopeExtension implements BurpExtension {
     void appendRequestLabRecord(RequestRecord record, long expectedEpoch, Runnable retainExchange) {
         synchronized (records) {
             if (datasetEpoch.get() != expectedEpoch) throw new DatasetReplacedException();
+            appendControlledToolRecord(record, retainExchange);
+        }
+    }
+
+    void appendControlledLlmRecord(RequestRecord record, long expectedEpoch, Runnable retainExchange) {
+        synchronized (records) {
+            if (datasetEpoch.get() != expectedEpoch
+                    || runContexts.current(Source.LLM, record.runId) == null) {
+                throw new DatasetReplacedException();
+            }
             appendControlledToolRecord(record, retainExchange);
         }
     }
