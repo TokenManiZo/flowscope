@@ -65,19 +65,13 @@ FlowScope는 Burp가 시작될 때의 PATH와 `~/.local/bin`, npm, WinGet, Homeb
 
 Codex를 찾지 못해도 직접 둘러보기와 ZAP 스캔은 그대로 쓸 수 있습니다.
 
+### `Codex CLI 시작 실패: Cannot load implementation of interface ...PtyHelpers$OSFacade`
+
+웹 터미널 시제품 JAR의 PTY 실행 오류입니다. 이 시제품은 자유 대화의 요구와도 달라 제거했습니다. 자유 대화 버튼을 누르면 터미널 대신 채팅방이 열리는 수정 JAR을 Burp에서 로드하세요. 이전 JAR과 동시에 로드하지 마세요. 기존 프로젝트 요청 기록은 삭제하지 않습니다.
+
 ### `Codex CLI 로그인이 필요합니다`
 
 FlowScope는 `codex login status`로 로그인을 확인합니다. Burp를 실행하는 것과 같은 OS 사용자로 터미널을 열고 `codex`를 실행해 **Sign in with ChatGPT**로 로그인하세요. ChatGPT Plus, Pro, Business, Edu, Enterprise 요금제 중 하나가 필요합니다. `OPENAI_API_KEY` 환경 변수는 FlowScope가 Codex에 넘기지 않으므로 그것만으로는 동작하지 않습니다.
-
-### Codex CLI 터미널이 빈 화면이다 / `Codex CLI 시작 실패`가 나온다
-
-**Codex CLI 열기**는 화면만 전환합니다. 터미널에서 **새 Codex CLI**나 **이전 대화 이어서**를 눌러야 실제 프로세스를 시작합니다. 시작 실패 문구가 나오면 Burp를 실행하는 같은 OS 사용자로 터미널에서 `codex --version`과 `codex login status`를 확인하고 Burp를 다시 시작하세요. **이전 대화 이어서**는 같은 프로젝트 작업 폴더의 대화가 없으면 실패할 수 있으니 그때는 **새 Codex CLI**를 사용합니다. PTY 네이티브 라이브러리 오류가 나면 Burp **Extensions → Output**의 오류와 OS·CPU 종류를 함께 확인하세요.
-
-처음 시작하면 Codex 자체의 **Folder access** 신뢰 확인이나 업데이트 안내가 터미널 안에 나타날 수 있습니다. 이는 FlowScope 오류가 아니며 신뢰할 수 있는 프로젝트에 대해서만 Codex 화면에서 직접 선택하세요.
-
-### CLI에서는 명령이 실행됐는데 LLM 요청 기록이 0건이다
-
-CLI 셸 명령의 성공은 HTTP 수집과 다릅니다. 폴더 조회·파일 읽기만 했다면 대상 트래픽이 없습니다. HTTP 요청을 보냈다면 현재 프로젝트의 exact scope에 들어 있는지, 클라이언트가 실행별 Burp 프록시를 실제로 사용하는지, HTTPS 대상이면 Burp CA를 신뢰하는지 확인하세요. 프록시를 무시하는 네이티브 도구의 직접 요청은 FlowScope가 수집할 수 없습니다. [LLM 실행 계약](reference/llm-chat-backend.md)을 확인하세요.
 
 ### `Chromium/Chrome 실행 파일을 찾지 못했습니다`
 

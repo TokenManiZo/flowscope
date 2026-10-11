@@ -14,16 +14,16 @@ import burp.api.montoya.proxy.MessageToBeSentAction;
 import burp.api.montoya.proxy.http.*;
 import io.flowscope.core.*;
 import io.flowscope.explorer.ExplorerBrowserProxy;
-import io.flowscope.explorer.CodexCliTerminal;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.explorer.ExplorerProvider;
 import io.flowscope.integration.SessionBroker;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.net.URI;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -35,20 +35,28 @@ import static org.junit.jupiter.api.Assertions.*;
 class FlowScopeProxyRoutingTest {
     private static final String TARGET = "https://app.test:443/api";
 
-    @Test void onlyTheActiveCliListenerProducesControlledLlmEvidence(@TempDir Path workspace) throws Exception {
+    @Test void onlyTheActiveRawListenerProducesControlledLlmEvidence() throws Exception {
         try (var f = new Fixture()) {
-            var terminal = (CodexCliTerminal) get(f.extension, "codexTerminal");
-            var contexts = (RunContextRegistry) get(f.extension, "runContexts");
-            String runId = "llm-cli-test";
-            contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
-                    Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
-            String javaExecutable = Path.of(System.getProperty("java.home"), "bin",
-                    System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java").toString();
-            String classes = Path.of(HoldOpenMain.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
-            terminal.start(runId, workspace, java.util.List.of(javaExecutable, "-cp", classes, HoldOpenMain.class.getName()),
-                    Map.of("TERM", "xterm"), 80, 24, ignored -> contexts.abort(Source.LLM, runId));
+            ExplorerProvider provider = new ExplorerProvider() {
+                @Override public String readiness() { return "READY"; }
+                @Override public Handle start(Request request, Listener listener) {
+                    return new Handle() {
+                        @Override public void steer(String message) { }
+                        @Override public void cancel() { }
+                    };
+                }
+                @Override public void close() { }
+            };
+            var coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                    request -> { throw new AssertionError("raw proxy must not use Explorer HTTP transport"); },
+                    provider, (RunContextRegistry) get(f.extension, "runContexts"),
+                    url -> ScopePolicy.parse("https://app.test/").allows(url),
+                    () -> Pipeline.run(java.util.List.of()), ignored -> { });
+            set(f.extension, "rawChat", coordinator);
             set(f.extension, "rawProxyPort", 19417);
-            set(f.extension, "rawProxyRunId", runId);
+            var started = coordinator.start(new ExplorerCoordinator.StartRequest(TARGET,
+                    java.util.List.of(), false, "", "", "Inspect", true, 19417, "/tmp"));
+            set(f.extension, "rawProxyRunId", started.runId());
             var credentialed = request(301, 19417, TARGET, Map.of("Cookie", "session=a",
                     "Authorization", "Bearer a"), "");
             var accepted = f.requests.handleRequestReceived(credentialed);
@@ -62,7 +70,7 @@ class FlowScopeProxyRoutingTest {
             assertEquals(1, records.size());
             assertEquals(Source.LLM, records.getFirst().source);
             assertEquals(ExecutionTrust.CONTROLLED, records.getFirst().executionTrust);
-            assertEquals(runId, records.getFirst().runId);
+            assertEquals(started.runId(), records.getFirst().runId);
             assertNull(records.getFirst().collectionAccountId,
                     "credentialed raw requests must not be mislabeled anonymous");
             assertEquals(1, Pipeline.run(records).coverageRecords.size(),
@@ -75,20 +83,10 @@ class FlowScopeProxyRoutingTest {
             assertEquals(1, Pipeline.run(records).coverageRecords.size());
             assertEquals(MessageReceivedAction.DROP, f.requests.handleRequestReceived(
                     request(302, 19417, "https://outside.test/api", Map.of(), "")).action());
-            terminal.stop();
-            for (int attempt = 0; attempt < 50 && terminal.activeRun(runId); attempt++) Thread.sleep(20);
-            assertFalse(terminal.activeRun(runId));
+            coordinator.cancel();
             assertEquals(MessageReceivedAction.DROP, f.requests.handleRequestReceived(
                     request(303, 19417, TARGET, Map.of(), "")).action());
-            terminal.close();
-        }
-    }
-
-    public static final class HoldOpenMain {
-        public static void main(String[] args) throws Exception {
-            System.out.print("READY\r\n");
-            System.out.flush();
-            System.in.read();
+            coordinator.close();
         }
     }
 

@@ -335,7 +335,7 @@ class FlowScopeExtensionLifecycleTest {
     }
 
     @Test
-    void openingAProjectRestoresAutomaticChatAndRetainsLegacyRawArchive() throws Exception {
+    void openingAProjectRestoresItsChatWithoutRestoringLoginCredentials() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         field("api").set(extension, loggingApi());
         ScheduledExecutorService worker = (ScheduledExecutorService) field("worker").get(extension);
@@ -358,12 +358,20 @@ class FlowScopeExtensionLifecycleTest {
         try (ExplorerCoordinator explorer = new ExplorerCoordinator(vault,
                 request -> { throw new AssertionError("no HTTP"); }, provider,
                 new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {});
+             ExplorerCoordinator rawChat = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP"); }, new ExplorerProvider() {
+                    @Override public String readiness() { return "READY"; }
+                    @Override public Handle start(Request request, Listener listener) { throw new AssertionError("no model turn"); }
+                    @Override public void close() {}
+                }, new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> {})) {
             field("explorer").set(extension, explorer);
+            field("rawChat").set(extension, rawChat);
             invoke(extension, "loadProjectFile", new Class<?>[]{java.io.File.class}, database.toFile());
             worker.submit(() -> {}).get(5, TimeUnit.SECONDS);
             assertEquals(chat, explorer.chatState());
-            assertEquals(raw, ((ProjectStore.ProjectContext) field("activeProjectContext").get(extension)).rawChat());
+            assertEquals(raw, rawChat.chatState());
             assertTrue(explorer.accounts().isEmpty());
         } finally { worker.shutdownNow(); }
     }

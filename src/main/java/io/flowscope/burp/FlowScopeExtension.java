@@ -70,7 +70,6 @@ import io.flowscope.integration.RunExecutionLedger;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.explorer.CodexAppServerProvider;
-import io.flowscope.explorer.CodexCliTerminal;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerTransport;
@@ -366,7 +365,7 @@ public final class FlowScopeExtension implements BurpExtension {
     private final ZapProbeStatus zapProbeStatus = new ZapProbeStatus();
     private ExplorerAccountVault explorerAccounts;
     private ExplorerCoordinator explorer;
-    private final CodexCliTerminal codexTerminal = new CodexCliTerminal();
+    private ExplorerCoordinator rawChat;
     private final Object llmStartMonitor = new Object();
     private CrossIdentityReplayOrchestrator crossIdentityReplay;
     private LiveCrossIdentityReplayCoordinator liveCrossIdentityReplay;
@@ -434,6 +433,15 @@ public final class FlowScopeExtension implements BurpExtension {
                 runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput, this::explorerChatChanged);
+        rawChat = new ExplorerCoordinator(new ExplorerAccountVault(), request -> {
+                    throw new IllegalStateException("자유 대화는 Explorer HTTP 도구를 사용하지 않습니다.");
+                },
+                new CodexAppServerProvider(api.logging()::logToOutput, this::approveCodexAction),
+                runContexts, value -> scope.allows(value),
+                () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
+                api.logging()::logToOutput, this::rawChatChanged);
+        rawChat.rawRunEnded(this::stopRawProxy);
+        rawChat.rawRunStarted(runId -> rawProxyRunId = runId);
         explorer.browserRecorder(this::recordBrowserExchange);
         PORT_SOURCE.entrySet().stream().filter(entry -> entry.getValue().source() == Source.LLM)
                 .map(Map.Entry::getKey).filter(port -> port > 0 && port <= 65535).sorted().findFirst()
@@ -620,7 +628,7 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             String loginCaptureHandle = sessionBroker.activeCaptureForService(serviceOf(request)).orElse(null);
             boolean rawListener = observedPort == rawProxyPort;
-            if (rawListener && !rawCaptureActiveRun(rawProxyRunId)) return ProxyRequestReceivedAction.drop();
+            if (rawListener && !rawChat.rawActiveRun(rawProxyRunId)) return ProxyRequestReceivedAction.drop();
             RunContextRegistry.Context managed = humanBrowsers.context(observedPort);
             if (humanBrowsers.ownsPort(observedPort) && managed == null) return ProxyRequestReceivedAction.drop();
             RunContextRegistry.Context humanRun = managed == null ? legacyHumanRun() : managed;
@@ -682,7 +690,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return ProxyRequestToBeSentAction.continueWith(request);
             }
             var observation = proxyObservations.get(request.messageId());
-            if (port == rawProxyPort && !rawCaptureActiveRun(rawProxyRunId)) {
+            if (port == rawProxyPort && !rawChat.rawActiveRun(rawProxyRunId)) {
                 proxyObservations.remove(request.messageId());
                 return ProxyRequestToBeSentAction.drop();
             }
@@ -754,7 +762,7 @@ public final class FlowScopeExtension implements BurpExtension {
             if (profile.source() == Source.HUMAN) return request;
             if (context == null) return request;
             if (profile.source() == Source.LLM && listenerPort(request.listenerInterface()) == rawProxyPort
-                    && rawCaptureActiveRun(context.runId())) {
+                    && rawChat.rawActiveRun(context.runId())) {
                 // Native Codex tools manage their own login state. Never replace the operator's headers.
                 return request.withRemovedHeader("Proxy-Authorization");
             }
@@ -832,6 +840,9 @@ public final class FlowScopeExtension implements BurpExtension {
                         && supportingAssets.pageUrlFor(profile.source(), runId, scope::allows, request.method(), request.url(),
                         request.headerValue("Referer"), request.headerValue("Sec-Fetch-Dest")) == null;
                 if (captured && !passiveResponse) {
+                    if (observation.rawControlled()) {
+                        rawChat.rawResponse(runId, request.method(), request.url(), response.statusCode());
+                    }
                     observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
                             response.headerValue("Location"), boundedResponseBody(response), response.headers(), observation);
                 }
@@ -1266,7 +1277,7 @@ public final class FlowScopeExtension implements BurpExtension {
                         && context != null && humanBrowsers.contains(context.runId()),
                 profile != null && profile.source() == Source.LLM && listenerPort == rawProxyPort
                         && context != null && context.runId().equals(rawProxyRunId)
-                        && rawCaptureActiveRun(context.runId()))) {
+                        && rawChat.rawActiveRun(context.runId()))) {
             api.logging().logToOutput("FlowScope: in-flight " + channel
                     + " 문맥 상한 도달 — 잘못된 run 귀속을 막기 위해 해당 응답은 수집에서 제외됩니다.");
         }
@@ -1274,7 +1285,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private boolean staleObservation(InFlightRequestTracker.Observation observation) {
         return observation != null && (!observation.belongsTo(datasetEpoch.get())
-                || observation.rawControlled() && !rawCaptureActiveRun(observation.context().runId())
+                || observation.rawControlled() && !rawChat.rawActiveRun(observation.context().runId())
                 || observation.context() != null && observation.source() == Source.HUMAN
                 && observation.detail() == SourceDetail.BROWSER
                 && !runContexts.acceptsHumanCapture(observation.context().runId(), observation.humanCaptureGeneration()));
@@ -1350,61 +1361,6 @@ public final class FlowScopeExtension implements BurpExtension {
     private static PortProfile profileOf(int listenerPort) {
         return PORT_SOURCE.getOrDefault(listenerPort,
                 new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN));
-    }
-
-    private boolean rawCaptureActiveRun(String runId) {
-        return codexTerminal.activeRun(runId);
-    }
-
-    private CodexCliTerminal.Poll startCodexTerminal(int columns, int rows, boolean resume) {
-        synchronized (llmStartMonitor) {
-            if (shuttingDown.get()) throw new IllegalStateException("FlowScope가 종료 중입니다.");
-            if (activeProjectDatabase == null) throw new IllegalStateException("Codex CLI를 열려면 프로젝트를 먼저 저장하세요.");
-            if (runContexts.current(Source.LLM) != null) throw new IllegalStateException("진행 중인 LLM 실행을 먼저 종료하세요.");
-            if (rawProxyPort > 0) throw new IllegalStateException("Codex 수집 프록시가 이미 열려 있습니다.");
-            int port;
-            try { port = proxyListeners.open(); }
-            catch (IOException error) { throw new IllegalStateException("Codex 수집 프록시를 열지 못했습니다: " + error.getMessage(), error); }
-            String runId = "llm-cli-" + System.currentTimeMillis() + "-"
-                    + java.util.UUID.randomUUID().toString().substring(0, 8);
-            rawProxyPort = port;
-            rawProxyRunId = runId;
-            try {
-                Path workspace = activeProjectDatabase.getParent().resolve("codex-raw-"
-                        + shortDigest(activeProjectDatabase.toString()));
-                java.nio.file.Files.createDirectories(workspace);
-                List<String> command = CodexCliTerminal.codexCommand(workspace, port, resume);
-                Map<String, String> environment = new LinkedHashMap<>(System.getenv());
-                environment.put("TERM", "xterm-256color");
-                environment.put("COLORTERM", "truecolor");
-                runContexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
-                        Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
-                return codexTerminal.start(runId, workspace, command, environment,
-                        columns, rows, this::finishCodexTerminal);
-            } catch (IOException | RuntimeException | LinkageError error) {
-                runContexts.abort(Source.LLM, runId);
-                stopRawProxy(runId);
-                throw new IllegalStateException("Codex CLI 시작 실패: " + error.getMessage(), error);
-            }
-        }
-    }
-
-    private void finishCodexTerminal(String runId) {
-        if (!rawProxyRunId.equals(runId)) return;
-        try {
-            if (!shuttingDown.get()) {
-                rebuildImmediately();
-                if (io.flowscope.core.LaneCompletionPolicy.evaluate(Source.LLM, runId, latest).eligible()) {
-                    io.flowscope.core.LaneCompletionPolicy.complete(runContexts, Source.LLM, runId, latest);
-                } else runContexts.abort(Source.LLM, runId);
-            } else runContexts.abort(Source.LLM, runId);
-        } catch (RuntimeException error) {
-            runContexts.abort(Source.LLM, runId);
-            api.logging().logToError("FlowScope Codex CLI 종료 정리 실패", error);
-        } finally {
-            stopRawProxy(runId);
-            if (!shuttingDown.get()) scheduleRebuild();
-        }
     }
 
     private void stopRawProxy(String runId) {
@@ -1643,7 +1599,7 @@ public final class FlowScopeExtension implements BurpExtension {
             if (!records.isEmpty()) return true;
         }
         return explorer != null && !explorer.chatMessages().isEmpty()
-                || activeProjectContext != null && !activeProjectContext.rawChat().messages().isEmpty()
+                || rawChat != null && !rawChat.chatMessages().isEmpty()
                 || !routeCandidates.isEmpty()
                 || !analysisConfig.accounts().isEmpty()
                 || !analysisConfig.identityRoles().isEmpty()
@@ -2010,6 +1966,7 @@ public final class FlowScopeExtension implements BurpExtension {
         scope = restoredScope;
         scopeText = String.join("\n", context.scope());
         if (explorer != null) explorer.restoreChatState(context.chat());
+        if (rawChat != null) rawChat.restoreChatState(context.rawChat());
         activeProjectDatabase = null;
         activeProjectContext = ProjectStore.ProjectContext.empty();
         publishAnalysis(analysisEpoch, result);
@@ -2364,6 +2321,9 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public io.flowscope.explorer.ExplorerChatState explorerChatState() {
                 return explorer.chatState();
             }
+            @Override public ExplorerCoordinator.Snapshot codexChatStatus() { return rawChat.current(); }
+            @Override public List<ExplorerCoordinator.ChatMessage> codexChatMessages() { return rawChat.chatMessages(); }
+            @Override public io.flowscope.explorer.ExplorerChatState codexChatState() { return rawChat.chatState(); }
             @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
                 return explorer.models();
             }
@@ -2397,12 +2357,37 @@ public final class FlowScopeExtension implements BurpExtension {
                 scheduleRebuild();
             }
             @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
-                if (request.rawCodex()) throw new IllegalArgumentException("Codex CLI는 별도 터미널을 사용하세요.");
+                if (request.rawCodex()) throw new IllegalArgumentException("자유 대화는 별도 API를 사용하세요.");
                 synchronized (llmStartMonitor) {
                     if (runContexts.current(Source.LLM) != null) throw new IllegalStateException("진행 중인 LLM 실행을 먼저 종료하세요.");
                     return explorer.start(request);
                 }
             }
+            @Override public ExplorerCoordinator.Snapshot startCodexChat(ExplorerCoordinator.StartRequest request) {
+                if (!request.rawCodex()) throw new IllegalArgumentException("자유 대화 메시지가 필요합니다.");
+                synchronized (llmStartMonitor) {
+                    if (runContexts.current(Source.LLM) != null) throw new IllegalStateException("진행 중인 LLM 실행을 먼저 종료하세요.");
+                Path database = activeProjectDatabase;
+                if (database == null) {
+                    throw new IllegalStateException("Codex 자유 대화를 시작하려면 프로젝트를 먼저 저장하세요.");
+                }
+                if (rawProxyPort > 0) throw new IllegalStateException("Codex 자유 대화가 이미 진행 중입니다.");
+                int port;
+                try { port = proxyListeners.open(); }
+                catch (IOException error) { throw new IllegalStateException("Codex 수집 프록시를 열지 못했습니다: " + error.getMessage(), error); }
+                rawProxyPort = port;
+                try {
+                    Path workspace = database.getParent().resolve("codex-raw-" + shortDigest(database.toString()));
+                    return rawChat.start(request.withRawRuntime(port, workspace.toString()));
+                } catch (RuntimeException error) {
+                    try { proxyListeners.remove(port); rawProxyPort = -1; }
+                    catch (IOException cleanup) { error.addSuppressed(cleanup); }
+                    rawProxyRunId = "";
+                    throw error;
+                }
+                }
+            }
+            @Override public boolean codexChatActive() { return rawChat.rawActive(); }
             @Override public ExplorerCoordinator.Snapshot steerExplorer(String message) {
                 return explorer.steer(message);
             }
@@ -2412,17 +2397,10 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
                 return explorer.recheckProvider();
             }
-            @Override public CodexCliTerminal.Poll codexTerminalPoll(long cursor) { return codexTerminal.poll(cursor); }
-            @Override public CodexCliTerminal.Poll codexTerminalStatus() { return codexTerminal.status(); }
-            @Override public CodexCliTerminal.Poll startCodexTerminal(int columns, int rows, boolean resume) {
-                return FlowScopeExtension.this.startCodexTerminal(columns, rows, resume);
-            }
-            @Override public void inputCodexTerminal(byte[] input) {
-                try { codexTerminal.input(input); }
-                catch (IOException error) { throw new IllegalStateException("Codex CLI 입력 실패: " + error.getMessage(), error); }
-            }
-            @Override public void resizeCodexTerminal(int columns, int rows) { codexTerminal.resize(columns, rows); }
-            @Override public void stopCodexTerminal() { codexTerminal.stop(); }
+            @Override public ExplorerCoordinator.Snapshot steerCodexChat(String message) { return rawChat.steer(message); }
+            @Override public ExplorerCoordinator.Snapshot cancelCodexChat() { return rawChat.cancel(); }
+            @Override public ExplorerCoordinator.Snapshot newCodexChat() { return rawChat.newChat(); }
+            @Override public ExplorerCoordinator.Snapshot recheckCodexChatProvider() { return rawChat.recheckProvider(); }
             @Override public void rebuild() { scheduleRebuild(); }
             @Override public void loadSample() {
                 runProjectTask(() -> { loadSampleProject(); return null; });
@@ -2916,9 +2894,12 @@ public final class FlowScopeExtension implements BurpExtension {
     private void resetExplorerSecrets() {
         supportingAssets.clear();
         if (explorer == null) return;
-        codexTerminal.stop();
-        try { codexTerminal.clear(); } catch (IllegalStateException ignored) { }
         try { explorer.cancel(); } catch (RuntimeException ignored) { }
+        if (rawChat != null) {
+            try { rawChat.cancel(); } catch (RuntimeException ignored) { }
+            try { rawChat.clear(); } catch (RuntimeException ignored) { }
+            try { rawChat.resetChatState(); } catch (RuntimeException ignored) { }
+        }
         // Explorer sessions belong to registered accounts now; resetting secrets must not delete those accounts.
         explorer.clearAccounts();
         try { explorer.clear(); } catch (RuntimeException ignored) { }
@@ -2933,13 +2914,20 @@ public final class FlowScopeExtension implements BurpExtension {
         scheduleDatabaseSave();
     }
 
+    private void rawChatChanged() {
+        if (rawChat == null || shuttingDown.get()) return;
+        ProjectStore.ProjectContext context = activeProjectContext;
+        if (context != null && context.present()) activeProjectContext = context.withRawChat(rawChat.chatState());
+        revision.incrementAndGet();
+        scheduleDatabaseSave();
+    }
+
     private io.flowscope.explorer.ExplorerChatState currentChatState() {
         return explorer == null ? io.flowscope.explorer.ExplorerChatState.empty() : explorer.chatState();
     }
 
     private io.flowscope.explorer.ExplorerChatState currentRawChatState() {
-        return activeProjectContext == null ? io.flowscope.explorer.ExplorerChatState.empty()
-                : activeProjectContext.rawChat();
+        return rawChat == null ? io.flowscope.explorer.ExplorerChatState.empty() : rawChat.chatState();
     }
 
     private void resetZapSecrets() {
@@ -2988,8 +2976,8 @@ public final class FlowScopeExtension implements BurpExtension {
             }
         }
         if (webServer != null) webServer.close();
-        codexTerminal.close();
         if (explorer != null) explorer.close();
+        if (rawChat != null) rawChat.close();
         if (zapCampaign != null) zapCampaign.close();
         zapAccounts.close();
         if (activeProjectDatabase != null) {

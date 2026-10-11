@@ -20,7 +20,7 @@
 
 처음 실행하는 사용자는 [README의 첫 점검](../../README.md#첫-점검)을 따라 하세요. 아래 내용은 세션·수집·판정이 어떤 조건에서 유효한지 확인할 때 사용하는 상세 참조입니다.
 
-Burp Browser에 연결된 프록시 리스너와 ZAP용 SCANNER 리스너를 구분합니다. Montoya는 확장 프로그램에서 listener를 생성할 수 없습니다. 8082 source 분류는 과거 직접 클라이언트 관측 호환용입니다. 계정별 자동 Explorer는 Montoya 전송을 쓰고, 별도 Codex CLI는 실행별 Burp 프록시 리스너를 실제로 지나는 네이티브 HTTP 클라이언트만 수집합니다.
+Burp Browser에 연결된 프록시 리스너와 ZAP용 SCANNER 리스너를 구분합니다. Montoya는 확장 프로그램에서 listener를 생성할 수 없습니다. 8082 source 분류는 과거 직접 클라이언트 관측 호환용입니다. 계정별 자동 Explorer는 Montoya 전송을 쓰고, 별도 자유 대화는 실행별 Burp 프록시 리스너를 사용하는 네이티브 HTTP 클라이언트만 수집합니다.
 
 | Listener | Source | 사용 클라이언트 |
 |---|---|---|
@@ -66,9 +66,9 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 
 기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 격리 브라우저, Judge, agent-workspace는 없습니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
-**탐색 시작**은 기존 계정·비로그인 자동 Explorer로 유지합니다. 카드 제목 옆 **Codex CLI 열기**는 실제 Codex CLI를 웹 터미널에서 실행합니다. 버튼을 누른 것만으로 프로세스가 시작되지는 않습니다. 사용자가 **새 Codex CLI** 또는 **이전 대화 이어서**를 누르면 프로젝트별 작업 폴더에서 CLI TUI가 열리고, 명령·모델·승인은 CLI 자체에서 다룹니다. **자동 탐색 보기**로 돌아가도 CLI 프로세스는 계속 실행됩니다. 동시에 두 LLM 실행을 시작할 수는 없고, CLI를 끝내거나 `/exit`로 종료해야 자동 Explorer를 시작할 수 있습니다. CLI가 실제로 Burp 프록시를 지난 범위 안 응답만 LLM Evidence입니다. 구현·재열기·잔존 한계는 [LLM 실행 계약](../reference/llm-chat-backend.md)에 기록했습니다.
+현재 로컬 개발 브랜치의 **탐색 시작**은 계정·비로그인 lane을 고르는 자동 Explorer로 유지합니다. 카드 제목 옆 **Codex 자유 대화**는 자동 탐색 컨트롤을 숨기고 입력창을 열며, 저장된 프로젝트에서 첫 메시지를 전송해야 별도 Codex turn을 시작합니다. **자동 탐색 보기**로 전환하면 대화는 지우지 않고 자동 탐색 컨트롤만 다시 보여 줍니다. FlowScope 계정·대상 URL·전용 도구·정찰 지침을 모델에 넘기지 않으므로 사용자가 메시지에 URL과 작업을 직접 적습니다. 네이티브 셸에는 실행별 Burp 프록시를 설정합니다. 완료 후 후속 메시지는 같은 대화를 이어갑니다. 실행 중 추가 지시는 현재 turn에 전달됩니다. `GET`의 `messages`는 화면 대화, `rawActive`는 진행 중인 자유 대화, `rawRun`은 마지막 실행이 자유 대화였는지 나타냅니다. 대화만 하고 HTTP 응답이 0건이면 **Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)**로 표시합니다. `/api/explorer-prompts`의 추천 문장은 화면에 자동 표시·실행하지 않습니다. 구현·재열기·잔존 상한은 [LLM 대화 계약](../reference/llm-chat-backend.md)에 기록했습니다.
 
-공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright 또는 MCP 설정은 필요하지 않습니다. 웹 터미널의 PTY·화면 라이브러리는 FlowScope JAR에 포함됩니다. 자동 Explorer의 계정 로그인 창은 `-Dflowscope.browser.path`로 지정한 브라우저, Burp에 포함된 Chromium, 시스템 Chrome/Chromium 순서로 찾아 띄웁니다. 자동 Explorer만 opaque account handle과 HTTP·브라우저 조작·선언 dynamic tool을 모델에 제공합니다. CLI TUI에는 FlowScope 지침·전용 도구·계정 handle을 넣지 않고, 셸 명령에만 실행별 Burp 프록시 환경을 전달합니다. 대상 요청이 없거나 프록시를 우회하면 LLM Evidence도 생기지 않습니다.
+공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright 또는 MCP 설정은 필요하지 않습니다. 자동 Explorer의 계정 로그인 창은 `-Dflowscope.browser.path`로 지정한 브라우저, Burp에 포함된 Chromium, 시스템 Chrome/Chromium 순서로 찾아 띄웁니다. 자동 Explorer는 인증 비밀 대신 opaque account handle과 HTTP·브라우저 조작·선언 dynamic tool만 모델에 제공합니다. 자유 대화에는 이 도구와 handle을 제공하지 않습니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. 기존 일회성 Explorer에서 응답 기록 0건은 완료 실패였지만, 자유 대화의 설명 답변은 HTTP 응답이 없어도 대화로 남습니다. 이때 수집 lane은 완료로 승격하지 않으며 모델의 자유서술 개수도 집계로 사용하지 않습니다.
 
 ### 실행별 모델 선택
 

@@ -56,22 +56,3 @@ Google Closure Compiler v20260831
   Copyright 2009-2026 Google LLC and contributors
   Original Apache NOTICE content is merged into META-INF/NOTICE.
 --------------------------------------------------------------------
-Pty4J 0.13.13 and WinPty native helpers
-  Artifact : org.jetbrains.pty4j:pty4j:0.13.13
-  Source   : https://github.com/JetBrains/pty4j
-  License  : Eclipse Public License 1.0 — full text in
-             META-INF/LICENSE-pty4j-epl-1.0.txt
-  Notice   : META-INF/NOTICE-pty4j.txt
-  Bundled Windows WinPty: MIT — full text in META-INF/LICENSE-winpty.txt
---------------------------------------------------------------------
-JNA 5.14.0, Kotlin standard library 2.1.21 and JetBrains annotations 24.0.1
-  Artifacts: net.java.dev.jna:jna:5.14.0, jna-platform:5.14.0
-             org.jetbrains.kotlin:kotlin-stdlib:2.1.21
-             org.jetbrains:annotations:24.0.1
-  JNA      : Apache License 2.0 / LGPL 2.1 (META-INF/AL2.0, META-INF/LGPL2.1)
-  Kotlin and annotations: Apache License 2.0
---------------------------------------------------------------------
-SLF4J API 2.0.13
-  Artifact : org.slf4j:slf4j-api:2.0.13
-  License  : MIT — full text in META-INF/LICENSE-slf4j.txt
---------------------------------------------------------------------
