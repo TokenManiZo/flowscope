@@ -124,8 +124,10 @@ export const controlExplorerRun = (action: "cancel" | "clear" | "new-chat" | "re
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
-export const startCodexChat = (values: { target: string; model: string; effort: string; message: string }) =>
-  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action: "start", ...values }, [202])
+export const startCodexChat = (values: { target: string; model: string; effort: string; message: string; accounts: string }) =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action: "start", target: values.target,
+    model: values.model, effort: values.effort, message: values.message,
+    ...(values.accounts ? { accounts: values.accounts } : {}) }, [202])
 export const controlCodexChat = (action: "cancel" | "new-chat" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action })
 export const steerCodexChat = (message: string) =>
@@ -136,6 +138,10 @@ export const openExplorerBrowserLogin = (id: string, url: string) =>
 /** Adopts the login window's session once the operator says the login is done. */
 export const completeExplorerBrowserLogin = (id: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-complete", id })
+export const openCodexChatBrowserLogin = (id: string, url: string) =>
+  postForm<ExplorerAccountSaveResult>("/api/codex-chat-accounts", { action: "browser-open", id, url })
+export const completeCodexChatBrowserLogin = (id: string) =>
+  postForm<ExplorerAccountSaveResult>("/api/codex-chat-accounts", { action: "browser-complete", id })
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })

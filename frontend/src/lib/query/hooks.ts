@@ -35,6 +35,8 @@ import {
   steerCodexChat,
   openExplorerBrowserLogin,
   completeExplorerBrowserLogin,
+  openCodexChatBrowserLogin,
+  completeCodexChatBrowserLogin,
   deleteExplorerAccount,
   saveZapAccount,
   deleteZapAccount,
@@ -177,6 +179,8 @@ export function useCodexChatControlMutation() { return useInvalidatingMutation((
 export function useCodexChatSteerMutation() { return useInvalidatingMutation((message: string) => steerCodexChat(message), [queryKeys.codexChat]) }
 export function useExplorerBrowserLoginMutation() { return useInvalidatingMutation(({ id, url }: { id: string; url: string }) => openExplorerBrowserLogin(id, url), [queryKeys.explorerRun]) }
 export function useExplorerBrowserCompleteMutation() { return useInvalidatingMutation((id: string) => completeExplorerBrowserLogin(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useCodexChatBrowserLoginMutation() { return useInvalidatingMutation(({ id, url }: { id: string; url: string }) => openCodexChatBrowserLogin(id, url), [queryKeys.codexChat]) }
+export function useCodexChatBrowserCompleteMutation() { return useInvalidatingMutation((id: string) => completeCodexChatBrowserLogin(id), [queryKeys.codexChat, queryKeys.snapshot]) }
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }

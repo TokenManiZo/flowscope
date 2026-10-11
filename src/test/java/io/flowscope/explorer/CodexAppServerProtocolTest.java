@@ -270,7 +270,7 @@ final class CodexAppServerProtocolTest {
     }
 
     @Test
-    void rawCodexThreadKeepsNativeToolsWithoutFlowScopeInstructionsOrTools(@TempDir Path temp) throws Exception {
+    void rawCodexThreadKeepsNativeToolsAndOnlyReadOnlyProjectEvidenceTools(@TempDir Path temp) throws Exception {
         AtomicReference<FakeCodex> process = new AtomicReference<>();
         Capture first = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         Capture second = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
@@ -284,10 +284,11 @@ final class CodexAppServerProtocolTest {
                     });
                     process.set(fake);
                     return fake;
-                }, ignored -> { })) {
+                }, ignored -> { }, (action, target) -> false,
+                new ProjectEvidenceReader((run, workspace) -> List.of()))) {
             ExplorerProvider.Request base = request();
             provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
-                    List.of(), "", "", "", "", "gpt-6.1-sol", "high", "", "Inspect freely",
+                    List.of(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(), "", "gpt-6.1-sol", "high", "", "Inspect freely",
                     true, 19417, temp.resolve("raw").toString()), listener(first));
             assertTrue(first.done().await(10, TimeUnit.SECONDS));
             assertNull(first.failure().get());
@@ -297,7 +298,12 @@ final class CodexAppServerProtocolTest {
             JsonNode params = started.path("params");
             assertFalse(params.path("ephemeral").asBoolean(true));
             assertFalse(params.has("developerInstructions"));
-            assertFalse(params.has("dynamicTools"));
+            assertEquals(List.of("flowscope_evidence_list", "flowscope_evidence_search", "flowscope_evidence_read",
+                            "flowscope_http_request", "flowscope_browser", "flowscope_artifact_list",
+                            "flowscope_artifact_search", "flowscope_artifact_read", "flowscope_artifact_index",
+                            "flowscope_record_discoveries"),
+                    java.util.stream.StreamSupport.stream(params.path("dynamicTools").spliterator(), false)
+                            .map(tool -> tool.path("name").asText()).toList());
             assertEquals("workspace-write", params.path("sandbox").asText());
             assertEquals("on-request", params.path("approvalPolicy").asText());
             assertEquals("http://127.0.0.1:19417", params.at("/config/shell_environment_policy/set/HTTPS_PROXY").asText());
@@ -309,16 +315,53 @@ final class CodexAppServerProtocolTest {
             assertTrue(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(false));
 
             provider.start(new ExplorerProvider.Request("raw-2", base.target(), base.exactScope(),
-                    List.of(), "", "", "", "", "gpt-6.1-sol", "high", "t1", "Continue",
+                    List.of(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(), "", "gpt-6.1-sol", "high", "t1", "Continue",
                     true, 19418, temp.resolve("raw").toString()), listener(second));
             assertTrue(second.done().await(10, TimeUnit.SECONDS));
             assertNull(second.failure().get());
             JsonNode resumed = process.get().awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
             assertEquals("t1", resumed.path("params").path("threadId").asText());
-            assertFalse(resumed.path("params").has("dynamicTools"));
+            assertEquals(10, resumed.at("/params/dynamicTools").size());
             assertEquals("http://127.0.0.1:19418", resumed.at("/params/config/shell_environment_policy/set/HTTP_PROXY").asText());
             JsonNode nextTurn = process.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Continue", nextTurn.at("/params/input/0/text").asText());
+        }
+    }
+
+    @Test
+    void rawCodexCanReadCurrentProjectEvidenceWithoutAnHttpGateway(@TempDir Path temp) throws Exception {
+        io.flowscope.core.RequestRecord record = new io.flowscope.core.RequestRecord(
+                io.flowscope.core.Source.HUMAN, "https://app.example.test:443", "GET", "/api/me", 200, "anon");
+        record.evidenceId = "ev-current";
+        record.hasResponse = true;
+        AtomicReference<JsonNode> toolResponse = new AtomicReference<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> new FakeCodex((self, turn) -> Thread.ofVirtual().start(() -> {
+                    try {
+                        self.emit("{\"id\":77,\"method\":\"item/tool/call\",\"params\":{"
+                                + "\"tool\":\"flowscope_evidence_list\",\"arguments\":{\"limit\":10}}}");
+                        toolResponse.set(self.awaitWritten(value -> value.path("id").asInt() == 77));
+                        self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"text\":\"Evidence found\"}}}");
+                        self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                    } catch (IOException | InterruptedException ignored) { }
+                })), ignored -> { }, (action, target) -> false,
+                new ProjectEvidenceReader((run, workspace) -> {
+                    assertEquals("raw-evidence", run);
+                    assertEquals(temp.resolve("raw").toString(), workspace);
+                    return List.of(record);
+                }))) {
+            provider.start(new ExplorerProvider.Request("raw-evidence", "https://app.example.test/",
+                    List.of("https://app.example.test/"), List.of(), "", "", "", "",
+                    "gpt-6.1-sol", "high", "", "Show evidence", true, 19417,
+                    temp.resolve("raw").toString()), listener(capture));
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            assertNull(capture.failure().get());
+            JsonNode response = toolResponse.get();
+            assertNotNull(response);
+            assertTrue(response.at("/result/success").asBoolean());
+            JsonNode evidence = JSON.readTree(response.at("/result/contentItems/0/text").asText());
+            assertEquals("ev-current", evidence.at("/items/0/evidence_id").asText());
         }
     }
 

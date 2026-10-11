@@ -22,6 +22,42 @@ import static org.junit.jupiter.api.Assertions.*;
 @EnabledIfSystemProperty(named = "flowscope.harness", matches = "true")
 final class CodexAppServerProviderHarnessTest {
     @Test
+    void rawCodexReadsTheCurrentProjectEvidenceWithoutAFileOrMcp(@TempDir Path temp) throws Exception {
+        io.flowscope.core.RequestRecord record = new io.flowscope.core.RequestRecord(
+                io.flowscope.core.Source.HUMAN, "https://provider-harness.invalid:443",
+                "GET", "/api/example", 200, "anon");
+        record.evidenceId = "ev-harness-current-project";
+        record.hasResponse = true;
+        java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(ignored -> { },
+                (action, reason) -> false, new ProjectEvidenceReader((run, workspace) -> {
+                    reads.incrementAndGet();
+                    assertEquals("raw-evidence-harness", run);
+                    return List.of(record);
+                }))) {
+            assertEquals("READY", provider.readiness());
+            String model = provider.models().configuredModel();
+            if (model.isBlank()) model = provider.models().models().getFirst().id();
+            CountDownLatch done = new CountDownLatch(1);
+            AtomicReference<ExplorerProvider.Result> result = new AtomicReference<>();
+            AtomicReference<String> failure = new AtomicReference<>();
+            provider.start(new ExplorerProvider.Request("raw-evidence-harness", "https://provider-harness.invalid/",
+                    List.of("https://provider-harness.invalid/"), List.of(), "", "", "", "",
+                    model, "", "", "Use flowscope_evidence_list to inspect the current FlowScope project's records. "
+                    + "Report the exact Evidence ID you find. Do not run shell commands or access any URL.",
+                    true, 0, temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity activity) { }
+                @Override public void completed(ExplorerProvider.Result value) { result.set(value); done.countDown(); }
+                @Override public void failed(String value) { failure.set(value); done.countDown(); }
+            });
+            assertTrue(done.await(3, TimeUnit.MINUTES), "real Codex evidence-read turn timed out");
+            assertNull(failure.get(), failure.get());
+            assertTrue(reads.get() > 0, "Codex did not call the current-project Evidence tool");
+            assertTrue(result.get().summary().contains("ev-harness-current-project"), result.get().summary());
+        }
+    }
+
+    @Test
     void rawCodexNativeCurlUsesThePerRunProxyWithoutFlowScopeTools(@TempDir Path temp) throws Exception {
         AtomicReference<String> captured = new AtomicReference<>();
         HttpServer proxy = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

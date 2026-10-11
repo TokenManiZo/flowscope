@@ -73,6 +73,7 @@ import io.flowscope.explorer.CodexAppServerProvider;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerTransport;
+import io.flowscope.explorer.ProjectEvidenceReader;
 import io.flowscope.explorer.ExplorerBrowserProxy;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
@@ -433,21 +434,22 @@ public final class FlowScopeExtension implements BurpExtension {
                 runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput, this::explorerChatChanged);
-        rawChat = new ExplorerCoordinator(new ExplorerAccountVault(), request -> {
-                    throw new IllegalStateException("자유 대화는 Explorer HTTP 도구를 사용하지 않습니다.");
-                },
-                new CodexAppServerProvider(api.logging()::logToOutput, this::approveCodexAction),
+        rawChat = new ExplorerCoordinator(new ExplorerAccountVault(), this::executeExplorerRequest,
+                new CodexAppServerProvider(api.logging()::logToOutput, this::approveCodexAction,
+                        new ProjectEvidenceReader(this::rawEvidenceForRun)),
                 runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput, this::rawChatChanged);
         rawChat.rawRunEnded(this::stopRawProxy);
         rawChat.rawRunStarted(runId -> rawProxyRunId = runId);
         explorer.browserRecorder(this::recordBrowserExchange);
+        rawChat.browserRecorder(this::recordBrowserExchange);
         PORT_SOURCE.entrySet().stream().filter(entry -> entry.getValue().source() == Source.LLM)
                 .map(Map.Entry::getKey).filter(port -> port > 0 && port <= 65535).sorted().findFirst()
                 .ifPresent(port -> {
                     explorerBrowserProxy = new ExplorerBrowserProxy(port);
                     explorer.browserProxy(explorerBrowserProxy);
+                    rawChat.browserProxy(explorerBrowserProxy);
                 });
         try {
             startWebUi();
@@ -1361,6 +1363,23 @@ public final class FlowScopeExtension implements BurpExtension {
     private static PortProfile profileOf(int listenerPort) {
         return PORT_SOURCE.getOrDefault(listenerPort,
                 new PortProfile(Source.UNKNOWN, SourceDetail.UNKNOWN));
+    }
+
+    private List<RequestRecord> rawEvidenceForRun(String runId, String workspace) {
+        Path database = activeProjectDatabase;
+        if (database == null || shuttingDown.get() || !runId.equals(rawProxyRunId)) {
+            throw new IllegalStateException("현재 Codex 대화의 프로젝트가 더는 활성 상태가 아닙니다.");
+        }
+        Path expected = database.getParent().resolve("codex-raw-" + shortDigest(database.toString()))
+                .toAbsolutePath().normalize();
+        if (!expected.equals(Path.of(workspace).toAbsolutePath().normalize())) {
+            throw new IllegalStateException("현재 프로젝트와 Codex 작업 폴더가 다릅니다.");
+        }
+        Pipeline.Result published = latest;
+        if (!database.equals(activeProjectDatabase) || !runId.equals(rawProxyRunId)) {
+            throw new IllegalStateException("Evidence를 읽는 동안 프로젝트가 변경됐습니다.");
+        }
+        return published.records;
     }
 
     private void stopRawProxy(String runId) {
@@ -2324,6 +2343,10 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public ExplorerCoordinator.Snapshot codexChatStatus() { return rawChat.current(); }
             @Override public List<ExplorerCoordinator.ChatMessage> codexChatMessages() { return rawChat.chatMessages(); }
             @Override public io.flowscope.explorer.ExplorerChatState codexChatState() { return rawChat.chatState(); }
+            @Override public List<ExplorerAccountVault.View> codexChatAccounts() { return rawChat.accounts(); }
+            @Override public ExplorerCoordinator.BrowserBudget codexChatBrowserBudget() {
+                return rawChat.browserDriven() ? rawChat.browserBudget() : null;
+            }
             @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
                 return explorer.models();
             }
@@ -2352,6 +2375,27 @@ public final class FlowScopeExtension implements BurpExtension {
                     throw new IllegalStateException("브라우저 세션을 읽지 못했습니다: " + error.getMessage());
                 }
             }
+            @Override public ExplorerAccountVault.View openCodexChatBrowserLogin(String id, String url) {
+                AccountProfile account = analysisConfig.account(id == null ? "" : id.trim()).orElseThrow(() ->
+                        new IllegalArgumentException("등록되지 않은 계정입니다. 계정·세션에서 먼저 등록하세요."));
+                URI login = URI.create(url.trim());
+                validateRuntimeAccount(account.id(), account.label(),
+                        login.getScheme() + "://" + login.getAuthority(), account.role().name());
+                try {
+                    ensureExplorerProxyListener();
+                    return rawChat.openBrowserLogin(account.id(), account.label(), account.role().name(), url);
+                } catch (java.io.IOException error) {
+                    throw new IllegalStateException(error.getMessage());
+                }
+            }
+            @Override public ExplorerAccountVault.View completeCodexChatBrowserLogin(String id) {
+                try {
+                    return rawChat.completeBrowserLogin(id);
+                } catch (java.io.IOException error) {
+                    throw new IllegalStateException("브라우저 세션을 읽지 못했습니다: " + error.getMessage());
+                }
+            }
+            @Override public void removeCodexChatAccount(String id) { rawChat.removeAccount(id); }
             @Override public void removeExplorerAccount(String id) {
                 explorer.removeAccount(id);
                 scheduleRebuild();
@@ -2899,6 +2943,7 @@ public final class FlowScopeExtension implements BurpExtension {
             try { rawChat.cancel(); } catch (RuntimeException ignored) { }
             try { rawChat.clear(); } catch (RuntimeException ignored) { }
             try { rawChat.resetChatState(); } catch (RuntimeException ignored) { }
+            rawChat.clearAccounts();
         }
         // Explorer sessions belong to registered accounts now; resetting secrets must not delete those accounts.
         explorer.clearAccounts();

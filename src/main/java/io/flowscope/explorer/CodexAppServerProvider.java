@@ -55,6 +55,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     /** Where Codex's own diagnostics go. Without it a turn that refuses or stalls explains itself to nobody. */
     private final Consumer<String> diagnostics;
     private final BiPredicate<String, String> rawApproval;
+    private final ProjectEvidenceReader projectEvidence;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "flowscope-codex-app-server");
         thread.setDaemon(true);
@@ -75,28 +76,40 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
     public CodexAppServerProvider(Consumer<String> diagnostics, BiPredicate<String, String> rawApproval) {
         this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable,
-                rawApproval);
+                rawApproval, null);
+    }
+
+    public CodexAppServerProvider(Consumer<String> diagnostics, BiPredicate<String, String> rawApproval,
+                                  ProjectEvidenceReader projectEvidence) {
+        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable,
+                rawApproval, projectEvidence);
     }
 
     CodexAppServerProvider(ProcessLauncher launcher) { this(launcher, ignored -> { }); }
 
     /** An injected launcher never runs the real binary, so it must not require one to be installed (CI has none). */
     CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics) {
-        this(launcher, diagnostics, () -> "codex", (action, target) -> false);
+        this(launcher, diagnostics, () -> "codex", (action, target) -> false, null);
     }
 
     CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
                            BiPredicate<String, String> rawApproval) {
-        this(launcher, diagnostics, () -> "codex", rawApproval);
+        this(launcher, diagnostics, () -> "codex", rawApproval, null);
+    }
+
+    CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
+                           BiPredicate<String, String> rawApproval, ProjectEvidenceReader projectEvidence) {
+        this(launcher, diagnostics, () -> "codex", rawApproval, projectEvidence);
     }
 
     private CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
                                    java.util.function.Supplier<String> executable,
-                                   BiPredicate<String, String> rawApproval) {
+                                   BiPredicate<String, String> rawApproval, ProjectEvidenceReader projectEvidence) {
         this.executable = executable;
         this.launcher = launcher;
         this.diagnostics = diagnostics == null ? ignored -> { } : diagnostics;
         this.rawApproval = rawApproval == null ? (action, target) -> false : rawApproval;
+        this.projectEvidence = projectEvidence;
     }
 
     private void diagnose(String line) {
@@ -497,6 +510,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             String tool = message.path("params").path("tool").asText("");
             try {
                 JsonNode params = message.path("params");
+                if (request.rawCodex() && tool.startsWith("flowscope_evidence_")) {
+                    if (projectEvidence == null) throw new IllegalStateException("현재 프로젝트 Evidence 조회가 연결되지 않았습니다.");
+                    result.put("success", true).putArray("contentItems").addObject()
+                            .put("type", "inputText")
+                            .put("text", projectEvidence.execute(request.runId(), request.rawWorkspace(), tool,
+                                    params.path("arguments")).toString());
+                    write(response);
+                    return;
+                }
                 String artifactBase = request.gatewayUrl().replaceFirst("/request$", "/artifacts");
                 String endpoint = switch (tool) {
                     case "flowscope_http_request" -> request.gatewayUrl();
@@ -619,6 +641,11 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (request.rawCodex()) {
                 rawShellProxy(params);
                 params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write");
+                var tools = params.putArray("dynamicTools");
+                if (projectEvidence != null) tools.add(evidenceListTool()).add(evidenceSearchTool()).add(evidenceReadTool());
+                if (!request.gatewayUrl().isBlank()) tools.add(httpTool()).add(rawBrowserTool())
+                        .add(artifactListTool()).add(artifactSearchTool()).add(artifactReadTool())
+                        .add(artifactIndexTool()).add(discoveryTool());
                 return params;
             }
             params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
@@ -701,6 +728,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             return tool;
         }
 
+        private ObjectNode rawBrowserTool() {
+            ObjectNode tool = browserTool();
+            tool.put("description", "Drive a FlowScope login window only after the operator completes its browser login. "
+                    + "Available account handles for this turn: "
+                    + (request.accountHandles().isEmpty() ? "none" : String.join(", ", request.accountHandles()))
+                    + ". Its in-scope HTTP responses are stored as LLM Evidence; no automatic exploration plan is imposed.");
+            return tool;
+        }
+
         private ObjectNode artifactListTool() {
             ObjectNode tool = dynamicTool("flowscope_artifact_list",
                     "List response artifacts retained for the active Explorer run, including Evidence ID, URL, media type, size, completeness, and SHA-256.");
@@ -753,6 +789,43 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode dynamicTool(String name, String description) {
             return JSON.createObjectNode().put("type", "function").put("name", name)
                     .put("description", description);
+        }
+
+        private ObjectNode evidenceListTool() {
+            ObjectNode tool = dynamicTool("flowscope_evidence_list",
+                    "List stored HTTP Evidence in the current FlowScope project, newest first, across HUMAN, SCANNER, and LLM. Returns IDs and metadata only, not raw content. If asked whether you can see FlowScope evidence, call this before answering; an empty working folder says nothing about project Evidence.");
+            ObjectNode fields = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false).putObject("properties");
+            fields.putObject("offset").put("type", "integer").put("minimum", 0);
+            fields.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
+            return tool;
+        }
+
+        private ObjectNode evidenceSearchTool() {
+            ObjectNode tool = dynamicTool("flowscope_evidence_search",
+                    "Search current-project HTTP Evidence metadata by URL, path, method, status, source, identity, operation, resource, run ID, or Evidence ID. Search does not inspect raw request or response bodies; read a matching ID for its content.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode fields = schema.putObject("properties");
+            fields.putObject("query").put("type", "string").put("minLength", 1).put("maxLength", 256);
+            fields.putObject("offset").put("type", "integer").put("minimum", 0);
+            fields.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
+            schema.putArray("required").add("query");
+            return tool;
+        }
+
+        private ObjectNode evidenceReadTool() {
+            ObjectNode tool = dynamicTool("flowscope_evidence_read",
+                    "Read a bounded part of one stored HTTP request or response by Evidence ID. Returns original unmasked text when retained, otherwise a clearly marked partial preview. Continue with next_char_offset until end_of_text; do not assume a preview is complete.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode fields = schema.putObject("properties");
+            fields.putObject("evidence_id").put("type", "string");
+            fields.putObject("part").put("type", "string").putArray("enum").add("request").add("response");
+            fields.putObject("char_offset").put("type", "integer").put("minimum", 0);
+            fields.putObject("max_chars").put("type", "integer").put("minimum", 1).put("maximum", 65536);
+            schema.putArray("required").add("evidence_id").add("part");
+            return tool;
         }
 
         private ObjectNode discoveryTool() {
@@ -912,6 +985,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             case "flowscope_http_request" -> "HTTP 요청";
             case "flowscope_browser" -> "브라우저 조작";
             case "flowscope_record_discoveries" -> "발견 저장";
+            case "flowscope_evidence_list", "flowscope_evidence_search", "flowscope_evidence_read" -> "프로젝트 요청 기록 조회";
             case "flowscope_artifact_list", "flowscope_artifact_search",
                  "flowscope_artifact_read", "flowscope_artifact_index" -> "산출물 분석";
             default -> tool.isBlank() ? "FlowScope 도구" : tool;

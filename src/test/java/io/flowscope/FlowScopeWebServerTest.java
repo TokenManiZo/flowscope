@@ -436,6 +436,26 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void rawChatLoginAndSelectedAccountsStaySeparateFromAutomaticExplorer() throws Exception {
+        start();
+        String target = state.record.service + "/";
+        assertEquals(403, post("/api/codex-chat-accounts", "action=browser-open&id=user-a&url="
+                + encode(target), "wrong-token").statusCode());
+        assertEquals(200, post("/api/codex-chat-accounts", "action=browser-open&id=user-a&url="
+                + encode(target), token).statusCode());
+        assertEquals("NEEDS_INPUT", json(get("/api/codex-chat", token, origin()))
+                .at("/accounts/0/status").asText());
+        assertEquals(200, post("/api/codex-chat-accounts", "action=browser-complete&id=user-a", token).statusCode());
+        assertEquals("READY", json(get("/api/codex-chat", token, origin()))
+                .at("/accounts/0/status").asText());
+        assertTrue(json(get("/api/explorer-run", token, origin())).path("accounts").isEmpty());
+        HttpResponse<String> started = post("/api/codex-chat", "action=start&target=" + encode(target)
+                + "&accounts=user-a&message=Inspect", token);
+        assertEquals(202, started.statusCode());
+        assertEquals("user-a", JSON.readTree(started.body()).at("/run/accountIds/0").asText());
+    }
+
+    @Test
     void explorerReadinessCanBeRecheckedWithoutStartingARun() throws Exception {
         start();
 
@@ -1890,6 +1910,7 @@ final class FlowScopeWebServerTest {
         private volatile String refreshedZapSessionAccountId = "";
         private volatile String linkedCandidateId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
+        private final List<ExplorerAccountVault.View> codexAccounts = new ArrayList<>();
         private final List<ExplorerCoordinator.ChatMessage> explorerMessages = new ArrayList<>();
         private final List<ExplorerCoordinator.ChatMessage> codexMessages = new ArrayList<>();
         private volatile String explorerStartMessage = "";
@@ -2061,6 +2082,23 @@ final class FlowScopeWebServerTest {
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
         @Override public ExplorerCoordinator.Snapshot codexChatStatus() { return codexChatRun; }
+        @Override public List<ExplorerAccountVault.View> codexChatAccounts() { return List.copyOf(codexAccounts); }
+        @Override public ExplorerAccountVault.View openCodexChatBrowserLogin(String id, String url) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", url,
+                    ExplorerAccountVault.AuthStatus.NEEDS_INPUT, "로그인 대기",
+                    java.time.Instant.now().toString(), 0, List.of(), true);
+            codexAccounts.clear();
+            codexAccounts.add(value);
+            return value;
+        }
+        @Override public ExplorerAccountVault.View completeCodexChatBrowserLogin(String id) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", "",
+                    ExplorerAccountVault.AuthStatus.READY, "브라우저 로그인 세션 (사용자 확인)",
+                    java.time.Instant.now().toString(), 1, List.of("Authorization"), true);
+            codexAccounts.clear();
+            codexAccounts.add(value);
+            return value;
+        }
         @Override public boolean codexChatActive() { return codexChatRun.status() == ExplorerCoordinator.Status.RUNNING; }
         @Override public List<ExplorerCoordinator.ChatMessage> codexChatMessages() { return List.copyOf(codexMessages); }
         @Override public io.flowscope.explorer.ExplorerChatState codexChatState() {
@@ -2104,7 +2142,7 @@ final class FlowScopeWebServerTest {
             codexMessages.add(new ExplorerCoordinator.ChatMessage("user", request.userMessage(), "raw-test-run", java.time.Instant.now()));
             codexChatRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "raw-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "Codex 대화 중", "READY",
-                    List.of(), true, 0, 0, 0, 0, 0, List.of(), List.of(), request.model(), request.effort());
+                    request.accountIds(), true, 0, 0, 0, 0, 0, List.of(), List.of(), request.model(), request.effort());
             return codexChatRun;
         }
         @Override public ExplorerCoordinator.Snapshot newCodexChat() {

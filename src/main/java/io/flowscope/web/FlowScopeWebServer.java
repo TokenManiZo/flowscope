@@ -241,6 +241,15 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ExplorerCoordinator.Snapshot recheckCodexChatProvider() {
             throw new UnsupportedOperationException("Codex chat is unavailable");
         }
+        default List<ExplorerAccountVault.View> codexChatAccounts() { return List.of(); }
+        default ExplorerAccountVault.View openCodexChatBrowserLogin(String id, String url) {
+            throw new UnsupportedOperationException("Codex chat browser login is unavailable");
+        }
+        default ExplorerAccountVault.View completeCodexChatBrowserLogin(String id) {
+            throw new UnsupportedOperationException("Codex chat browser login is unavailable");
+        }
+        default void removeCodexChatAccount(String id) { }
+        default ExplorerCoordinator.BrowserBudget codexChatBrowserBudget() { return null; }
         default ExplorerProvider.ModelCatalog explorerModels() {
             throw new UnsupportedOperationException("Explorer model list is unavailable");
         }
@@ -389,6 +398,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/scanner-run" -> scannerRun(request);
             case "/api/explorer-run" -> explorerRun(request);
             case "/api/codex-chat" -> codexChat(request);
+            case "/api/codex-chat-accounts" -> codexChatAccounts(request);
             case "/api/explorer-prompts" -> explorerPrompts(request);
             case "/api/explorer-models" -> explorerModels(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
@@ -1379,6 +1389,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (state.explorerAccounts().stream().anyMatch(account -> account.id().equals(id))) {
                 state.removeExplorerAccount(id);
             }
+            if (state.codexChatAccounts().stream().anyMatch(account -> account.id().equals(id))) {
+                state.removeCodexChatAccount(id);
+            }
             state.config().removeAccount(id);
             state.rebuild();
             return success("계정을 삭제했습니다.");
@@ -1664,8 +1677,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     .put("role", item.role()).put("text", item.text())
                     .put("runId", item.runId()).put("at", item.at().toString()));
             body.set("chat", json.valueToTree(state.codexChatState()));
-            body.putNull("browser");
-            body.set("accounts", json.valueToTree(List.of()));
+            ExplorerCoordinator.BrowserBudget budget = state.codexChatBrowserBudget();
+            if (budget == null) body.putNull("browser");
+            else body.set("browser", json.valueToTree(budget));
+            body.set("accounts", json.valueToTree(state.codexChatAccounts()));
             body.set("scope", json.valueToTree(state.scopeEntries()));
             return json(200, body);
         }
@@ -1679,9 +1694,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 case "start" -> {
                     String target = required(form, "target");
                     if (isOwnControlPlane(target)) throw new IllegalArgumentException("FlowScope 제어면은 Codex 대상이 될 수 없습니다.");
-                    if (!form.getOrDefault("accounts", "").isBlank())
-                        throw new IllegalArgumentException("Codex 자유 대화에는 Explorer 계정을 전달하지 않습니다.");
-                    snapshot = state.startCodexChat(new ExplorerCoordinator.StartRequest(target, List.of(), true,
+                    List<String> accounts = java.util.Arrays.stream(form.getOrDefault("accounts", "").split(","))
+                            .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
+                    snapshot = state.startCodexChat(new ExplorerCoordinator.StartRequest(target, accounts, true,
                             form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
                             required(form, "message"), true));
                     status = 202;
@@ -1695,6 +1710,32 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ObjectNode body = json.createObjectNode();
             body.set("run", explorerSnapshot(snapshot));
             return json(status, body);
+        } catch (RuntimeException error) {
+            return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response codexChatAccounts(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            ObjectNode body = json.createObjectNode();
+            body.set("accounts", json.valueToTree(state.codexChatAccounts()));
+            return json(200, body);
+        }
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String action = required(form, "action").trim().toLowerCase(Locale.ROOT);
+            ExplorerAccountVault.View account = switch (action) {
+                case "browser-open" -> state.openCodexChatBrowserLogin(required(form, "id"), required(form, "url"));
+                case "browser-complete" -> state.completeCodexChatBrowserLogin(required(form, "id"));
+                default -> throw new IllegalArgumentException("지원하지 않는 자유 대화 계정 동작입니다.");
+            };
+            ObjectNode body = json.createObjectNode().put("success", true)
+                    .put("message", action.equals("browser-open")
+                            ? "브라우저 창에서 로그인한 뒤 [로그인 완료]를 누르세요."
+                            : "자유 대화의 브라우저 로그인 세션을 가져왔습니다.");
+            body.set("account", json.valueToTree(account));
+            return json(200, body);
         } catch (RuntimeException error) {
             return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());
         }

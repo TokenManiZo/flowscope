@@ -65,6 +65,10 @@ FlowScope는 Burp가 시작될 때의 PATH와 `~/.local/bin`, npm, WinGet, Homeb
 
 Codex를 찾지 못해도 직접 둘러보기와 ZAP 스캔은 그대로 쓸 수 있습니다.
 
+### Codex 자유 대화가 “작업 폴더에 증거가 없다”고 답한다
+
+작업 폴더가 비어 있어도 현재 프로젝트의 요청 기록은 별도 DB에 있을 수 있습니다. 자유 대화의 수정 JAR은 `flowscope_evidence_list/search/read`로 현재 프로젝트 기록을 읽습니다. **현재 프로젝트 요청 기록을 목록으로 보여 줘**라고 요청해 보세요. 여전히 폴더만 확인한다면 Burp에 이전 JAR이 로드됐는지 확인하세요. 자유 대화의 **HTTP 응답 0건**은 이번 대화에서 새로 수집한 응답이 없다는 뜻이지, 프로젝트에 저장된 모든 기록이 0건이라는 뜻이 아닙니다.
+
 ### `Codex CLI 시작 실패: Cannot load implementation of interface ...PtyHelpers$OSFacade`
 
 웹 터미널 시제품 JAR의 PTY 실행 오류입니다. 이 시제품은 자유 대화의 요구와도 달라 제거했습니다. 자유 대화 버튼을 누르면 터미널 대신 채팅방이 열리는 수정 JAR을 Burp에서 로드하세요. 이전 JAR과 동시에 로드하지 마세요. 기존 프로젝트 요청 기록은 삭제하지 않습니다.

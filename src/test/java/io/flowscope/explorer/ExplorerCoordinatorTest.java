@@ -41,20 +41,42 @@ final class ExplorerCoordinatorTest {
     }
 
     @Test
-    void rawChatDoesNotReceiveExplorerAccountHandles(@TempDir Path temp) throws Exception {
+    void rawChatUsesItsOwnCompletedLoginWindowAndRecordsBrowserTraffic(@TempDir Path temp) throws Exception {
         FakeProvider provider = new FakeProvider();
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        vault.register("user-a", "USER A", "USER");
-        vault.adoptSession("user-a", java.net.URI.create("https://app.example.test/"), List.of(),
-                java.util.Map.of("Authorization", "Bearer test"));
+        FakeWindow window = new FakeWindow();
+        window.cookies.add(cookie("session", "local-test"));
+        List<ExplorerCoordinator.BrowserExchange> recorded = new java.util.ArrayList<>();
         try (ExplorerCoordinator coordinator = new ExplorerCoordinator(vault,
                 request -> { throw new AssertionError("no HTTP call expected"); }, provider,
                 new RunContextRegistry(), url -> url.startsWith("https://app.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> { })) {
-            assertThrows(IllegalArgumentException.class, () -> coordinator.start(
-                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
-                            false, "", "", "Inspect", true, 19417, temp.resolve("raw").toString())));
-            assertNull(provider.request.get());
+            coordinator.loginBrowser(window);
+            coordinator.browserRecorder(recorded::add);
+            coordinator.openBrowserLogin("user-a", "USER A", "USER", "https://app.example.test/");
+            coordinator.completeBrowserLogin("user-a");
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
+                    true, "", "", "Inspect", true, 19417, temp.resolve("raw").toString()));
+            await(() -> provider.request.get() != null);
+            assertEquals(List.of("user-a"), provider.request.get().accountHandles());
+            assertFalse(provider.request.get().gatewayUrl().isBlank());
+            coordinator.browserAction("user-a", "navigate", "https://app.example.test/api/me", "", "");
+            assertEquals(1, recorded.size());
+            assertEquals("user-a", recorded.getFirst().accountId());
+            window.emit("https://app.example.test/public.js", java.util.Map.of());
+            assertEquals(2, recorded.size());
+            assertNull(recorded.getLast().accountId(), "a browser request without credentials is not attributed to the account");
+            String firstRun = provider.request.get().runId();
+            provider.listener.get().completed(new ExplorerProvider.Result("First answer", List.of(), "raw-thread"));
+            await(() -> !activeStatus(coordinator));
+            assertFalse(window.recording);
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
+                    true, "", "", "Continue", true, 19418, temp.resolve("raw").toString()));
+            await(() -> provider.request.get() != null && !firstRun.equals(provider.request.get().runId()));
+            assertEquals("raw-thread", provider.request.get().threadId());
+            assertTrue(window.recording, "the completed login window must resume collection on the next turn");
+            coordinator.cancel();
+            assertFalse(window.recording);
         }
     }
 
@@ -74,7 +96,7 @@ final class ExplorerCoordinatorTest {
             assertEquals(19417, started.rawProxyPort());
             assertEquals(temp.resolve("raw").toString(), started.rawWorkspace());
             assertEquals("", started.prompt());
-            assertEquals("", started.gatewayUrl());
+            assertFalse(started.gatewayUrl().isBlank());
             assertTrue(started.accountHandles().isEmpty());
             assertNotNull(contexts.current(Source.LLM));
             provider.listener.get().threadReady("raw-thread");
@@ -85,7 +107,7 @@ final class ExplorerCoordinatorTest {
             provider.listener.get().completed(new ExplorerProvider.Result("Done", List.of(), "raw-thread"));
             await(() -> !activeStatus(coordinator));
             assertTrue(coordinator.rawRun(), "terminal raw turns must remain distinguishable from automatic Explorer");
-            assertEquals("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)", coordinator.current().message());
+            assertEquals("Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)", coordinator.current().message());
             assertTrue(coordinator.current().activities().stream().noneMatch(activity ->
                     activity.kind().equals("SYSTEM") || activity.kind().equals("MODEL")));
             assertEquals("raw-thread", coordinator.chatState().threadId());
@@ -115,7 +137,7 @@ final class ExplorerCoordinatorTest {
             published.set(Pipeline.run(List.of(evidence)));
             provider.listener.get().completed(new ExplorerProvider.Result("Found items", List.of(), "raw-thread"));
             await(() -> !activeStatus(coordinator));
-            assertEquals("Codex 답변 완료 · FlowScope HTTP 응답 1건", coordinator.current().message());
+            assertEquals("Codex 답변 완료 · 이번 대화 신규 HTTP 응답 1건", coordinator.current().message());
             assertTrue(coordinator.current().activities().stream().noneMatch(item -> item.title().contains("Explorer")));
         }
     }

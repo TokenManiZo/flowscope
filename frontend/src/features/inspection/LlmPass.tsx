@@ -18,6 +18,8 @@ import {
   useCodexChatQuery,
   useCodexChatStartMutation,
   useCodexChatSteerMutation,
+  useCodexChatBrowserLoginMutation,
+  useCodexChatBrowserCompleteMutation,
   useExplorerControlMutation,
   useExplorerModelsQuery,
   useExplorerRunQuery,
@@ -84,6 +86,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const rawSteer = useCodexChatSteerMutation()
   const openLogin = useExplorerBrowserLoginMutation()
   const completeLogin = useExplorerBrowserCompleteMutation()
+  const openRawLogin = useCodexChatBrowserLoginMutation()
+  const completeRawLogin = useCodexChatBrowserCompleteMutation()
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<string[] | null>(null)
   const [autoSelectedModel, setAutoSelectedModel] = useState<string | null>(null)
@@ -156,6 +160,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     && Boolean(target) && !(rawView && automaticActive)
   const readyToExplore = readyToSend && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
+    ?? openRawLogin.error ?? completeRawLogin.error
 
   const feedItems: readonly SourceFeedItem[] = (rawView ? [] : visibleRun?.activities ?? [])
     .map((item) => ({
@@ -168,7 +173,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
 
   const notices = <>
     {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>{rawView ? "Codex 대화 요청 실패" : "Explorer 요청 실패"}</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
-    {legacyRawChat && rawView && <Alert><AlertTitle>이전 자유 대화는 새 채팅이 필요합니다</AlertTitle><AlertDescription>이전 Codex thread에는 FlowScope 도구 문맥이 남아 있습니다. 아래의 새 채팅을 눌러 순정 대화로 시작하세요. 저장된 요청 기록은 유지됩니다.</AlertDescription></Alert>}
+    {legacyRawChat && rawView && <Alert><AlertTitle>이전 자유 대화는 새 채팅이 필요합니다</AlertTitle><AlertDescription>이전 Codex thread에는 자동 Explorer 도구 문맥이 남아 있습니다. 아래의 새 채팅을 눌러 현재 자유 대화로 시작하세요. 저장된 요청 기록은 유지됩니다.</AlertDescription></Alert>}
     {run && !providerReady ? <Alert variant="destructive"><AlertTitle>Codex 준비가 필요합니다</AlertTitle><AlertDescription className="space-y-3">
       <p>{run.providerReadiness}</p>
       <ol className="list-decimal space-y-1 pl-5">
@@ -214,7 +219,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   </section> : null
 
   const sessions = new Map((data?.accounts ?? []).map((item) => [item.id, item]))
-  const loginBusy = openLogin.isPending || completeLogin.isPending
+  const loginBusy = openLogin.isPending || completeLogin.isPending || openRawLogin.isPending || completeRawLogin.isPending
   const rows = accounts.map((account) => {
     const session = sessions.get(account.id)
     const ready = session?.status === "READY"
@@ -223,8 +228,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       id: account.id, label: account.label, configured: ready,
       statusText: ready ? "세션 있음" : waiting ? "로그인 대기" : "로그인 필요",
       action: waiting
-        ? <Button type="button" size="sm" disabled={active || loginBusy} aria-label={`${account.label} 로그인 완료`} onClick={() => completeLogin.mutate(account.id)}>로그인 완료</Button>
-        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
+        ? <Button type="button" size="sm" disabled={active || loginBusy} aria-label={`${account.label} 로그인 완료`} onClick={() => rawView ? completeRawLogin.mutate(account.id) : completeLogin.mutate(account.id)}>로그인 완료</Button>
+        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => rawView ? openRawLogin.mutate({ id: account.id, url: target }) : openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
     }
   })
   const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
@@ -268,6 +273,14 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       <p className="text-xs text-muted-foreground">[브라우저 로그인] → 열린 창에서 로그인 → [로그인 완료]. 이 창의 기록은 직접 둘러보기와 섞이지 않습니다.</p>
     </div>}
     </section>}
+    {rawView && <section className="rounded-md border">
+      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">자유 대화 브라우저 로그인 <span className="ml-2 font-normal text-muted-foreground">{readyAccounts.size}개 준비 · 로그인 완료한 계정은 다음 메시지에 연결</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
+      {accountsOpen && <div className="grid gap-2 border-t p-3 text-xs">
+        {rows.length ? rows.map((row) => <div key={row.id} className="flex items-center justify-between gap-3"><span className="min-w-0 truncate">{row.label} · {row.statusText}</span>{row.action}</div>)
+          : <p className="text-muted-foreground">계정·세션에서 점검 계정을 먼저 등록하세요.</p>}
+        <p className="text-muted-foreground">이 브라우저는 자동 Explorer와 별도 세션입니다. 로그인 완료 전 요청은 증거로 수집하지 않습니다.</p>
+      </div>}
+    </section>}
     {!rawView && browserCard}
     <div className="flex flex-wrap items-center justify-start gap-2 border-t pt-3">
       {!rawView && <Button size="sm" disabled={!readyToExplore || active || start.isPending} onClick={() => {
@@ -299,7 +312,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     if (run?.status === "RUNNING" && data?.rawActive) {
       rawSteer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     } else if (!active && readyToSend) {
-      rawStart.mutate({ target, model: nextModel, effort: nextEffort, message: text },
+      rawStart.mutate({ target, model: nextModel, effort: nextEffort, message: text,
+        accounts: [...readyAccounts].filter((id) => availableAccounts.has(id)).join(",") },
         { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }
   }
@@ -318,7 +332,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         placeholder={visibleRun?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "대상 URL과 원하는 작업을 직접 입력하세요"}
         className="min-h-18 max-h-48 resize-y" disabled={start.isPending || steer.isPending} />
       <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
-      <p className="break-all text-xs text-muted-foreground">자유 대화에는 FlowScope 계정·전용 도구·자동 지침을 전달하지 않습니다. 메시지에 대상 URL을 직접 적으세요: <code>{target}</code></p>
+      <p className="break-all text-xs text-muted-foreground">자동 탐색 지침은 붙이지 않습니다. 현재 프로젝트 요청 기록과 준비한 로그인 브라우저를 사용할 수 있습니다. 대상 URL은 메시지에 직접 적으세요: <code>{target}</code></p>
       <p className="text-xs text-amber-700 dark:text-amber-300">Burp 프록시를 우회한 Codex 요청은 FlowScope가 차단하거나 기록하지 못합니다. 범위 안 응답 중 실제로 기록된 것만 LLM 그래프에 반영합니다.</p>
       <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
     </form>}

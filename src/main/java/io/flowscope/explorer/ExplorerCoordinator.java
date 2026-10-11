@@ -210,15 +210,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (request.rawCodex() && request.userMessage().isBlank()) {
             throw new IllegalArgumentException("raw Codex 메시지가 필요합니다.");
         }
-        if (request.rawCodex() && !request.accountIds().isEmpty()) {
-            throw new IllegalArgumentException("Codex 자유 대화에는 Explorer 계정 handle을 전달하지 않습니다.");
-        }
         if (!request.userMessage().isBlank() && !conversationThreadId.isBlank()
                 && conversationRaw != request.rawCodex()) {
             throw new IllegalStateException("다른 대화 방식에서는 새 채팅을 시작하세요.");
         }
         if (request.rawCodex() && !conversationThreadId.isBlank() && conversationRawProtocolVersion < 1) {
-            throw new IllegalStateException("이전 자유 대화에는 FlowScope 도구 문맥이 남아 있습니다. 순정 Codex로 시작하려면 새 채팅을 선택하세요.");
+            throw new IllegalStateException("이전 자유 대화에는 자동 Explorer 도구 문맥이 남아 있습니다. 현재 자유 대화로 시작하려면 새 채팅을 선택하세요.");
         }
         if (!request.userMessage().isBlank() && !conversationTarget.isBlank()
                 && !conversationTarget.equals(request.target())) {
@@ -449,11 +446,13 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (!current.accountIds().contains(accountId)
                 || vault.view(accountId).status() != ExplorerAccountVault.AuthStatus.READY) return;
         // A public resource fetched in an account window is not an anonymous exploration run.
-        if (exchange.requestHeaders().entrySet().stream().noneMatch(header ->
+        boolean authenticatedRequest = exchange.requestHeaders().entrySet().stream().anyMatch(header ->
                 (header.getKey().equalsIgnoreCase("Cookie") || header.getKey().equalsIgnoreCase("Authorization"))
-                        && header.getValue() != null && !header.getValue().isBlank())) return;
+                        && header.getValue() != null && !header.getValue().isBlank());
+        if (!authenticatedRequest && !rawModeActive) return;
         if (!exactScope.test(exchange.url())) return;
-        browserSink.accept(new BrowserExchange(runId, accountId, exchange.method(), exchange.url(),
+        browserSink.accept(new BrowserExchange(runId, authenticatedRequest ? accountId : null,
+                exchange.method(), exchange.url(),
                 exchange.requestHeaders(), exchange.requestBody(), exchange.status(),
                 exchange.responseHeaders(), exchange.responseBody()));
         browserEndpoints.add(exchange.method() + " " + exchange.url());
@@ -593,11 +592,35 @@ public final class ExplorerCoordinator implements AutoCloseable {
         List<ExplorerProvider.Unresolved> limitations = new ArrayList<>();
         try {
             if (request.rawCodex()) {
+                List<String> ready = new ArrayList<>();
+                for (String accountId : request.accountIds()) {
+                    ExplorerAccountVault.View view = vault.view(accountId);
+                    LoginBrowser.Session window = loginWindows.get(accountId);
+                    if (view.status() != ExplorerAccountVault.AuthStatus.READY || window == null || !window.alive()) {
+                        throw new IllegalStateException("자유 대화 계정 " + view.label() + "의 브라우저 로그인을 완료해 주세요.");
+                    }
+                    try { adoptWindowSession(accountId, window); }
+                    catch (IOException | IllegalStateException ignored) { /* keep the session adopted earlier */ }
+                    ready.add(accountId);
+                }
                 synchronized (this) {
-                    if (!sameActiveRun(runId)) return;
+                    if (conversationArtifacts == null) conversationArtifacts = new ExplorerArtifactStore("llm-chat-" + runId);
+                }
+                ExplorerHttpGateway created = new ExplorerHttpGateway(vault, transport, exactScope, runId,
+                        this::gatewayEvent, candidates -> acceptDiscoveries(runId, candidates), true,
+                        conversationArtifacts);
+                created.browserDriver(this::browserAction);
+                synchronized (this) {
+                    if (!sameActiveRun(runId)) { created.close(); return; }
+                    gateway = created;
+                    if (!ready.isEmpty()) {
+                        browserStartedAt = System.currentTimeMillis();
+                        ready.forEach(accountId -> loginWindows.get(accountId).recording(true));
+                    }
                     snapshot = update(Status.RUNNING, "Codex 자유 대화가 진행 중입니다.", limitations, null);
                     providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
-                            List.of(request.target()), List.of(), "", "", "", "", request.model(),
+                            List.of(request.target()), ready, created.url(), created.discoveriesUrl(),
+                            created.token(), "", request.model(),
                             request.effort(), conversationThreadId, request.userMessage(), true,
                             request.rawProxyPort(), request.rawWorkspace()), providerListener(runId, limitations, true));
                 }
@@ -793,8 +816,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
             Status status = limitations.isEmpty() ? Status.COMPLETED : Status.COMPLETED_WITH_LIMITATIONS;
             String summary = rawModeActive
                     ? snapshot.responses() == 0
-                    ? "Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)"
-                    : "Codex 답변 완료 · FlowScope HTTP 응답 " + snapshot.responses() + "건"
+                    ? "Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)"
+                    : "Codex 답변 완료 · 이번 대화 신규 HTTP 응답 " + snapshot.responses() + "건"
                     : "Explorer 완료 · HTTP 시도 " + snapshot.attempts()
                     + "건 · 응답 기록 " + snapshot.responses()
                     + "건 · 선언 endpoint " + snapshot.endpointDeclarations()

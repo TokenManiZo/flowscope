@@ -80,7 +80,7 @@ it("separates a completed Codex conversation from automatic Explorer controls", 
   const user = userEvent.setup()
   const raw = { ...idle, rawRun: true, rawActive: false,
     run: { ...idle.run, status: "COMPLETED", runId: "llm-raw-1",
-      message: "Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)",
+      message: "Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)",
       activities: [{ sequence: 1, kind: "SYSTEM", title: "Codex 답변 완료", detail: "대화 turn을 마쳤습니다.", status: "COMPLETED" }] },
     chat: { threadId: "raw-thread", target: "https://app.example.test/", model: "", effort: "",
       rawCodex: true, rawProtocolVersion: 1 },
@@ -93,7 +93,7 @@ it("separates a completed Codex conversation from automatic Explorer controls", 
     ? catalogResponse() : new Response(JSON.stringify(String(input) === "/api/codex-chat" ? raw : idle))))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
   await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
-  expect(await screen.findByText("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)")).toBeVisible()
+  expect(await screen.findByText("Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)")).toBeVisible()
   expect(screen.getByText("Codex 대화")).toBeVisible()
   expect(screen.queryByRole("button", { name: "탐색 시작" })).not.toBeInTheDocument()
   expect(screen.queryByRole("button", { name: /^탐색할 계정/ })).not.toBeInTheDocument()
@@ -101,7 +101,7 @@ it("separates a completed Codex conversation from automatic Explorer controls", 
   await user.click(screen.getByRole("button", { name: "자동 탐색 보기" }))
   expect(screen.getByRole("button", { name: "탐색 시작" })).toBeVisible()
   expect(screen.queryByText("하이")).not.toBeInTheDocument()
-  expect(screen.queryByText("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)")).not.toBeInTheDocument()
+  expect(screen.queryByText("Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)")).not.toBeInTheDocument()
   await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   expect(screen.getByText("하이")).toBeVisible()
 })
@@ -109,7 +109,7 @@ it("separates a completed Codex conversation from automatic Explorer controls", 
 it("keeps Codex tool and HTTP activity out of the free-chat transcript", async () => {
   const chat = { ...idle, rawRun: true, rawActive: false,
     run: { ...idle.run, status: "COMPLETED", runId: "llm-raw-chat",
-      message: "Codex 답변 완료 · FlowScope HTTP 응답 1건",
+      message: "Codex 답변 완료 · 이번 대화 신규 HTTP 응답 1건",
       activities: [
         { sequence: 1, kind: "TOOL", title: "Codex 셸 명령", detail: "curl https://app.example.test/api/me", status: "COMPLETED" },
         { sequence: 2, kind: "HTTP", title: "GET /api/me", detail: "HTTP 200", status: "RECORDED" },
@@ -129,6 +129,39 @@ it("keeps Codex tool and HTTP activity out of the free-chat transcript", async (
   expect(screen.queryByText("요청·셸 실행 기록")).not.toBeInTheDocument()
 })
 
+it("prepares a separate free-chat login and sends its ready account with the next message", async () => {
+  const user = userEvent.setup()
+  let loginStatus: "UNVERIFIED" | "NEEDS_INPUT" | "READY" = "UNVERIFIED"
+  const posted: string[] = []
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input)
+    if (path === "/api/explorer-models") return catalogResponse()
+    if (path === "/api/codex-chat-accounts" && init?.method === "POST") {
+      loginStatus = String(init.body).includes("browser-complete") ? "READY" : "NEEDS_INPUT"
+      return new Response(JSON.stringify({ success: true, account: { id: "user-a", label: "USER A", status: loginStatus } }))
+    }
+    if (path === "/api/codex-chat" && init?.method === "POST") {
+      posted.push(String(init.body))
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "raw-account" } }), { status: 202 })
+    }
+    if (path === "/api/codex-chat") return new Response(JSON.stringify({ ...idle, accounts: loginStatus === "UNVERIFIED" ? [] : [
+      { id: "user-a", label: "USER A", status: loginStatus, browserOpen: true },
+    ] }))
+    if (path === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    throw new Error(`unexpected API ${path}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
+  await user.click(await screen.findByRole("button", { name: /^자유 대화 브라우저 로그인/ }))
+  await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
+  await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
+  await waitFor(() => expect(screen.getByText("USER A · 세션 있음")).toBeVisible())
+  await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "로그인한 화면을 봐줘")
+  await user.click(screen.getByRole("button", { name: "메시지 전송" }))
+  await waitFor(() => expect(posted).toHaveLength(1))
+  expect(posted[0]).toContain("accounts=user-a")
+})
+
 it("warns before resuming an older raw thread that still has Explorer tool context", async () => {
   const legacy = { ...idle, chat: { threadId: "old-thread", target: "https://app.example.test/",
     model: "", effort: "", rawCodex: true, rawProtocolVersion: 0 } }
@@ -137,7 +170,7 @@ it("warns before resuming an older raw thread that still has Explorer tool conte
   const user = userEvent.setup()
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
   await user.click(await screen.findByRole("button", { name: "Codex 자유 대화" }))
-  expect(screen.getByText(/이전 Codex thread에는 FlowScope 도구 문맥이 남아 있습니다/)).toBeVisible()
+  expect(screen.getByText(/이전 Codex thread에는 자동 Explorer 도구 문맥이 남아 있습니다/)).toBeVisible()
   expect(screen.getByRole("button", { name: "새 채팅" })).toBeVisible()
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "대상을 확인해줘")
   expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
