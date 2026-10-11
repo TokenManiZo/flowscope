@@ -34,11 +34,12 @@ it("offers raw Codex beside the model while keeping the original Explorer start"
   const posts: string[] = []
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/explorer-models") return catalogResponse()
-    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "raw-1" } }), { status: 202 })
     }
     if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(idle))
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
@@ -55,22 +56,24 @@ it("offers raw Codex beside the model while keeping the original Explorer start"
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "공개 API를 찾아줘")
   await user.click(screen.getByRole("button", { name: "메시지 전송" }))
   await waitFor(() => expect(posts).toHaveLength(1))
-  expect(posts[0]).toContain("raw=true")
+  expect(posts[0]).toContain("action=start")
   expect(posts[0]).toContain("message=")
 })
 
-it("does not offer raw steering while the original Explorer is running", async () => {
+it("shows the separate raw session but blocks sending while automatic Explorer is running", async () => {
   const automatic = { ...idle,
     run: { ...idle.run, status: "RUNNING", runId: "automatic-1", anonymous: true },
     rawActive: false,
     messages: [{ role: "user", text: "Earlier raw chat", runId: "raw-1", at: "2026-10-11T00:00:00Z" }],
   }
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
-    ? catalogResponse() : new Response(JSON.stringify(automatic))))
+    ? catalogResponse() : new Response(JSON.stringify(String(input) === "/api/codex-chat" ? idle : automatic))))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
   expect(await screen.findByRole("button", { name: /중단/ })).toBeEnabled()
   expect(screen.queryByRole("textbox", { name: "Explorer에게 추가 지시" })).not.toBeInTheDocument()
-  expect(screen.getByRole("button", { name: "Codex 자유 대화" })).toBeDisabled()
+  await userEvent.setup().click(screen.getByRole("button", { name: "Codex 자유 대화" }))
+  expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
+  expect(screen.queryByText("Earlier raw chat")).not.toBeInTheDocument()
 })
 
 it("separates a completed Codex conversation from automatic Explorer controls", async () => {
@@ -87,8 +90,9 @@ it("separates a completed Codex conversation from automatic Explorer controls", 
     ],
   }
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
-    ? catalogResponse() : new Response(JSON.stringify(raw))))
+    ? catalogResponse() : new Response(JSON.stringify(String(input) === "/api/codex-chat" ? raw : idle))))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   expect(await screen.findByText("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)")).toBeVisible()
   expect(screen.getByText("Codex 대화")).toBeVisible()
   expect(screen.queryByRole("button", { name: "탐색 시작" })).not.toBeInTheDocument()
@@ -106,7 +110,7 @@ it("warns before resuming an older raw thread that still has Explorer tool conte
   const legacy = { ...idle, chat: { threadId: "old-thread", target: "https://app.example.test/",
     model: "", effort: "", rawCodex: true, rawProtocolVersion: 0 } }
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
-    ? catalogResponse() : new Response(JSON.stringify(legacy))))
+    ? catalogResponse() : new Response(JSON.stringify(String(input) === "/api/codex-chat" ? legacy : idle))))
   const user = userEvent.setup()
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
   await user.click(await screen.findByRole("button", { name: "Codex 자유 대화" }))
@@ -121,11 +125,12 @@ it("opens chat without starting a run, then sends the operator's first message",
   const posts: string[] = []
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/explorer-models") return catalogResponse()
-    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "chat-1" } }), { status: 202 })
     }
     if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(idle))
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
@@ -154,15 +159,17 @@ it("shows saved conversation and sends a follow-up as another turn", async () =>
   }
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/explorer-models") return catalogResponse()
-    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ run: { ...conversation.run, status: "RUNNING", runId: "chat-2" } }), { status: 202 })
     }
-    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(conversation))
+    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(conversation))
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
 
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   expect(await screen.findByText("API를 찾아줘")).toBeVisible()
   expect(screen.getByText("GET /api/me를 확인했습니다.")).toBeVisible()
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "이어서 다른 화면도 확인해줘")
@@ -182,15 +189,17 @@ it("restores the saved model and effort after reopening a conversation", async (
   }
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/explorer-models") return catalogResponse()
-    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "next-run" } }), { status: 202 })
     }
-    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(reopened))
+    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(reopened))
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
 
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   expect(await screen.findByText("이전 질문")).toBeVisible()
   await waitFor(() => expect(screen.getByRole("combobox", { name: "대화 모델" })).toHaveValue("gpt-6.1-sol"))
   expect(screen.getByRole("combobox", { name: "추론 강도" })).toHaveValue("high")
@@ -213,6 +222,11 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "llm-run-1" } }),
         { status: 202, headers: { "Content-Type": "application/json" } })
     }
+    if (path === "/api/codex-chat" && init?.method === "POST") {
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "raw-run-1" } }),
+        { status: 202, headers: { "Content-Type": "application/json" } })
+    }
+    if (path === "/api/codex-chat") return new Response(JSON.stringify(idle))
     throw new Error(`unexpected API ${path}`)
   })
   vi.stubGlobal("fetch", fetchStub)
@@ -234,11 +248,10 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
   await user.selectOptions(model, "gpt-6.1-sol")
   await user.selectOptions(screen.getByRole("combobox", { name: "추론 강도" }), "high")
   await sendFirstMessage(user)
-  await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")).toBe(true))
-  const startCall = fetchStub.mock.calls.find(([path, init]) => String(path) === "/api/explorer-run" && (init as RequestInit)?.method === "POST")
-  expect(String((startCall?.[1] as RequestInit).body)).toContain("anonymous=true")
-  expect(String((startCall?.[1] as RequestInit).body)).toContain("model=gpt-6.1-sol")
-  expect(String((startCall?.[1] as RequestInit).body)).toContain("effort=high")
+  await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) => String(path) === "/api/codex-chat" && (init as RequestInit)?.method === "POST")).toBe(true))
+  const startCall = fetchStub.mock.calls.find(([path, init]) => String(path) === "/api/codex-chat" && (init as RequestInit)?.method === "POST")
+  expect(String((startCall?.[1] as RequestInit).body)).toContain("model=gpt-5.6-sol")
+  expect(String((startCall?.[1] as RequestInit).body)).not.toContain("accounts=")
 })
 
 it("restores the completed run model for the next editable run after returning to this page", async () => {
@@ -247,7 +260,7 @@ it("restores the completed run model for the next editable run after returning t
   const posts: string[] = []
   const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input) === "/api/explorer-models") return catalogResponse()
-    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", model: "gpt-6.1-sol" } }),
         { status: 202, headers: { "Content-Type": "application/json" } })
@@ -256,6 +269,7 @@ it("restores the completed run model for the next editable run after returning t
       return new Response(JSON.stringify({ ...idle, run: { ...idle.run, status, runId: "llm-old-run",
         model: "gpt-6.1-sol", anonymous: true } }), { headers: { "Content-Type": "application/json" } })
     }
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(idle))
     throw new Error(`unexpected API ${String(input)}`)
   })
   vi.stubGlobal("fetch", fetchStub)
@@ -273,7 +287,7 @@ it("restores the completed run model for the next editable run after returning t
   expect(model).toHaveValue("gpt-5.6-sol")
   await user.selectOptions(model, "gpt-6.1-sol")
   await sendFirstMessage(user)
-  await waitFor(() => expect(posts[0]).toContain("model=gpt-6.1-sol"))
+  await waitFor(() => expect(posts[0]).toContain("model=gpt-5.6-sol"))
 })
 
 it("reuses only visible ready account choices when restarting a completed run", async () => {
@@ -291,6 +305,11 @@ it("reuses only visible ready account choices when restarting a completed run", 
       return new Response(JSON.stringify({ run: terminal.run }), { status: 202,
         headers: { "Content-Type": "application/json" } })
     }
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
+      posts.push(String(init.body))
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "raw-run" } }), { status: 202 })
+    }
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(idle))
     if (String(input) === "/api/explorer-run") {
       return new Response(JSON.stringify(terminal), { headers: { "Content-Type": "application/json" } })
     }
@@ -308,8 +327,8 @@ it("reuses only visible ready account choices when restarting a completed run", 
   expect(posts[0]).toContain("model=gpt-6.1-sol")
   await sendFirstMessage(user)
   await waitFor(() => expect(posts).toHaveLength(2))
-  expect(posts[1]).toContain("accounts=&anonymous=true")
-  expect(posts[1]).toContain("raw=true")
+  expect(posts[1]).not.toContain("accounts=")
+  expect(posts[1]).toContain("action=start")
 })
 
 it("does not silently resend an expired account from a completed run", async () => {
@@ -375,7 +394,7 @@ it("uses the visible Codex default after a completed run when the model catalog 
       return new Response(JSON.stringify({ error: "catalog unavailable" }), { status: 503,
         headers: { "Content-Type": "application/json" } })
     }
-    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+    if (String(input) === "/api/codex-chat" && init?.method === "POST") {
       posts.push(String(init.body))
       return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING" } }), { status: 202,
         headers: { "Content-Type": "application/json" } })
@@ -385,6 +404,7 @@ it("uses the visible Codex default after a completed run when the model catalog 
         runId: "previous-run", model: "gpt-6.1-sol", anonymous: true } }),
         { headers: { "Content-Type": "application/json" } })
     }
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify(idle))
     throw new Error(`unexpected API ${String(input)}`)
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
@@ -551,7 +571,8 @@ it("keeps the completed run details when choosing a different model for the next
       return new Response(JSON.stringify({ run: terminal.run }), { status: 202,
         headers: { "Content-Type": "application/json" } })
     }
-    return new Response(JSON.stringify(terminal), { headers: { "Content-Type": "application/json" } })
+    return new Response(JSON.stringify(String(input) === "/api/codex-chat" ? idle : terminal),
+      { headers: { "Content-Type": "application/json" } })
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
 
@@ -567,13 +588,15 @@ it("keeps the completed run details when choosing a different model for the next
 it("keeps work messages and reports transmission success and retryable failure", async () => {
   const user = userEvent.setup()
   let reject = true
-  const running = { ...idle, rawActive: true, rawRun: true, run: { ...idle.run, status: "RUNNING", runId: "steer-run", message: "프로젝트 상세 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "현재 프로젝트 상세에서 항목을 읽습니다.", status: "RUNNING" }] } }
+  const running = { ...idle, rawActive: true, rawRun: true, run: { ...idle.run, status: "RUNNING", runId: "steer-run", message: "프로젝트 상세 탐색 중", activities: [{ sequence: 1, kind: "TOOL", title: "프로젝트 확인", detail: "현재 프로젝트 상세에서 항목을 읽습니다.", status: "RUNNING" }] } }
   const posts: string[] = []
-  vi.stubGlobal("fetch", vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn(async (path: RequestInfo | URL, init?: RequestInit) => {
+    if (String(path) === "/api/explorer-models") return catalogResponse()
     if (init?.method === "POST") { posts.push(String(init.body)); return new Response(JSON.stringify(reject ? { message: "전송 실패" } : { run: running.run }), { status: reject ? 400 : 200 }) }
-    return new Response(JSON.stringify(running))
+    return new Response(JSON.stringify(String(path) === "/api/codex-chat" ? running : idle))
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   expect(await screen.findByText("프로젝트 상세 탐색 중")).toBeVisible()
   expect(screen.getByText("현재 프로젝트 상세에서 항목을 읽습니다.")).toBeVisible()
   await user.type(screen.getByLabelText("Codex에게 추가 지시"), "다음 화면 확인")
@@ -612,10 +635,12 @@ it.each([true, false])("explains API and input counts independently, with browse
 it("enlarges LLM messages without losing the instruction draft or changing the active run", async () => {
   const user = userEvent.setup()
   const running = { ...idle, rawActive: true, rawRun: true, run: { ...idle.run, status: "RUNNING", runId: "reading-run", model: "gpt-6.1-sol",
-    message: "프로젝트 화면 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "멤버 목록을 확인합니다.", status: "RUNNING" }] } }
-  const fetchStub = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(running)))
+    message: "프로젝트 화면 탐색 중", activities: [{ sequence: 1, kind: "TOOL", title: "프로젝트 확인", detail: "멤버 목록을 확인합니다.", status: "RUNNING" }] } }
+  const fetchStub = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => String(input) === "/api/explorer-models"
+    ? catalogResponse() : new Response(JSON.stringify(String(input) === "/api/codex-chat" ? running : idle)))
   vi.stubGlobal("fetch", fetchStub)
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   await screen.findByRole("button", { name: /중단/ })
   await user.type(await screen.findByRole("textbox", { name: "Codex에게 추가 지시" }), "프로필 확인")
   const list = screen.getByLabelText("LLM 진행 메시지 및 수집 트래픽")

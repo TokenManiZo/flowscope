@@ -24,12 +24,22 @@ import java.util.Set;
 /** Versioned FlowScope session file. Model-provider credentials are never part of this schema. */
 public final class ProjectStore {
     /** A diagnostic workspace's user-visible identity. Secrets are never part of this metadata. */
-    public record ProjectContext(String name, List<String> scope, Instant createdAt, ExplorerChatState chat) {
+    public record ProjectContext(String name, List<String> scope, Instant createdAt,
+                                 ExplorerChatState chat, ExplorerChatState rawChat) {
         public ProjectContext {
             name = name == null ? "" : name.trim();
             scope = List.copyOf(scope == null ? List.of() : scope);
             createdAt = createdAt == null ? Instant.EPOCH : createdAt;
             chat = chat == null ? ExplorerChatState.empty() : chat;
+            rawChat = rawChat == null ? ExplorerChatState.empty() : rawChat;
+            if (chat.rawCodex() && rawChat.equals(ExplorerChatState.empty())) {
+                rawChat = chat;
+                chat = ExplorerChatState.empty();
+            }
+        }
+
+        public ProjectContext(String name, List<String> scope, Instant createdAt, ExplorerChatState chat) {
+            this(name, scope, createdAt, chat, ExplorerChatState.empty());
         }
 
         public ProjectContext(String name, List<String> scope, Instant createdAt) {
@@ -37,7 +47,11 @@ public final class ProjectStore {
         }
 
         public ProjectContext withChat(ExplorerChatState value) {
-            return new ProjectContext(name, scope, createdAt, value);
+            return new ProjectContext(name, scope, createdAt, value, rawChat);
+        }
+
+        public ProjectContext withRawChat(ExplorerChatState value) {
+            return new ProjectContext(name, scope, createdAt, chat, value);
         }
 
         public static ProjectContext empty() {
@@ -274,6 +288,7 @@ public final class ProjectStore {
         savedProject.set("scope", json.valueToTree(safeContext.scope()));
         savedProject.put("created_at", safeContext.createdAt().toString());
         savedProject.set("llm_chat", json.valueToTree(safeContext.chat()));
+        savedProject.set("codex_chat", json.valueToTree(safeContext.rawChat()));
         List<RunContextRegistry.CompletedRun> exactRuns =
                 (completedRuns == null ? Map.<Source, RunContextRegistry.CompletedRun>of() : completedRuns)
                         .entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
@@ -414,8 +429,13 @@ public final class ProjectStore {
             ExplorerChatState chat = schemaVersion >= 10 && projectNode.hasNonNull("llm_chat")
                     ? json.convertValue(projectNode.get("llm_chat"), ExplorerChatState.class)
                     : ExplorerChatState.empty();
+            ExplorerChatState rawChat = projectNode.hasNonNull("codex_chat")
+                    ? json.convertValue(projectNode.get("codex_chat"), ExplorerChatState.class)
+                    : chat.rawCodex() ? chat : ExplorerChatState.empty();
+            if (chat.rawCodex() && rawChat.equals(ExplorerChatState.empty())) rawChat = chat;
+            if (chat.rawCodex()) chat = ExplorerChatState.empty();
             context = new ProjectContext(projectNode.path("name").asText(""), projectScope,
-                    Instant.parse(createdAt), chat);
+                    Instant.parse(createdAt), chat, rawChat);
         }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
                 Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),

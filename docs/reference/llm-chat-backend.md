@@ -1,6 +1,6 @@
 # LLM 자동 탐색·자유 대화 계약 (로컬 검증 중)
 
-> 표시 수정 자동 검증 완료·Burp 실물 gate 대기 (2026-10-11): `v1.0.2` 기반 로컬 브랜치에서 자유 대화와 자동 탐색 보기를 분리하고, 답변 완료와 HTTP 수집 완료를 구분합니다. 사용자가 화면에서 자유 대화를 실행한 사실은 확인했지만, 수정 JAR의 실대상 프록시·HTTPS 수집은 아직 검증하지 않았습니다.
+> 백엔드 세션 분리 자동 검증 완료·Burp 실물 gate 대기 (2026-10-11): `v1.0.2` 기반 로컬 브랜치에서 자유 대화와 자동 탐색의 대화 상태·실행 기록·Web API를 분리했습니다. 수정 JAR의 실대상 프록시·HTTPS 수집은 아직 확인하지 않았습니다.
 
 이 문서는 `v1.0.2` 기반 로컬 작업의 두 실행 방식을 설명합니다. **탐색 시작**은 계정·비로그인 lane을 선택하는 기존 자동 Explorer입니다. 카드 제목 옆 **Codex 자유 대화**는 자동 탐색 컨트롤을 숨기고 별도 대화 보기를 열며, 버튼만으로 네트워크 실행을 시작하지 않습니다. 저장된 프로젝트에서 첫 메시지를 전송하면 별도의 turn을 시작하고, 완료 뒤의 메시지는 저장된 Codex thread를 재개합니다. 추천 문장을 자동 실행하지 않습니다.
 
@@ -14,8 +14,10 @@ Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 
 
 기존 Web capability·Host·Origin 검사 아래의 `/api/explorer-run`을 사용합니다.
 
-- `GET`: 기존 `run`, `browser`, `accounts`, `scope`와 함께 `messages: [{role,text,runId,at}]`, 진행 중 자유 대화 여부 `rawActive`, 마지막 실행의 자유 대화 여부 `rawRun`을 반환합니다. 모델 출력 delta도 실행 중 이 배열의 마지막 assistant 메시지에 이어 붙습니다.
-- `POST action=start`: 기존 자동 Explorer는 `target`, `accounts`, `anonymous`, `model`, `effort`를 보내며 `message`·`raw`는 생략합니다. 자유 대화는 `raw=true`, `message`를 보내며 계정 handle을 전달하지 않습니다. 계정을 함께 보내면 서버가 거부합니다. 첫 메시지는 지속 Codex thread를 만들고, 후속 메시지는 저장된 thread를 재개합니다. 프록시 포트와 작업 폴더는 Web 입력에서 받지 않고 확장이 정합니다. `target`은 실행·수집 범위 검사용이지 Codex 메시지에 삽입하는 문장이 아닙니다.
+- `GET /api/explorer-run`: 자동 Explorer의 `run`, `browser`, `accounts`, `scope`, 자동 탐색 대화만 반환합니다.
+- `GET /api/codex-chat`: 자유 대화의 `run`, `messages: [{role,text,runId,at}]`, `chat`, `rawActive`를 반환합니다. 자동 Explorer 활동·계정·브라우저 상태는 섞지 않습니다.
+- `POST /api/explorer-run action=start`: 기존 자동 Explorer만 시작합니다. `raw=true`는 거부합니다.
+- `POST /api/codex-chat action=start`: `target`, `model`, `effort`, `message`로 자유 대화의 첫 turn 또는 저장된 thread의 후속 turn을 시작합니다. `steer`, `cancel`, `new-chat`, `recheck`도 이 경로의 자유 대화에만 적용합니다. 프록시 포트와 작업 폴더는 Web 입력에서 받지 않고 확장이 정합니다. `target`은 실행·수집 범위 검사용이지 Codex 메시지에 삽입하는 문장이 아닙니다.
 - `POST action=steer`: 실행 중 turn에 지시를 추가하고 화면 대화에 기록합니다. 끝난 turn에는 새 `action=start&message=...`를 사용합니다.
 - `POST action=cancel`: 현재 turn을 중단합니다. 저장된 대화와 기존 Evidence는 유지됩니다.
 - `POST action=clear`: 지난 run 표시만 초기화합니다. 대화와 Evidence는 유지됩니다.
@@ -26,7 +28,7 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 ## 세션·프로젝트 저장
 
-프로젝트 형식은 schema 10입니다. JSON과 SQLite의 project metadata에 Codex `threadId`, 대화 대상, 선택 모델·추론 강도, user/assistant 메시지, turn `runId`, 자유 대화 여부와 `rawProtocolVersion`을 저장합니다. 기존 schema 1~9는 빈 대화로 열리고 이전 schema 10에 버전 필드가 없으면 0으로 읽습니다. 이전 로컬 실험본의 raw thread에는 FlowScope 도구 문맥이 이미 들어 있을 수 있어 버전 0을 순정 대화로 자동 재개하지 않습니다. Web에서 **새 채팅**을 명시적으로 누르면 새 thread가 시작되며 기존 요청 기록은 유지됩니다. 새 프로젝트 파일은 옛 JAR에서 열 수 없으므로 업그레이드 전 백업을 보존해야 합니다. 로그인 Cookie·Authorization, FlowScope gateway capability는 대화 메타데이터에 넣지 않습니다. 요청·응답 Evidence는 인증값을 포함해 원문 그대로 저장되며, Codex 로컬 history와 DB 옆 `codex-raw-<해시>` 작업 폴더에도 대상 내용이 남을 수 있습니다.
+프로젝트 형식은 schema 10입니다. JSON과 SQLite의 project metadata에 자동 탐색 대화 `llm_chat`과 자유 대화 `codex_chat`을 각각 저장합니다. 각 항목에는 Codex `threadId`, 대화 대상, 선택 모델·추론 강도, user/assistant 메시지, turn `runId`가 있습니다. 기존 schema 1~9는 빈 대화로 열리고, 옛 schema 10의 `llm_chat.rawCodex=true`는 자유 대화 쪽으로 옮겨 읽습니다. 버전 필드가 없는 옛 raw thread는 0으로 읽고 순정 대화로 자동 재개하지 않습니다. **새 채팅**은 자유 대화만 비우며 자동 탐색 대화와 요청 기록은 유지합니다. 같은 schema의 이전 JAR로 다시 저장하면 새 `codex_chat` 필드를 잃을 수 있으므로 업그레이드 전 백업을 보존해야 합니다. 로그인 Cookie·Authorization, FlowScope gateway capability는 대화 메타데이터에 넣지 않습니다. 요청·응답 Evidence는 인증값을 포함해 원문 그대로 저장되며, Codex 로컬 history와 DB 옆 `codex-raw-<해시>` 작업 폴더에도 대상 내용이 남을 수 있습니다.
 
 계정 로그인 브라우저의 메모리 세션은 같은 Burp 실행 안에서 turn 사이에 유지됩니다. 프로젝트를 다시 열거나 Burp를 재시작하면 로그인 자격은 복원하지 않으므로 다시 로그인해야 합니다. 같은 컴퓨터의 Codex thread가 남아 있으면 `thread/resume`으로 대화를 이어갑니다. 다른 컴퓨터에서 프로젝트를 열어 로컬 Codex thread가 없으면 자동으로 같은 모델 문맥을 꾸며내지 않고 실패를 표시합니다. `action=new-chat`으로 새 thread를 시작할 수 있습니다.
 
@@ -40,7 +42,7 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 프록시 환경은 표준 HTTP(S) 클라이언트의 기본 경로일 뿐 OS 방화벽이 아닙니다. 프록시를 무시하는 프로그램, 명시적 `--noproxy`, 브라우저의 자체 네트워크 경로는 FlowScope가 막거나 기록할 수 없습니다. 따라서 자유 대화의 **모든** 요청이 exact scope에 묶이거나 그래프에 나타난다고 주장하지 않습니다. 범위 안 응답도 실제 Burp 프록시를 거쳐 저장된 경우에만 LLM Evidence입니다. 이 한계 때문에 자유 대화를 자동 Explorer의 범위 보장·계정 비교 성과와 혼동하지 않아야 합니다. 대화 turn에는 기존 500 HTTP 요청·300 브라우저 행동·3,000 브라우저 교환의 강제 종료 상한이 없지만 전역 기록 20,000건·프로젝트 파일 100MiB 등은 남아 있습니다.
 
-두 방식은 `Source.LLM`의 실행 문맥을 공유하므로 동시에 돌리는 별도 엔진으로 만들지 않았습니다. 대신 Web 응답의 `rawRun`으로 마지막 실행의 방식을 구분하고, React는 해당 방식의 컨트롤·기록만 표시합니다. 이전 구현은 자유 대화에도 공통 `Explorer 완료` 요약과 모델 메모를 보여 답변만 한 turn이 탐색 완료처럼 보였습니다. 자유 대화는 **Codex 답변 완료**와 실제 기록된 HTTP 응답 수를 표시하고, 0건이면 **대화만 완료**라고 명시합니다. Codex 최종 답변은 채팅에 한 번만 보여 주며 별도의 `Explorer 모델 메모` 활동으로 복제하지 않습니다. 자동 Explorer의 완료 게이트와 요약은 그대로 유지합니다.
+두 방식은 `Source.LLM`의 수집 lane만 공유하며 동시 실행은 막습니다. 실행 객체, 공급자 프로세스, 대화 thread, 채팅 메시지, 마지막 실행 snapshot, Web API 및 화면 조회 키는 분리합니다. 이전 구현은 한 `ExplorerCoordinator`에서 `rawRun` 플래그만 바꿔 자유 대화에 공통 `Explorer 완료` 피드가 섞였습니다. 자유 대화 화면은 자체 대화와 HTTP·도구 기록만 보여 주고 준비·연결·완료 시스템 활동 및 모델 최종 보고 복제는 숨깁니다. 답변 완료와 실제 기록된 HTTP 응답 수를 표시하고, 0건이면 **대화만 완료**라고 명시합니다. 자동 Explorer의 완료 게이트와 요약은 그대로 유지합니다.
 
 HTTPS 요청은 클라이언트가 Burp CA를 신뢰해야 합니다. FlowScope는 `curl -k` 같은 TLS 검증 우회나 OS 전역 인증서 설치를 자동으로 수행하지 않습니다. 필요한 경우 [PortSwigger의 CA 설치 안내](https://portswigger.net/burp/documentation/desktop/external-browser-config/certificate)에 따라 셸 클라이언트의 신뢰 저장소를 준비해야 합니다.
 
@@ -56,4 +58,5 @@ HTTPS 요청은 클라이언트가 Burp CA를 신뢰해야 합니다. FlowScope�
 - 이전 커밋 `097521e`의 자동 검증: 2026-10-11 `mvn clean verify` 통과(React 888/888, Java 986건 중 실패·오류 0, opt-in 8건 skip). 그때의 자유 대화에는 FlowScope 전용 도구·대상 URL 접두 문구·네트워크 차단이 남아 있었으므로 이 수치를 현재 수정본의 검증으로 전용하지 않습니다.
 - 이전 커밋 `8dfaed7` 검증: 2026-10-11 `mvn clean verify` 통과(React 889/889, Java 986건 중 실패·오류 0, opt-in 8건 skip). opt-in 실물 Codex app-server가 네이티브 `curl` 요청을 로컬 모의 프록시로 보내는 시험과 Playwright 자유 대화 화면 1건을 별도로 통과했습니다. 현재 UI·상태 문구 수정의 최종 검증으로 전용하지 않습니다.
 - 이번 표시 수정 검증: 2026-10-11 `mvn clean verify` 통과(React 890/890, Java 988건 중 실패·오류 0, opt-in 8건 skip). raw 답변 0건·1건의 완료 문구, 자동 Explorer 문구 보존, raw 모델 메모 중복 제거, Web `rawRun`, 두 보기 전환과 짧은 말풍선 회귀를 추가했습니다. 수정 JAR의 별도 포트 Standalone에서 Playwright 자유 대화 화면 1건을 통과했고 `하이` 말풍선의 실제 너비가 최소 96px 이상임을 확인했습니다. 사용자 Burp의 실제 프록시·HTTPS CA·대상 수집은 여전히 미검증입니다.
+- 백엔드 세션 분리(2026-10-11): 한 `ExplorerCoordinator`와 `/api/explorer-run`에서 raw 플래그만 바꾸던 방식은 진행 이벤트·채팅·모델 선택이 섞여 기각했습니다. 별도 coordinator/공급자, `/api/codex-chat`, 프로젝트의 `codex_chat`, React 조회·조작 키와 모델 선택을 분리했습니다. 단일 LLM 수집 lane은 유지해 동시 실행만 거부합니다. Java `FlowScopeExtension`, `ExplorerCoordinator`, `ProjectStore`, `ProjectWorkspace`, `FlowScopeWebServer`; React `LlmPass`, API·훅; JSON/SQLite·Web·프록시·대화 회귀와 이 문서·README·화면 설명·다음 릴리스 문구를 변경했습니다. 회귀는 자동/자유 대화 조회 분리, 옛 raw chat 이관, 프로젝트 재열기, raw 프록시 귀속, raw SYSTEM/MODEL 이벤트 배제와 화면에서 자동 탐색 완료 기록 미노출을 확인합니다. `mvn clean verify`는 React 890건·Java 990건(실패/오류 0, opt-in 8건 skip), 별도 17778 Standalone의 Playwright 대화 1건을 통과했습니다. 실물 Burp JAR 재로드·HTTPS 대상 요청/응답·프로젝트 전환 후 후속 turn은 미검증으로 남습니다.
 - 다음 gate: 실제 Burp에서 비로그인/두 계정의 후속 turn까지 수집·그래프 확인, 전역 저장 상한 제거를 위한 디스크 기반 기록 설계.

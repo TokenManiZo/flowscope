@@ -277,9 +277,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
             chatMessages.add(new ChatMessage("user", request.userMessage(), runId, Instant.now()));
             chatChanged.run();
         }
-        addActivity("SYSTEM", request.rawCodex() ? "Codex 대화 준비" : "Explorer 준비",
-                request.rawCodex() ? "Codex 연결을 확인했습니다." : "exact scope와 Codex 로그인을 확인했습니다.",
-                "RUNNING", null);
+        if (!request.rawCodex()) addActivity("SYSTEM", "Explorer 준비",
+                "exact scope와 Codex 로그인을 확인했습니다.", "RUNNING", null);
         if (request.rawCodex()) rawRunStarted.accept(runId);
         worker.execute(() -> prepareAndStart(request, runId));
         return current();
@@ -548,9 +547,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
         snapshot = terminal(Status.CANCELLED, rawModeActive
                 ? "사용자가 Codex 대화를 중단했습니다." : "사용자가 Explorer를 중단했습니다.", snapshot.unresolved());
         if (rawModeActive) rawRunEnded.accept(snapshot.runId());
-        addActivity("SYSTEM", rawModeActive ? "Codex 대화 중단" : "Explorer 중단",
-                rawModeActive ? "대화 turn과 전용 프록시를 종료했습니다." : "실행과 gateway를 종료했습니다.",
-                "CANCELLED", null);
+        if (!rawModeActive) addActivity("SYSTEM", "Explorer 중단",
+                "실행과 gateway를 종료했습니다.", "CANCELLED", null);
         return current();
     }
 
@@ -725,6 +723,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
             }
 
             @Override public void activity(ExplorerProvider.Activity event) {
+                if (rawModeActive && ("SYSTEM".equals(event.kind()) || "MODEL".equals(event.kind()))) return;
                 if (sameActiveRun(runId)) addActivity(event.kind(), event.title(), event.detail(),
                         event.status(), event.durationMillis());
             }
@@ -802,9 +801,8 @@ public final class ExplorerCoordinator implements AutoCloseable {
                     + "건 · 선언 parameter " + snapshot.parameterDeclarations()
                     + "건 · OPTIONS probe " + snapshot.capabilityProbes() + "건";
             snapshot = terminal(status, summary, limitations);
-            addActivity("SYSTEM", rawModeActive ? "Codex 답변 완료" : "Explorer 완료",
-                    rawModeActive ? "대화 turn을 마쳤습니다. HTTP 수집 여부는 기록 수로 확인하세요."
-                            : status == Status.COMPLETED ? "응답 기록과 종료 조건을 확인했습니다."
+            if (!rawModeActive) addActivity("SYSTEM", "Explorer 완료",
+                    status == Status.COMPLETED ? "응답 기록과 종료 조건을 확인했습니다."
                             : "응답 기록을 남기고 미해결 항목도 함께 남겼습니다.", status.name(), null);
         } catch (Exception error) {
             contexts.abort(Source.LLM, runId);

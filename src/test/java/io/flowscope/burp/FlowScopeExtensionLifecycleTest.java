@@ -341,8 +341,11 @@ class FlowScopeExtensionLifecycleTest {
         ScheduledExecutorService worker = (ScheduledExecutorService) field("worker").get(extension);
         ExplorerChatState chat = new ExplorerChatState("thread-local", "https://api.example.test/",
                 List.of(new ExplorerChatState.Message("user", "Find APIs", "old-run", "2026-10-10T00:00:00Z")));
+        ExplorerChatState raw = new ExplorerChatState("thread-raw", "https://api.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Hi", "raw-run", "2026-10-10T00:01:00Z")),
+                "gpt-6.1-sol", "high", true, 1);
         ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("Chat project",
-                List.of("https://api.example.test"), Instant.EPOCH, chat);
+                List.of("https://api.example.test"), Instant.EPOCH, chat, raw);
         Path database = temp.resolve("chat-project.flowscope.db");
         new SqliteProjectStore(new ProjectStore()).save(database, List.of(), new AnalysisConfig(),
                 List.of(), List.of(), Map.of(), List.of(), List.of(), context);
@@ -355,11 +358,20 @@ class FlowScopeExtensionLifecycleTest {
         try (ExplorerCoordinator explorer = new ExplorerCoordinator(vault,
                 request -> { throw new AssertionError("no HTTP"); }, provider,
                 new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {});
+             ExplorerCoordinator rawChat = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP"); }, new ExplorerProvider() {
+                    @Override public String readiness() { return "READY"; }
+                    @Override public Handle start(Request request, Listener listener) { throw new AssertionError("no model turn"); }
+                    @Override public void close() {}
+                }, new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> {})) {
             field("explorer").set(extension, explorer);
+            field("rawChat").set(extension, rawChat);
             invoke(extension, "loadProjectFile", new Class<?>[]{java.io.File.class}, database.toFile());
             worker.submit(() -> {}).get(5, TimeUnit.SECONDS);
             assertEquals(chat, explorer.chatState());
+            assertEquals(raw, rawChat.chatState());
             assertTrue(explorer.accounts().isEmpty());
         } finally { worker.shutdownNow(); }
     }

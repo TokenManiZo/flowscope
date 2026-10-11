@@ -52,7 +52,7 @@ class FlowScopeProxyRoutingTest {
                     provider, (RunContextRegistry) get(f.extension, "runContexts"),
                     url -> ScopePolicy.parse("https://app.test/").allows(url),
                     () -> Pipeline.run(java.util.List.of()), ignored -> { });
-            set(f.extension, "explorer", coordinator);
+            set(f.extension, "rawChat", coordinator);
             set(f.extension, "rawProxyPort", 19417);
             var started = coordinator.start(new ExplorerCoordinator.StartRequest(TARGET,
                     java.util.List.of(), false, "", "", "Inspect", true, 19417, "/tmp"));

@@ -414,19 +414,25 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
-    void rawExplorerFlagIsExplicitAndVisibleOnlyForItsActiveRun() throws Exception {
+    void rawChatHasAnIndependentEndpointAndDoesNotReplaceExplorerState() throws Exception {
         start();
         String target = state.record.service + "/";
-        assertFalse(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
-        assertFalse(json(get("/api/explorer-run", token, origin())).path("rawRun").asBoolean());
+        state.explorerMessages.add(new ExplorerCoordinator.ChatMessage("user", "Previous Explorer turn",
+                "auto-old", java.time.Instant.now()));
         assertEquals(400, post("/api/explorer-run", "action=start&target=" + encode(target)
-                + "&raw=true&accounts=human-a&message=Inspect", token).statusCode());
-        HttpResponse<String> started = post("/api/explorer-run",
-                "action=start&target=" + encode(target) + "&raw=true&message=Inspect", token);
+                + "&raw=true&message=Inspect", token).statusCode());
+        HttpResponse<String> started = post("/api/codex-chat",
+                "action=start&target=" + encode(target) + "&message=Inspect", token);
         assertEquals(202, started.statusCode());
-        assertTrue(state.explorerRaw);
-        assertTrue(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
-        assertTrue(json(get("/api/explorer-run", token, origin())).path("rawRun").asBoolean());
+        assertTrue(json(get("/api/codex-chat", token, origin())).path("rawActive").asBoolean());
+        assertEquals("IDLE", json(get("/api/explorer-run", token, origin())).at("/run/status").asText());
+        assertEquals("Previous Explorer turn", json(get("/api/explorer-run", token, origin()))
+                .at("/messages/0/text").asText());
+        assertEquals("Inspect", json(get("/api/codex-chat", token, origin())).at("/messages/0/text").asText());
+        post("/api/codex-chat", "action=new-chat", token);
+        assertEquals(0, json(get("/api/codex-chat", token, origin())).path("messages").size());
+        assertEquals("Previous Explorer turn", json(get("/api/explorer-run", token, origin()))
+                .at("/messages/0/text").asText());
     }
 
     @Test
@@ -1885,11 +1891,14 @@ final class FlowScopeWebServerTest {
         private volatile String linkedCandidateId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private final List<ExplorerCoordinator.ChatMessage> explorerMessages = new ArrayList<>();
+        private final List<ExplorerCoordinator.ChatMessage> codexMessages = new ArrayList<>();
         private volatile String explorerStartMessage = "";
-        private volatile boolean explorerRaw;
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
+        private volatile ExplorerCoordinator.Snapshot codexChatRun = new ExplorerCoordinator.Snapshot(
+                ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Codex 대화 대기", "READY",
+                List.of(), true, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile String manualService = "";
@@ -2051,8 +2060,12 @@ final class FlowScopeWebServerTest {
             return JSON.createObjectNode().put("status", "CANCELLED");
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
-        @Override public boolean explorerRawActive() { return explorerRaw; }
-        @Override public boolean explorerRawRun() { return explorerRaw; }
+        @Override public ExplorerCoordinator.Snapshot codexChatStatus() { return codexChatRun; }
+        @Override public boolean codexChatActive() { return codexChatRun.status() == ExplorerCoordinator.Status.RUNNING; }
+        @Override public List<ExplorerCoordinator.ChatMessage> codexChatMessages() { return List.copyOf(codexMessages); }
+        @Override public io.flowscope.explorer.ExplorerChatState codexChatState() {
+            return new io.flowscope.explorer.ExplorerChatState("", "", List.of(), codexChatRun.model(), codexChatRun.effort(), true, 1);
+        }
         @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
             return List.copyOf(explorerMessages);
         }
@@ -2079,7 +2092,6 @@ final class FlowScopeWebServerTest {
         }
         @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
             explorerStartMessage = request.userMessage();
-            explorerRaw = request.rawCodex();
             if (!request.userMessage().isBlank()) explorerMessages.add(new ExplorerCoordinator.ChatMessage(
                     "user", request.userMessage(), "llm-test-run", java.time.Instant.now()));
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
@@ -2087,6 +2099,19 @@ final class FlowScopeWebServerTest {
                     request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
                     request.model(), request.effort());
             return explorerRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot startCodexChat(ExplorerCoordinator.StartRequest request) {
+            codexMessages.add(new ExplorerCoordinator.ChatMessage("user", request.userMessage(), "raw-test-run", java.time.Instant.now()));
+            codexChatRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "raw-test-run",
+                    request.target(), java.time.Instant.now(), null, 0, "Codex 대화 중", "READY",
+                    List.of(), true, 0, 0, 0, 0, 0, List.of(), List.of(), request.model(), request.effort());
+            return codexChatRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot newCodexChat() {
+            codexMessages.clear();
+            codexChatRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "", null, null,
+                    0, "Codex 대화 대기", "READY", List.of(), true, 0, 0, 0, 0, 0, List.of(), List.of());
+            return codexChatRun;
         }
         @Override public ExplorerCoordinator.Snapshot newExplorerChat() {
             explorerMessages.clear();

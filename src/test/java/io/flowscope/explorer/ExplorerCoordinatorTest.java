@@ -78,12 +78,16 @@ final class ExplorerCoordinatorTest {
             assertTrue(started.accountHandles().isEmpty());
             assertNotNull(contexts.current(Source.LLM));
             provider.listener.get().threadReady("raw-thread");
+            provider.listener.get().activity(new ExplorerProvider.Activity(java.time.Instant.now(),
+                    "SYSTEM", "탐색 시작", "Explorer lifecycle", "RUNNING", null));
+            provider.listener.get().activity(new ExplorerProvider.Activity(java.time.Instant.now(),
+                    "MODEL", "Explorer 모델 메모", "Explorer 최종 보고", "COMPLETED", null));
             provider.listener.get().completed(new ExplorerProvider.Result("Done", List.of(), "raw-thread"));
             await(() -> !activeStatus(coordinator));
             assertTrue(coordinator.rawRun(), "terminal raw turns must remain distinguishable from automatic Explorer");
             assertEquals("Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)", coordinator.current().message());
             assertTrue(coordinator.current().activities().stream().noneMatch(activity ->
-                    activity.title().contains("Explorer") || activity.detail().contains("Explorer")));
+                    activity.kind().equals("SYSTEM") || activity.kind().equals("MODEL")));
             assertEquals("raw-thread", coordinator.chatState().threadId());
             assertEquals("Done", coordinator.chatMessages().getLast().text());
             assertNull(contexts.completedRun(Source.LLM), "answer-only turns are not evidence coverage");

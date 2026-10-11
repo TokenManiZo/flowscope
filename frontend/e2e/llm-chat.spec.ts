@@ -11,16 +11,21 @@ const idleRun = {
 }
 
 test("chat starts only after a user message and keeps the conversation visible", async ({ page }) => {
+  const automaticRun = { ...idleRun, status: "COMPLETED", runId: "auto-previous",
+    message: "Explorer 완료 · HTTP 시도 1건", activities: [
+      { sequence: 1, kind: "SYSTEM", title: "Explorer 완료", detail: "응답 기록 확인", status: "COMPLETED" },
+    ] }
   let run = idleRun
-  let rawRun = false
   let messages: Array<{ role: "user" | "assistant"; text: string; runId: string; at: string }> = []
   const starts: string[] = []
-  const modes: string[] = []
   const efforts: string[] = []
-  await page.route("**/api/explorer-run", async (route) => {
+  await page.route("**/api/explorer-run", (route) => route.fulfill({ json: {
+    run: automaticRun, messages: [], chat: null, browser: null, accounts: [], scope: [target],
+  } }))
+  await page.route("**/api/codex-chat", async (route) => {
     if (route.request().method() === "GET") {
-      await route.fulfill({ json: { run, messages, rawActive: false, rawRun,
-        chat: rawRun ? { threadId: "raw-thread", target, model: "", effort: "", rawCodex: true, rawProtocolVersion: 1 } : null,
+      await route.fulfill({ json: { run, messages, rawActive: false, rawRun: true,
+        chat: { threadId: "raw-thread", target, model: "", effort: "", rawCodex: true, rawProtocolVersion: 1 },
         browser: null, accounts: [], scope: [target] } })
       return
     }
@@ -28,9 +33,7 @@ test("chat starts only after a user message and keeps the conversation visible",
     if (form.get("action") === "start") {
       const instruction = form.get("message") ?? ""
       starts.push(instruction)
-      modes.push(form.get("raw") ?? "")
       efforts.push(form.get("effort") ?? "")
-      rawRun = form.get("raw") === "true"
       run = { ...idleRun, status: "COMPLETED", runId: `chat-${starts.length}`, target,
         anonymous: true, model: form.get("model") ?? "", effort: form.get("effort") ?? "",
         message: "Codex 답변 완료 · FlowScope HTTP 응답 0건 (대화만 완료)" }
@@ -56,8 +59,9 @@ test("chat starts only after a user message and keeps the conversation visible",
   if (process.env.FLOWSCOPE_CHAT_PREVIEW === "1") {
     await page.screenshot({ path: resolve(process.cwd(), "../target/llm-chat-start-preview.png"), fullPage: true })
   }
-  await page.getByRole("combobox", { name: "추론 강도" }).selectOption("high")
   await page.getByRole("button", { name: "Codex 자유 대화" }).click()
+  await expect(page.getByText("Explorer 완료 · HTTP 시도 1건")).toHaveCount(0)
+  await page.getByRole("combobox", { name: "추론 강도" }).selectOption("high")
   await expect(page.getByRole("button", { name: /^탐색할 계정/ })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "탐색 시작" })).toHaveCount(0)
   expect(starts).toHaveLength(0)
@@ -73,7 +77,6 @@ test("chat starts only after a user message and keeps the conversation visible",
   const bubble = await page.getByText("하이", { exact: true }).locator("..").boundingBox()
   expect(bubble?.width ?? 0).toBeGreaterThanOrEqual(96)
   expect(starts).toEqual(["하이"])
-  expect(modes).toEqual(["true"])
   expect(efforts).toEqual(["high"])
   if (process.env.FLOWSCOPE_CHAT_PREVIEW === "1") {
     await page.screenshot({ path: resolve(process.cwd(), "../target/llm-chat-preview.png"), fullPage: true })

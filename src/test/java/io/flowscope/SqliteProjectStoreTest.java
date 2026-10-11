@@ -56,7 +56,8 @@ final class SqliteProjectStoreTest {
         store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), java.util.Map.of(),
                 List.of(), List.of(), context);
 
-        assertEquals(chat, store.load(file).context().chat());
+        assertEquals(ExplorerChatState.empty(), store.load(file).context().chat());
+        assertEquals(chat, store.load(file).context().rawChat());
     }
 
     @Test void passiveSubdomainTrafficSurvivesDatabaseReopenWithoutBecomingCoverage() throws Exception {

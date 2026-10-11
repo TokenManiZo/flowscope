@@ -33,18 +33,55 @@ final class ProjectStoreTest {
         ProjectStore store = new ProjectStore();
         store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(), context);
 
-        assertEquals(chat, store.load(file).context().chat());
+        assertEquals(ExplorerChatState.empty(), store.load(file).context().chat());
+        assertEquals(chat, store.load(file).context().rawChat());
         var malformed = new ObjectMapper().readTree(file.toFile());
-        ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/llm_chat"))
+        ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/codex_chat"))
                 .remove("rawProtocolVersion");
         new ObjectMapper().writeValue(file.toFile(), malformed);
-        assertEquals(0, store.load(file).context().chat().rawProtocolVersion(),
+        assertEquals(0, store.load(file).context().rawChat().rawProtocolVersion(),
                 "older raw projects must not be mistaken for harness-free threads");
-        ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/llm_chat/messages/0"))
+        ((com.fasterxml.jackson.databind.node.ObjectNode) malformed.at("/project/codex_chat/messages/0"))
                 .put("at", "not-a-time");
         new ObjectMapper().writeValue(file.toFile(), malformed);
         assertThrows(IllegalArgumentException.class, () -> store.load(file),
                 "invalid chat metadata must fail before a project is installed");
+    }
+
+    @Test
+    void automaticAndRawChatsSurviveJsonReopenIndependently() throws Exception {
+        ExplorerChatState automatic = new ExplorerChatState("auto-thread", "https://app.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Explore", "auto-run", "2026-10-10T00:00:00Z")),
+                "gpt-6.1-sol", "high", false, 0);
+        ExplorerChatState raw = new ExplorerChatState("raw-thread", "https://app.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Hi", "raw-run", "2026-10-10T00:01:00Z")),
+                "gpt-6.1-sol", "high", true, 1);
+        ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("separate chats",
+                List.of("https://app.example.test/"), Instant.parse("2026-10-10T00:00:00Z"), automatic, raw);
+        Path file = temp.resolve("separate.flowscope.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(), context);
+        assertEquals(automatic, store.load(file).context().chat());
+        assertEquals(raw, store.load(file).context().rawChat());
+    }
+
+    @Test
+    void oldSingleRawChatMovesToTheIndependentSessionOnReopen() throws Exception {
+        ExplorerChatState raw = new ExplorerChatState("raw-old", "https://app.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Hi", "raw-run", "2026-10-10T00:00:00Z")),
+                "gpt-6.1-sol", "high", true, 1);
+        Path file = temp.resolve("old-single-chat.json");
+        ProjectStore store = new ProjectStore();
+        store.save(file, List.of(), new AnalysisConfig(), List.of(), List.of(), Map.of(), List.of(), List.of(),
+                new ProjectStore.ProjectContext("old", List.of("https://app.example.test/"), Instant.now(), raw));
+        ObjectMapper json = new ObjectMapper();
+        var root = (com.fasterxml.jackson.databind.node.ObjectNode) json.readTree(file.toFile());
+        var project = (com.fasterxml.jackson.databind.node.ObjectNode) root.path("project");
+        project.set("llm_chat", project.get("codex_chat"));
+        project.remove("codex_chat");
+        json.writeValue(file.toFile(), root);
+        assertEquals(ExplorerChatState.empty(), store.load(file).context().chat());
+        assertEquals(raw, store.load(file).context().rawChat());
     }
 
     @Test

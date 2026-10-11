@@ -14,6 +14,10 @@ import { runStatusLabel } from "@/lib/display/runStatus"
 import {
   useExplorerBrowserCompleteMutation,
   useExplorerBrowserLoginMutation,
+  useCodexChatControlMutation,
+  useCodexChatQuery,
+  useCodexChatStartMutation,
+  useCodexChatSteerMutation,
   useExplorerControlMutation,
   useExplorerModelsQuery,
   useExplorerRunQuery,
@@ -69,19 +73,25 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   /** 대상 서비스의 등록 계정. */
   accounts?: readonly { id: string; label: string }[]
 }) {
-  const query = useExplorerRunQuery()
-  const start = useExplorerStartMutation()
-  const control = useExplorerControlMutation()
-  const steer = useExplorerSteerMutation()
+  const [selectedView, setSelectedView] = useState<"auto" | "raw" | null>(null)
+  const autoQuery = useExplorerRunQuery()
+  const rawQuery = useCodexChatQuery(selectedView === "raw")
+  const autoStart = useExplorerStartMutation()
+  const rawStart = useCodexChatStartMutation()
+  const autoControl = useExplorerControlMutation()
+  const rawControl = useCodexChatControlMutation()
+  const autoSteer = useExplorerSteerMutation()
+  const rawSteer = useCodexChatSteerMutation()
   const openLogin = useExplorerBrowserLoginMutation()
   const completeLogin = useExplorerBrowserCompleteMutation()
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<string[] | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
-  const [selectedEffort, setSelectedEffort] = useState<string | null>(null)
+  const [autoSelectedModel, setAutoSelectedModel] = useState<string | null>(null)
+  const [rawSelectedModel, setRawSelectedModel] = useState<string | null>(null)
+  const [autoSelectedEffort, setAutoSelectedEffort] = useState<string | null>(null)
+  const [rawSelectedEffort, setRawSelectedEffort] = useState<string | null>(null)
   const [operatorMessage, setOperatorMessage] = useState("")
   const [chatOpen, setChatOpen] = useState(false)
-  const [selectedView, setSelectedView] = useState<"auto" | "raw" | null>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const feedScroll = useRef<HTMLDivElement>(null)
   const followLatest = useRef(true)
@@ -90,18 +100,28 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const [feedOpen, setFeedOpen] = useState(true)
   const [steerState, setSteerState] = useState<"sent" | "failed" | null>(null)
 
+  const rawView = selectedView === "raw"
+  const selectedModel = rawView ? rawSelectedModel : autoSelectedModel
+  const selectedEffort = rawView ? rawSelectedEffort : autoSelectedEffort
+  const setSelectedModel = rawView ? setRawSelectedModel : setAutoSelectedModel
+  const setSelectedEffort = rawView ? setRawSelectedEffort : setAutoSelectedEffort
+  const query = rawView ? rawQuery : autoQuery
+  const start = rawView ? rawStart : autoStart
+  const control = rawView ? rawControl : autoControl
+  const steer = rawView ? rawSteer : autoSteer
   const data = query.data
   useEffect(() => { setSteerState(null) }, [data?.run.runId, datasetRevision])
-  useEffect(() => { setChatOpen(false); setSelectedView(null); setOperatorMessage("") }, [datasetRevision])
+  useEffect(() => {
+    setChatOpen(false); setSelectedView(null); setOperatorMessage("")
+    setAutoSelectedModel(null); setRawSelectedModel(null)
+    setAutoSelectedEffort(null); setRawSelectedEffort(null)
+  }, [datasetRevision])
   useEffect(() => { if (chatOpen) composer.current?.focus() }, [chatOpen])
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
+  const automaticActive = activeStates.has(autoQuery.data?.run.status ?? "IDLE")
   const chatMessages = data?.messages ?? []
-  const rawRun = Boolean(data?.rawRun)
-  const defaultRawView = run && run.status !== "IDLE" ? rawRun
-    : Boolean(data?.chat?.rawCodex && data.chat.threadId)
-  const rawView = active && !rawRun ? false : selectedView === null ? defaultRawView : selectedView === "raw"
-  const visibleRun = run && run.status !== "IDLE" && rawView !== rawRun ? undefined : run
+  const visibleRun = run
   const legacyRawChat = Boolean(data?.chat?.threadId && data.chat.rawCodex
     && !data.chat.rawProtocolVersion)
   const chatVisible = rawView
@@ -132,11 +152,14 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const nextEffort = selectedEffort ?? (previousModel === nextModel ? previousEffort
     : chatMessages.length > 0 ? modelOption?.defaultEffort ?? "" : "")
   const effortUnavailable = Boolean(nextEffort && !effortOptions.some((item) => item.effort === nextEffort))
-  const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable && Boolean(target)
+  const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable
+    && Boolean(target) && !(rawView && automaticActive)
   const readyToExplore = readyToSend && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
 
-  const feedItems: readonly SourceFeedItem[] = (visibleRun?.activities ?? []).map((item) => ({
+  const feedItems: readonly SourceFeedItem[] = (visibleRun?.activities ?? [])
+    .filter((item) => !rawView || (item.kind !== "SYSTEM" && item.kind !== "MODEL"))
+    .map((item) => ({
     id: String(item.sequence),
     badge: item.kind,
     title: item.title,
@@ -145,7 +168,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   }))
 
   const notices = <>
-    {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>Explorer 요청 실패</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
+    {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>{rawView ? "Codex 대화 요청 실패" : "Explorer 요청 실패"}</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
     {legacyRawChat && rawView && <Alert><AlertTitle>이전 자유 대화는 새 채팅이 필요합니다</AlertTitle><AlertDescription>이전 Codex thread에는 FlowScope 도구 문맥이 남아 있습니다. 아래의 새 채팅을 눌러 순정 대화로 시작하세요. 저장된 요청 기록은 유지됩니다.</AlertDescription></Alert>}
     {run && !providerReady ? <Alert variant="destructive"><AlertTitle>Codex 준비가 필요합니다</AlertTitle><AlertDescription className="space-y-3">
       <p>{run.providerReadiness}</p>
@@ -206,7 +229,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     }
   })
   const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
-        <Button type="button" size="sm" variant={rawView ? "secondary" : "outline"} disabled={!providerReady || active || !target}
+        <Button type="button" size="sm" variant={rawView ? "secondary" : "outline"} disabled={!providerReady || !target}
           onClick={() => { setAccountsOpen(false); setSelectedView("raw"); setChatOpen(true) }}><MessageSquare className="size-4" />Codex 자유 대화</Button>
         <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? rawView ? "대화 모델" : hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
         {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
@@ -251,21 +274,21 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       {!rawView && <Button size="sm" disabled={!readyToExplore || active || start.isPending} onClick={() => {
         setSelectedView("auto")
         setChatOpen(false)
-        start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
+        autoStart.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
           model: nextModel, effort: nextEffort })
       }}><Play className="size-4" />탐색 시작</Button>}
       {rawView && <Button type="button" size="sm" variant="outline" disabled={active}
         onClick={() => { setSelectedView("auto"); setChatOpen(false) }}>자동 탐색 보기</Button>}
       {rawView && Boolean(chatMessages.length > 0 || data?.chat?.threadId) && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
         if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
-        control.mutate("new-chat", { onSuccess: () => {
+        rawControl.mutate("new-chat", { onSuccess: () => {
           setSelectedView("raw")
           setAnonymous(nextAnonymous); setSelected(nextSelected); setSelectedModel(nextModel); setSelectedEffort(nextEffort)
           setOperatorMessage(""); setChatOpen(true)
         } })
       }}>새 채팅</Button>}
       {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />{rawView ? "대화 중단" : "중단"}</Button>
-        : !rawView && visibleRun && visibleRun.status !== "IDLE" && chatMessages.length === 0 ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
+        : !rawView && visibleRun && visibleRun.status !== "IDLE" && chatMessages.length === 0 ? <Button variant="outline" onClick={() => autoControl.mutate("clear")}>실행 표시 지우기</Button> : null}
       {!rawView && <span className="text-xs text-muted-foreground">자동 탐색 {(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>}
     </div>
   </div>
@@ -275,10 +298,9 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     if (!rawView || !text || legacyRawChat || start.isPending || steer.isPending) return
     setSteerState(null)
     if (run?.status === "RUNNING" && data?.rawActive) {
-      steer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
+      rawSteer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     } else if (!active && readyToSend) {
-      start.mutate({ target, accounts: "", anonymous: true,
-        model: nextModel, effort: nextEffort, message: text, raw: true },
+      rawStart.mutate({ target, model: nextModel, effort: nextEffort, message: text },
         { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }
   }
