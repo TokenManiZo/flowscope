@@ -103,6 +103,69 @@ public final class FatJarIsolationSmoke {
                 first.createStatement().execute("SELECT 1");
                 second.createStatement().execute("SELECT 1");
             }
+            assertShadedPtyRuns(firstLoader);
+            assertShadedPtyRuns(secondLoader);
+        }
+    }
+
+    private static void assertShadedPtyRuns(ClassLoader loader) throws Exception {
+        Path work = Files.createTempDirectory("flowscope-release-pty-");
+        Class<?> type = Class.forName("io.flowscope.explorer.CodexCliTerminal", true, loader);
+        Object terminal = type.getDeclaredConstructor().newInstance();
+        try {
+            String javaExecutable = Path.of(System.getProperty("java.home"), "bin",
+                    System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win") ? "java.exe" : "java").toString();
+            String classes = Path.of(PtyProbe.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+            type.getMethod("start", String.class, Path.class, List.class, java.util.Map.class,
+                    int.class, int.class, java.util.function.Consumer.class).invoke(terminal, "release-smoke", work,
+                    List.of(javaExecutable, "-cp", classes, PtyProbe.class.getName()),
+                    java.util.Map.of("TERM", "xterm-256color"), 80, 24,
+                    (java.util.function.Consumer<String>) ignored -> {});
+            var poll = type.getMethod("poll", long.class);
+            var output = Class.forName("io.flowscope.explorer.CodexCliTerminal$Poll", true, loader)
+                    .getMethod("output");
+            var nextCursor = Class.forName("io.flowscope.explorer.CodexCliTerminal$Poll", true, loader)
+                    .getMethod("cursor");
+            long cursor = 0;
+            boolean ready = false;
+            StringBuilder startup = new StringBuilder();
+            for (int attempt = 0; attempt < 20; attempt++) {
+                Object result = poll.invoke(terminal, cursor);
+                cursor = (long) nextCursor.invoke(result);
+                startup.append(new String((byte[]) output.invoke(result), StandardCharsets.UTF_8));
+                if (startup.toString().contains("PTY_READY")) {
+                    ready = true;
+                    break;
+                }
+            }
+            if (!ready) throw new IllegalStateException("Shaded PTY did not start its child process");
+            type.getMethod("input", byte[].class).invoke(terminal, (Object) "x\r".getBytes(StandardCharsets.UTF_8));
+            boolean echoed = false;
+            StringBuilder received = new StringBuilder();
+            for (int attempt = 0; attempt < 20; attempt++) {
+                Object result = poll.invoke(terminal, cursor);
+                cursor = (long) nextCursor.invoke(result);
+                received.append(new String((byte[]) output.invoke(result), StandardCharsets.UTF_8));
+                if (received.toString().contains("PTY_ECHO:x")) {
+                    echoed = true;
+                    break;
+                }
+            }
+            if (!echoed) throw new IllegalStateException("Shaded PTY did not relay child input/output");
+        } finally {
+            ((AutoCloseable) terminal).close();
+            Files.deleteIfExists(work);
+        }
+    }
+
+    public static final class PtyProbe {
+        public static void main(String[] args) throws Exception {
+            System.out.print("PTY_READY\r\n");
+            System.out.flush();
+            String line = new java.io.BufferedReader(new java.io.InputStreamReader(System.in,
+                    StandardCharsets.UTF_8)).readLine();
+            System.out.print("PTY_ECHO:" + line + "\r\n");
+            System.out.flush();
         }
     }
 
@@ -127,6 +190,15 @@ public final class FatJarIsolationSmoke {
             List<String> entries = jar.stream().map(JarEntry::getName).toList();
             requireEntry(entries, "web/app/index.html");
             requireEntry(entries, "META-INF/NOTICE-frontend.txt");
+            requireEntry(entries, "META-INF/LICENSE-pty4j-epl-1.0.txt");
+            requireEntry(entries, "META-INF/NOTICE-pty4j.txt");
+            requireEntry(entries, "META-INF/LICENSE-winpty.txt");
+            requireEntry(entries, "META-INF/LICENSE-slf4j.txt");
+            requireEntry(entries, "META-INF/AL2.0");
+            requireEntry(entries, "META-INF/LGPL2.1");
+            requireEntry(entries, "resources/com/pty4j/native/darwin/libpty.dylib");
+            requireEntry(entries, "resources/com/pty4j/native/linux/x86-64/libpty.so");
+            requireEntry(entries, "resources/com/pty4j/native/win/x86-64/conpty.dll");
             requireAny(entries, "hashed React JavaScript", name -> name.matches("web/app/assets/[^/]+-[A-Za-z0-9_-]+\\.js"));
             requireAny(entries, "hashed React CSS", name -> name.matches("web/app/assets/[^/]+-[A-Za-z0-9_-]+\\.css"));
             requireNone(entries, "legacy web UI", name -> name.equals("web/index.html") || name.startsWith("web/vendor/"));
@@ -286,7 +358,8 @@ public final class FatJarIsolationSmoke {
     /**
      * 어떤 의존성이든 io.flowscope 밖의 원래 네임스페이스로 새면 빌드를 실패시킨다. 이름별 allowlist가 아니라
      * "낯선 최상위 네임스페이스가 하나라도 있으면 실패"라서, 알려진 것뿐 아니라 앞으로 추가될 누락도 잡는다.
-     * org.sqlite는 네이티브 라이브러리를 고정 패키지명으로 로드해 relocate하면 깨지므로 명시적으로 허용한다.
+     * org.sqlite와 com.sun.jna는 네이티브 라이브러리의 JNI 클래스명이 고정되어 있어 relocate하면 깨진다.
+     * 실제 배포 JAR의 PTY 기동을 별도 smoke로 확인하면서 이 두 네임스페이스만 허용한다.
      */
     private static void assertNoForeignClassNamespace(List<String> entries) {
         List<String> leaks = entries.stream()
@@ -295,6 +368,7 @@ public final class FatJarIsolationSmoke {
                 .filter(name -> !name.equals("module-info.class"))
                 .filter(name -> !name.startsWith("io/flowscope/"))
                 .filter(name -> !name.startsWith("org/sqlite/")) // 네이티브 로딩 때문에 의도적으로 미relocate
+                .filter(name -> !name.startsWith("com/sun/jna/")) // JNA jnidispatch의 JNI 클래스명은 고정
                 .distinct()
                 .toList();
         if (!leaks.isEmpty()) {

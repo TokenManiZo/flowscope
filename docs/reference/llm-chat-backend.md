@@ -1,56 +1,47 @@
-# LLM 자동 탐색·자유 대화 계약 (로컬 검증 중)
+# LLM 자동 탐색·Codex CLI 터미널 계약 (로컬 검증 중)
 
-> 백엔드 세션 분리 자동 검증 완료·Burp 실물 gate 대기 (2026-10-11): `v1.0.2` 기반 로컬 브랜치에서 자유 대화와 자동 탐색의 대화 상태·실행 기록·Web API를 분리했습니다. 수정 JAR의 실대상 프록시·HTTPS 수집은 아직 확인하지 않았습니다.
+> 2026-10-11: 자동 Explorer는 유지하고, 사용자 자유 대화 화면은 실제 `codex` CLI를 실행하는 웹 터미널로 교체 중입니다. 자동 회귀와 PTY 단일 JAR 검증을 구분하며, 수정 JAR의 실제 Burp 대상 트래픽 gate는 아직 수행하지 않았습니다.
 
-이 문서는 `v1.0.2` 기반 로컬 작업의 두 실행 방식을 설명합니다. **탐색 시작**은 계정·비로그인 lane을 선택하는 기존 자동 Explorer입니다. 카드 제목 옆 **Codex 자유 대화**는 자동 탐색 컨트롤을 숨기고 별도 대화 보기를 열며, 버튼만으로 네트워크 실행을 시작하지 않습니다. 저장된 프로젝트에서 첫 메시지를 전송하면 별도의 turn을 시작하고, 완료 뒤의 메시지는 저장된 Codex thread를 재개합니다. 추천 문장을 자동 실행하지 않습니다.
+## 두 실행 방식
 
-## 의도와 경계
+**탐색 시작**은 기존 계정·비로그인 자동 Explorer입니다. FlowScope의 전용 HTTP·브라우저·산출물 도구와 시작 지침을 쓰며, 계정별 완료 판정은 저장된 HTTP Evidence로 수행합니다.
 
-자유 대화에서는 사용자가 작성한 메시지를 그대로 Codex turn에 전달합니다. FlowScope의 고정 정찰 프롬프트, 대상 URL 접두 문구, 계정 handle, dynamic tool schema, JSON 출력 형식은 붙이지 않습니다. 기존 자동 Explorer의 프롬프트·계정 선택·범위 제한 HTTP 도구는 그대로입니다. 순정 대화에서도 Codex 자체의 에이전트 루프와 기본 도구는 사용합니다. 이는 “Codex 자체에 하네스가 없다”는 뜻이 아니라 “FlowScope가 별도 Explorer 하네스를 얹지 않는다”는 뜻입니다. [공식 Codex 설명](https://developers.openai.com/blog/codex-as-a-platform)은 앱 서버가 대화·도구·승인 처리를 제공한다고 명시합니다.
+**Codex CLI 열기**는 설치된 `codex` 실행 파일을 PTY에서 직접 시작하고 xterm.js로 그 화면을 웹에 표시합니다. FlowScope는 대화 문장·도구 호출·모델 출력을 번역하거나 재구성하지 않습니다. 모델 변경, 승인, 파일 작업, `/exit` 등은 Codex CLI 자체 UI에서 다룹니다. [Codex CLI 공식 문서](https://learn.chatgpt.com/docs/codex/cli)는 터미널 실행과 `codex resume`을 설명합니다. 웹 버튼의 **새 Codex CLI**는 새 대화를, **이전 대화 이어서**는 같은 작업 폴더에서 `codex resume --last`를 실행합니다. 자동 Explorer와 CLI는 같은 LLM 수집 lane을 쓰므로 동시에 실행하지 않습니다.
 
-Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 turn·`runId`입니다. 자유 대화의 네이티브 셸에는 run 전용 loopback Burp 프록시 주소를 표준 HTTP(S) 프록시 환경 변수로 설정합니다. 그 프록시를 실제로 지난 요청은 Burp의 exact-scope 검사 뒤 `source=LLM`으로 기록되며, 실행 중인 run·포트가 맞는 경우에만 `CONTROLLED`입니다. 일반 8082 요청은 그대로 `UNVERIFIED_RUNTIME`입니다. 프록시 경로는 Cookie·Authorization을 브로커 값으로 바꾸지 않습니다. 실제로 기록된 Evidence만 기존 결정론적 분석·그래프 입력에 들어갑니다. 답변에 HTTP 응답이 0건이어도 대화는 남지만 완료된 수집 lane으로 승격하지 않습니다.
+## 터미널과 Web API
 
-## 로컬 Web API
+Java는 Pty4J PTY에서 실제 CLI 프로세스를 실행합니다. 브라우저는 xterm.js로 PTY 바이트를 표시하고 키 입력·화면 크기를 그대로 전달합니다. Web API는 기존 loopback·Host·Origin·256비트 capability 검사를 사용합니다.
 
-기존 Web capability·Host·Origin 검사 아래의 `/api/explorer-run`을 사용합니다.
+- `GET /api/codex-terminal?cursor=N`: 실행 상태와 최대 64KiB PTY 출력(base64), 다음 커서를 반환합니다. 화면에서 읽지 못한 출력이 4MiB 메모리 보존 상한을 넘으면 `truncated=true`를 표시합니다.
+- `POST action=start`: 터미널 열·행 수와 `resume` 여부를 받아 CLI를 시작합니다. CLI 명령·작업 폴더·프록시 포트는 브라우저 입력에서 받지 않습니다.
+- `POST action=input`, `resize`, `stop`: PTY에 입력을 전달하거나 화면 크기를 바꾸고 프로세스를 종료합니다. 입력은 호출당 64KiB 이하입니다.
+- 이전 앱 서버 채팅 API `/api/codex-chat`은 더는 공개하지 않습니다. 자동 Explorer의 `/api/explorer-run`은 그대로입니다.
 
-- `GET /api/explorer-run`: 자동 Explorer의 `run`, `browser`, `accounts`, `scope`, 자동 탐색 대화만 반환합니다.
-- `GET /api/codex-chat`: 자유 대화의 `run`, `messages: [{role,text,runId,at}]`, `chat`, `rawActive`를 반환합니다. 자동 Explorer 활동·계정·브라우저 상태는 섞지 않습니다.
-- `POST /api/explorer-run action=start`: 기존 자동 Explorer만 시작합니다. `raw=true`는 거부합니다.
-- `POST /api/codex-chat action=start`: `target`, `model`, `effort`, `message`로 자유 대화의 첫 turn 또는 저장된 thread의 후속 turn을 시작합니다. `steer`, `cancel`, `new-chat`, `recheck`도 이 경로의 자유 대화에만 적용합니다. 프록시 포트와 작업 폴더는 Web 입력에서 받지 않고 확장이 정합니다. `target`은 실행·수집 범위 검사용이지 Codex 메시지에 삽입하는 문장이 아닙니다.
-- `POST action=steer`: 실행 중 turn에 지시를 추가하고 화면 대화에 기록합니다. 끝난 turn에는 새 `action=start&message=...`를 사용합니다.
-- `POST action=cancel`: 현재 turn을 중단합니다. 저장된 대화와 기존 Evidence는 유지됩니다.
-- `POST action=clear`: 지난 run 표시만 초기화합니다. 대화와 Evidence는 유지됩니다.
-- `POST action=new-chat`: 현재 대화 참조·표시 메시지를 명시적으로 비웁니다. Evidence는 지우지 않습니다. Codex의 이전 로컬 thread는 자동 삭제하지 않습니다.
-- `GET /api/explorer-prompts`: API·입력 찾기, 계정별 요청 살펴보기, 이어서 확인하기의 범용 문장을 반환합니다. 현재 UI는 추천 목록을 표시하지 않으므로 사용자가 자유롭게 입력합니다.
+터미널은 페이지를 떠나도 Burp 프로세스에서 계속 실행되고, 돌아오면 보존된 출력으로 화면을 복원합니다. 확장을 내리면 PTY를 종료합니다. Codex 자체의 세션 기록은 FlowScope가 삭제하지 않습니다. 웹 터미널 출력은 메모리 보존용이며 프로젝트 DB에 셸 전문을 중복 저장하지 않습니다.
 
-Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니다. capability 값이나 Codex gateway 토큰을 프로젝트 데이터에 저장하지 않습니다.
+## 트래픽·Evidence 경계
 
-## 세션·프로젝트 저장
+CLI 실행마다 전용 Burp 프록시 리스너와 `runId`를 만듭니다. Codex 본체의 모델 통신은 프록시로 보내지 않고, `shell_environment_policy.set`으로 Codex가 실행하는 셸 명령에만 `HTTP_PROXY`·`HTTPS_PROXY` 등을 넣습니다. Codex 기본 `workspace-write`에서 로컬 Burp 프록시에 연결할 수 있도록 해당 실행에만 `sandbox_workspace_write.network_access=true`를 지정합니다. 그 외 Codex 대화·도구·승인 하네스는 주입하지 않습니다. [Codex 설정 문서](https://learn.chatgpt.com/docs/config-file/config-reference)는 두 설정을 정의합니다.
 
-프로젝트 형식은 schema 10입니다. JSON과 SQLite의 project metadata에 자동 탐색 대화 `llm_chat`과 자유 대화 `codex_chat`을 각각 저장합니다. 각 항목에는 Codex `threadId`, 대화 대상, 선택 모델·추론 강도, user/assistant 메시지, turn `runId`가 있습니다. 기존 schema 1~9는 빈 대화로 열리고, 옛 schema 10의 `llm_chat.rawCodex=true`는 자유 대화 쪽으로 옮겨 읽습니다. 버전 필드가 없는 옛 raw thread는 0으로 읽고 순정 대화로 자동 재개하지 않습니다. **새 채팅**은 자유 대화만 비우며 자동 탐색 대화와 요청 기록은 유지합니다. 같은 schema의 이전 JAR로 다시 저장하면 새 `codex_chat` 필드를 잃을 수 있으므로 업그레이드 전 백업을 보존해야 합니다. 로그인 Cookie·Authorization, FlowScope gateway capability는 대화 메타데이터에 넣지 않습니다. 요청·응답 Evidence는 인증값을 포함해 원문 그대로 저장되며, Codex 로컬 history와 DB 옆 `codex-raw-<해시>` 작업 폴더에도 대상 내용이 남을 수 있습니다.
+프록시를 실제로 통과하고 프로젝트 exact scope에 들어온 응답만 `source=LLM`, CLI `runId`, `CONTROLLED` HTTP Evidence로 저장합니다. 저장된 요청·응답은 기존 분석기와 그래프에 들어갑니다. 셸 명령 성공, 모델 설명, 빈 작업 폴더는 HTTP Evidence가 아닙니다. 자격정보가 실린 CLI 요청을 FlowScope 등록 계정으로 자동 추정하지 않습니다. CLI 또는 도구가 프록시를 무시하거나 직접 연결하면 FlowScope가 그 요청을 차단·기록할 수 없다는 한계는 그대로입니다.
 
-계정 로그인 브라우저의 메모리 세션은 같은 Burp 실행 안에서 turn 사이에 유지됩니다. 프로젝트를 다시 열거나 Burp를 재시작하면 로그인 자격은 복원하지 않으므로 다시 로그인해야 합니다. 같은 컴퓨터의 Codex thread가 남아 있으면 `thread/resume`으로 대화를 이어갑니다. 다른 컴퓨터에서 프로젝트를 열어 로컬 Codex thread가 없으면 자동으로 같은 모델 문맥을 꾸며내지 않고 실패를 표시합니다. `action=new-chat`으로 새 thread를 시작할 수 있습니다.
+CLI 종료 시 같은 run의 신뢰 가능한 범위 안 응답이 있어야만 LLM lane을 완료 처리합니다. 없으면 실행은 종료되지만 수집 완료로 승격하지 않습니다. 전역 요청 기록 20,000건·프로젝트 파일 100MiB 상한은 유지됩니다.
 
-기존 Explorer 도구가 만든 큰 응답의 임시 artifact는 같은 Burp 프로세스의 대화 turn 사이에 재사용합니다. 자유 대화에는 FlowScope artifact 도구를 제공하지 않습니다. Codex 네이티브 셸이 프로젝트별 작업 폴더에 만든 파일과 Codex 자체의 로컬 thread 기록은 별도로 남으며 사용자가 직접 관리해야 합니다.
+## 프로젝트·이전 기록
 
-## 이번 구현의 범위와 남은 한계
+CLI 작업 폴더는 현재 프로젝트 DB 옆의 `codex-raw-<해시>`입니다. 빈 폴더는 오류가 아닙니다. Codex는 셸 출력과 대화를 자체 로컬 세션 기록에 저장하고, 파일을 생성하라는 명령이 있을 때만 작업 폴더에 파일이 생깁니다. 이전 앱 서버 자유 대화의 `codex_chat` 메타데이터와 기존 HTTP Evidence는 프로젝트를 다시 저장해도 보존하지만, 그 대화를 새 CLI TUI에 자동 주입하거나 같은 세션이라고 주장하지 않습니다.
 
-모델 선택지는 설치된 Codex CLI의 `model/list`에서 읽습니다. 화면은 포커스 복귀와 5분 간격으로 목록을 다시 조회하며 서버의 60초 캐시를 사용합니다. `supportedReasoningEfforts`와 `defaultReasoningEffort`를 읽어 모델별 추론 강도 목록을 만들고, 명시적으로 고른 값은 `turn/start.effort`로 보냅니다. 모델이 바뀐 기존 대화에서는 새 모델의 기본 강도를 명시해 앞 모델의 강도가 잘못 이어지지 않게 합니다. 미지원 조합은 실행 전에 거부합니다. 모델 목록은 표시용 catalog이지 계정 사용 권한의 증명이 아닙니다. FlowScope는 Codex CLI 자체를 자동 업데이트하지 않고, 진행 중인 turn의 모델·강도도 자동 변경하지 않습니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)의 `model/list`와 `turn/start` 계약을 따릅니다.
+HTTPS 대상에서 셸 클라이언트가 Burp CA를 신뢰하지 않으면 TLS 오류가 납니다. FlowScope는 `curl -k`나 OS 전역 CA 설치를 자동 적용하지 않습니다. 실제 Burp에서 CLI 입력, 프록시 경유·우회, 종료·재개, 프로젝트 전환 및 HTTPS 응답 저장을 별도로 확인해야 합니다.
 
-자유 대화의 Codex thread는 FlowScope 개발자 지침·dynamic tools를 받지 않습니다. Codex의 `workspace-write` 셸 격리를 쓰되 네트워크를 허용해야 로컬 Burp 프록시까지 연결됩니다. 로컬 실험에서 `networkAccess=false`는 `127.0.0.1` 연결도 막았고, `networkAccess=true`에 프록시 환경을 설정하자 네이티브 `curl`이 로컬 프록시를 사용했습니다. 승인 요청은 Burp에서 명령·사유를 보여 주고 사용자의 결정을 한 번만 전달합니다. 기존 자동 Explorer의 네트워크·도구 정책은 바꾸지 않았습니다.
+## 현재 CLI 이식·검증 기록
 
-프록시 환경은 표준 HTTP(S) 클라이언트의 기본 경로일 뿐 OS 방화벽이 아닙니다. 프록시를 무시하는 프로그램, 명시적 `--noproxy`, 브라우저의 자체 네트워크 경로는 FlowScope가 막거나 기록할 수 없습니다. 따라서 자유 대화의 **모든** 요청이 exact scope에 묶이거나 그래프에 나타난다고 주장하지 않습니다. 범위 안 응답도 실제 Burp 프록시를 거쳐 저장된 경우에만 LLM Evidence입니다. 이 한계 때문에 자유 대화를 자동 Explorer의 범위 보장·계정 비교 성과와 혼동하지 않아야 합니다. 대화 turn에는 기존 500 HTTP 요청·300 브라우저 행동·3,000 브라우저 교환의 강제 종료 상한이 없지만 전역 기록 20,000건·프로젝트 파일 100MiB 등은 남아 있습니다.
+- 필요성: 이전 웹 채팅은 Codex app-server turn과 FlowScope 도구 이벤트를 재구성한 화면이었으므로 사용자가 요청한 “CLI 자체”와 달랐습니다. 외부 터미널 창만 열면 웹 안에서 그대로 쓰려는 요구를 충족하지 못해 기각했습니다. 실제 PTY·웹 터미널로 교체하고 FlowScope는 실행별 Burp 프록시와 HTTP Evidence 귀속만 담당합니다.
+- 변경 범위: `CodexCliTerminal`, `FlowScopeExtension`의 CLI run·프록시 lifecycle, `FlowScopeWebServer`의 로컬 터미널 API, React `CodexTerminalPanel`·`LlmPass`·API 타입, Pty4J/xterm.js 의존성·배포 격리·라이선스 문서. 이전 `/api/codex-chat`은 제거하고 프로젝트 `codex_chat` 기록은 보존했습니다. 자동 Explorer 코드는 변경하지 않았습니다.
+- 관련 파일: Java `CodexCliTerminal`, `FlowScopeExtension`, `FlowScopeWebServer`, `FatJarIsolationSmoke`와 PTY·Web API·프록시·프로젝트 재열기 테스트; React `CodexTerminalPanel`, `LlmPass`, API 타입·endpoint·query hook과 화면·Playwright 테스트; `pom.xml`, `frontend/package*.json`, NOTICE/라이선스 자원, `README.md`, 점검 흐름·화면·신뢰 경계·문제 해결·다음 릴리스 문서.
+- 재현·검증: PTY 입력·출력·리사이즈·종료, Web capability·오류 입력, CLI 프록시의 LLM 귀속·종료 후 차단, 프로젝트 재열기 이력 보존을 각각 회귀로 확인했습니다. 배포 JAR에서 JNA를 relocate하면 JNI 오류가 나는 것을 재현해 JNA만 고정 네임스페이스로 남겼습니다. 두 독립 클래스 로더의 배포 JAR에서 PTY 자식 프로세스 왕복을 확인했습니다. `mvn clean verify`는 React 880건·Java 992건(실패·오류 0, opt-in 8건 skip)으로 통과했습니다. 별도 17778 Standalone의 Playwright 모의 화면 시험 1건은 출력 렌더링·키 입력·종료·화면 전환·재개 버튼·자동 Explorer 분리를 확인했습니다. 배포 JAR과 실제 설치된 Codex CLI 0.159.3을 연결한 opt-in 웹 시험 1건에서는 모델 요청 없이 CLI TUI 화면과 키 입력 전송을 확인했습니다. 두 화면 시험 모두 실제 Burp 대상 HTTP 수집 성공으로 전용하지 않습니다.
+- 남은 gate: 실제 Burp에 수정 JAR 재로드 후 CLI 셸의 범위 안 HTTP 요청·응답 저장, HTTPS Burp CA, 프로젝트 전환·확장 unload, Windows/Linux 배포 PTY를 확인해야 합니다. 프록시 우회 요청까지 수집한다고 주장하지 않습니다.
 
-두 방식은 `Source.LLM`의 수집 lane만 공유하며 동시 실행은 막습니다. 실행 객체, 공급자 프로세스, 대화 thread, 채팅 메시지, 마지막 실행 snapshot, Web API 및 화면 조회 키는 분리합니다. 이전 구현은 한 `ExplorerCoordinator`에서 `rawRun` 플래그만 바꿔 자유 대화에 공통 `Explorer 완료` 피드가 섞였습니다. 자유 대화 화면은 자체 대화와 HTTP·도구 기록만 보여 주고 준비·연결·완료 시스템 활동 및 모델 최종 보고 복제는 숨깁니다. 답변 완료와 실제 기록된 HTTP 응답 수를 표시하고, 0건이면 **대화만 완료**라고 명시합니다. 자동 Explorer의 완료 게이트와 요약은 그대로 유지합니다.
-
-HTTPS 요청은 클라이언트가 Burp CA를 신뢰해야 합니다. FlowScope는 `curl -k` 같은 TLS 검증 우회나 OS 전역 인증서 설치를 자동으로 수행하지 않습니다. 필요한 경우 [PortSwigger의 CA 설치 안내](https://portswigger.net/burp/documentation/desktop/external-browser-config/certificate)에 따라 셸 클라이언트의 신뢰 저장소를 준비해야 합니다.
-
-기존 자동 Explorer의 `flowscope_record_discoveries`는 유효한 선언은 저장하고 잘못된 발견·파라미터의 인덱스와 이유를 `rejected_discoveries`·`rejected_parameters`로 돌려줍니다. 자유 대화에는 이 도구를 제공하지 않으므로 선언 저장은 실제로 프록시에서 캡처한 응답을 기존 파서가 분석하는 범위에 한정됩니다.
-
-이번 자유 대화 변경만으로 API 발견률 상승은 입증되지 않습니다. 사용자 메시지, Codex가 고른 네이티브 도구, 프록시 준수 여부에 따라 수집 건수가 달라집니다. FlowScope 계정 handle과 메모리 로그인 세션은 자유 대화에 제공하지 않습니다. 인증 요청을 하려면 사용자가 허가된 계정의 인증값을 Codex의 네이티브 작업 경로에서 직접 다뤄야 하며, FlowScope는 자격증명이 있는 셸 요청을 확인된 계정으로 추정하지 않습니다. 실제 Burp에서 프록시 경유·우회·취소·프로젝트 전환을 확인해야 합니다. 기존 로컬 crAPI 비교는 성능 합격 자료로 쓰지 않습니다.
-
-## 개발·검증 기록
+## 이전 앱 서버 대화의 개발·검증 기록 (현재 실행 경로 아님)
 
 - 필요성: 자동 Explorer를 보존하면서 사용자가 Codex에게 직접 지시하고 이어서 물을 별도 진입점이 필요했습니다. 원래 **탐색 시작**을 자유 대화로 치환하면 계정 lane 절차가 사라지므로 두 버튼을 분리했습니다.
 - 수정 범위: `ExplorerProvider`·`CodexAppServerProvider`·`ExplorerCoordinator`·`ExplorerHttpGateway`, Web API, 프로젝트 JSON/SQLite 메타데이터, React `LlmPass`와 API 타입·훅, 단위·브라우저 회귀 테스트. 다른 화면의 구조는 바꾸지 않았습니다.

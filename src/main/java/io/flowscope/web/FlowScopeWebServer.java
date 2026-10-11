@@ -35,6 +35,7 @@ import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerProvider;
+import io.flowscope.explorer.CodexCliTerminal;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
 import io.flowscope.integration.RunExecutionLedger;
@@ -46,6 +47,7 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -216,30 +218,21 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default io.flowscope.explorer.ExplorerChatState explorerChatState() {
             return io.flowscope.explorer.ExplorerChatState.empty();
         }
-        default ExplorerCoordinator.Snapshot codexChatStatus() {
-            return new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "", null, null,
-                    0, "Codex 자유 대화를 사용할 수 없습니다.", "UNAVAILABLE", List.of(), true,
-                    0, 0, 0, 0, 0, List.of(), List.of());
+        default CodexCliTerminal.Poll codexTerminalPoll(long cursor) {
+            return new CodexCliTerminal.Poll("", false, null, 0, 0, false, new byte[0]);
         }
-        default List<ExplorerCoordinator.ChatMessage> codexChatMessages() { return List.of(); }
-        default io.flowscope.explorer.ExplorerChatState codexChatState() {
-            return io.flowscope.explorer.ExplorerChatState.empty();
+        default CodexCliTerminal.Poll codexTerminalStatus() { return codexTerminalPoll(0); }
+        default CodexCliTerminal.Poll startCodexTerminal(int columns, int rows, boolean resume) {
+            throw new UnsupportedOperationException("Codex CLI terminal is unavailable");
         }
-        default boolean codexChatActive() { return false; }
-        default ExplorerCoordinator.Snapshot startCodexChat(ExplorerCoordinator.StartRequest request) {
-            throw new UnsupportedOperationException("Codex chat is unavailable");
+        default void inputCodexTerminal(byte[] input) {
+            throw new UnsupportedOperationException("Codex CLI terminal is unavailable");
         }
-        default ExplorerCoordinator.Snapshot steerCodexChat(String message) {
-            throw new UnsupportedOperationException("Codex chat is unavailable");
+        default void resizeCodexTerminal(int columns, int rows) {
+            throw new UnsupportedOperationException("Codex CLI terminal is unavailable");
         }
-        default ExplorerCoordinator.Snapshot cancelCodexChat() {
-            throw new UnsupportedOperationException("Codex chat is unavailable");
-        }
-        default ExplorerCoordinator.Snapshot newCodexChat() {
-            throw new UnsupportedOperationException("Codex chat is unavailable");
-        }
-        default ExplorerCoordinator.Snapshot recheckCodexChatProvider() {
-            throw new UnsupportedOperationException("Codex chat is unavailable");
+        default void stopCodexTerminal() {
+            throw new UnsupportedOperationException("Codex CLI terminal is unavailable");
         }
         default ExplorerProvider.ModelCatalog explorerModels() {
             throw new UnsupportedOperationException("Explorer model list is unavailable");
@@ -388,7 +381,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/zap-accounts" -> zapAccounts(request);
             case "/api/scanner-run" -> scannerRun(request);
             case "/api/explorer-run" -> explorerRun(request);
-            case "/api/codex-chat" -> codexChat(request);
+            case "/api/codex-terminal" -> codexTerminal(request, target);
             case "/api/explorer-prompts" -> explorerPrompts(request);
             case "/api/explorer-models" -> explorerModels(request);
             case "/api/explorer-accounts" -> explorerAccounts(request);
@@ -1632,7 +1625,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                             .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
                     boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
                     if (Boolean.parseBoolean(form.getOrDefault("raw", "false")))
-                        throw new IllegalArgumentException("Codex 자유 대화는 /api/codex-chat을 사용하세요.");
+                        throw new IllegalArgumentException("Codex CLI는 /api/codex-terminal을 사용하세요.");
                     snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
                             form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
                             form.getOrDefault("message", ""), false));
@@ -1653,47 +1646,50 @@ public final class FlowScopeWebServer implements AutoCloseable {
         }
     }
 
-    private LoopbackHttpServer.Response codexChat(LoopbackHttpServer.Request request) throws IOException {
-        if (request.method().equals("GET")) {
-            ObjectNode body = json.createObjectNode();
-            body.set("run", explorerSnapshot(state.codexChatStatus()));
-            body.put("rawActive", state.codexChatActive());
-            body.put("rawRun", true);
-            var messages = body.putArray("messages");
-            state.codexChatMessages().forEach(item -> messages.addObject()
-                    .put("role", item.role()).put("text", item.text())
-                    .put("runId", item.runId()).put("at", item.at().toString()));
-            body.set("chat", json.valueToTree(state.codexChatState()));
-            body.putNull("browser");
-            body.set("accounts", json.valueToTree(List.of()));
-            body.set("scope", json.valueToTree(state.scopeEntries()));
-            return json(200, body);
-        }
-        Map<String, String> form = postForm(request);
-        if (form == null) return invalidForm(request);
+    private LoopbackHttpServer.Response codexTerminal(LoopbackHttpServer.Request request, URI target) throws IOException {
         try {
-            String action = form.getOrDefault("action", "start").trim().toLowerCase(Locale.ROOT);
-            ExplorerCoordinator.Snapshot snapshot;
+            CodexCliTerminal.Poll poll;
             int status = 200;
-            switch (action) {
-                case "start" -> {
-                    String target = required(form, "target");
-                    if (isOwnControlPlane(target)) throw new IllegalArgumentException("FlowScope 제어면은 Codex 대상이 될 수 없습니다.");
-                    if (!form.getOrDefault("accounts", "").isBlank())
-                        throw new IllegalArgumentException("Codex 자유 대화에는 Explorer 계정을 전달하지 않습니다.");
-                    snapshot = state.startCodexChat(new ExplorerCoordinator.StartRequest(target, List.of(), true,
-                            form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
-                            required(form, "message"), true));
-                    status = 202;
+            if (request.method().equals("GET")) {
+                long cursor = Long.parseLong(form(target.getRawQuery()).getOrDefault("cursor", "0"));
+                if (cursor < 0) throw new IllegalArgumentException("터미널 커서가 올바르지 않습니다.");
+                poll = state.codexTerminalPoll(cursor);
+            } else if (request.method().equals("POST")) {
+                Map<String, String> values = postForm(request);
+                if (values == null) return invalidForm(request);
+                String action = values.getOrDefault("action", "");
+                switch (action) {
+                    case "start" -> {
+                        poll = state.startCodexTerminal(Integer.parseInt(required(values, "columns")),
+                                Integer.parseInt(required(values, "rows")),
+                                Boolean.parseBoolean(values.getOrDefault("resume", "false")));
+                        status = 202;
+                    }
+                    case "input" -> {
+                        String encoded = required(values, "data");
+                        if (encoded.length() > 90_000) throw new IllegalArgumentException("터미널 입력이 너무 큽니다.");
+                        state.inputCodexTerminal(Base64.getDecoder().decode(encoded));
+                        poll = state.codexTerminalStatus();
+                    }
+                    case "resize" -> {
+                        state.resizeCodexTerminal(Integer.parseInt(required(values, "columns")),
+                                Integer.parseInt(required(values, "rows")));
+                        poll = state.codexTerminalStatus();
+                    }
+                    case "stop" -> {
+                        state.stopCodexTerminal();
+                        poll = state.codexTerminalStatus();
+                    }
+                    default -> throw new IllegalArgumentException("지원하지 않는 Codex CLI 동작입니다.");
                 }
-                case "steer" -> snapshot = state.steerCodexChat(required(form, "message"));
-                case "cancel" -> snapshot = state.cancelCodexChat();
-                case "new-chat" -> snapshot = state.newCodexChat();
-                case "recheck" -> snapshot = state.recheckCodexChatProvider();
-                default -> throw new IllegalArgumentException("지원하지 않는 Codex 대화 동작입니다.");
-            }
+            } else return method("GET, POST");
             ObjectNode body = json.createObjectNode();
-            body.set("run", explorerSnapshot(snapshot));
+            body.put("runId", poll.runId()).put("running", poll.running())
+                    .put("cursor", poll.cursor()).put("oldestCursor", poll.oldestCursor())
+                    .put("truncated", poll.truncated())
+                    .put("outputBase64", Base64.getEncoder().encodeToString(poll.output()));
+            if (poll.exitCode() == null) body.putNull("exitCode");
+            else body.put("exitCode", poll.exitCode());
             return json(status, body);
         } catch (RuntimeException error) {
             return error(error instanceof IllegalStateException ? 409 : 400, error.getMessage());

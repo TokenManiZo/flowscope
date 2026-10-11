@@ -925,15 +925,24 @@ export interface ExplorerBrowserBudget {
 
 export interface ExplorerRunEnvelope {
   run: ExplorerRun
-  rawActive?: boolean
-  rawRun?: boolean
-  chat?: { threadId: string; target: string; model: string; effort: string; rawCodex?: boolean; rawProtocolVersion?: number }
+  chat?: { threadId: string; target: string; model: string; effort: string }
   /** Project-persisted LLM conversation; older servers may omit it. */
   messages?: readonly { role: "user" | "assistant"; text: string; runId: string; at: string }[]
   /** Present only while a login window is being driven. */
   browser: ExplorerBrowserBudget | null
   accounts: readonly ExplorerAccount[]
   scope: readonly string[]
+}
+
+/** Raw PTY bytes from the real Codex CLI; not a FlowScope model/tool transcript. */
+export interface CodexTerminalPoll {
+  runId: string
+  running: boolean
+  exitCode: number | null
+  cursor: number
+  oldestCursor: number
+  truncated: boolean
+  outputBase64: string
 }
 
 export interface ExplorerAccountSaveResult extends ApiSuccess { account: ExplorerAccount }
