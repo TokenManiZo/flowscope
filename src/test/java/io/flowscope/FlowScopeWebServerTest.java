@@ -362,10 +362,46 @@ final class FlowScopeWebServerTest {
     @Test
     void retiredLlmAndMcpRoutesAreNotExposed() throws Exception {
         start();
-        for (String path : List.of("/api/llm-run", "/api/ai-preview", "/api/ai-scenarios", "/mcp")) {
+        for (String path : List.of("/api/llm-run", "/api/ai-preview", "/api/ai-scenarios")) {
             assertEquals(404, get(path, token, null).statusCode(), path);
             assertEquals(404, post(path, "action=start&role=JUDGE", token).statusCode(), path);
         }
+    }
+
+    @Test
+    void mcpRequiresItsOwnBearerTokenAndResendsOnlyGetAsTheSendingAccount() throws Exception {
+        start();
+        String list = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}";
+        // UI capability 토큰이나 토큰 없음으로는 MCP에 들어올 수 없다.
+        assertEquals(401, mcp(list, token).statusCode());
+        assertEquals(401, mcp(list, null).statusCode());
+        assertEquals(405, get("/mcp", null, null).statusCode());
+
+        JsonNode tools = json(mcp(list, server.mcpToken()));
+        assertEquals(5, tools.at("/result/tools").size());
+
+        String send = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_cross_send_get\",\"arguments\":{\"evidence_id\":\"" + state.record.evidenceId + "\",\"account_id\":\"user-b\"}}}";
+        JsonNode sent = json(mcp(send, server.mcpToken()));
+        assertFalse(sent.at("/result/isError").asBoolean(), sent.toString());
+        assertEquals(FlowScopeWebServer.CredentialMode.ACCOUNT, state.manualCredentialMode);
+        assertEquals("user-b", state.manualAccountId);
+        assertTrue(state.manualRequest.startsWith("GET "));
+        assertFalse(sent.toString().contains("raw-session-secret"), "보낸 요청의 인증값을 MCP 응답에 싣지 않는다");
+
+        // 쓰기 요청인 기록은 보내지 않고 거부한다.
+        state.draftRequest = "POST /v1/orders HTTP/1.1\r\nHost: api.example.test\r\n\r\n{}";
+        int before = state.manualRequestCount.get();
+        JsonNode refused = json(mcp(send, server.mcpToken()));
+        assertTrue(refused.at("/result/isError").asBoolean());
+        assertEquals(before, state.manualRequestCount.get());
+
+        String finding = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_finding\",\"arguments\":{\"operation\":\"GET /v1/orders/{id}\",\"identity\":\"user-b\",\"verdict\":\"IDOR 의심\",\"evidence_ids\":[\"ev-manual\"]}}}";
+        assertFalse(json(mcp(finding, server.mcpToken())).at("/result/isError").asBoolean());
+        assertEquals(1, state.findings.size());
+        assertEquals("IDOR 의심", state.findings.get(0).verdict());
+        JsonNode listed = json(get("/api/llm-findings", token, origin()));
+        assertEquals("user-b", listed.at("/findings/0/identity").asText());
+        assertEquals("ev-manual", listed.at("/findings/0/evidenceIds/0").asText());
     }
 
     @Test
@@ -1861,6 +1897,14 @@ final class FlowScopeWebServerTest {
     }
 
     private String origin() { return server.url().substring(0, server.url().length() - 1); }
+
+    private HttpResponse<String> mcp(String body, String bearer) throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(origin() + "/mcp"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (bearer != null) request.header("Authorization", "Bearer " + bearer);
+        return HttpClient.newHttpClient().send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
     private static JsonNode json(HttpResponse<String> response) throws Exception {
         assertEquals(200, response.statusCode(), response.body());
         return JSON.readTree(response.body());
@@ -1925,6 +1969,9 @@ final class FlowScopeWebServerTest {
         private volatile String manualService = "";
         private volatile boolean rawAvailable;
         private volatile FlowScopeWebServer.CredentialMode manualCredentialMode;
+        private volatile String manualAccountId = "";
+        private volatile String draftRequest;
+        private final List<io.flowscope.core.LlmFinding> findings = new ArrayList<>();
         private volatile int credentialPreviewCount;
         private volatile boolean rejectCredentialPreview;
         private volatile boolean changeDatasetDuringPreview;
@@ -2197,11 +2244,16 @@ final class FlowScopeWebServerTest {
             return value;
         }
         @Override public boolean requestLabRawAvailable(RequestRecord record) { return rawAvailable; }
+        @Override public List<io.flowscope.core.LlmFinding> findings() { return List.copyOf(findings); }
+        @Override public void submitFinding(io.flowscope.core.LlmFinding finding) {
+            findings.removeIf(value -> value.id().equals(finding.id()));
+            findings.add(finding);
+        }
         @Override public FlowScopeWebServer.RequestLabDraft requestLabDraft(String evidenceId) {
             RequestRecord value = result.records.stream().filter(item -> item.evidenceId.equals(evidenceId))
                     .findFirst().orElseThrow();
             return new FlowScopeWebServer.RequestLabDraft(value.evidenceId, value.service,
-                    "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
+                    draftRequest != null ? draftRequest : "GET /v1/orders/7 HTTP/1.1\r\nHost: api.example.test\r\nCookie: raw-session-secret\r\n\r\n",
                     "HTTP/1.1 200 OK\r\n\r\n{\"id\":7}", true, true, true,
                     "UTF-8", "UTF-8", "USER A", "없음", "", "메모리 원문", "user-a");
         }
@@ -2217,6 +2269,7 @@ final class FlowScopeWebServerTest {
                                                                             String accountId) {
             manualRequest = request;
             manualCredentialMode = mode;
+            manualAccountId = accountId;
             manualRequestCount.incrementAndGet();
             if (blockManualRequest) {
                 manualRequestEntered.countDown();
@@ -2238,6 +2291,7 @@ final class FlowScopeWebServerTest {
             manualService = service;
             manualRequest = request;
             manualCredentialMode = mode;
+            manualAccountId = accountId;
             manualRequestCount.incrementAndGet();
             return new FlowScopeWebServer.RequestLabResult("ev-candidate", 200,
                     "HTTP/1.1 200 OK\r\n\r\n", 15, request.length(), 19);

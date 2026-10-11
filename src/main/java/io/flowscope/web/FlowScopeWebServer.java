@@ -2,6 +2,7 @@ package io.flowscope.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
@@ -86,6 +87,20 @@ public final class FlowScopeWebServer implements AutoCloseable {
         AnalysisConfig config();
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
+        /** LLM 교차 검증 소견(추천). 판정 엔진 결과와 분리된 참고 자료다. */
+        default List<io.flowscope.core.LlmFinding> findings() { return List.of(); }
+        /** LLM 소견을 저장(같은 id면 덮어쓰기)하고 프로젝트 파일에 영속한다. */
+        default void submitFinding(io.flowscope.core.LlmFinding finding) {
+            throw new UnsupportedOperationException("LLM 소견 저장을 사용할 수 없습니다.");
+        }
+        /** 보내는 계정(accountId) 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+        default LlmVerifyState startLlmVerify(String accountId) {
+            throw new UnsupportedOperationException("LLM 검증 실행을 사용할 수 없습니다.");
+        }
+        /** 현재 LLM 검증 실행 상태. */
+        default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
+        /** 실행 중인 LLM 검증을 중단한다. */
+        default LlmVerifyState cancelLlmVerify() { return llmVerifyState(); }
         RunContextRegistry contexts();
         default void humanRunStarted(String runId) {}
         default void humanRunStopped(String runId) {}
@@ -304,6 +319,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
 
+    /** LLM 교차 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
+    public record LlmVerifyState(String status, String accountId, String message,
+                                 Long startedAt, Long endedAt) {
+        public static LlmVerifyState idle() { return new LlmVerifyState("IDLE", "", "실행 대기", null, null); }
+    }
+
     /** Live header values for the current editor only; never stored or snapshotted. */
     public record RequestLabCredentialHeader(String name, String value) {}
 
@@ -314,6 +335,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private static final int REQUEST_LAB_OPERATION_LIMIT = 256;
     private final State state;
     private final String capabilityToken = randomCapabilityToken();
+    private final String mcpToken = randomCapabilityToken();
+    private FlowScopeMcp mcp;
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
     private final ClasspathWebAssets webAssets = new ClasspathWebAssets();
@@ -329,11 +352,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
         this.state = state;
         this.server = bindAvailable(requestedPort);
+        this.mcp = new FlowScopeMcp(state, mcpToken, server.port());
     }
 
     public void start() { server.start(); }
     public int port() { return server.port(); }
     public String url() { return "http://127.0.0.1:" + port() + "/"; }
+    /** Codex가 접속할 MCP 엔드포인트 URL. loopback 전용. */
+    public String mcpUrl() { return "http://127.0.0.1:" + port() + "/mcp"; }
+    /** MCP Bearer 토큰. 자식 프로세스 환경변수로만 전달하고 화면·로그·프로젝트에 넣지 않는다. */
+    public String mcpToken() { return mcpToken; }
 
     private LoopbackHttpServer bindAvailable(int requestedPort) throws IOException {
         IOException last = null;
@@ -360,6 +388,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             return error(403, "localhost 요청만 허용됩니다.");
         }
         if (path.equals("/app")) return appRedirect(request);
+        // MCP는 자체 Bearer 토큰(Authorization 헤더)으로 인증하므로 UI capability 토큰 검사(authorized) 밖에 둔다.
+        if (path.equals("/mcp")) return mcp.handle(request);
         Optional<ClasspathWebAssets.Asset> asset = webAssets.resolve(target.getRawPath());
         if (asset.isPresent()) return staticAsset(request, asset.orElseThrow());
         if (staticPath(target.getRawPath())) return staticError(request, 404, "Not found");
@@ -405,6 +435,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
+            case "/api/llm-findings" -> llmFindings(request);
+            case "/api/llm-verify" -> llmVerify(request);
             default -> error(404, "Not found");
         };
     }
@@ -1901,6 +1933,52 @@ public final class FlowScopeWebServer implements AutoCloseable {
             state.rebuild();
             return success("소유자를 저장했습니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    /** LLM 교차 검증 소견 목록(읽기). 프로젝트에 영속된 추천을 그대로 돌려준다. */
+    private LoopbackHttpServer.Response llmFindings(LoopbackHttpServer.Request request) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        ObjectNode body = json.createObjectNode();
+        ArrayNode list = body.putArray("findings");
+        for (io.flowscope.core.LlmFinding finding : state.findings()) {
+            ObjectNode node = list.addObject();
+            node.put("id", finding.id());
+            node.put("operation", finding.operation());
+            node.put("identity", finding.identity());
+            if (finding.resource() != null) node.put("resource", finding.resource());
+            node.put("verdict", finding.verdict());
+            node.put("confidence", finding.confidence());
+            node.put("note", finding.note());
+            node.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
+            node.put("createdAt", finding.createdAt());
+        }
+        return json(200, body);
+    }
+
+    /** LLM 검증 실행 시작(POST accountId)·상태 조회(GET). */
+    private LoopbackHttpServer.Response llmVerify(LoopbackHttpServer.Request request) throws IOException {
+        try {
+            LlmVerifyState verifyState;
+            if (request.method().equals("POST")) {
+                Map<String, String> form = postForm(request);
+                if (form == null) return invalidForm(request);
+                verifyState = "cancel".equals(form.getOrDefault("action", "").trim())
+                        ? state.cancelLlmVerify() : state.startLlmVerify(required(form, "accountId"));
+            } else if (request.method().equals("GET")) {
+                verifyState = state.llmVerifyState();
+            } else {
+                return method("GET, POST");
+            }
+            ObjectNode body = json.createObjectNode();
+            body.put("status", verifyState.status());
+            body.put("accountId", verifyState.accountId());
+            body.put("message", verifyState.message());
+            if (verifyState.startedAt() != null) body.put("startedAt", verifyState.startedAt());
+            if (verifyState.endedAt() != null) body.put("endedAt", verifyState.endedAt());
+            return json(200, body);
+        } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
+            return error(400, error.getMessage());
+        }
     }
 
     private LoopbackHttpServer.Response trafficOverride(LoopbackHttpServer.Request request) throws IOException {

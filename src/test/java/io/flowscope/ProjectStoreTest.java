@@ -210,6 +210,7 @@ final class ProjectStoreTest {
                 .withEndpointRequirement(record.op, AccessRole.LV1)
                 .withResourceOwner(record.resource, "user-a")
                 .withResourceOwner(record.service + " observed-object:obj-v1-persisted", "user-a")
+                .withLlmFinding("llm:finding-1", "{\"verdict\":\"IDOR 의심\"}")
                 .withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(record.op, record.service + " observed-object:obj-v1-persisted"), ResourcePolicy.PUBLIC)
                 .withResourcePolicy(record.resource, ResourcePolicy.OWNER_ONLY)
                 .withTrafficOverride(record.op, TrafficOverride.INCLUDE).withTrafficOverride(record.service + " GET /api/review", TrafficOverride.REVIEW);
@@ -263,6 +264,7 @@ final class ProjectStoreTest {
         assertEquals(AccessRole.USER, loaded.config().identityRole("user-a"));
         assertEquals("user-a", loaded.config().resourceOwner(record.resource));
         assertEquals("user-a", loaded.config().resourceOwner(record.service + " observed-object:obj-v1-persisted"));
+        assertEquals(java.util.Map.of("llm:finding-1", "{\"verdict\":\"IDOR 의심\"}"), loaded.config().llmFindings());
         assertEquals(ResourcePolicy.PUBLIC, loaded.config().resourcePolicy(record.op, record.service + " observed-object:obj-v1-persisted"));
         assertEquals(ResourcePolicy.OWNER_ONLY, loaded.config().resourcePolicy(record.op, record.resource));
         assertEquals("USER A", loaded.config().account("acct-a").orElseThrow().label());

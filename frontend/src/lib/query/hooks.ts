@@ -47,6 +47,10 @@ import {
   resetProjectTraffic,
   deleteProject,
   runAuthorizationReplay,
+  getLlmFindings,
+  getLlmVerifyState,
+  startLlmVerify,
+  cancelLlmVerify,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -61,6 +65,8 @@ export const queryKeys = {
   codexChat: ["codex-chat"] as const,
   explorerModels: ["explorer-models"] as const,
   projects: ["projects"] as const,
+  llmFindings: ["llm-findings"] as const,
+  llmVerify: ["llm-verify"] as const,
 }
 
 const pollingOptions = {
@@ -198,3 +204,24 @@ export function useIdentityResetMutation() { return useInvalidatingMutation(rese
 export function useOwnerMutation() { return useInvalidatingMutation(({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity), [queryKeys.snapshot]) }
 export function useRequestLabSendMutation() { return useInvalidatingMutation(sendRequestLab, [queryKeys.snapshot]) }
 export function useAuthorizationReplayMutation() { return useInvalidatingMutation(({ itemId, armed }: { itemId: string; armed: boolean }) => runAuthorizationReplay(itemId, armed), [queryKeys.snapshot]) }
+
+export function useLlmFindingsQuery(enabled: boolean, polling = false) {
+  return useQuery({ queryKey: queryKeys.llmFindings, queryFn: ({ signal }) => getLlmFindings(signal),
+    enabled, staleTime: FLOW_SCOPE_STALE_TIME_MS,
+    refetchInterval: polling ? FLOW_SCOPE_POLL_INTERVAL_MS : false, refetchIntervalInBackground: false })
+}
+export function useLlmVerifyStateQuery(enabled: boolean, polling: boolean) {
+  return useQuery({ queryKey: queryKeys.llmVerify, queryFn: ({ signal }) => getLlmVerifyState(signal),
+    enabled, staleTime: FLOW_SCOPE_STALE_TIME_MS, retry: 1,
+    refetchInterval: polling ? FLOW_SCOPE_POLL_INTERVAL_MS : false, refetchIntervalInBackground: false })
+}
+export function useStartLlmVerifyMutation() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: (accountId: string) => startLlmVerify(accountId),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
+}
+export function useCancelLlmVerifyMutation() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: () => cancelLlmVerify(),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
+}
