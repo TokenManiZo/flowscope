@@ -299,6 +299,7 @@ final class CodexAppServerProtocolTest {
             assertFalse(params.path("ephemeral").asBoolean(true));
             assertTrue(params.path("developerInstructions").asText().contains("https://app.example.test/"));
             assertTrue(params.path("developerInstructions").asText().contains("flowscope_http_request"));
+            assertTrue(params.path("developerInstructions").asText().contains("If shell or Docker access fails"));
             assertFalse(params.path("developerInstructions").asText().contains("탐색 순서"));
             assertEquals(List.of("flowscope_evidence_list", "flowscope_evidence_search", "flowscope_evidence_read",
                             "flowscope_http_request", "flowscope_browser", "flowscope_artifact_list",
@@ -308,12 +309,13 @@ final class CodexAppServerProtocolTest {
                             .map(tool -> tool.path("name").asText()).toList());
             assertEquals("workspace-write", params.path("sandbox").asText());
             assertEquals("on-request", params.path("approvalPolicy").asText());
-            assertTrue(params.path("config").isMissingNode(), "shell requests must not inherit a bypassable proxy hint");
+            assertEquals("http://127.0.0.1:19417", params.at("/config/shell_environment_policy/set/HTTPS_PROXY").asText());
+            assertEquals("", params.at("/config/shell_environment_policy/set/NO_PROXY").asText());
             JsonNode turn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Inspect freely",
                     turn.path("params").path("input").get(0).path("text").asText());
             assertFalse(turn.path("params").has("outputSchema"));
-            assertFalse(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(true));
+            assertTrue(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(false));
 
             provider.start(new ExplorerProvider.Request("raw-2", base.target(), base.exactScope(),
                     List.of(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(), "", "gpt-6.1-sol", "high", "t1", "Continue",
@@ -323,7 +325,7 @@ final class CodexAppServerProtocolTest {
             JsonNode resumed = process.get().awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
             assertEquals("t1", resumed.path("params").path("threadId").asText());
             assertEquals(10, resumed.at("/params/dynamicTools").size());
-            assertTrue(resumed.at("/params/config").isMissingNode());
+            assertEquals("http://127.0.0.1:19418", resumed.at("/params/config/shell_environment_policy/set/HTTP_PROXY").asText());
             JsonNode nextTurn = process.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Continue", nextTurn.at("/params/input/0/text").asText());
         }
@@ -425,7 +427,7 @@ final class CodexAppServerProtocolTest {
     }
 
     @Test
-    void rawCodexCannotEscalateShellNetworkThroughAnApproval(@TempDir Path temp) throws Exception {
+    void rawCodexCommandApprovalFollowsTheOperatorDecision(@TempDir Path temp) throws Exception {
         AtomicReference<FakeCodex> codex = new AtomicReference<>();
         Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         List<String> approvals = new CopyOnWriteArrayList<>();
@@ -462,12 +464,13 @@ final class CodexAppServerProtocolTest {
             });
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
             JsonNode response = codex.get().awaitWritten(value -> value.path("id").asInt() == 9010);
-            assertEquals("decline", response.at("/result/decision").asText());
+            assertEquals("accept", response.at("/result/decision").asText());
             JsonNode network = codex.get().awaitWritten(value -> value.path("id").asInt() == 9011);
             assertEquals("decline", network.at("/result/decision").asText());
-            assertTrue(approvals.isEmpty(), "command and network escalation must never reach the operator approval path");
+            assertEquals(List.of("curl https://app.example.test/ | network request",
+                    "curl https://outside.test/ | 네트워크 권한 요청 · "), approvals);
             assertTrue(activities.stream().anyMatch(item -> item.kind().equals("APPROVAL")
-                    && item.status().equals("DECLINED")));
+                    && item.status().equals("WAITING")));
             assertTrue(activities.stream().noneMatch(item -> item.detail().contains("outside.test")),
                     "command text must not be duplicated into the persisted activity feed");
         }

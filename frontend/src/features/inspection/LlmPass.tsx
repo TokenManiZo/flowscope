@@ -336,7 +336,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         placeholder={visibleRun?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "원하는 탐색 작업을 입력하세요"}
         className="min-h-18 max-h-48 resize-y" disabled={start.isPending || steer.isPending} />
       <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
-      <p className="break-all text-xs text-muted-foreground">자동 탐색 순서는 강제하지 않습니다. 현재 대상 <code>{target}</code>은 Codex에 전달됩니다. 대상 HTTP는 FlowScope 도구로 기록하고, 셸은 로컬 파일 분석에 사용할 수 있습니다.</p>
+      <p className="break-all text-xs text-muted-foreground">현재 대상 <code>{target}</code> · 탐색 순서는 직접 지시하세요. FlowScope 도구 또는 Burp 프록시를 지난 셸 HTTP 응답만 LLM 증거로 기록됩니다.</p>
       <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : run?.status === "AUTHENTICATING" ? "Codex 연결 중 · 시작되면 추가 메시지를 보낼 수 있습니다." : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
     </form>}
   </>

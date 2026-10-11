@@ -20,7 +20,7 @@
 
 처음 실행하는 사용자는 [README의 첫 점검](../../README.md#첫-점검)을 따라 하세요. 아래 내용은 세션·수집·판정이 어떤 조건에서 유효한지 확인할 때 사용하는 상세 참조입니다.
 
-Burp Browser에 연결된 프록시 리스너와 ZAP용 SCANNER 리스너를 구분합니다. 8082 source 분류는 과거 직접 클라이언트 관측 호환용입니다. 계정별 자동 Explorer는 Montoya 전송을 쓰고, 별도 자유 대화는 셸 네트워크를 차단한 채 FlowScope HTTP·브라우저 도구의 범위 안 응답을 LLM 요청 기록으로 저장합니다.
+Burp Browser에 연결된 프록시 리스너와 ZAP용 SCANNER 리스너를 구분합니다. 8082 source 분류는 과거 직접 클라이언트 관측 호환용입니다. 계정별 자동 Explorer는 Montoya 전송을 쓰고, 별도 자유 대화는 FlowScope HTTP·브라우저 도구 또는 실행별 Burp 프록시를 지난 셸 HTTP의 범위 안 응답을 LLM 요청 기록으로 저장합니다.
 
 | Listener | Source | 사용 클라이언트 |
 |---|---|---|
@@ -66,7 +66,7 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 
 기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 격리 브라우저, Judge, agent-workspace는 없습니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
-현재 로컬 개발 브랜치의 **탐색 시작**은 계정·비로그인 lane을 고르는 자동 Explorer로 유지합니다. 카드 제목 옆 **Codex 자유 대화**는 별도 채팅·계정 로그인 창을 열며, 저장된 프로젝트에서 첫 메시지를 전송해야 별도 Codex turn을 시작합니다. 자유 대화의 **브라우저 로그인 → 로그인 완료**로 준비한 계정은 다음 메시지부터 사용할 수 있고, 자동 Explorer의 로그인 창과 섞이지 않습니다. 정해진 정찰 순서나 JSON 보고 형식은 붙이지 않고 현재 프로젝트 대상만 모델 문맥에 줍니다. 현재 프로젝트 Evidence 조회와 범위 안 HTTP·브라우저·산출물 도구를 제공하며, 네이티브 셸의 직접 네트워크는 막습니다. 완료 후 후속 메시지는 같은 대화를 이어갑니다. 실행 중 추가 지시는 현재 turn에 전달됩니다. 채팅 위 한 줄에는 최근 실제 행동이 갱신되고 **실행 과정 보기**로 지난 행동을 확인할 수 있습니다. **자동 탐색으로 돌아가기**는 대화를 지우지 않으며 모델·추론 강도는 채팅 상단에서 다음 메시지용으로 선택합니다. 대화만 하고 새 HTTP 응답이 0건이면 **Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)**으로 표시합니다. `/api/explorer-prompts`의 추천 문장은 화면에 자동 표시·실행하지 않습니다. 구현·재열기·잔존 상한은 [LLM 대화 계약](../reference/llm-chat-backend.md)에 기록했습니다.
+현재 로컬 개발 브랜치의 **탐색 시작**은 계정·비로그인 lane을 고르는 자동 Explorer로 유지합니다. 카드 제목 옆 **Codex 자유 대화**는 별도 채팅·계정 로그인 창을 열며, 저장된 프로젝트에서 첫 메시지를 전송해야 별도 Codex turn을 시작합니다. 자유 대화의 **브라우저 로그인 → 로그인 완료**로 준비한 계정은 다음 메시지부터 사용할 수 있고, 자동 Explorer의 로그인 창과 섞이지 않습니다. 정해진 정찰 순서나 JSON 보고 형식은 붙이지 않고 현재 프로젝트 대상과 증거 경로만 모델 문맥에 줍니다. 현재 프로젝트 Evidence 조회와 범위 안 HTTP·브라우저·산출물 도구를 제공하며, 네이티브 셸에는 실행별 Burp 프록시를 기본 설정합니다. 완료 후 후속 메시지는 같은 대화를 이어갑니다. 실행 중 추가 지시는 현재 turn에 전달됩니다. 채팅 위 한 줄에는 최근 실제 행동이 갱신되고 **실행 과정 보기**로 지난 행동을 확인할 수 있습니다. **자동 탐색으로 돌아가기**는 대화를 지우지 않으며 모델·추론 강도는 채팅 상단에서 다음 메시지용으로 선택합니다. 대화만 하고 새 HTTP 응답이 0건이면 **Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)**으로 표시합니다. `/api/explorer-prompts`의 추천 문장은 화면에 자동 표시·실행하지 않습니다. 구현·재열기·잔존 상한은 [LLM 대화 계약](../reference/llm-chat-backend.md)에 기록했습니다.
 
 공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright 또는 MCP 설정은 필요하지 않습니다. 두 LLM 방식의 계정 로그인 창은 `-Dflowscope.browser.path`로 지정한 브라우저, Burp에 포함된 Chromium, 시스템 Chrome/Chromium 순서로 찾아 띄웁니다. 모델에는 인증 비밀 대신 준비된 계정 handle만 제공하고, 창에서 실제로 보낸 범위 안 요청을 `source=LLM`으로 저장합니다. 자유 대화는 자동 탐색 프롬프트 없이 동일한 HTTP·브라우저 도구와 현재 프로젝트 Evidence 조회 도구를 사용할 수 있습니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. 기존 일회성 Explorer에서 응답 기록 0건은 완료 실패였지만, 자유 대화의 설명 답변은 HTTP 응답이 없어도 대화로 남습니다. 이때 수집 lane은 완료로 승격하지 않으며 모델의 자유서술 개수도 집계로 사용하지 않습니다.
 

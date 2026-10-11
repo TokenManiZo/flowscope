@@ -448,15 +448,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 String reason = params.path("reason").asText("");
                 String description = command.isBlank() ? method : command;
                 if (description.length() > 800) description = description.substring(0, 800) + "…";
-                // A command approval can run outside the turn sandbox, so it must not restore direct network
-                // access after raw turns disable it. Only file-change approvals reach the operator.
-                boolean fileChange = method.equals("item/fileChange/requestApproval")
-                        || method.equals("applyPatchApproval");
-                if (fileChange) listener.activity(activity("APPROVAL", "Burp에서 Codex 승인 대기",
-                        "파일 변경 내용을 Burp 승인 창에서 확인하세요.", "WAITING", null));
-                boolean approved = fileChange && rawApproval.test(description, reason);
-                listener.activity(activity("APPROVAL", fileChange ? "Codex 승인 결과" : "셸 권한 상승 거부",
-                        fileChange ? "이번 요청의 운영자 선택" : "대상 HTTP는 FlowScope 도구를 사용하세요.",
+                listener.activity(activity("APPROVAL", "Burp에서 Codex 승인 대기",
+                        "명령과 사유는 Burp 승인 창에서 확인하세요.", "WAITING", null));
+                JsonNode networkContext = params.path("networkApprovalContext");
+                boolean network = !networkContext.isMissingNode() && !networkContext.isNull()
+                        || params.at("/permissions/network/enabled").asBoolean(false);
+                boolean approved = rawApproval.test(description,
+                        network ? "네트워크 권한 요청 · " + reason : reason);
+                listener.activity(activity("APPROVAL", "Codex 승인 결과", "이번 요청의 운영자 선택",
                         approved ? "APPROVED" : "DECLINED", null));
                 ObjectNode response = JSON.createObjectNode();
                 response.set("id", message.get("id"));
@@ -650,11 +649,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             }
             if (!request.model().isBlank()) params.put("model", request.model());
             if (request.rawCodex()) {
+                rawShellProxy(params);
                 params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write");
                 params.put("developerInstructions", "Current FlowScope project target: " + request.target()
-                        + ". Shell commands have no network access. Send target HTTP only with "
-                        + "flowscope_http_request or flowscope_browser; these record actual responses "
-                        + "as LLM Evidence. This is a transport rule, not an automatic exploration task.");
+                        + ". This is a free Codex conversation, not an automatic exploration task. "
+                        + "Use flowscope_http_request or flowscope_browser for target HTTP when you need "
+                        + "FlowScope LLM Evidence. Shell HTTP clients have a run-scoped Burp proxy by default; "
+                        + "only responses actually received by FlowScope are evidence. "
+                        + "If shell or Docker access fails, use the FlowScope HTTP/browser tools before "
+                        + "claiming reconnaissance is impossible. Docker is not required for HTTP reconnaissance.");
                 var tools = params.putArray("dynamicTools");
                 if (projectEvidence != null) tools.add(evidenceListTool()).add(evidenceSearchTool()).add(evidenceReadTool());
                 if (!request.gatewayUrl().isBlank()) tools.add(httpTool()).add(rawBrowserTool())
@@ -668,6 +671,16 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
+        }
+
+        private void rawShellProxy(ObjectNode params) {
+            if (request.rawProxyPort() == 0) return;
+            String proxy = "http://127.0.0.1:" + request.rawProxyPort();
+            ObjectNode values = params.putObject("config").putObject("shell_environment_policy").putObject("set");
+            for (String name : List.of("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")) {
+                values.put(name, proxy);
+            }
+            values.put("NO_PROXY", "").put("no_proxy", "");
         }
 
         private ObjectNode turnParams() {
@@ -684,7 +697,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (request.rawCodex()) {
                 params.put("approvalPolicy", "on-request");
                 params.putObject("sandboxPolicy").put("type", "workspaceWrite")
-                        .put("networkAccess", false).putArray("writableRoots").add(workspace.toString());
+                        .put("networkAccess", true).putArray("writableRoots").add(workspace.toString());
                 return params;
             }
             params.put("approvalPolicy", "on-request");

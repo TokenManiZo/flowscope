@@ -58,7 +58,7 @@ final class CodexAppServerProviderHarnessTest {
     }
 
     @Test
-    void rawCodexShellDoesNotReachATargetWithoutFlowScopeTools(@TempDir Path temp) throws Exception {
+    void rawCodexNativeCurlUsesThePerRunProxyWithoutFlowScopeTools(@TempDir Path temp) throws Exception {
         AtomicReference<String> captured = new AtomicReference<>();
         HttpServer proxy = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         proxy.createContext("/", exchange -> {
@@ -73,12 +73,14 @@ final class CodexAppServerProviderHarnessTest {
             if (model.isBlank()) model = provider.models().models().getFirst().id();
             CountDownLatch done = new CountDownLatch(1);
             AtomicReference<String> failure = new AtomicReference<>();
-            String target = "http://127.0.0.1:" + proxy.getAddress().getPort() + "/probe";
+            // A loopback target is the path that failed in the operator's real run. Port 1 has no target
+            // listener; only the per-run proxy can answer the request.
+            String target = "http://127.0.0.1:1/probe";
             provider.start(new ExplorerProvider.Request("raw-harness", target,
                     List.of(target), List.of(), "", "", "", "",
-                    model, "", "", "Try this shell command once: curl -sS " + target
-                            + ". Do not use a FlowScope HTTP tool or any other URL. Report whether it reached the server.",
-                    true, 0,
+                    model, "", "", "Run exactly one shell command: curl -sS -o /dev/null -w '%{http_code}' "
+                            + target + ". Do not access any other URL or write files. Report the command output.",
+                    true, proxy.getAddress().getPort(),
                     temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
                 @Override public void activity(ExplorerProvider.Activity activity) { }
                 @Override public void completed(ExplorerProvider.Result result) { done.countDown(); }
@@ -86,7 +88,7 @@ final class CodexAppServerProviderHarnessTest {
             });
             assertTrue(done.await(3, TimeUnit.MINUTES), "raw Codex turn timed out");
             assertNull(failure.get(), failure.get());
-            assertNull(captured.get(), "native shell reached a target outside FlowScope's Evidence path");
+            assertEquals(target, captured.get(), "native curl did not pass through the configured local proxy");
         } finally {
             proxy.stop(0);
         }

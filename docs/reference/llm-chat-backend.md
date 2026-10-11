@@ -1,14 +1,14 @@
 # LLM 자동 탐색·자유 대화 계약 (로컬 검증 중)
 
-> 로컬 구현·자동 검증 및 실물 Codex 증거 조회 확인 (2026-10-11), 실제 Burp 재로드 gate 대기: 자유 대화에 현재 프로젝트 Evidence 조회와 별도 로그인 브라우저를 연결했습니다. 기존 자동 Explorer와 대화·세션은 분리하고 LLM 증거 저장 경로만 공유합니다. 최신 변경은 셸 네트워크 차단과 실시간 행동 표시이며, 아래의 과거 검증 기록은 당시 계약에만 적용됩니다.
+> 로컬 구현·자동 검증 및 실물 Codex 증거 조회 확인 (2026-10-12), 실제 Burp 재로드 gate 대기: 자유 대화에 현재 프로젝트 Evidence 조회와 별도 로그인 브라우저를 연결했습니다. 기존 자동 Explorer와 대화·세션은 분리하고 LLM 증거 저장 경로만 공유합니다. 최신 변경은 자유 대화의 셸 네트워크·실행별 프록시 복구이며, 아래 과거 검증 기록은 당시 계약에만 적용됩니다.
 
 이 문서는 `v1.0.2` 기반 로컬 작업의 두 실행 방식을 설명합니다. **탐색 시작**은 계정·비로그인 lane을 선택하는 기존 자동 Explorer입니다. 카드 제목 옆 **Codex 자유 대화**는 자동 탐색 컨트롤을 숨기고 별도 대화 보기를 열며, 버튼만으로 네트워크 실행을 시작하지 않습니다. 저장된 프로젝트에서 첫 메시지를 전송하면 별도의 turn을 시작하고, 완료 뒤의 메시지는 저장된 Codex thread를 재개합니다. 추천 문장을 자동 실행하지 않습니다.
 
 ## 의도와 경계
 
-자유 대화에서는 사용자가 작성한 메시지를 그대로 Codex turn에 전달합니다. FlowScope의 고정 정찰 순서, 대상 URL 접두 문구, JSON 출력 형식은 붙이지 않습니다. 대신 현재 프로젝트 대상과 대상 HTTP 전송 경로를 짧은 실행 문맥으로 전달합니다. 자동 Explorer와는 다른 대화 thread·로그인 창을 쓰지만, 준비된 계정 handle과 범위 안 HTTP·브라우저·산출물 도구, 현재 프로젝트 Evidence 읽기 도구는 제공합니다. 이는 “도구 없는 LLM”이 아니라 “FlowScope가 자동 탐색 순서와 최종 보고를 강제하지 않는 대화”입니다. Codex 자체의 셸·에이전트 루프는 유지하되 셸 네트워크 권한 상승은 거부합니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)는 실행 이벤트와 권한 승인 요청을 구분합니다.
+자유 대화에서는 사용자가 작성한 메시지를 그대로 Codex turn에 전달합니다. FlowScope의 고정 정찰 순서, 대상 URL 접두 문구, JSON 출력 형식은 붙이지 않습니다. 대신 현재 프로젝트 대상과 증거가 되는 전송 경로를 짧은 실행 문맥으로 전달합니다. 자동 Explorer와는 다른 대화 thread·로그인 창을 쓰지만, 준비된 계정 handle과 범위 안 HTTP·브라우저·산출물 도구, 현재 프로젝트 Evidence 읽기 도구는 제공합니다. Codex 자체의 셸·에이전트 루프와 운영자 승인도 유지합니다. 이는 “도구 없는 LLM”이나 자동 탐색기 복제가 아니라, 진단자가 자유롭게 지시하면서 실제로 기록된 응답을 같은 LLM lane에 쌓는 대화입니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)는 실행 이벤트와 승인 요청을 구분합니다.
 
-Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 turn·`runId`입니다. 자유 대화의 네이티브 셸은 네트워크를 사용할 수 없습니다. 셸은 로컬 파일 분석에 쓰고, 대상 HTTP는 `flowscope_http_request` 또는 로그인 완료한 `flowscope_browser`를 사용합니다. 이 도구로 실제로 받은 범위 안 요청·응답은 `source=LLM` 프로젝트 Evidence로 저장합니다. 브라우저 교환에서 Cookie·Authorization이 없는 요청은 로그인 계정으로 추정하지 않고 비로그인으로 기록합니다. 일반 8082 요청은 `UNVERIFIED_RUNTIME`이며, 신뢰 가능한 자유 대화 run으로 승격하지 않습니다. 실제로 기록된 Evidence만 결정론적 분석·그래프 입력에 들어갑니다. 답변에 HTTP 응답이 0건이어도 대화는 남지만 완료된 수집 lane으로 승격하지 않습니다.
+Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 turn·`runId`입니다. 자유 대화의 네이티브 셸에는 실행별 Burp 프록시 주소를 표준 HTTP(S) 환경 변수로 설정합니다. `flowscope_http_request`, 로그인 완료한 `flowscope_browser`, 그 프록시를 실제로 지난 셸 HTTP의 범위 안 응답은 `source=LLM` 프로젝트 Evidence로 저장합니다. 브라우저 교환에서 Cookie·Authorization이 없는 요청은 로그인 계정으로 추정하지 않고 비로그인으로 기록합니다. 일반 8082 요청은 `UNVERIFIED_RUNTIME`이며, 신뢰 가능한 자유 대화 run으로 승격하지 않습니다. 프록시를 우회한 셸 요청·Docker 내부 요청·모델의 서술은 자동 Evidence가 아닙니다. 실제로 기록된 Evidence만 결정론적 분석·그래프 입력에 들어갑니다. 답변에 HTTP 응답이 0건이어도 대화는 남지만 완료된 수집 lane으로 승격하지 않습니다.
 
 ## 로컬 Web API
 
@@ -41,19 +41,21 @@ Web UI가 아닌 로컬 API 호출도 FlowScope Web capability가 필요합니�
 
 모델 선택지는 설치된 Codex CLI의 `model/list`에서 읽습니다. 화면은 포커스 복귀와 5분 간격으로 목록을 다시 조회하며 서버의 60초 캐시를 사용합니다. `supportedReasoningEfforts`와 `defaultReasoningEffort`를 읽어 모델별 추론 강도 목록을 만들고, 명시적으로 고른 값은 `turn/start.effort`로 보냅니다. 모델이 바뀐 기존 대화에서는 새 모델의 기본 강도를 명시해 앞 모델의 강도가 잘못 이어지지 않게 합니다. 미지원 조합은 실행 전에 거부합니다. 모델 목록은 표시용 catalog이지 계정 사용 권한의 증명이 아닙니다. FlowScope는 Codex CLI 자체를 자동 업데이트하지 않고, 진행 중인 turn의 모델·강도도 자동 변경하지 않습니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)의 `model/list`와 `turn/start` 계약을 따릅니다.
 
-자유 대화의 Codex thread에는 자동 탐색 순서 대신 현재 대상과 “대상 HTTP는 FlowScope 도구로 전송”하는 최소 전송 규칙만 줍니다. 준비된 계정 브라우저의 opaque handle만 모델에 주고 Cookie·Authorization 원문은 로그인 vault에 둡니다. Codex `workspace-write` 셸의 `networkAccess=false`를 설정하고 셸 명령·네트워크 권한 상승 요청은 거부합니다. 파일 변경 승인만 기존 Burp 승인 창을 사용합니다. 기존 자동 Explorer도 셸 네트워크는 꺼져 있었지만 레거시 명령 승인이 샌드박스 밖 재실행을 허용할 수 있어 이를 거부하도록 고쳤습니다. 로컬 Codex CLI 0.159.3 앱 서버 대조 실험에서 같은 `127.0.0.1` HTTP 서버가 `networkAccess=false`에서는 연결 실패, `true`에서는 HTTP 200을 반환했습니다. 두 모드의 FlowScope HTTP·브라우저 도구는 유지합니다.
+자유 대화의 Codex thread에는 자동 탐색 순서 대신 현재 대상과 증거 경로를 알려 주는 최소 문맥만 줍니다. 준비된 계정 브라우저의 opaque handle만 모델에 주고 Cookie·Authorization 원문은 로그인 vault에 둡니다. 자유 대화 셸은 `workspace-write`·`networkAccess=true`이고 실행별 프록시를 기본으로 받습니다. 명령 권한 요청은 Burp에서 운영자가 건별로 승인하거나 거부합니다. Docker 접근은 API 수집의 선행조건이 아니므로 막히면 HTTP·브라우저 도구로 계속할 수 있게 안내합니다. 기존 자동 Explorer는 `networkAccess=false`와 명령 권한 상승 거부를 유지합니다. 로컬 Codex CLI 0.159.3 앱 서버에서 loopback URL의 네이티브 `curl`이 지정한 프록시에 도착하는 opt-in 시험을 통과했습니다.
 
-셸 네트워크 차단은 이 자유 대화 turn의 Codex 샌드박스에만 적용됩니다. Codex 서비스 연결·호스팅 검색·별도 앱/커넥터·FlowScope 밖의 사용자 프로세스까지 통제하거나 그 트래픽을 Evidence로 저장하는 전역 방화벽은 아닙니다([OpenAI Docs 권한 경계](https://learn.chatgpt.com/docs/permissions)). FlowScope 브라우저·HTTP 도구는 exact scope를 검사하고 범위 안 응답을 LLM Evidence로 저장합니다. 모델의 답변이나 Evidence 읽기 자체는 새 관측이 아니며, 이전 프로젝트의 읽기 도구는 run·작업 폴더가 바뀌면 거부합니다. 대화 turn에는 기존 500 HTTP 요청·300 브라우저 행동·3,000 브라우저 교환의 강제 종료 상한이 없지만 전역 기록 20,000건·프로젝트 파일 100MiB 등은 남아 있습니다.
+프록시 환경 변수는 표준 HTTP(S) 클라이언트의 기본 경로이지 OS 전역 강제 프록시가 아닙니다. `--noproxy` 같은 명시적 우회, Docker 내부 요청, Codex 서비스 연결·호스팅 검색·별도 앱/커넥터·FlowScope 밖의 사용자 프로세스는 이 방식만으로 통제하거나 Evidence로 저장할 수 없습니다([OpenAI Docs 권한 경계](https://learn.chatgpt.com/docs/permissions)). FlowScope 브라우저·HTTP 도구와 실행별 Burp 리스너는 exact scope를 검사하고 실제로 받은 범위 안 응답만 LLM Evidence로 저장합니다. 모델의 답변이나 Evidence 읽기 자체는 새 관측이 아니며, 이전 프로젝트의 읽기 도구는 run·작업 폴더가 바뀌면 거부합니다. 대화 turn에는 기존 500 HTTP 요청·300 브라우저 행동·3,000 브라우저 교환의 강제 종료 상한이 없지만 전역 기록 20,000건·프로젝트 파일 100MiB 등은 남아 있습니다.
 
 두 방식은 `Source.LLM`의 수집 lane만 공유하며 동시 실행은 막습니다. 실행 객체, 공급자 프로세스, 대화 thread, 채팅 메시지, 마지막 실행 snapshot, Web API 및 화면 조회 키는 분리합니다. 이전 구현은 한 `ExplorerCoordinator`에서 `rawRun` 플래그만 바꿔 자유 대화에 공통 `Explorer 완료` 피드가 섞였습니다. 두 화면은 가장 최근의 실제 셸·브라우저·HTTP 행동을 한 줄로 갱신합니다. 자유 대화는 답변 말풍선과 별도로 **실행 과정 보기**에서 최근 행동 기록을 펼치며, 준비·연결·완료 시스템 활동이나 모델 최종 보고를 중복 표시하지 않습니다. 명령 출력 전문은 이 활동 요약이 아니라 Codex 대화/산출물에 남을 수 있습니다. 서버에 기록된 HTTP Evidence는 별도 수집 기록·그래프에서도 확인합니다. 자유 대화 헤더에는 **자동 탐색으로 돌아가기**와 모델·추론 강도 설정을 둡니다. 진행 중에는 현재 모델/강도를 읽기 전용으로 보이고 turn 종료 후 다음 메시지용 값을 바꿀 수 있습니다. 답변 완료와 **이번 대화에서 새로 기록된** HTTP 응답 수를 표시하고, 0건이어도 기존 프로젝트 기록 조회가 가능함을 명시합니다. 자동 Explorer의 완료 게이트와 요약은 그대로 유지합니다.
 
-FlowScope 밖의 별도 브라우저를 Burp 프록시에 연결해 HTTPS 대상으로 쓰는 경우 클라이언트가 Burp CA를 신뢰해야 합니다. 자유 대화 셸에는 직접 네트워크가 없으며, FlowScope는 TLS 검증 우회나 OS 전역 인증서 설치를 자동으로 수행하지 않습니다.
+FlowScope 밖의 별도 브라우저나 자유 대화 셸 클라이언트가 Burp 프록시를 통해 HTTPS 대상으로 요청하는 경우 Burp CA를 신뢰해야 합니다. FlowScope는 TLS 검증 우회나 OS 전역 인증서 설치를 자동으로 수행하지 않습니다.
 
 두 방식의 `flowscope_record_discoveries`는 유효한 선언은 저장하고 잘못된 발견·파라미터의 인덱스와 이유를 `rejected_discoveries`·`rejected_parameters`로 돌려줍니다. 선언은 실제 HTTP 응답이 아니며, Evidence ID에 묶인 후보로만 저장합니다.
 
 이번 자유 대화 변경만으로 API 발견률 상승은 입증되지 않습니다. 사용자 메시지, Codex가 고른 도구, 브라우저 조작 범위에 따라 수집 건수가 달라집니다. 브라우저 로그인을 완료한 등록 계정의 opaque handle은 자유 대화의 HTTP·브라우저 도구에 제공하지만 인증 비밀값은 전달하지 않습니다. 실제 Burp에서 로그인 브라우저·HTTP 도구의 수집·취소·프로젝트 전환을 확인해야 합니다. 기존 로컬 crAPI 비교는 성능 합격 자료로 쓰지 않습니다.
 
 ## 개발·검증 기록
+
+- 2026-10-12 raw 대화 정찰·증거 경로 복구: 실제 대화가 loopback HTTP와 Docker 읽기 권한을 자동 거절당하고 FlowScope HTTP 도구도 호출하지 않아 응답 0건으로 끝난 사례를 출발점으로 삼았습니다. 셸 네트워크를 전면 차단한 이전 선택은 raw 정찰을 막아 기각하고, 기존 실행별 Burp 프록시·운영자 승인 경로를 복구하며 HTTP·브라우저 도구는 그대로 둡니다. `CodexAppServerProvider`의 간단한 전송 문맥, `FlowScopeExtension`의 raw listener, `LlmPass` 안내, `CodexAppServerProtocolTest`·`CodexAppServerProviderHarnessTest`와 README·점검 흐름·화면·신뢰·릴리스 문서를 수정했습니다. 프로토콜·프록시 귀속 테스트와 loopback `curl`의 실물 프록시 도착은 통과했습니다. 첫 opt-in 시도는 Codex 로그인 상태 확인이 6초를 초과해 모델 turn 전 실패했고, 즉시 재시도에서는 통과했습니다. 최종 `mvn -o clean verify`는 React 897건·Java 1000건(실패/오류 0, opt-in 9 skip)으로 통과했습니다. 실제 Burp에서 새 JAR 재로드 후 LLM Evidence·그래프 확인은 아직 미검증이며 다음 gate입니다. 프록시 명시 우회 및 Docker 내부 트래픽까지 강제 기록하는 기능은 제공하지 않습니다.
 
 - 2026-10-11 실시간 행동·셸 네트워크 경계 보강: 프록시 환경변수만으로 우회를 막는 안을 기각하고 사용자 선택에 따라 자유 대화의 셸 네트워크를 끈 뒤 대상 HTTP는 기존 FlowScope HTTP·브라우저 도구로 보냅니다. 셸 명령의 샌드박스 밖 재실행 승인은 거부하고 파일 변경 승인만 남깁니다. 자동 Explorer의 레거시 명령 승인도 같은 우회가 될 수 있어 거부합니다. `CodexAppServerProvider`의 명령·도구 시작 이벤트, `FlowScopeExtension`의 raw 시작, `LlmPass`의 최근 행동 한 줄·접힌 기록·돌아가기·모델/강도 헤더, `ExplorerActivityFeedTest`·`CodexAppServerProtocolTest`·`CodexAppServerProviderHarnessTest`·`LlmPass.test.tsx`·`llm-chat.spec.ts`와 README·점검 흐름·화면·신뢰·릴리스 문서를 수정했습니다. RED는 raw 행동 숨김과 셸 시작 이벤트 부재를 재현했고, 최종 `mvn -o clean verify`는 React 897건·Java 1000건(실패/오류 0, opt-in 9 skip)으로 통과했습니다. 마지막 UI 정리 뒤 집중 회귀 31건·TypeScript 검사도 통과했습니다. 별도 Standalone의 패키징 JAR Playwright 채팅 1건, 실물 Codex 0.159.3 opt-in 2건(셸 네트워크 미도달·FlowScope HTTP 도구 호출)도 통과했습니다. 로컬 HTTP 서버 대조에서 네트워크 차단 시 연결 실패·허용 시 200을 확인했습니다. 명령 출력 전문은 현재 한 줄 행동 기록에 넣지 않으며, 최근 행동은 300개 snapshot 상한을 가집니다. 실제 Burp 재로드·사용자 대상 수집은 아직 미검증이며 다음 gate입니다.
 

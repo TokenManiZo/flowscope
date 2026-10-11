@@ -2415,8 +2415,20 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (database == null) {
                     throw new IllegalStateException("Codex 자유 대화를 시작하려면 프로젝트를 먼저 저장하세요.");
                 }
-                Path workspace = database.getParent().resolve("codex-raw-" + shortDigest(database.toString()));
-                return rawChat.start(request.withRawRuntime(0, workspace.toString()));
+                if (rawProxyPort > 0) throw new IllegalStateException("Codex 자유 대화가 이미 진행 중입니다.");
+                int port;
+                try { port = proxyListeners.open(); }
+                catch (IOException error) { throw new IllegalStateException("Codex 수집 프록시를 열지 못했습니다: " + error.getMessage(), error); }
+                rawProxyPort = port;
+                try {
+                    Path workspace = database.getParent().resolve("codex-raw-" + shortDigest(database.toString()));
+                    return rawChat.start(request.withRawRuntime(port, workspace.toString()));
+                } catch (RuntimeException error) {
+                    try { proxyListeners.remove(port); rawProxyPort = -1; }
+                    catch (IOException cleanup) { error.addSuppressed(cleanup); }
+                    rawProxyRunId = "";
+                    throw error;
+                }
                 }
             }
             @Override public boolean codexChatActive() { return rawChat.rawActive(); }
