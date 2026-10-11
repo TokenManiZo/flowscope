@@ -414,6 +414,18 @@ final class FlowScopeWebServerTest {
     }
 
     @Test
+    void rawExplorerFlagIsExplicitAndVisibleOnlyForItsActiveRun() throws Exception {
+        start();
+        String target = state.record.service + "/";
+        assertFalse(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
+        HttpResponse<String> started = post("/api/explorer-run",
+                "action=start&target=" + encode(target) + "&raw=true&message=Inspect", token);
+        assertEquals(202, started.statusCode());
+        assertTrue(state.explorerRaw);
+        assertTrue(json(get("/api/explorer-run", token, origin())).path("rawActive").asBoolean());
+    }
+
+    @Test
     void explorerReadinessCanBeRecheckedWithoutStartingARun() throws Exception {
         start();
 
@@ -1870,6 +1882,7 @@ final class FlowScopeWebServerTest {
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
         private final List<ExplorerCoordinator.ChatMessage> explorerMessages = new ArrayList<>();
         private volatile String explorerStartMessage = "";
+        private volatile boolean explorerRaw;
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
@@ -2034,6 +2047,7 @@ final class FlowScopeWebServerTest {
             return JSON.createObjectNode().put("status", "CANCELLED");
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
+        @Override public boolean explorerRawActive() { return explorerRaw; }
         @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
             return List.copyOf(explorerMessages);
         }
@@ -2060,6 +2074,7 @@ final class FlowScopeWebServerTest {
         }
         @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
             explorerStartMessage = request.userMessage();
+            explorerRaw = request.rawCodex();
             if (!request.userMessage().isBlank()) explorerMessages.add(new ExplorerCoordinator.ChatMessage(
                     "user", request.userMessage(), "llm-test-run", java.time.Instant.now()));
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",

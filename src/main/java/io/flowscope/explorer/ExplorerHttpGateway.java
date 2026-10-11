@@ -73,6 +73,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final ExplorerArtifactStore artifacts;
     private final boolean ownsArtifacts;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
+    private volatile Set<String> permittedAccounts;
     private volatile BrowserDriver browser;
 
     /** Drives the window the operator logged in to. Scope, budget and the stop switch live on the coordinator. */
@@ -130,6 +131,11 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     public String artifactsUrl() { return "http://127.0.0.1:" + server.port() + "/artifacts"; }
     public String token() { return token; }
 
+    /** Raw chat may only use the READY account handles the operator selected for this turn. */
+    void restrictAccounts(List<String> accountIds) {
+        permittedAccounts = Set.copyOf(accountIds == null ? List.of() : accountIds);
+    }
+
     private LoopbackHttpServer.Response handle(LoopbackHttpServer.Request request) throws Exception {
         if (!request.remoteAddress().isLoopbackAddress()) return error(403, "loopback 요청만 허용됩니다.");
         URI requestUri = URI.create(request.path());
@@ -166,6 +172,10 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         String method = body.path("method").asText("GET").toUpperCase(Locale.ROOT);
         String target = body.path("url").asText("");
         String accountId = body.path("account").asText("").trim();
+        Set<String> selectedAccounts = permittedAccounts;
+        if (selectedAccounts != null && !accountId.isBlank() && !selectedAccounts.contains(accountId)) {
+            return error(403, "이번 자유 대화에서 선택하지 않은 계정입니다.");
+        }
         if (!method.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,32}")) {
             return error(400, "HTTP method 형식이 올바르지 않습니다.");
         }

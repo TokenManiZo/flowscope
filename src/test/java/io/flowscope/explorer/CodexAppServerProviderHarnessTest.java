@@ -3,8 +3,10 @@ package io.flowscope.explorer;
 import io.flowscope.core.RouteCandidate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.time.Instant;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -17,6 +19,38 @@ import static org.junit.jupiter.api.Assertions.*;
 /** Opt-in real-provider gate. Normal unit/CI runs never consume a model turn. */
 @EnabledIfSystemProperty(named = "flowscope.harness", matches = "true")
 final class CodexAppServerProviderHarnessTest {
+    @Test
+    void rawCodexUsesTheScopedHttpBridgeWithoutAnExplorerPrompt(@TempDir Path temp) throws Exception {
+        AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), request -> {
+                    captured.set(request);
+                    return new ExplorerTransport.Response(200, request.url(), "", "application/json",
+                            Map.of(), "{\"ok\":true}", false, "ev-raw-harness", 1, Instant.now());
+                }, url -> url.equals("https://provider-harness.invalid/"), "raw-harness", ignored -> { });
+             CodexAppServerProvider provider = new CodexAppServerProvider()) {
+            assertEquals("READY", provider.readiness());
+            String model = provider.models().configuredModel();
+            if (model.isBlank()) model = provider.models().models().getFirst().id();
+            CountDownLatch done = new CountDownLatch(1);
+            AtomicReference<String> failure = new AtomicReference<>();
+            provider.start(new ExplorerProvider.Request("raw-harness", "https://provider-harness.invalid/",
+                    List.of("https://provider-harness.invalid/"), List.of(), gateway.url(),
+                    gateway.discoveriesUrl(), gateway.token(), "", model, "", "",
+                    "Use flowscope_http_request exactly once: account empty, method GET, url "
+                            + "https://provider-harness.invalid/, headers empty object, body empty string. "
+                            + "Do not use shell or visit any other URL. Then answer briefly.",
+                    true, 19417, temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity activity) { }
+                @Override public void completed(ExplorerProvider.Result result) { done.countDown(); }
+                @Override public void failed(String message) { failure.set(message); done.countDown(); }
+            });
+            assertTrue(done.await(3, TimeUnit.MINUTES), "raw Codex turn timed out");
+            assertNull(failure.get(), failure.get());
+            assertNotNull(captured.get(), "raw Codex did not call the scoped HTTP bridge");
+            assertEquals("https://provider-harness.invalid/", captured.get().url());
+        }
+    }
+
     @Test
     void realCodexResumesAChatOnTheSameThreadWithFreshGatewayTools() throws Exception {
         try (CodexAppServerProvider provider = new CodexAppServerProvider()) {

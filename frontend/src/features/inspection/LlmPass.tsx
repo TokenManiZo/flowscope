@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, MessageSquare, RefreshCw, Send } from "lucide-react"
+import { ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, MessageSquare, Play, RefreshCw, Send } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -89,7 +89,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
   const chatMessages = data?.messages ?? []
-  const chatVisible = chatOpen || chatMessages.length > 0 || active
+  const chatVisible = (chatOpen || chatMessages.length > 0 || Boolean(data?.rawActive))
+    && (!active || Boolean(data?.rawActive))
   useEffect(() => {
     if (followLatest.current && feedScroll.current) feedScroll.current.scrollTop = feedScroll.current.scrollHeight
   }, [chatMessages.length, chatMessages.at(-1)?.text, run?.activities.length])
@@ -118,7 +119,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     : chatMessages.length > 0 ? modelOption?.defaultEffort ?? "" : "")
   const effortUnavailable = Boolean(nextEffort && !effortOptions.some((item) => item.effort === nextEffort))
   const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable && Boolean(target)
-    && (nextAnonymous || nextSelected.length > 0)
+  const readyToExplore = readyToSend && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
 
   const feedItems: readonly SourceFeedItem[] = (run?.activities ?? []).map((item) => ({
@@ -190,6 +191,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     }
   })
   const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
+        <Button type="button" size="sm" variant="outline" disabled={!providerReady || active || !target}
+          onClick={() => setChatOpen(true)}><MessageSquare className="size-4" />Codex 자유 대화</Button>
         <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
         {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
           value={nextModel} disabled={!providerReady || !catalog?.models.length}
@@ -230,7 +233,11 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     </section>
     {browserCard}
     <div className="flex flex-wrap items-center justify-start gap-2 border-t pt-3">
-      {!chatVisible && <Button size="sm" disabled={!providerReady || active || modelLoading || modelUnavailable || effortUnavailable || !target} onClick={() => { setAccountsOpen(false); setChatOpen(true) }}><MessageSquare className="size-4" />채팅 시작</Button>}
+      <Button size="sm" disabled={!readyToExplore || active || start.isPending} onClick={() => {
+        setChatOpen(false)
+        start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
+          model: nextModel, effort: nextEffort })
+      }}><Play className="size-4" />탐색 시작</Button>
       {chatMessages.length > 0 && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
         if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
         control.mutate("new-chat", { onSuccess: () => {
@@ -248,16 +255,16 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     const text = operatorMessage.trim()
     if (!text || start.isPending || steer.isPending) return
     setSteerState(null)
-    if (run?.status === "RUNNING") {
+    if (run?.status === "RUNNING" && data?.rawActive) {
       steer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     } else if (!active && readyToSend) {
-      start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
-        model: nextModel, effort: nextEffort, message: text },
+      start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous || nextSelected.length === 0,
+        model: nextModel, effort: nextEffort, message: text, raw: true },
         { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }
   }
   const sendDisabled = !operatorMessage.trim() || start.isPending || steer.isPending
-    || (run?.status !== "RUNNING" && (active || !readyToSend))
+    || (active ? !data?.rawActive : !readyToSend)
 
   const feedFooter = <>
     {run?.unresolved.length ? <details className="border-t border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs">
@@ -271,7 +278,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         placeholder={run?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "어떤 API와 화면을 살펴볼지 직접 입력하세요"}
         className="min-h-18 max-h-48 resize-y" disabled={start.isPending || steer.isPending} />
       <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
-      {!active && !nextAnonymous && nextSelected.length === 0 && <p className="text-xs text-amber-700 dark:text-amber-300">메시지를 보내려면 비로그인 또는 로그인 완료 계정을 선택하세요.</p>}
+      <p className="text-xs text-muted-foreground">자유 대화는 저장된 프로젝트에서 계정 없이도 시작합니다. 선택한 대상 URL과 준비된 계정 handle을 함께 전달하며, FlowScope를 실제로 거친 범위 안 요청만 LLM 그래프에 반영합니다.</p>
       <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
     </form>}
   </>

@@ -41,12 +41,26 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     public record StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model,
-                               String effort, String userMessage) {
+                               String effort, String userMessage, boolean rawCodex,
+                               int rawProxyPort, String rawWorkspace) {
         public StartRequest {
             accountIds = List.copyOf(accountIds == null ? List.of() : accountIds);
             model = model == null ? "" : model.trim();
             effort = effort == null ? "" : effort.trim();
             userMessage = userMessage == null ? "" : userMessage.trim();
+            rawWorkspace = rawWorkspace == null ? "" : rawWorkspace;
+        }
+        public StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model,
+                            String effort, String userMessage) {
+            this(target, accountIds, includeAnonymous, model, effort, userMessage, false, 0, "");
+        }
+        public StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model,
+                            String effort, String userMessage, boolean rawCodex) {
+            this(target, accountIds, includeAnonymous, model, effort, userMessage, rawCodex, 0, "");
+        }
+        public StartRequest withRawRuntime(int proxyPort, String workspace) {
+            return new StartRequest(target, accountIds, includeAnonymous, model, effort, userMessage,
+                    rawCodex, proxyPort, workspace);
         }
         public StartRequest(String target, List<String> accountIds, boolean includeAnonymous, String model,
                             String userMessage) {
@@ -121,7 +135,11 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private String conversationTarget = "";
     private String conversationModel = "";
     private String conversationEffort = "";
+    private boolean conversationRaw;
     private volatile boolean chatModeActive;
+    private volatile boolean rawModeActive;
+    private volatile Consumer<String> rawRunEnded = ignored -> { };
+    private volatile Consumer<String> rawRunStarted = ignored -> { };
     private volatile Snapshot snapshot = idle();
     private volatile ExplorerHttpGateway gateway;
     private ExplorerArtifactStore conversationArtifacts;
@@ -188,17 +206,31 @@ public final class ExplorerCoordinator implements AutoCloseable {
             throw new IllegalArgumentException("Explorer 대상이 필요합니다.");
         }
         if (!exactScope.test(request.target())) throw new IllegalArgumentException("대상이 현재 exact scope 밖입니다.");
+        if (request.rawCodex() && request.userMessage().isBlank()) {
+            throw new IllegalArgumentException("raw Codex 메시지가 필요합니다.");
+        }
+        if (!request.userMessage().isBlank() && !conversationThreadId.isBlank()
+                && conversationRaw != request.rawCodex()) {
+            throw new IllegalStateException("다른 대화 방식에서는 새 채팅을 시작하세요.");
+        }
         if (!request.userMessage().isBlank() && !conversationTarget.isBlank()
                 && !conversationTarget.equals(request.target())) {
             throw new IllegalStateException("다른 대상에서는 새 LLM 대화를 시작하세요.");
         }
-        if (!request.includeAnonymous() && request.accountIds().isEmpty()) {
+        if (!request.rawCodex() && !request.includeAnonymous() && request.accountIds().isEmpty()) {
             throw new IllegalArgumentException("비로그인 또는 하나 이상의 Explorer 계정을 선택하세요.");
         }
-        request.accountIds().forEach(vault::view);
+        request.accountIds().forEach(id -> {
+            ExplorerAccountVault.View view = vault.view(id);
+            if (request.rawCodex() && view.status() != ExplorerAccountVault.AuthStatus.READY) {
+                throw new IllegalStateException("자유 대화에 선택한 계정은 브라우저 로그인 완료가 필요합니다: " + view.label());
+            }
+        });
         String readiness = provider.readiness();
         if (!"READY".equals(readiness)) throw new IllegalStateException(readiness);
-        if (contexts.current(Source.SCANNER) != null) throw new IllegalStateException("활성 ZAP 실행을 먼저 종료하세요.");
+        if (!request.rawCodex() && contexts.current(Source.SCANNER) != null) {
+            throw new IllegalStateException("활성 ZAP 실행을 먼저 종료하세요.");
+        }
         ExplorerProvider.ModelCatalog catalog = request.model().isBlank() && request.effort().isBlank()
                 ? null : provider.models();
         if (!request.model().isBlank() && catalog.models().stream()
@@ -214,7 +246,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 throw new IllegalArgumentException("선택한 모델이 해당 추론 강도를 지원하지 않습니다.");
             }
         }
-        String runId = "llm-explorer-" + System.currentTimeMillis() + "-"
+        String runId = (request.rawCodex() ? "llm-raw-" : "llm-explorer-") + System.currentTimeMillis() + "-"
                 + UUID.randomUUID().toString().substring(0, 8);
         contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
                 Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
@@ -225,21 +257,25 @@ public final class ExplorerCoordinator implements AutoCloseable {
         browserSnapshots.set(0);
         browserEndpoints.clear();
         chatModeActive = !request.userMessage().isBlank();
+        rawModeActive = request.rawCodex();
         browserStartedAt = 0;
         browserEndedAt = 0;
         browserDeadline = 0;
         snapshot = new Snapshot(Status.AUTHENTICATING, runId, request.target(), Instant.now(), null,
                 0, "Explorer 계정과 세션을 준비하는 중입니다.", readiness,
-                request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
+                request.accountIds(),
+                request.rawCodex() || request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
                 request.model(), request.effort());
         if (!request.userMessage().isBlank()) {
             conversationTarget = request.target();
+            conversationRaw = request.rawCodex();
             if (!request.model().isBlank()) conversationModel = request.model();
             if (!request.effort().isBlank()) conversationEffort = request.effort();
             chatMessages.add(new ChatMessage("user", request.userMessage(), runId, Instant.now()));
             chatChanged.run();
         }
         addActivity("SYSTEM", "Explorer 준비", "exact scope와 Codex 로그인을 확인했습니다.", "RUNNING", null);
+        if (request.rawCodex()) rawRunStarted.accept(runId);
         worker.execute(() -> prepareAndStart(request, runId));
         return current();
     }
@@ -260,13 +296,39 @@ public final class ExplorerCoordinator implements AutoCloseable {
 
     public List<ExplorerAccountVault.View> accounts() { return vault.views(); }
 
+    public boolean rawActiveRun(String runId) {
+        Snapshot value = snapshot;
+        return rawModeActive && runId != null && runId.equals(value.runId()) && active(value.status());
+    }
+
+    public boolean rawActive() { return rawModeActive && active(snapshot.status()); }
+
+    public void rawRunEnded(Consumer<String> handler) {
+        rawRunEnded = handler == null ? ignored -> { } : handler;
+    }
+
+    public void rawRunStarted(Consumer<String> handler) {
+        rawRunStarted = handler == null ? ignored -> { } : handler;
+    }
+
+    public synchronized void rawResponse(String runId, String method, String url, int status) {
+        if (!rawActiveRun(runId)) return;
+        snapshot = new Snapshot(snapshot.status(), snapshot.runId(), snapshot.target(), snapshot.startedAt(),
+                snapshot.endedAt(), snapshot.elapsedMillis(), snapshot.message(), snapshot.providerReadiness(),
+                snapshot.accountIds(), snapshot.anonymous(), snapshot.attempts() + 1, snapshot.responses() + 1,
+                snapshot.endpointDeclarations(), snapshot.parameterDeclarations(), snapshot.capabilityProbes(),
+                snapshot.unresolved(), snapshot.activities(), snapshot.model(), snapshot.effort());
+        addActivity("HTTP", method + " " + url, "자유 대화 · HTTP " + status + " · 요청 기록 분석 중",
+                "COMPLETED", null);
+    }
+
     public synchronized List<ChatMessage> chatMessages() { return List.copyOf(chatMessages); }
 
     public synchronized ExplorerChatState chatState() {
         return new ExplorerChatState(conversationThreadId, conversationTarget,
                 chatMessages.stream().map(item -> new ExplorerChatState.Message(
                         item.role(), item.text(), item.runId(), item.at().toString())).toList(),
-                conversationModel, conversationEffort);
+                conversationModel, conversationEffort, conversationRaw);
     }
 
     public synchronized void restoreChatState(ExplorerChatState restored) {
@@ -283,6 +345,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         conversationTarget = state.target();
         conversationModel = state.model();
         conversationEffort = state.effort();
+        conversationRaw = state.rawCodex();
         chatMessages.clear();
         chatMessages.addAll(parsed);
     }
@@ -475,6 +538,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         contexts.abort(Source.LLM, snapshot.runId());
         closeGateway();
         snapshot = terminal(Status.CANCELLED, "사용자가 Explorer를 중단했습니다.", snapshot.unresolved());
+        if (rawModeActive) rawRunEnded.accept(snapshot.runId());
         addActivity("SYSTEM", "Explorer 중단", "실행과 gateway를 종료했습니다.", "CANCELLED", null);
         return current();
     }
@@ -498,6 +562,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         conversationTarget = "";
         conversationModel = "";
         conversationEffort = "";
+        conversationRaw = false;
     }
 
     public synchronized Snapshot newChat() {
@@ -517,6 +582,25 @@ public final class ExplorerCoordinator implements AutoCloseable {
         List<String> readyAccounts = new ArrayList<>();
         List<ExplorerProvider.Unresolved> limitations = new ArrayList<>();
         try {
+            if (request.rawCodex()) {
+                ExplorerHttpGateway created = new ExplorerHttpGateway(vault, transport, exactScope, runId,
+                        this::gatewayEvent, candidates -> acceptDiscoveries(runId, candidates), true);
+                created.restrictAccounts(request.accountIds());
+                synchronized (this) {
+                    if (!sameActiveRun(runId)) {
+                        created.close();
+                        return;
+                    }
+                    gateway = created;
+                    snapshot = update(Status.RUNNING, "Codex 자유 대화가 진행 중입니다.", limitations, null);
+                    providerHandle = provider.start(new ExplorerProvider.Request(runId, request.target(),
+                            List.of(request.target()), request.accountIds(), gateway.url(), gateway.discoveriesUrl(),
+                            gateway.token(), "", request.model(),
+                            request.effort(), conversationThreadId, request.userMessage(), true,
+                            request.rawProxyPort(), request.rawWorkspace()), providerListener(runId, limitations, true));
+                }
+                return;
+            }
             ExplorerArtifactStore sharedArtifacts = null;
             if (!request.userMessage().isBlank()) {
                 synchronized (this) {
@@ -672,6 +756,20 @@ public final class ExplorerCoordinator implements AutoCloseable {
         }
         try {
             Pipeline.Result finalSnapshot = completionSnapshot.get();
+            if (rawModeActive) {
+                long storedResponses = finalSnapshot.records.stream()
+                        .filter(record -> record.source == Source.LLM && runId.equals(record.runId)
+                                && record.hasResponse).count();
+                if (storedResponses > snapshot.responses()) {
+                    snapshot = new Snapshot(snapshot.status(), snapshot.runId(), snapshot.target(),
+                            snapshot.startedAt(), snapshot.endedAt(), snapshot.elapsedMillis(), snapshot.message(),
+                            snapshot.providerReadiness(), snapshot.accountIds(), snapshot.anonymous(),
+                            Math.max(snapshot.attempts(), storedResponses), storedResponses,
+                            snapshot.endpointDeclarations(), snapshot.parameterDeclarations(),
+                            snapshot.capabilityProbes(), snapshot.unresolved(), snapshot.activities(),
+                            snapshot.model(), snapshot.effort());
+                }
+            }
             LaneCompletionPolicy.Decision gate = LaneCompletionPolicy.evaluate(Source.LLM, runId, finalSnapshot);
             if (gate.eligible()) {
                 LaneCompletionPolicy.complete(contexts, Source.LLM, runId, finalSnapshot);
@@ -705,6 +803,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                     "Explorer 완료 gate 실패: " + safe(error.getMessage()), limitations);
             addActivity("ERROR", "완료 gate 실패", snapshot.message(), "FAILED", null);
         }
+        if (rawModeActive) rawRunEnded.accept(runId);
     }
 
     private synchronized void fail(String runId, String message,
@@ -715,6 +814,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         contexts.abort(Source.LLM, runId);
         closeGateway();
         snapshot = terminal(Status.FAILED, safe(message), limitations);
+        if (rawModeActive) rawRunEnded.accept(runId);
         addActivity("ERROR", "Explorer 실패", snapshot.message(), "FAILED", null);
         logger.accept("FlowScope Explorer 실패: " + snapshot.message());
     }

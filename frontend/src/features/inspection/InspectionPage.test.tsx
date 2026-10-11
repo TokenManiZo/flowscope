@@ -669,7 +669,7 @@ describe("unified inspection hub", () => {
       expect(within(panel).queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
     }
 
-    await user.click(screen.getByRole("button", { name: "채팅 시작" }))
+    await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
     expect(screen.getByLabelText("LLM에게 메시지")).toBeVisible()
 
     expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()

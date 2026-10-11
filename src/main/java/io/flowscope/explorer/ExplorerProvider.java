@@ -7,7 +7,8 @@ import java.util.List;
 public interface ExplorerProvider extends AutoCloseable {
     record Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
                    String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
-                   String effort, String threadId, String userMessage) {
+                   String effort, String threadId, String userMessage, boolean rawCodex,
+                   int rawProxyPort, String rawWorkspace) {
         public Request {
             exactScope = List.copyOf(exactScope);
             accountHandles = List.copyOf(accountHandles);
@@ -15,6 +16,15 @@ public interface ExplorerProvider extends AutoCloseable {
             effort = effort == null ? "" : effort;
             threadId = threadId == null ? "" : threadId;
             userMessage = userMessage == null ? "" : userMessage;
+            rawWorkspace = rawWorkspace == null ? "" : rawWorkspace;
+            if (rawProxyPort < 0 || rawProxyPort > 65535) throw new IllegalArgumentException("invalid raw proxy port");
+            if (rawCodex && userMessage.isBlank()) throw new IllegalArgumentException("raw Codex needs a message");
+        }
+        public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
+                       String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
+                       String effort, String threadId, String userMessage) {
+            this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt,
+                    model, effort, threadId, userMessage, false, 0, "");
         }
         public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
                        String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,

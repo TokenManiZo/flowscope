@@ -66,7 +66,7 @@ ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 
 
 기존 `/api/llm-run`, `/api/ai-preview`, `/api/ai-scenarios`와 MCP 서버는 삭제된 채 유지됩니다. `8787` 리스너, MCP 토큰, 격리 브라우저, Judge, agent-workspace는 없습니다. 새 `/api/explorer-run`과 `/api/explorer-accounts`는 React Explorer 화면 전용의 loopback Web 계약입니다.
 
-로컬 `-llm.jar` 실험본의 **채팅 시작**은 입력창을 열기만 합니다. 계정 또는 비로그인을 고르고 메시지를 전송하면 `/api/explorer-run`의 새 turn이 시작되며, 완료 후 메시지를 다시 보내면 같은 Codex 대화를 이어갑니다. 실행 중 추가 지시는 현재 turn에 전달됩니다. `GET`의 `messages`는 화면 대화이고, `/api/explorer-prompts`는 편집 가능한 범용 시작 문장을 반환하지만 현재 화면은 문장 추천 목록을 표시하지 않습니다. 구현·재열기·잔존 상한은 [LLM 대화 계약](../reference/llm-chat-backend.md)에 기록했습니다.
+현재 로컬 개발 브랜치의 **탐색 시작**은 계정·비로그인 lane을 고르는 자동 Explorer로 유지합니다. 카드 제목 옆 **Codex 자유 대화**는 입력창만 열고, 저장된 프로젝트에서 첫 메시지를 전송해야 별도 Codex turn을 시작합니다. 완료 후 후속 메시지는 같은 대화를 이어갑니다. 실행 중 추가 지시는 현재 turn에 전달됩니다. `GET`의 `messages`는 화면 대화이고 `rawActive`는 자유 대화가 실행 중인지 나타냅니다. `/api/explorer-prompts`의 추천 문장은 화면에 자동 표시·실행하지 않습니다. 구현·재열기·잔존 상한은 [LLM 대화 계약](../reference/llm-chat-backend.md)에 기록했습니다.
 
 공식 Codex CLI 설치·로그인이 필요하지만 API key, Node.js 직접 설치, Playwright 또는 MCP 설정은 필요하지 않습니다. 계정 로그인 창은 `-Dflowscope.browser.path`로 지정한 브라우저, Burp에 포함된 Chromium, 시스템 Chrome/Chromium 순서로 찾아 띄웁니다. FlowScope는 Codex 실행 파일과 로그인 상태를 확인하고, 모델에는 인증 비밀 대신 opaque account handle과 HTTP·브라우저 조작·선언 dynamic tool만 제공합니다. app-server dynamic tools는 현재 experimental API이므로 실제 설치된 CLI 호환성은 readiness와 opt-in 실물 provider gate로 확인합니다. 기존 일회성 Explorer에서 응답 기록 0건은 완료 실패였지만, 새 대화의 설명 답변은 HTTP 응답이 없어도 대화로 남습니다. 이때 수집 lane은 완료로 승격하지 않으며 모델의 자유서술 개수도 집계로 사용하지 않습니다.
 

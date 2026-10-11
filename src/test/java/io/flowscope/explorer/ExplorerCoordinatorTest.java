@@ -7,13 +7,67 @@ import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.Source;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerCoordinatorTest {
+    @Test
+    void rawChatOffersOnlyReadySelectedAccountHandles(@TempDir Path temp) throws Exception {
+        FakeProvider provider = new FakeProvider();
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        vault.register("user-a", "USER A", "USER");
+        vault.register("user-b", "USER B", "USER");
+        vault.adoptSession("user-a", java.net.URI.create("https://app.example.test/"), List.of(),
+                java.util.Map.of("Authorization", "Bearer test"));
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(vault,
+                request -> { throw new AssertionError("no HTTP call expected"); }, provider,
+                new RunContextRegistry(), url -> url.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> { })) {
+            assertThrows(IllegalStateException.class, () -> coordinator.start(
+                    new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-b"),
+                            false, "", "", "Inspect", true, 19417, temp.resolve("raw").toString())));
+            var run = coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/",
+                    List.of("user-a"), false, "", "", "Inspect", true, 19417,
+                    temp.resolve("raw").toString()));
+            assertEquals(List.of("user-a"), run.accountIds());
+            await(() -> provider.request.get() != null);
+            assertEquals(List.of("user-a"), provider.request.get().accountHandles());
+        }
+    }
+
+    @Test
+    void rawCodexStartsWithoutAccountsAndRetainsItsConversation(@TempDir Path temp) throws Exception {
+        FakeProvider provider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("raw Codex must not use the Explorer transport"); }, provider,
+                contexts, value -> value.startsWith("https://app.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(),
+                    false, "", "", "Use your normal tools", true, 19417, temp.resolve("raw").toString()));
+            await(() -> provider.request.get() != null);
+            ExplorerProvider.Request started = provider.request.get();
+            assertTrue(started.rawCodex());
+            assertEquals(19417, started.rawProxyPort());
+            assertEquals(temp.resolve("raw").toString(), started.rawWorkspace());
+            assertEquals("", started.prompt());
+            assertTrue(started.gatewayUrl().startsWith("http://127.0.0.1:"));
+            assertTrue(started.accountHandles().isEmpty());
+            assertNotNull(contexts.current(Source.LLM));
+            provider.listener.get().threadReady("raw-thread");
+            provider.listener.get().completed(new ExplorerProvider.Result("Done", List.of(), "raw-thread"));
+            await(() -> !activeStatus(coordinator));
+            assertEquals("raw-thread", coordinator.chatState().threadId());
+            assertEquals("Done", coordinator.chatMessages().getLast().text());
+            assertNull(contexts.completedRun(Source.LLM), "answer-only turns are not evidence coverage");
+        }
+    }
+
     @Test
     void humanAccountsDoNotBlockExplorerAndRemainActiveAfterCancellation() throws Exception {
         FakeProvider provider = new FakeProvider();

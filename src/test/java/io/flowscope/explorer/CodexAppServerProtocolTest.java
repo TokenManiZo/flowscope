@@ -3,6 +3,7 @@ package io.flowscope.explorer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.io.PipedOutputStream;
 import java.io.Writer;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -267,6 +269,57 @@ final class CodexAppServerProtocolTest {
         };
     }
 
+    @Test
+    void rawCodexThreadKeepsNativeToolsAndScopedBridgeWithoutExplorerInstructions(@TempDir Path temp) throws Exception {
+        AtomicReference<FakeCodex> process = new AtomicReference<>();
+        Capture first = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        Capture second = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"text\":\"raw answer\"}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    process.set(fake);
+                    return fake;
+                }, ignored -> { })) {
+            ExplorerProvider.Request base = request();
+            provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                    List.of(), "", "", "", "", "gpt-6.1-sol", "high", "", "Inspect freely",
+                    true, 19417, temp.resolve("raw").toString()), listener(first));
+            assertTrue(first.done().await(10, TimeUnit.SECONDS));
+            assertNull(first.failure().get());
+            assertEquals("raw answer", first.result().get().summary());
+            FakeCodex firstProcess = process.get();
+            JsonNode started = firstProcess.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
+            JsonNode params = started.path("params");
+            assertFalse(params.path("ephemeral").asBoolean(true));
+            assertFalse(params.has("developerInstructions"));
+            assertFalse(params.path("dynamicTools").isEmpty());
+            assertEquals("flowscope_http_request", params.path("dynamicTools").get(0).path("name").asText());
+            assertEquals("workspace-write", params.path("sandbox").asText());
+            assertEquals("on-request", params.path("approvalPolicy").asText());
+            assertEquals("http://127.0.0.1:19417", params.at("/config/shell_environment_policy/set/HTTPS_PROXY").asText());
+            JsonNode turn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("FlowScope에서 선택한 대상: https://app.example.test/\n사용 가능한 계정 handle: 없음\n\nInspect freely",
+                    turn.path("params").path("input").get(0).path("text").asText());
+            assertFalse(turn.path("params").has("outputSchema"));
+            assertFalse(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(true));
+
+            provider.start(new ExplorerProvider.Request("raw-2", base.target(), base.exactScope(),
+                    List.of(), "", "", "", "", "gpt-6.1-sol", "high", "t1", "Continue",
+                    true, 19418, temp.resolve("raw").toString()), listener(second));
+            assertTrue(second.done().await(10, TimeUnit.SECONDS));
+            assertNull(second.failure().get());
+            JsonNode resumed = process.get().awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
+            assertEquals("t1", resumed.path("params").path("threadId").asText());
+            assertFalse(resumed.path("params").path("dynamicTools").isEmpty());
+            assertEquals("http://127.0.0.1:19418", resumed.at("/params/config/shell_environment_policy/set/HTTP_PROXY").asText());
+        }
+    }
+
     /** Codex explains itself on stderr. Merging that into the JSONL stream and dropping it leaves no evidence. */
     @Test
     void codexDiagnosticsReachTheLogger() throws Exception {
@@ -321,6 +374,43 @@ final class CodexAppServerProtocolTest {
             assertEquals("acceptForSession", legacy.path("result").path("decision").asText());
 
             assertTrue(capture.done().await(10, TimeUnit.SECONDS), "turn never finished");
+        }
+    }
+
+    @Test
+    void rawCodexCommandApprovalRequiresTheOperatorInsteadOfAutoAccepting(@TempDir Path temp) throws Exception {
+        AtomicReference<FakeCodex> codex = new AtomicReference<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        List<String> approvals = new CopyOnWriteArrayList<>();
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"id\":9010,\"method\":\"item/commandExecution/requestApproval\","
+                                    + "\"params\":{\"command\":\"curl https://app.example.test/\","
+                                    + "\"reason\":\"network request\"}}");
+                            self.emit("{\"id\":9011,\"method\":\"item/commandExecution/requestApproval\","
+                                    + "\"params\":{\"command\":\"curl https://outside.test/\","
+                                    + "\"networkApprovalContext\":{}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    codex.set(fake);
+                    return fake;
+                }, ignored -> { }, (action, reason) -> {
+                    approvals.add(action + " | " + reason);
+                    return false;
+                })) {
+            ExplorerProvider.Request base = request();
+            provider.start(new ExplorerProvider.Request("raw-approval", base.target(), base.exactScope(),
+                    List.of(), "", "", "", "", "", "", "", "Inspect", true,
+                    19417, temp.resolve("raw").toString()), listener(capture));
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            JsonNode response = codex.get().awaitWritten(value -> value.path("id").asInt() == 9010);
+            assertEquals("decline", response.at("/result/decision").asText());
+            JsonNode network = codex.get().awaitWritten(value -> value.path("id").asInt() == 9011);
+            assertEquals("decline", network.at("/result/decision").asText());
+            assertTrue(approvals.isEmpty(), "native command escalation must not bypass exact scope");
         }
     }
 

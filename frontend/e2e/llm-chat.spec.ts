@@ -14,16 +14,18 @@ test("chat starts only after a user message and keeps the conversation visible",
   let run = idleRun
   let messages: Array<{ role: "user" | "assistant"; text: string; runId: string; at: string }> = []
   const starts: string[] = []
+  const modes: string[] = []
   const efforts: string[] = []
   await page.route("**/api/explorer-run", async (route) => {
     if (route.request().method() === "GET") {
-      await route.fulfill({ json: { run, messages, browser: null, accounts: [], scope: [target] } })
+      await route.fulfill({ json: { run, messages, rawActive: false, browser: null, accounts: [], scope: [target] } })
       return
     }
     const form = new URLSearchParams(route.request().postData() ?? "")
     if (form.get("action") === "start") {
       const instruction = form.get("message") ?? ""
       starts.push(instruction)
+      modes.push(form.get("raw") ?? "")
       efforts.push(form.get("effort") ?? "")
       run = { ...idleRun, status: "COMPLETED", runId: `chat-${starts.length}`, target,
         anonymous: true, model: form.get("model") ?? "", effort: form.get("effort") ?? "" }
@@ -44,14 +46,13 @@ test("chat starts only after a user message and keeps the conversation visible",
 
   await page.goto(`${origin}/#inspection`)
   await page.getByRole("tab", { name: /LLM 탐색/ }).click()
-  await expect(page.getByRole("button", { name: "채팅 시작" })).toBeEnabled()
+  await expect(page.getByRole("button", { name: "Codex 자유 대화" })).toBeEnabled()
+  await expect(page.getByRole("button", { name: "탐색 시작" })).toBeDisabled()
   if (process.env.FLOWSCOPE_CHAT_PREVIEW === "1") {
     await page.screenshot({ path: resolve(process.cwd(), "../target/llm-chat-start-preview.png"), fullPage: true })
   }
-  await page.getByRole("button", { name: /^탐색할 계정/ }).click()
-  await page.getByRole("checkbox", { name: "비로그인" }).check()
   await page.getByRole("combobox", { name: "추론 강도" }).selectOption("high")
-  await page.getByRole("button", { name: "채팅 시작" }).click()
+  await page.getByRole("button", { name: "Codex 자유 대화" }).click()
   await expect(page.getByRole("button", { name: /^탐색할 계정/ })).toHaveAttribute("aria-expanded", "false")
   expect(starts).toHaveLength(0)
   await expect(page.getByRole("textbox", { name: "LLM에게 메시지" })).toBeVisible()
@@ -61,6 +62,7 @@ test("chat starts only after a user message and keeps the conversation visible",
   await expect(page.getByRole("log", { name: "LLM 대화" })).toContainText("샘플 응답")
   await expect(page.getByRole("textbox", { name: "LLM에게 메시지" })).toHaveValue("")
   expect(starts).toEqual(["이 범위의 공개 API를 살펴봐"])
+  expect(modes).toEqual(["true"])
   expect(efforts).toEqual(["high"])
   if (process.env.FLOWSCOPE_CHAT_PREVIEW === "1") {
     await page.screenshot({ path: resolve(process.cwd(), "../target/llm-chat-preview.png"), fullPage: true })

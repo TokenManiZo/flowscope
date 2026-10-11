@@ -11,7 +11,8 @@ import java.util.Map;
 final class InFlightRequestTracker {
     record Observation(RunContextRegistry.Context context, String humanCaptureAccountId,
                        boolean humanCaptureSuppressed, long datasetEpoch, long startedAt,
-                       Source source, SourceDetail detail, int listenerPort, long humanCaptureGeneration, boolean managedHuman) {
+                       Source source, SourceDetail detail, int listenerPort, long humanCaptureGeneration,
+                       boolean managedHuman, boolean rawControlled) {
         boolean belongsTo(long currentDatasetEpoch) {
             return datasetEpoch == currentDatasetEpoch;
         }
@@ -52,12 +53,21 @@ final class InFlightRequestTracker {
                                   boolean humanCaptureSuppressed, long datasetEpoch, long now,
                                   Source source, SourceDetail detail, int listenerPort, long humanCaptureGeneration,
                                   boolean managedHuman) {
+        return remember(messageId, context, humanCaptureAccountId, humanCaptureSuppressed,
+                datasetEpoch, now, source, detail, listenerPort, humanCaptureGeneration, managedHuman, false);
+    }
+
+    synchronized boolean remember(int messageId, RunContextRegistry.Context context, String humanCaptureAccountId,
+                                  boolean humanCaptureSuppressed, long datasetEpoch, long now,
+                                  Source source, SourceDetail detail, int listenerPort, long humanCaptureGeneration,
+                                  boolean managedHuman, boolean rawControlled) {
         if (observations.size() >= capacity) {
             observations.entrySet().removeIf(entry -> now - entry.getValue().startedAt() > ttlMillis);
         }
         if (observations.size() >= capacity) return false;
         observations.put(messageId, new Observation(context, humanCaptureAccountId,
-                humanCaptureSuppressed, datasetEpoch, now, source, detail, listenerPort, humanCaptureGeneration, managedHuman));
+                humanCaptureSuppressed, datasetEpoch, now, source, detail, listenerPort, humanCaptureGeneration,
+                managedHuman, rawControlled));
         return true;
     }
 
@@ -65,7 +75,7 @@ final class InFlightRequestTracker {
         observations.computeIfPresent(messageId, (id, original) -> new Observation(original.context(),
                 accountId, captureSuppressed, original.datasetEpoch(), original.startedAt(),
                 original.source(), original.detail(), original.listenerPort(), original.humanCaptureGeneration(),
-                original.managedHuman()));
+                original.managedHuman(), original.rawControlled()));
     }
 
     synchronized Observation get(int messageId) { return observations.get(messageId); }

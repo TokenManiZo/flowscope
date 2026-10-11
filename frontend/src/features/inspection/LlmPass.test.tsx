@@ -24,10 +24,54 @@ const catalogResponse = () => new Response(JSON.stringify({ configuredModel: "gp
 ] }), { headers: { "Content-Type": "application/json" } })
 
 async function sendFirstMessage(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: "채팅 시작" }))
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "API를 살펴봐")
   await user.click(screen.getByRole("button", { name: "메시지 전송" }))
 }
+
+it("offers raw Codex beside the model while keeping the original Explorer start", async () => {
+  const user = userEvent.setup()
+  const posts: string[] = []
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/api/explorer-models") return catalogResponse()
+    if (String(input) === "/api/explorer-run" && init?.method === "POST") {
+      posts.push(String(init.body))
+      return new Response(JSON.stringify({ run: { ...idle.run, status: "RUNNING", runId: "raw-1" } }), { status: 202 })
+    }
+    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    throw new Error(`unexpected API ${String(input)}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+
+  const heading = screen.getByRole("heading", { name: "LLM 탐색" })
+  const header = heading.parentElement?.parentElement
+  expect(header).not.toBeNull()
+  const raw = within(header!).getByRole("button", { name: "Codex 자유 대화" })
+  const model = within(header!).getByRole("combobox", { name: "탐색 모델" })
+  expect(raw.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+  expect(screen.getByRole("button", { name: "탐색 시작" })).toBeDisabled()
+  await user.click(raw)
+  expect(posts).toHaveLength(0)
+  await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "공개 API를 찾아줘")
+  await user.click(screen.getByRole("button", { name: "메시지 전송" }))
+  await waitFor(() => expect(posts).toHaveLength(1))
+  expect(posts[0]).toContain("raw=true")
+  expect(posts[0]).toContain("message=")
+})
+
+it("does not offer raw steering while the original Explorer is running", async () => {
+  const automatic = { ...idle,
+    run: { ...idle.run, status: "RUNNING", runId: "automatic-1", anonymous: true },
+    rawActive: false,
+    messages: [{ role: "user", text: "Earlier raw chat", runId: "raw-1", at: "2026-10-11T00:00:00Z" }],
+  }
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => String(input) === "/api/explorer-models"
+    ? catalogResponse() : new Response(JSON.stringify(automatic))))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
+  expect(await screen.findByRole("button", { name: /중단/ })).toBeEnabled()
+  expect(screen.queryByRole("textbox", { name: "Explorer에게 추가 지시" })).not.toBeInTheDocument()
+  expect(screen.getByRole("button", { name: "Codex 자유 대화" })).toBeDisabled()
+})
 
 it("opens chat without starting a run, then sends the operator's first message", async () => {
   const user = userEvent.setup()
@@ -43,7 +87,7 @@ it("opens chat without starting a run, then sends the operator's first message",
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" />)
 
-  await user.click(await screen.findByRole("button", { name: "채팅 시작" }))
+  await user.click(await screen.findByRole("button", { name: "Codex 자유 대화" }))
   expect(posts).toHaveLength(0)
   await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
   await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
@@ -136,7 +180,7 @@ it("offers account models and sends the chosen one with the anonymous run", asyn
   expect(await screen.findByRole("checkbox", { name: "USER A" })).toBeDisabled()
   expect(screen.getByRole("button", { name: "USER A 브라우저 로그인" })).toBeEnabled()
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
-  expect(screen.getByRole("button", { name: "채팅 시작" })).toBeEnabled()
+  expect(screen.getByRole("button", { name: "Codex 자유 대화" })).toBeEnabled()
   await user.click(screen.getByRole("checkbox", { name: "비로그인" }))
   // 계정 등록 패널은 계정·세션 화면으로 옮겼다.
   expect(screen.queryByLabelText("표시 이름")).not.toBeInTheDocument()
@@ -215,10 +259,15 @@ it("reuses only visible ready account choices when restarting a completed run", 
   await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
-  await sendFirstMessage(user)
+  await user.click(screen.getByRole("button", { name: "탐색 시작" }))
   await waitFor(() => expect(posts[0]).toContain("accounts=user-a"))
   expect(posts[0]).toContain("anonymous=false")
   expect(posts[0]).toContain("model=gpt-6.1-sol")
+  await sendFirstMessage(user)
+  await waitFor(() => expect(posts).toHaveLength(2))
+  expect(posts[1]).toContain("accounts=user-a")
+  expect(posts[1]).toContain("anonymous=false")
+  expect(posts[1]).toContain("raw=true")
 })
 
 it("does not silently resend an expired account from a completed run", async () => {
@@ -241,7 +290,7 @@ it("does not silently resend an expired account from a completed run", async () 
   expect(screen.getByRole("checkbox", { name: "USER A" })).toBeDisabled()
   expect(screen.getByRole("checkbox", { name: "USER A" })).not.toBeChecked()
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
-  await userEvent.setup().click(screen.getByRole("button", { name: "채팅 시작" }))
+  await userEvent.setup().click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
 })
 
@@ -270,7 +319,9 @@ it("names an unavailable previous model and requires a new visible choice", asyn
 
   expect(await screen.findByText(/선택 모델이 현재 목록에 없습니다/)).toBeVisible()
   expect(screen.getByRole("option", { name: /gpt-6.1-sol.*사용 불가/ })).toBeDisabled()
-  expect(screen.getByRole("button", { name: "채팅 시작" })).toBeDisabled()
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
+  await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "API를 살펴봐")
+  expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
   await user.selectOptions(screen.getByRole("combobox", { name: /탐색 모델/ }), "gpt-5.6-sol")
   await sendFirstMessage(user)
   await waitFor(() => expect(posts[0]).toContain("model=gpt-5.6-sol"))
@@ -323,7 +374,7 @@ it("shows actionable setup help and rechecks Codex readiness", async () => {
   expect(screen.getByRole("link", { name: /공식 설치 안내/ })).toHaveAttribute(
     "href", "https://learn.chatgpt.com/docs/codex/cli",
   )
-  expect(screen.getByRole("button", { name: "채팅 시작" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "Codex 자유 대화" })).toBeDisabled()
   await user.click(screen.getByRole("button", { name: /다시 확인/ }))
   await waitFor(() => expect(fetchStub.mock.calls.some(([path, init]) =>
     String(path) === "/api/explorer-run" && String((init as RequestInit)?.body).includes("action=recheck"),
@@ -358,19 +409,18 @@ it("opens a login window for a registered account and adopts its session on [로
   expect(posts[0]).toContain("action=browser-open")
   expect(posts[0]).toContain("id=user-a")
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
-  await user.click(screen.getByRole("button", { name: "채팅 시작" }))
+  await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "API를 살펴봐")
-  expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
-  await user.click(screen.getByRole("button", { name: /^탐색할 계정/ }))
+  expect(screen.getByRole("button", { name: "탐색 시작" })).toBeDisabled()
   await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
   expect(posts[1]).toContain("action=browser-complete")
 
   expect(await screen.findByText("세션 있음")).toBeVisible()
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "USER A" })).toBeEnabled())
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
-  expect(screen.getByRole("button", { name: "메시지 전송" })).toBeDisabled()
+  expect(screen.getByRole("button", { name: "탐색 시작" })).toBeDisabled()
   await user.click(screen.getByRole("checkbox", { name: "USER A" }))
-  await waitFor(() => expect(screen.getByRole("button", { name: "메시지 전송" })).toBeEnabled())
+  await waitFor(() => expect(screen.getByRole("button", { name: "탐색 시작" })).toBeEnabled())
 })
 
 it("shows the browser budget as a ceiling and keeps the stop switch visible while a window is driven", async () => {
@@ -424,7 +474,7 @@ it("hides the browser card when no window is being driven", async () => {
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[]} />)
 
-  expect(await screen.findByRole("button", { name: "채팅 시작" })).toBeInTheDocument()
+  expect(await screen.findByRole("button", { name: "Codex 자유 대화" })).toBeInTheDocument()
   expect(screen.queryByRole("group", { name: "브라우저 탐색 진행" })).not.toBeInTheDocument()
   expect(screen.queryByText("브라우저 창을 닫으면 즉시 끝납니다")).not.toBeInTheDocument()
 })
@@ -479,7 +529,7 @@ it("keeps the completed run details when choosing a different model for the next
 it("keeps work messages and reports transmission success and retryable failure", async () => {
   const user = userEvent.setup()
   let reject = true
-  const running = { ...idle, run: { ...idle.run, status: "RUNNING", runId: "steer-run", message: "프로젝트 상세 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "현재 프로젝트 상세에서 항목을 읽습니다.", status: "RUNNING" }] } }
+  const running = { ...idle, rawActive: true, run: { ...idle.run, status: "RUNNING", runId: "steer-run", message: "프로젝트 상세 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "현재 프로젝트 상세에서 항목을 읽습니다.", status: "RUNNING" }] } }
   const posts: string[] = []
   vi.stubGlobal("fetch", vi.fn(async (_path: RequestInfo | URL, init?: RequestInit) => {
     if (init?.method === "POST") { posts.push(String(init.body)); return new Response(JSON.stringify(reject ? { message: "전송 실패" } : { run: running.run }), { status: reject ? 400 : 200 }) }
@@ -523,7 +573,7 @@ it.each([true, false])("explains API and input counts independently, with browse
 
 it("enlarges LLM messages without losing the instruction draft or changing the active run", async () => {
   const user = userEvent.setup()
-  const running = { ...idle, run: { ...idle.run, status: "RUNNING", runId: "reading-run", model: "gpt-6.1-sol",
+  const running = { ...idle, rawActive: true, run: { ...idle.run, status: "RUNNING", runId: "reading-run", model: "gpt-6.1-sol",
     message: "프로젝트 화면 탐색 중", activities: [{ sequence: 1, kind: "MODEL", title: "프로젝트 확인", detail: "멤버 목록을 확인합니다.", status: "RUNNING" }] } }
   const fetchStub = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify(running)))
   vi.stubGlobal("fetch", fetchStub)

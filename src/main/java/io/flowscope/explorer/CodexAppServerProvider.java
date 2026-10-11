@@ -36,6 +36,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.BiPredicate;
 
 /** 공식 Codex app-server JSONL 프로토콜을 사용하는 구독 로그인 기반 Explorer 공급자. */
 public final class CodexAppServerProvider implements ExplorerProvider {
@@ -53,6 +54,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     private final java.util.function.Supplier<String> executable;
     /** Where Codex's own diagnostics go. Without it a turn that refuses or stalls explains itself to nobody. */
     private final Consumer<String> diagnostics;
+    private final BiPredicate<String, String> rawApproval;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "flowscope-codex-app-server");
         thread.setDaemon(true);
@@ -68,21 +70,33 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     public CodexAppServerProvider() { this(ignored -> { }); }
 
     public CodexAppServerProvider(Consumer<String> diagnostics) {
-        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable);
+        this(diagnostics, (action, target) -> false);
+    }
+
+    public CodexAppServerProvider(Consumer<String> diagnostics, BiPredicate<String, String> rawApproval) {
+        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable,
+                rawApproval);
     }
 
     CodexAppServerProvider(ProcessLauncher launcher) { this(launcher, ignored -> { }); }
 
     /** An injected launcher never runs the real binary, so it must not require one to be installed (CI has none). */
     CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics) {
-        this(launcher, diagnostics, () -> "codex");
+        this(launcher, diagnostics, () -> "codex", (action, target) -> false);
+    }
+
+    CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
+                           BiPredicate<String, String> rawApproval) {
+        this(launcher, diagnostics, () -> "codex", rawApproval);
     }
 
     private CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
-                                   java.util.function.Supplier<String> executable) {
+                                   java.util.function.Supplier<String> executable,
+                                   BiPredicate<String, String> rawApproval) {
         this.executable = executable;
         this.launcher = launcher;
         this.diagnostics = diagnostics == null ? ignored -> { } : diagnostics;
+        this.rawApproval = rawApproval == null ? (action, target) -> false : rawApproval;
     }
 
     private void diagnose(String line) {
@@ -253,6 +267,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private volatile String turnId = "";
         private volatile String finalMessage = "";
         private Path workspace;
+        private boolean temporaryWorkspace;
 
         private Session(Request request, Listener listener, String executable) {
             this.request = request;
@@ -262,7 +277,10 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private void run() {
             try {
-                workspace = Files.createTempDirectory("flowscope-explorer-");
+                temporaryWorkspace = request.rawWorkspace().isBlank();
+                workspace = temporaryWorkspace ? Files.createTempDirectory("flowscope-explorer-")
+                        : Path.of(request.rawWorkspace()).toAbsolutePath().normalize();
+                if (!temporaryWorkspace) Files.createDirectories(workspace);
                 // The model receives only the dynamic tool schema. The gateway capability stays in this
                 // Java process and is never inherited by the provider process as an environment variable.
                 process = launcher.start(List.of(executable, "app-server"), workspace, Map.of());
@@ -300,7 +318,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 if (!cancelled.get()) listener.failed("Codex Explorer 실패: " + safe(error.getMessage()));
             } finally {
                 terminate(process);
-                deleteWorkspace(workspace);
+                if (temporaryWorkspace) deleteWorkspace(workspace);
                 synchronized (CodexAppServerProvider.this) {
                     if (active == this) active = null;
                 }
@@ -406,6 +424,35 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             String method = message.path("method").asText("");
             if (method.equals("item/tool/call")) {
                 handleDynamicTool(message);
+                return;
+            }
+            if (request.rawCodex() && (method.equals("item/permissions/requestApproval")
+                    || method.contains("requestApproval") || method.equals("applyPatchApproval")
+                    || method.equals("execCommandApproval"))) {
+                JsonNode params = message.path("params");
+                String command = params.path("command").asText("");
+                String reason = params.path("reason").asText("");
+                String description = command.isBlank() ? method : command;
+                if (description.length() > 800) description = description.substring(0, 800) + "…";
+                JsonNode networkContext = params.path("networkApprovalContext");
+                boolean network = !networkContext.isMissingNode() && !networkContext.isNull()
+                        || params.at("/permissions/network/enabled").asBoolean(false);
+                boolean localFileApproval = method.equals("item/fileChange/requestApproval")
+                        || method.equals("applyPatchApproval")
+                        || method.equals("item/permissions/requestApproval");
+                // A native command approval may escape the sandbox and bypass FlowScope's exact-scope gate.
+                boolean approved = localFileApproval && !network && rawApproval.test(description, reason);
+                ObjectNode response = JSON.createObjectNode();
+                response.set("id", message.get("id"));
+                ObjectNode result = response.putObject("result");
+                if (method.equals("item/permissions/requestApproval")) {
+                    result.set("permissions", approved ? params.path("permissions").deepCopy()
+                            : JSON.createObjectNode());
+                    result.put("scope", "turn");
+                } else {
+                    result.put("decision", approved ? "accept" : "decline");
+                }
+                write(response);
                 return;
             }
             if (method.equals("item/permissions/requestApproval")) {
@@ -558,31 +605,60 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         }
 
         private ObjectNode threadParams() {
-            ObjectNode params = JSON.createObjectNode().put("cwd", workspace.toString())
-                    .put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
-                    .put("developerInstructions", request.prompt());
+            ObjectNode params = JSON.createObjectNode().put("cwd", workspace.toString());
             if (request.threadId().isBlank()) {
-                params.put("serviceName", "flowscope_explorer")
-                        .put("ephemeral", request.userMessage().isBlank());
+                params.put("serviceName", request.rawCodex() ? "flowscope_raw" : "flowscope_explorer")
+                        .put("ephemeral", !request.rawCodex() && request.userMessage().isBlank());
             } else {
                 params.put("threadId", request.threadId());
             }
             if (!request.model().isBlank()) params.put("model", request.model());
+            if (request.rawCodex()) {
+                rawShellProxy(params);
+                params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write");
+                params.putArray("dynamicTools").add(httpTool()).add(artifactListTool())
+                        .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
+                        .add(discoveryTool());
+                return params;
+            }
+            params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
+                    .put("developerInstructions", request.prompt());
             params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
         }
 
+        private void rawShellProxy(ObjectNode params) {
+            if (request.rawProxyPort() == 0) return;
+            String proxy = "http://127.0.0.1:" + request.rawProxyPort();
+            ObjectNode values = params.putObject("config").putObject("shell_environment_policy").putObject("set");
+            for (String name : List.of("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                    "http_proxy", "https_proxy", "all_proxy")) values.put(name, proxy);
+            values.put("NO_PROXY", "").put("no_proxy", "");
+        }
+
         private ObjectNode turnParams() {
             ObjectNode params = JSON.createObjectNode();
-            params.put("threadId", threadId).put("cwd", workspace.toString()).put("approvalPolicy", "on-request");
+            params.put("threadId", threadId).put("cwd", workspace.toString());
             if (!request.model().isBlank()) params.put("model", request.model());
             if (!request.effort().isBlank()) params.put("effort", request.effort());
             params.putArray("input").addObject().put("type", "text")
-                    .put("text", request.userMessage().isBlank()
+                    .put("text", request.rawCodex()
+                            ? "FlowScope에서 선택한 대상: " + request.target()
+                                    + "\n사용 가능한 계정 handle: "
+                                    + (request.accountHandles().isEmpty() ? "없음" : String.join(", ", request.accountHandles()))
+                                    + "\n\n" + request.userMessage()
+                            : request.userMessage().isBlank()
                             ? "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요."
                             : request.userMessage());
+            if (request.rawCodex()) {
+                params.put("approvalPolicy", "on-request");
+                params.putObject("sandboxPolicy").put("type", "workspaceWrite")
+                        .put("networkAccess", false).putArray("writableRoots").add(workspace.toString());
+                return params;
+            }
+            params.put("approvalPolicy", "on-request");
             ObjectNode sandbox = params.putObject("sandboxPolicy").put("type", "workspaceWrite")
                     .put("networkAccess", false);
             sandbox.putArray("writableRoots").add(workspace.toString());

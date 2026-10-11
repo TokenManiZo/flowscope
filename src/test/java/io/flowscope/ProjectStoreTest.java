@@ -26,7 +26,7 @@ final class ProjectStoreTest {
         ExplorerChatState chat = new ExplorerChatState("thread-1", "https://app.example.test/",
                 List.of(new ExplorerChatState.Message("user", "Find APIs", "llm-run-1", "2026-10-10T00:00:00Z"),
                         new ExplorerChatState.Message("assistant", "Found one request", "llm-run-1",
-                                "2026-10-10T00:00:01Z")), "gpt-6.1-sol", "high");
+                                "2026-10-10T00:00:01Z")), "gpt-6.1-sol", "high", true);
         ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("chat project",
                 List.of("https://app.example.test/"), Instant.parse("2026-10-10T00:00:00Z"), chat);
         Path file = temp.resolve("chat.flowscope.json");

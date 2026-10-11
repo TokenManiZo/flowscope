@@ -925,6 +925,7 @@ export interface ExplorerBrowserBudget {
 
 export interface ExplorerRunEnvelope {
   run: ExplorerRun
+  rawActive?: boolean
   chat?: { threadId: string; target: string; model: string; effort: string }
   /** Project-persisted LLM conversation; older servers may omit it. */
   messages?: readonly { role: "user" | "assistant"; text: string; runId: string; at: string }[]

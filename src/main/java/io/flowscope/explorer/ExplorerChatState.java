@@ -5,7 +5,7 @@ import java.time.Instant;
 
 /** Visible chat history and the local Codex thread handle; never stores gateway or login credentials. */
 public record ExplorerChatState(String threadId, String target, List<Message> messages,
-                                String model, String effort) {
+                                String model, String effort, boolean rawCodex) {
     public record Message(String role, String text, String runId, String at) {
         public Message {
             if (!"user".equals(role) && !"assistant".equals(role)) {
@@ -27,8 +27,12 @@ public record ExplorerChatState(String threadId, String target, List<Message> me
     }
 
     public ExplorerChatState(String threadId, String target, List<Message> messages) {
-        this(threadId, target, messages, "", "");
+        this(threadId, target, messages, "", "", false);
     }
 
-    public static ExplorerChatState empty() { return new ExplorerChatState("", "", List.of(), "", ""); }
+    public ExplorerChatState(String threadId, String target, List<Message> messages, String model, String effort) {
+        this(threadId, target, messages, model, effort, false);
+    }
+
+    public static ExplorerChatState empty() { return new ExplorerChatState("", "", List.of(), "", "", false); }
 }

@@ -213,6 +213,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("Explorer workflow is unavailable");
         }
         default List<ExplorerCoordinator.ChatMessage> explorerChatMessages() { return List.of(); }
+        default boolean explorerRawActive() { return false; }
         default io.flowscope.explorer.ExplorerChatState explorerChatState() {
             return io.flowscope.explorer.ExplorerChatState.empty();
         }
@@ -1574,6 +1575,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (request.method().equals("GET")) {
             ObjectNode body = json.createObjectNode();
             body.set("run", explorerSnapshot(state.explorerStatus()));
+            body.put("rawActive", state.explorerRawActive());
             var messages = body.putArray("messages");
             state.explorerChatMessages().forEach(item -> messages.addObject()
                     .put("role", item.role()).put("text", item.text())
@@ -1607,7 +1609,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous", "true"));
                     snapshot = state.startExplorer(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
                             form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
-                            form.getOrDefault("message", "")));
+                            form.getOrDefault("message", ""), Boolean.parseBoolean(form.getOrDefault("raw", "false"))));
                     status = 202;
                 }
                 case "steer" -> snapshot = state.steerExplorer(required(form, "message"));

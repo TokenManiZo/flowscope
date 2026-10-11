@@ -93,6 +93,33 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
+    void rawChatCannotUseAReadyAccountThatWasNotSelected() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        for (String id : List.of("user-a", "user-b")) {
+            vault.register(id, id, "USER");
+            vault.adoptSession(id, URI.create("https://app.example.test/"), List.of(),
+                    Map.of("Authorization", "Bearer " + id));
+        }
+        AtomicReference<ExplorerTransport.Request> sent = new AtomicReference<>();
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, request -> {
+                    sent.set(request);
+                    return new ExplorerTransport.Response(200, request.url(), "", "application/json", Map.of(),
+                            "{}", false, "ev-raw-account", 1, Instant.now());
+                }, url -> url.startsWith("https://app.example.test/"), "raw-accounts", ignored -> {},
+                ignored -> {}, true)) {
+            gateway.restrictAccounts(List.of("user-a"));
+            assertEquals(403, post(gateway, """
+                    {"account":"user-b","method":"GET","url":"https://app.example.test/api/me","headers":{},"body":""}
+                    """).statusCode());
+            assertNull(sent.get());
+            assertEquals(200, post(gateway, """
+                    {"account":"user-a","method":"GET","url":"https://app.example.test/api/me","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals("Bearer user-a", sent.get().headers().get("Authorization"));
+        }
+    }
+
+    @Test
     void exposesLargeBodyAsLoopbackArtifact() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
