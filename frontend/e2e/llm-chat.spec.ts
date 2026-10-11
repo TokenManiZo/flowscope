@@ -36,7 +36,11 @@ test("chat starts only after a user message and keeps the conversation visible",
       efforts.push(form.get("effort") ?? "")
       run = { ...idleRun, status: "COMPLETED", runId: `chat-${starts.length}`, target,
         anonymous: true, model: form.get("model") ?? "", effort: form.get("effort") ?? "",
-        message: "Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)" }
+        message: "Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)",
+        activities: [
+          { sequence: 1, kind: "TOOL", title: "셸 명령 실행 중", detail: "find . -name '*.js'", status: "RUNNING" },
+          { sequence: 2, kind: "TOOL", title: "Codex 셸 명령", detail: "find . -name '*.js'", status: "COMPLETED" },
+        ] }
       messages = [...messages,
         { role: "user", text: instruction, runId: run.runId, at: "2026-10-10T00:00:00Z" },
         { role: "assistant", text: "샘플 응답: 실제 수집은 Burp에서 확인하세요.", runId: run.runId, at: "2026-10-10T00:00:01Z" },
@@ -72,12 +76,21 @@ test("chat starts only after a user message and keeps the conversation visible",
   await expect(page.getByRole("log", { name: "LLM 대화" })).toContainText("샘플 응답")
   await expect(page.getByText(/Codex 대화\s+답변 완료/)).toBeVisible()
   await expect(page.getByText("Codex 답변 완료 · 이번 대화 신규 HTTP 응답 0건 (기존 기록 조회 가능)")).toBeVisible()
+  await expect(page.getByRole("status", { name: "현재 LLM 행동" })).toContainText("Codex 셸 명령")
+  await expect(page.getByRole("article").filter({ hasText: "find . -name '*.js'" })).toHaveCount(0)
+  await page.getByRole("button", { name: "실행 과정 보기" }).click()
+  await expect(page.getByRole("article").filter({ hasText: "find . -name '*.js'" })).toHaveCount(2)
   await expect(page.getByRole("button", { name: "탐색 시작" })).toHaveCount(0)
   await expect(page.getByRole("textbox", { name: "LLM에게 메시지" })).toHaveValue("")
   const bubble = await page.getByText("하이", { exact: true }).locator("..").boundingBox()
   expect(bubble?.width ?? 0).toBeGreaterThanOrEqual(96)
   expect(starts).toEqual(["하이"])
   expect(efforts).toEqual(["high"])
+  await page.getByRole("button", { name: "크게 보기" }).click()
+  await expect(page.getByRole("combobox", { name: "대화 모델" })).toBeVisible()
+  await expect(page.getByRole("combobox", { name: "추론 강도" })).toBeVisible()
+  await page.getByRole("button", { name: "자동 탐색으로 돌아가기" }).click()
+  await expect(page.getByRole("button", { name: "탐색 시작" })).toBeVisible()
   if (process.env.FLOWSCOPE_CHAT_PREVIEW === "1") {
     await page.screenshot({ path: resolve(process.cwd(), "../target/llm-chat-preview.png"), fullPage: true })
   }

@@ -297,7 +297,9 @@ final class CodexAppServerProtocolTest {
             JsonNode started = firstProcess.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
             JsonNode params = started.path("params");
             assertFalse(params.path("ephemeral").asBoolean(true));
-            assertFalse(params.has("developerInstructions"));
+            assertTrue(params.path("developerInstructions").asText().contains("https://app.example.test/"));
+            assertTrue(params.path("developerInstructions").asText().contains("flowscope_http_request"));
+            assertFalse(params.path("developerInstructions").asText().contains("탐색 순서"));
             assertEquals(List.of("flowscope_evidence_list", "flowscope_evidence_search", "flowscope_evidence_read",
                             "flowscope_http_request", "flowscope_browser", "flowscope_artifact_list",
                             "flowscope_artifact_search", "flowscope_artifact_read", "flowscope_artifact_index",
@@ -306,13 +308,12 @@ final class CodexAppServerProtocolTest {
                             .map(tool -> tool.path("name").asText()).toList());
             assertEquals("workspace-write", params.path("sandbox").asText());
             assertEquals("on-request", params.path("approvalPolicy").asText());
-            assertEquals("http://127.0.0.1:19417", params.at("/config/shell_environment_policy/set/HTTPS_PROXY").asText());
-            assertTrue(params.at("/config/shell_environment_policy/set/ALL_PROXY").isMissingNode());
+            assertTrue(params.path("config").isMissingNode(), "shell requests must not inherit a bypassable proxy hint");
             JsonNode turn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Inspect freely",
                     turn.path("params").path("input").get(0).path("text").asText());
             assertFalse(turn.path("params").has("outputSchema"));
-            assertTrue(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(false));
+            assertFalse(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(true));
 
             provider.start(new ExplorerProvider.Request("raw-2", base.target(), base.exactScope(),
                     List.of(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(), "", "gpt-6.1-sol", "high", "t1", "Continue",
@@ -322,7 +323,7 @@ final class CodexAppServerProtocolTest {
             JsonNode resumed = process.get().awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
             assertEquals("t1", resumed.path("params").path("threadId").asText());
             assertEquals(10, resumed.at("/params/dynamicTools").size());
-            assertEquals("http://127.0.0.1:19418", resumed.at("/params/config/shell_environment_policy/set/HTTP_PROXY").asText());
+            assertTrue(resumed.at("/params/config").isMissingNode());
             JsonNode nextTurn = process.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
             assertEquals("Continue", nextTurn.at("/params/input/0/text").asText());
         }
@@ -416,14 +417,15 @@ final class CodexAppServerProtocolTest {
 
             // The legacy name carries no "requestApproval" substring; a contains() check used to drop it.
             JsonNode legacy = codex.get().awaitWritten(value -> value.path("id").asLong() == 9002);
-            assertEquals("acceptForSession", legacy.path("result").path("decision").asText());
+            assertEquals("decline", legacy.path("result").path("decision").asText(),
+                    "automatic Explorer commands must not escape the network-disabled sandbox");
 
             assertTrue(capture.done().await(10, TimeUnit.SECONDS), "turn never finished");
         }
     }
 
     @Test
-    void rawCodexCommandApprovalFollowsTheOperatorDecision(@TempDir Path temp) throws Exception {
+    void rawCodexCannotEscalateShellNetworkThroughAnApproval(@TempDir Path temp) throws Exception {
         AtomicReference<FakeCodex> codex = new AtomicReference<>();
         Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
         List<String> approvals = new CopyOnWriteArrayList<>();
@@ -460,13 +462,12 @@ final class CodexAppServerProtocolTest {
             });
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
             JsonNode response = codex.get().awaitWritten(value -> value.path("id").asInt() == 9010);
-            assertEquals("accept", response.at("/result/decision").asText());
+            assertEquals("decline", response.at("/result/decision").asText());
             JsonNode network = codex.get().awaitWritten(value -> value.path("id").asInt() == 9011);
             assertEquals("decline", network.at("/result/decision").asText());
-            assertEquals(List.of("curl https://app.example.test/ | network request",
-                    "curl https://outside.test/ | 네트워크 권한 요청 · "), approvals);
+            assertTrue(approvals.isEmpty(), "command and network escalation must never reach the operator approval path");
             assertTrue(activities.stream().anyMatch(item -> item.kind().equals("APPROVAL")
-                    && item.status().equals("WAITING")));
+                    && item.status().equals("DECLINED")));
             assertTrue(activities.stream().noneMatch(item -> item.detail().contains("outside.test")),
                     "command text must not be duplicated into the persisted activity feed");
         }
@@ -497,6 +498,8 @@ final class CodexAppServerProtocolTest {
         ExplorerProvider.Activity refusal = activities.stream()
                 .filter(value -> "TOOL".equals(value.kind()) && "FAILED".equals(value.status()))
                 .findFirst().orElseThrow(() -> new AssertionError("no refusal in " + activities));
+        assertTrue(activities.stream().anyMatch(value -> "브라우저 조작 실행 중".equals(value.title())
+                && "RUNNING".equals(value.status())), "the action must be visible before the gateway returns");
         assertTrue(refusal.title().contains("브라우저 조작"), refusal.title());
         assertFalse(refusal.detail().isBlank(), "the reason must reach the operator");
     }

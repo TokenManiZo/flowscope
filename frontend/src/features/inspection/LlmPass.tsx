@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, MessageSquare, Play, RefreshCw, Send } from "lucide-react"
+import { ArrowLeft, ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, MessageSquare, Play, RefreshCw, Send } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -77,7 +77,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
 }) {
   const [selectedView, setSelectedView] = useState<"auto" | "raw" | null>(null)
   const autoQuery = useExplorerRunQuery()
-  const rawQuery = useCodexChatQuery(selectedView === "raw")
+  const rawQuery = useCodexChatQuery(true)
   const autoStart = useExplorerStartMutation()
   const rawStart = useCodexChatStartMutation()
   const autoControl = useExplorerControlMutation()
@@ -102,6 +102,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [feedOpen, setFeedOpen] = useState(true)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const [steerState, setSteerState] = useState<"sent" | "failed" | null>(null)
 
   const rawView = selectedView === "raw"
@@ -116,7 +117,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const data = query.data
   useEffect(() => { setSteerState(null) }, [data?.run.runId, datasetRevision])
   useEffect(() => {
-    setChatOpen(false); setSelectedView(null); setOperatorMessage("")
+    setChatOpen(false); setSelectedView(null); setOperatorMessage(""); setActionsOpen(false)
     setAutoSelectedModel(null); setRawSelectedModel(null)
     setAutoSelectedEffort(null); setRawSelectedEffort(null)
   }, [datasetRevision])
@@ -124,6 +125,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
   const automaticActive = activeStates.has(autoQuery.data?.run.status ?? "IDLE")
+  const rawActive = Boolean(rawQuery.data?.rawActive)
   const chatMessages = data?.messages ?? []
   const visibleRun = run
   const legacyRawChat = Boolean(data?.chat?.threadId && data.chat.rawCodex
@@ -157,12 +159,12 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     : chatMessages.length > 0 ? modelOption?.defaultEffort ?? "" : "")
   const effortUnavailable = Boolean(nextEffort && !effortOptions.some((item) => item.effort === nextEffort))
   const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable
-    && Boolean(target) && !(rawView && automaticActive)
+    && Boolean(target) && !(rawView ? automaticActive : rawActive)
   const readyToExplore = readyToSend && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
     ?? openRawLogin.error ?? completeRawLogin.error
 
-  const feedItems: readonly SourceFeedItem[] = (rawView ? [] : visibleRun?.activities ?? [])
+  const allFeedItems: readonly SourceFeedItem[] = (visibleRun?.activities ?? [])
     .map((item) => ({
     id: String(item.sequence),
     badge: item.kind,
@@ -170,6 +172,10 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     status: item.durationMillis == null ? item.status : `${item.status} · ${item.durationMillis}ms`,
     detail: item.detail && withoutUnnumberedEvidence(withEvidenceOrdinals(item.detail, evidenceOrdinals)),
   }))
+  const actionItems = allFeedItems.filter((item) => item.badge !== "SYSTEM" && item.badge !== "MODEL")
+  const currentAction = actionItems.at(-1)
+  const feedItems = rawView ? [] : allFeedItems
+  const visibleFeedItems = rawView ? actionsOpen ? actionItems : [] : feedItems
 
   const notices = <>
     {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>{rawView ? "Codex 대화 요청 실패" : "Explorer 요청 실패"}</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
@@ -233,8 +239,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     }
   })
   const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
-        <Button type="button" size="sm" variant={rawView ? "secondary" : "outline"} disabled={!providerReady || !target}
-          onClick={() => { setAccountsOpen(false); setSelectedView("raw"); setChatOpen(true) }}><MessageSquare className="size-4" />Codex 자유 대화</Button>
+        {!rawView && <Button type="button" size="sm" variant="outline" disabled={!providerReady || !target}
+          onClick={() => { setAccountsOpen(false); setSelectedView("raw"); setChatOpen(true) }}><MessageSquare className="size-4" />Codex 자유 대화</Button>}
         <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? rawView ? "대화 모델" : hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
         {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
           value={nextModel} disabled={!providerReady || !catalog?.models.length}
@@ -289,8 +295,6 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         autoStart.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
           model: nextModel, effort: nextEffort })
       }}><Play className="size-4" />탐색 시작</Button>}
-      {rawView && <Button type="button" size="sm" variant="outline" disabled={active}
-        onClick={() => { setSelectedView("auto"); setChatOpen(false) }}>자동 탐색 보기</Button>}
       {rawView && Boolean(chatMessages.length > 0 || data?.chat?.threadId) && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
         if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
         rawControl.mutate("new-chat", { onSuccess: () => {
@@ -329,16 +333,34 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       <div className="flex items-end gap-2"><Textarea ref={composer} aria-label={visibleRun?.status === "RUNNING" ? "Codex에게 추가 지시" : "LLM에게 메시지"} value={operatorMessage}
         onChange={(event) => setOperatorMessage(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() } }}
-        placeholder={visibleRun?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "대상 URL과 원하는 작업을 직접 입력하세요"}
+        placeholder={visibleRun?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "원하는 탐색 작업을 입력하세요"}
         className="min-h-18 max-h-48 resize-y" disabled={start.isPending || steer.isPending} />
       <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
-      <p className="break-all text-xs text-muted-foreground">자동 탐색 지침은 붙이지 않습니다. 현재 프로젝트 요청 기록과 준비한 로그인 브라우저를 사용할 수 있습니다. 대상 URL은 메시지에 직접 적으세요: <code>{target}</code></p>
-      <p className="text-xs text-amber-700 dark:text-amber-300">Burp 프록시를 우회한 Codex 요청은 FlowScope가 차단하거나 기록하지 못합니다. 범위 안 응답 중 실제로 기록된 것만 LLM 그래프에 반영합니다.</p>
+      <p className="break-all text-xs text-muted-foreground">자동 탐색 순서는 강제하지 않습니다. 현재 대상 <code>{target}</code>은 Codex에 전달됩니다. 대상 HTTP는 FlowScope 도구로 기록하고, 셸은 로컬 파일 분석에 사용할 수 있습니다.</p>
       <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : run?.status === "AUTHENTICATING" ? "Codex 연결 중 · 시작되면 추가 메시지를 보낼 수 있습니다." : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
     </form>}
   </>
   const feed = (view: RecordView) => <Card className={`flex flex-col gap-0 overflow-hidden py-0 ${feedOpen ? "min-h-32 flex-1" : "shrink-0"}`}>
-    <CardHeader className="shrink-0 border-b py-3"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">{rawView ? "Codex 대화" : "진행 기록"} <span className="ml-2 text-sm font-normal text-muted-foreground">{llmStatus(visibleRun?.status ?? "IDLE", rawView)}</span></CardTitle><div className="flex shrink-0 items-center gap-2"><RecordViewButton view={view} onExpand={() => setFeedOpen(true)} /><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div></div>{view.focused && <p className="text-xs text-muted-foreground">{rawView ? "Codex 자유 대화" : "LLM 탐색"} · {target} · 실행 모델 {visibleRun?.model || "Codex 기본 설정"}</p>}<p className="break-words text-sm font-medium" aria-live="polite">{visibleRun?.message ?? (rawView ? "메시지를 보내면 Codex 대화가 시작됩니다." : "자동 탐색 실행 대기")}</p></CardHeader>
+    <CardHeader className="shrink-0 border-b py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {rawView && <Button type="button" variant="ghost" size="sm" onClick={() => {
+            if (view.focused) view.toggleFocus()
+            setSelectedView("auto"); setChatOpen(false)
+          }}><ArrowLeft className="size-4" />자동 탐색으로 돌아가기</Button>}
+          <CardTitle className="text-base">{rawView ? "Codex 대화" : "진행 기록"} <span className="ml-2 text-sm font-normal text-muted-foreground">{llmStatus(visibleRun?.status ?? "IDLE", rawView)}</span></CardTitle>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {rawView && <Button type="button" variant="outline" size="sm" aria-expanded={actionsOpen} onClick={() => { setActionsOpen((value) => !value); setFeedOpen(true) }}>{actionsOpen ? "실행 과정 접기" : "실행 과정 보기"}</Button>}
+          <RecordViewButton view={view} onExpand={() => setFeedOpen(true)} />
+          <Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button>
+        </div>
+      </div>
+      {rawView && modelControl}
+      {view.focused && <p className="text-xs text-muted-foreground">{rawView ? "Codex 자유 대화" : "LLM 탐색"} · {target} · 실행 모델 {visibleRun?.model || "Codex 기본 설정"}</p>}
+      <p className="break-words text-sm font-medium">{visibleRun?.message ?? (rawView ? "메시지를 보내면 Codex 대화가 시작됩니다." : "자동 탐색 실행 대기")}</p>
+      {currentAction && <p role="status" aria-label="현재 LLM 행동" className="truncate text-xs text-muted-foreground" title={`${currentAction.title}${currentAction.detail ? ` · ${currentAction.detail}` : ""}`}>{currentAction.title}{currentAction.detail ? ` · ${currentAction.detail}` : ""}</p>}
+    </CardHeader>
     <CardContent className="flex min-h-0 flex-1 flex-col p-0">
       {feedOpen && <div ref={feedScroll} data-record-list className="min-h-0 flex-1 overflow-y-auto" aria-label={rawView ? "Codex 대화 내용" : "LLM 진행 메시지 및 수집 트래픽"} onScroll={(event) => {
         const element = event.currentTarget
@@ -352,7 +374,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
             </div>
           </div>) : <p className="py-5 text-center text-sm text-muted-foreground">메시지를 보내면 LLM이 이 대화에서 작업을 시작합니다. 버튼만 눌러서는 요청하지 않습니다.</p>}
         </div>}
-        {feedItems.length ? feedItems.slice().reverse().map((item) => {
+        {rawView && actionsOpen && <p className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">실행 과정 · 최근 {actionItems.length}건</p>}
+        {visibleFeedItems.length ? visibleFeedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
           return <article key={item.id} className="grid grid-cols-[60px_minmax(0,1fr)_1.5rem_6rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
@@ -367,6 +390,6 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     </CardContent>
   </Card>
 
-  return <SourcePassLayout label="LLM" title="LLM 탐색" titleControl={modelControl} onRecordFocusChange={onRecordFocusChange} description="LLM이 서비스를 둘러보며 API 요청과 응답을 기록합니다." control={control_} notices={notices}
+  return <SourcePassLayout label="LLM" title="LLM 탐색" titleControl={rawView ? undefined : modelControl} onRecordFocusChange={onRecordFocusChange} description="LLM이 서비스를 둘러보며 API 요청과 응답을 기록합니다." control={control_} notices={notices}
     feedItems={feedItems} feedTitle="진행 기록" emptyHint="" feedContent={feed} />
 }

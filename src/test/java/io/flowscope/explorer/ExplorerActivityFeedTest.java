@@ -19,14 +19,24 @@ final class ExplorerActivityFeedTest {
     }
 
     @Test
-    void toolCallStartAndSuccessAreNotActivities() {
+    void uninformativeToolStartAndSuccessAreNotActivities() {
         assertNull(CodexAppServerProvider.activityFor(frame(
                 "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"dynamicToolCall\"}}}")));
         assertNull(CodexAppServerProvider.activityFor(frame(
-                "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\"}}}")));
-        assertNull(CodexAppServerProvider.activityFor(frame(
                 "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"dynamicToolCall\","
                         + "\"status\":\"completed\",\"durationMs\":4}}}")));
+    }
+
+    @Test
+    void commandStartReportsTheActualShellActionBeforeItFinishes() {
+        ExplorerProvider.Activity started = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\","
+                        + "\"command\":\"curl -I https://app.example.test/api/items\"}}}"), true);
+        assertNotNull(started);
+        assertEquals("TOOL", started.kind());
+        assertEquals("셸 명령 실행 중", started.title());
+        assertEquals("curl -I https://app.example.test/api/items", started.detail());
+        assertEquals("RUNNING", started.status());
     }
 
     /**

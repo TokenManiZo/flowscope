@@ -448,14 +448,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 String reason = params.path("reason").asText("");
                 String description = command.isBlank() ? method : command;
                 if (description.length() > 800) description = description.substring(0, 800) + "…";
-                listener.activity(activity("APPROVAL", "Burp에서 Codex 승인 대기",
-                        "명령과 사유는 Burp 승인 창에서 확인하세요.", "WAITING", null));
-                JsonNode networkContext = params.path("networkApprovalContext");
-                boolean network = !networkContext.isMissingNode() && !networkContext.isNull()
-                        || params.at("/permissions/network/enabled").asBoolean(false);
-                boolean approved = rawApproval.test(description,
-                        network ? "네트워크 권한 요청 · " + reason : reason);
-                listener.activity(activity("APPROVAL", "Codex 승인 결과", "이번 요청의 운영자 선택",
+                // A command approval can run outside the turn sandbox, so it must not restore direct network
+                // access after raw turns disable it. Only file-change approvals reach the operator.
+                boolean fileChange = method.equals("item/fileChange/requestApproval")
+                        || method.equals("applyPatchApproval");
+                if (fileChange) listener.activity(activity("APPROVAL", "Burp에서 Codex 승인 대기",
+                        "파일 변경 내용을 Burp 승인 창에서 확인하세요.", "WAITING", null));
+                boolean approved = fileChange && rawApproval.test(description, reason);
+                listener.activity(activity("APPROVAL", fileChange ? "Codex 승인 결과" : "셸 권한 상승 거부",
+                        fileChange ? "이번 요청의 운영자 선택" : "대상 HTTP는 FlowScope 도구를 사용하세요.",
                         approved ? "APPROVED" : "DECLINED", null));
                 ObjectNode response = JSON.createObjectNode();
                 response.set("id", message.get("id"));
@@ -492,14 +493,11 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 write(refusal);
                 return;
             }
-            JsonNode params = message.path("params");
-            JsonNode network = params.path("networkApprovalContext");
-            boolean networkRequest = !network.isMissingNode() && !network.isNull();
             ObjectNode response = JSON.createObjectNode();
             response.set("id", message.get("id"));
-            boolean command = method.equals("item/commandExecution/requestApproval")
-                    || method.equals("execCommandApproval");
-            response.putObject("result").put("decision", command && !networkRequest ? "acceptForSession" : "decline");
+            // Automatic Explorer also runs with networkAccess=false. Re-running an approved command outside
+            // that sandbox would let shell HTTP evade the exact-scope gateway and LLM Evidence capture.
+            response.putObject("result").put("decision", "decline");
             write(response);
         }
 
@@ -508,6 +506,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             response.set("id", message.get("id"));
             ObjectNode result = response.putObject("result");
             String tool = message.path("params").path("tool").asText("");
+            JsonNode arguments = message.path("params").path("arguments");
+            String action = switch (tool) {
+                case "flowscope_http_request" -> arguments.path("method").asText("GET") + " "
+                        + arguments.path("url").asText("");
+                case "flowscope_browser" -> arguments.path("action").asText("") + " "
+                        + arguments.path("url").asText("");
+                default -> "";
+            };
+            listener.activity(activity("TOOL", toolLabel(tool) + " 실행 중", action.trim(), "RUNNING", null));
             try {
                 JsonNode params = message.path("params");
                 if (request.rawCodex() && tool.startsWith("flowscope_evidence_")) {
@@ -516,6 +523,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                             .put("type", "inputText")
                             .put("text", projectEvidence.execute(request.runId(), request.rawWorkspace(), tool,
                                     params.path("arguments")).toString());
+                    listener.activity(activity("TOOL", toolLabel(tool) + " 완료", "", "COMPLETED", null));
                     write(response);
                     return;
                 }
@@ -533,6 +541,9 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 String gatewayResponse = callGateway(endpoint, params.path("arguments"));
                 result.put("success", true).putArray("contentItems").addObject()
                         .put("type", "inputText").put("text", gatewayResponse);
+                if (tool.startsWith("flowscope_artifact_")) {
+                    listener.activity(activity("TOOL", toolLabel(tool) + " 완료", "", "COMPLETED", null));
+                }
             } catch (Exception error) {
                 String reason = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
                 // Codex reports the failure back with no tool and no reason, so the feed used to read
@@ -639,8 +650,11 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             }
             if (!request.model().isBlank()) params.put("model", request.model());
             if (request.rawCodex()) {
-                rawShellProxy(params);
                 params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write");
+                params.put("developerInstructions", "Current FlowScope project target: " + request.target()
+                        + ". Shell commands have no network access. Send target HTTP only with "
+                        + "flowscope_http_request or flowscope_browser; these record actual responses "
+                        + "as LLM Evidence. This is a transport rule, not an automatic exploration task.");
                 var tools = params.putArray("dynamicTools");
                 if (projectEvidence != null) tools.add(evidenceListTool()).add(evidenceSearchTool()).add(evidenceReadTool());
                 if (!request.gatewayUrl().isBlank()) tools.add(httpTool()).add(rawBrowserTool())
@@ -654,16 +668,6 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
-        }
-
-        private void rawShellProxy(ObjectNode params) {
-            if (request.rawProxyPort() == 0) return;
-            String proxy = "http://127.0.0.1:" + request.rawProxyPort();
-            ObjectNode values = params.putObject("config").putObject("shell_environment_policy").putObject("set");
-            for (String name : List.of("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")) {
-                values.put(name, proxy);
-            }
-            values.put("NO_PROXY", "").put("no_proxy", "");
         }
 
         private ObjectNode turnParams() {
@@ -680,7 +684,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (request.rawCodex()) {
                 params.put("approvalPolicy", "on-request");
                 params.putObject("sandboxPolicy").put("type", "workspaceWrite")
-                        .put("networkAccess", true).putArray("writableRoots").add(workspace.toString());
+                        .put("networkAccess", false).putArray("writableRoots").add(workspace.toString());
                 return params;
             }
             params.put("approvalPolicy", "on-request");
@@ -919,7 +923,9 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             return rawCodex ? activity("SYSTEM", "Codex 대화 시작", "사용자 메시지를 처리 중입니다.", "RUNNING", null)
                     : activity("SYSTEM", "탐색 시작", "독립 Explorer turn이 시작됐습니다.", "RUNNING", null);
         }
-        // item/started says only that something began; item/completed says the same and says when.
+        if (method.equals("item/started") && item.path("type").asText("").equals("commandExecution")) {
+            return activity("TOOL", "셸 명령 실행 중", item.path("command").asText(""), "RUNNING", null);
+        }
         if (method.equals("item/completed")) {
             String type = item.path("type").asText("");
             String status = item.path("status").asText("");
@@ -928,7 +934,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             if (type.equals("commandExecution")) {
                 // Sandbox analysis never reaches the gateway, so this is its only record.
                 return activity("TOOL", rawCodex ? "Codex 셸 명령" : "응답 산출물 분석",
-                        ok ? "명령 완료" : "명령 " + status,
+                        item.path("command").asText(ok ? "명령 완료" : "명령 " + status),
                         ok ? "COMPLETED" : "FAILED", duration);
             }
             if (type.equals("dynamicToolCall")) {
