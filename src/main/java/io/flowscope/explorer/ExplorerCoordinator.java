@@ -269,7 +269,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
         snapshot = new Snapshot(Status.AUTHENTICATING, runId, request.target(), Instant.now(), null,
                 0, request.rawCodex() ? "Codex 대화를 준비하는 중입니다." : "Explorer 계정과 세션을 준비하는 중입니다.", readiness,
                 request.accountIds(),
-                request.rawCodex() || request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
+                request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
                 request.model(), request.effort());
         if (!request.userMessage().isBlank()) {
             conversationTarget = request.target();

@@ -58,8 +58,11 @@ final class ExplorerCoordinatorTest {
             coordinator.browserRecorder(recorded::add);
             coordinator.openBrowserLogin("user-a", "USER A", "USER", "https://app.example.test/");
             coordinator.completeBrowserLogin("user-a");
-            coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
-                    false, "", "", "Inspect", true, 19417, temp.resolve("raw").toString()));
+            ExplorerCoordinator.Snapshot started = coordinator.start(new ExplorerCoordinator.StartRequest(
+                    "https://app.example.test/", List.of("user-a"), false, "", "", "Inspect", true,
+                    19417, temp.resolve("raw").toString()));
+            assertFalse(started.anonymous(), "an account-bound free-chat turn must not be restored as anonymous");
+            assertEquals(List.of("user-a"), started.accountIds());
             await(() -> provider.request.get() != null);
             assertEquals(List.of("user-a"), provider.request.get().accountHandles());
             assertFalse(provider.request.get().gatewayUrl().isBlank());
