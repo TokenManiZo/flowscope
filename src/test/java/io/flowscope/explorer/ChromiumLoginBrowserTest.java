@@ -37,6 +37,24 @@ final class ChromiumLoginBrowserTest {
     }
 
     @Test
+    void fallsBackToPageNetworkCookiesWhenBurpRejectsStorageDomain() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<java.net.URI> requested = new java.util.concurrent.atomic.AtomicReference<>();
+        JsonNode cookies = ChromiumLoginBrowser.cookieResult(new ChromiumLoginBrowser.CookieReader() {
+            @Override public JsonNode storageCookies() throws java.io.IOException {
+                throw new java.io.IOException("Storage.getCookies unsupported");
+            }
+
+            @Override public JsonNode networkCookies(java.net.URI target) {
+                requested.set(target);
+                return frame("{\"cookies\":[{\"name\":\"session\",\"value\":\"abc\"}]}");
+            }
+        }, java.net.URI.create("https://app.example.test/login"));
+
+        assertEquals("session", cookies.at("/cookies/0/name").asText());
+        assertEquals(java.net.URI.create("https://app.example.test/login"), requested.get());
+    }
+
+    @Test
     void findsTheNewestBurpBrowserNextToBurpsJre(@TempDir Path burp) throws Exception {
         // macOS layout: Resources/jre.bundle/Contents/Home and Resources/app/burpbrowser/<version>/...
         Path javaHome = Files.createDirectories(burp.resolve("Resources/jre.bundle/Contents/Home"));
