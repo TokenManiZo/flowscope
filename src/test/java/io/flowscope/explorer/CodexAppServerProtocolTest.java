@@ -3,6 +3,7 @@ package io.flowscope.explorer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.io.PipedOutputStream;
 import java.io.Writer;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -63,10 +65,16 @@ final class CodexAppServerProtocolTest {
                             case "config/read" -> reply(message, "{\"config\":{\"model\":\"gpt-5.6-sol\"}}");
                             case "model/list" -> reply(message, "{\"data\":["
                                     + "{\"id\":\"gpt-6.1-sol\",\"model\":\"gpt-6.1-sol\","
-                                    + "\"displayName\":\"GPT-6.1 Sol\",\"isDefault\":true},"
+                                    + "\"displayName\":\"GPT-6.1 Sol\",\"isDefault\":true,"
+                                    + "\"defaultReasoningEffort\":\"medium\",\"supportedReasoningEfforts\":["
+                                    + "{\"reasoningEffort\":\"medium\",\"description\":\"Balanced\"},"
+                                    + "{\"reasoningEffort\":\"high\",\"description\":\"Deeper\"}]},"
                                     + "{\"id\":\"gpt-5.6-sol\",\"model\":\"gpt-5.6-sol\","
-                                    + "\"displayName\":\"GPT-5.6 Sol\",\"isDefault\":false}],\"nextCursor\":null}");
+                                    + "\"displayName\":\"GPT-5.6 Sol\",\"isDefault\":false,"
+                                    + "\"defaultReasoningEffort\":\"low\",\"supportedReasoningEfforts\":["
+                                    + "{\"reasoningEffort\":\"low\",\"description\":\"Fast\"}]}],\"nextCursor\":null}");
                             case "thread/start" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
+                            case "thread/resume" -> reply(message, "{\"thread\":{\"id\":\"t1\"}}");
                             case "thread/delete" -> reply(message, "{}");
                             case "turn/start" -> {
                                 // The provider waits for this response before it starts reading turn events.
@@ -155,6 +163,9 @@ final class CodexAppServerProtocolTest {
             assertEquals(List.of("gpt-6.1-sol", "gpt-5.6-sol"),
                     catalog.models().stream().map(ExplorerProvider.ModelOption::id).toList());
             assertTrue(catalog.models().getFirst().recommended());
+            assertEquals("medium", catalog.models().getFirst().defaultEffort());
+            assertEquals(List.of("medium", "high"), catalog.models().getFirst().efforts().stream()
+                    .map(ExplorerProvider.ReasoningOption::effort).toList());
             assertEquals(catalog, provider.models());
             assertEquals(1, launches.get(), "polling must not start another app-server process");
 
@@ -169,11 +180,80 @@ final class CodexAppServerProtocolTest {
             JsonNode thread = active.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
             assertEquals("gpt-6.1-sol", thread.path("params").path("model").asText());
             assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            assertTrue(thread.path("params").path("ephemeral").asBoolean(false),
+                    "the existing one-shot UI must not leave a persistent chat behind");
+            assertNotNull(active.awaitWritten(value -> "thread/delete".equals(value.path("method").asText())));
         }
     }
 
     private record Capture(CountDownLatch done, AtomicReference<ExplorerProvider.Result> result,
                            AtomicReference<String> failure) {}
+
+    @Test
+    void chatMessagesUseNewTurnsOnTheSamePersistedThread() throws Exception {
+        AtomicReference<FakeCodex> process = new AtomicReference<>();
+        List<String> deltas = new CopyOnWriteArrayList<>();
+        Capture first = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        Capture second = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"method\":\"item/agentMessage/delta\",\"params\":{\"delta\":\"first \"}}");
+                            self.emit("{\"method\":\"item/agentMessage/delta\",\"params\":{\"delta\":\"answer\"}}");
+                            self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{"
+                                    + "\"type\":\"agentMessage\",\"text\":\"first answer\"}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    process.set(fake);
+                    return fake;
+                }, ignored -> { })) {
+            ExplorerProvider.Request base = request();
+            provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                    base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
+                    base.prompt(), "gpt-6.1-sol", "high", "", "Find the API"), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity activity) { }
+                @Override public void assistantDelta(String delta) { deltas.add(delta); }
+                @Override public void completed(ExplorerProvider.Result value) {
+                    first.result().set(value);
+                    first.done().countDown();
+                }
+                @Override public void failed(String message) {
+                    first.failure().set(message);
+                    first.done().countDown();
+                }
+            });
+            assertTrue(first.done().await(10, TimeUnit.SECONDS));
+            assertNull(first.failure().get());
+            assertEquals("first answer", first.result().get().summary());
+            assertEquals(List.of("first ", "answer"), deltas);
+            assertEquals("t1", first.result().get().threadId());
+            FakeCodex firstProcess = process.get();
+            JsonNode started = firstProcess.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
+            assertFalse(started.path("params").path("ephemeral").asBoolean(true));
+            JsonNode firstTurn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Find the API", firstTurn.path("params").path("input").get(0).path("text").asText());
+            assertEquals("gpt-6.1-sol", firstTurn.path("params").path("model").asText());
+            assertEquals("high", firstTurn.path("params").path("effort").asText());
+            assertFalse(firstTurn.path("params").has("outputSchema"));
+
+            provider.start(new ExplorerProvider.Request("run-2", base.target(), base.exactScope(),
+                    base.accountHandles(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(),
+                    base.prompt(), "gpt-6.1-sol", "medium", "t1", "Continue with account B"), listener(second));
+            assertTrue(second.done().await(10, TimeUnit.SECONDS));
+            assertNull(second.failure().get());
+            FakeCodex secondProcess = process.get();
+            assertNotSame(firstProcess, secondProcess);
+            JsonNode resumed = secondProcess.awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
+            assertEquals("t1", resumed.path("params").path("threadId").asText());
+            assertTrue(resumed.path("params").path("dynamicTools").isArray(),
+                    "the resumed conversation must bind tools to the new gateway");
+            JsonNode nextTurn = secondProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Continue with account B", nextTurn.path("params").path("input").get(0).path("text").asText());
+            assertEquals("medium", nextTurn.path("params").path("effort").asText());
+        }
+    }
 
     private static ExplorerProvider.Listener listener(Capture capture) {
         return new ExplorerProvider.Listener() {
@@ -187,6 +267,105 @@ final class CodexAppServerProtocolTest {
                 capture.done().countDown();
             }
         };
+    }
+
+    @Test
+    void rawCodexThreadKeepsNativeToolsAndOnlyReadOnlyProjectEvidenceTools(@TempDir Path temp) throws Exception {
+        AtomicReference<FakeCodex> process = new AtomicReference<>();
+        Capture first = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        Capture second = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"text\":\"raw answer\"}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    process.set(fake);
+                    return fake;
+                }, ignored -> { }, (action, target) -> false,
+                new ProjectEvidenceReader((run, workspace) -> List.of()))) {
+            ExplorerProvider.Request base = request();
+            provider.start(new ExplorerProvider.Request(base.runId(), base.target(), base.exactScope(),
+                    List.of(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(), "", "gpt-6.1-sol", "high", "", "Inspect freely",
+                    true, 19417, temp.resolve("raw").toString()), listener(first));
+            assertTrue(first.done().await(10, TimeUnit.SECONDS));
+            assertNull(first.failure().get());
+            assertEquals("raw answer", first.result().get().summary());
+            FakeCodex firstProcess = process.get();
+            JsonNode started = firstProcess.awaitWritten(value -> "thread/start".equals(value.path("method").asText()));
+            JsonNode params = started.path("params");
+            assertFalse(params.path("ephemeral").asBoolean(true));
+            assertTrue(params.path("developerInstructions").asText().contains("https://app.example.test/"));
+            assertTrue(params.path("developerInstructions").asText().contains("flowscope_http_request"));
+            assertTrue(params.path("developerInstructions").asText().contains("If shell or Docker access fails"));
+            assertFalse(params.path("developerInstructions").asText().contains("탐색 순서"));
+            assertEquals(List.of("flowscope_evidence_list", "flowscope_evidence_search", "flowscope_evidence_read",
+                            "flowscope_http_request", "flowscope_browser", "flowscope_artifact_list",
+                            "flowscope_artifact_search", "flowscope_artifact_read", "flowscope_artifact_index",
+                            "flowscope_record_discoveries"),
+                    java.util.stream.StreamSupport.stream(params.path("dynamicTools").spliterator(), false)
+                            .map(tool -> tool.path("name").asText()).toList());
+            assertEquals("workspace-write", params.path("sandbox").asText());
+            assertEquals("on-request", params.path("approvalPolicy").asText());
+            assertEquals("http://127.0.0.1:19417", params.at("/config/shell_environment_policy/set/HTTPS_PROXY").asText());
+            assertEquals("", params.at("/config/shell_environment_policy/set/NO_PROXY").asText());
+            JsonNode turn = firstProcess.awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Inspect freely",
+                    turn.path("params").path("input").get(0).path("text").asText());
+            assertFalse(turn.path("params").has("outputSchema"));
+            assertTrue(turn.at("/params/sandboxPolicy/networkAccess").asBoolean(false));
+
+            provider.start(new ExplorerProvider.Request("raw-2", base.target(), base.exactScope(),
+                    List.of(), base.gatewayUrl(), base.discoveryUrl(), base.gatewayToken(), "", "gpt-6.1-sol", "high", "t1", "Continue",
+                    true, 19418, temp.resolve("raw").toString()), listener(second));
+            assertTrue(second.done().await(10, TimeUnit.SECONDS));
+            assertNull(second.failure().get());
+            JsonNode resumed = process.get().awaitWritten(value -> "thread/resume".equals(value.path("method").asText()));
+            assertEquals("t1", resumed.path("params").path("threadId").asText());
+            assertEquals(10, resumed.at("/params/dynamicTools").size());
+            assertEquals("http://127.0.0.1:19418", resumed.at("/params/config/shell_environment_policy/set/HTTP_PROXY").asText());
+            JsonNode nextTurn = process.get().awaitWritten(value -> "turn/start".equals(value.path("method").asText()));
+            assertEquals("Continue", nextTurn.at("/params/input/0/text").asText());
+        }
+    }
+
+    @Test
+    void rawCodexCanReadCurrentProjectEvidenceWithoutAnHttpGateway(@TempDir Path temp) throws Exception {
+        io.flowscope.core.RequestRecord record = new io.flowscope.core.RequestRecord(
+                io.flowscope.core.Source.HUMAN, "https://app.example.test:443", "GET", "/api/me", 200, "anon");
+        record.evidenceId = "ev-current";
+        record.hasResponse = true;
+        AtomicReference<JsonNode> toolResponse = new AtomicReference<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> new FakeCodex((self, turn) -> Thread.ofVirtual().start(() -> {
+                    try {
+                        self.emit("{\"id\":77,\"method\":\"item/tool/call\",\"params\":{"
+                                + "\"tool\":\"flowscope_evidence_list\",\"arguments\":{\"limit\":10}}}");
+                        toolResponse.set(self.awaitWritten(value -> value.path("id").asInt() == 77));
+                        self.emit("{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\",\"text\":\"Evidence found\"}}}");
+                        self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                    } catch (IOException | InterruptedException ignored) { }
+                })), ignored -> { }, (action, target) -> false,
+                new ProjectEvidenceReader((run, workspace) -> {
+                    assertEquals("raw-evidence", run);
+                    assertEquals(temp.resolve("raw").toString(), workspace);
+                    return List.of(record);
+                }))) {
+            provider.start(new ExplorerProvider.Request("raw-evidence", "https://app.example.test/",
+                    List.of("https://app.example.test/"), List.of(), "", "", "", "",
+                    "gpt-6.1-sol", "high", "", "Show evidence", true, 19417,
+                    temp.resolve("raw").toString()), listener(capture));
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            assertNull(capture.failure().get());
+            JsonNode response = toolResponse.get();
+            assertNotNull(response);
+            assertTrue(response.at("/result/success").asBoolean());
+            JsonNode evidence = JSON.readTree(response.at("/result/contentItems/0/text").asText());
+            assertEquals("ev-current", evidence.at("/items/0/evidence_id").asText());
+        }
     }
 
     /** Codex explains itself on stderr. Merging that into the JSONL stream and dropping it leaves no evidence. */
@@ -240,9 +419,60 @@ final class CodexAppServerProtocolTest {
 
             // The legacy name carries no "requestApproval" substring; a contains() check used to drop it.
             JsonNode legacy = codex.get().awaitWritten(value -> value.path("id").asLong() == 9002);
-            assertEquals("acceptForSession", legacy.path("result").path("decision").asText());
+            assertEquals("decline", legacy.path("result").path("decision").asText(),
+                    "automatic Explorer commands must not escape the network-disabled sandbox");
 
             assertTrue(capture.done().await(10, TimeUnit.SECONDS), "turn never finished");
+        }
+    }
+
+    @Test
+    void rawCodexCommandApprovalFollowsTheOperatorDecision(@TempDir Path temp) throws Exception {
+        AtomicReference<FakeCodex> codex = new AtomicReference<>();
+        Capture capture = new Capture(new CountDownLatch(1), new AtomicReference<>(), new AtomicReference<>());
+        List<String> approvals = new CopyOnWriteArrayList<>();
+        List<ExplorerProvider.Activity> activities = new CopyOnWriteArrayList<>();
+        try (CodexAppServerProvider provider = new CodexAppServerProvider(
+                (command, cwd, environment) -> {
+                    FakeCodex fake = new FakeCodex((self, turn) -> {
+                        try {
+                            self.emit("{\"id\":9010,\"method\":\"item/commandExecution/requestApproval\","
+                                    + "\"params\":{\"command\":\"curl https://app.example.test/\","
+                                    + "\"reason\":\"network request\"}}");
+                            self.emit("{\"id\":9011,\"method\":\"item/commandExecution/requestApproval\","
+                                    + "\"params\":{\"command\":\"curl https://outside.test/\","
+                                    + "\"networkApprovalContext\":{}}}");
+                            self.emit("{\"method\":\"turn/completed\",\"params\":{\"turn\":{\"status\":\"completed\"}}}");
+                        } catch (IOException ignored) { }
+                    });
+                    codex.set(fake);
+                    return fake;
+                }, ignored -> { }, (action, reason) -> {
+                    approvals.add(action + " | " + reason);
+                    return action.contains("https://app.example.test/");
+                })) {
+            ExplorerProvider.Request base = request();
+            provider.start(new ExplorerProvider.Request("raw-approval", base.target(), base.exactScope(),
+                    List.of(), "", "", "", "", "", "", "", "Inspect", true,
+                    19417, temp.resolve("raw").toString()), new ExplorerProvider.Listener() {
+                @Override public void activity(ExplorerProvider.Activity value) { activities.add(value); }
+                @Override public void completed(ExplorerProvider.Result value) { capture.done().countDown(); }
+                @Override public void failed(String value) {
+                    capture.failure().set(value);
+                    capture.done().countDown();
+                }
+            });
+            assertTrue(capture.done().await(10, TimeUnit.SECONDS));
+            JsonNode response = codex.get().awaitWritten(value -> value.path("id").asInt() == 9010);
+            assertEquals("accept", response.at("/result/decision").asText());
+            JsonNode network = codex.get().awaitWritten(value -> value.path("id").asInt() == 9011);
+            assertEquals("decline", network.at("/result/decision").asText());
+            assertEquals(List.of("curl https://app.example.test/ | network request",
+                    "curl https://outside.test/ | 네트워크 권한 요청 · "), approvals);
+            assertTrue(activities.stream().anyMatch(item -> item.kind().equals("APPROVAL")
+                    && item.status().equals("WAITING")));
+            assertTrue(activities.stream().noneMatch(item -> item.detail().contains("outside.test")),
+                    "command text must not be duplicated into the persisted activity feed");
         }
     }
 
@@ -271,6 +501,8 @@ final class CodexAppServerProtocolTest {
         ExplorerProvider.Activity refusal = activities.stream()
                 .filter(value -> "TOOL".equals(value.kind()) && "FAILED".equals(value.status()))
                 .findFirst().orElseThrow(() -> new AssertionError("no refusal in " + activities));
+        assertTrue(activities.stream().anyMatch(value -> "브라우저 조작 실행 중".equals(value.title())
+                && "RUNNING".equals(value.status())), "the action must be visible before the gateway returns");
         assertTrue(refusal.title().contains("브라우저 조작"), refusal.title());
         assertFalse(refusal.detail().isBlank(), "the reason must reach the operator");
     }

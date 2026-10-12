@@ -36,6 +36,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import java.util.function.BiPredicate;
 
 /** 공식 Codex app-server JSONL 프로토콜을 사용하는 구독 로그인 기반 Explorer 공급자. */
 public final class CodexAppServerProvider implements ExplorerProvider {
@@ -53,6 +54,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     private final java.util.function.Supplier<String> executable;
     /** Where Codex's own diagnostics go. Without it a turn that refuses or stalls explains itself to nobody. */
     private final Consumer<String> diagnostics;
+    private final BiPredicate<String, String> rawApproval;
+    private final ProjectEvidenceReader projectEvidence;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "flowscope-codex-app-server");
         thread.setDaemon(true);
@@ -68,21 +71,45 @@ public final class CodexAppServerProvider implements ExplorerProvider {
     public CodexAppServerProvider() { this(ignored -> { }); }
 
     public CodexAppServerProvider(Consumer<String> diagnostics) {
-        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable);
+        this(diagnostics, (action, target) -> false);
+    }
+
+    public CodexAppServerProvider(Consumer<String> diagnostics, BiPredicate<String, String> rawApproval) {
+        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable,
+                rawApproval, null);
+    }
+
+    public CodexAppServerProvider(Consumer<String> diagnostics, BiPredicate<String, String> rawApproval,
+                                  ProjectEvidenceReader projectEvidence) {
+        this(CodexAppServerProvider::launchAppServer, diagnostics, CodexAppServerProvider::resolveExecutable,
+                rawApproval, projectEvidence);
     }
 
     CodexAppServerProvider(ProcessLauncher launcher) { this(launcher, ignored -> { }); }
 
     /** An injected launcher never runs the real binary, so it must not require one to be installed (CI has none). */
     CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics) {
-        this(launcher, diagnostics, () -> "codex");
+        this(launcher, diagnostics, () -> "codex", (action, target) -> false, null);
+    }
+
+    CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
+                           BiPredicate<String, String> rawApproval) {
+        this(launcher, diagnostics, () -> "codex", rawApproval, null);
+    }
+
+    CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
+                           BiPredicate<String, String> rawApproval, ProjectEvidenceReader projectEvidence) {
+        this(launcher, diagnostics, () -> "codex", rawApproval, projectEvidence);
     }
 
     private CodexAppServerProvider(ProcessLauncher launcher, Consumer<String> diagnostics,
-                                   java.util.function.Supplier<String> executable) {
+                                   java.util.function.Supplier<String> executable,
+                                   BiPredicate<String, String> rawApproval, ProjectEvidenceReader projectEvidence) {
         this.executable = executable;
         this.launcher = launcher;
         this.diagnostics = diagnostics == null ? ignored -> { } : diagnostics;
+        this.rawApproval = rawApproval == null ? (action, target) -> false : rawApproval;
+        this.projectEvidence = projectEvidence;
     }
 
     private void diagnose(String line) {
@@ -187,7 +214,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     String id = item.path("model").asText("");
                     if (id.isBlank() || item.path("hidden").asBoolean(false)) continue;
                     String label = item.path("displayName").asText(id);
-                    found.putIfAbsent(id, new ModelOption(id, label, item.path("isDefault").asBoolean(false)));
+                    Map<String, ReasoningOption> efforts = new LinkedHashMap<>();
+                    for (JsonNode option : item.path("supportedReasoningEfforts")) {
+                        String effort = option.path("reasoningEffort").asText("");
+                        if (!effort.isBlank()) efforts.putIfAbsent(effort,
+                                new ReasoningOption(effort, option.path("description").asText("")));
+                    }
+                    found.putIfAbsent(id, new ModelOption(id, label, item.path("isDefault").asBoolean(false),
+                            item.path("defaultReasoningEffort").asText(""), List.copyOf(efforts.values())));
                 }
                 cursor = response.path("result").path("nextCursor").asText("");
                 if (cursor.isBlank()) {
@@ -246,6 +280,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private volatile String turnId = "";
         private volatile String finalMessage = "";
         private Path workspace;
+        private boolean temporaryWorkspace;
 
         private Session(Request request, Listener listener, String executable) {
             this.request = request;
@@ -255,7 +290,10 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
         private void run() {
             try {
-                workspace = Files.createTempDirectory("flowscope-explorer-");
+                temporaryWorkspace = request.rawWorkspace().isBlank();
+                workspace = temporaryWorkspace ? Files.createTempDirectory("flowscope-explorer-")
+                        : Path.of(request.rawWorkspace()).toAbsolutePath().normalize();
+                if (!temporaryWorkspace) Files.createDirectories(workspace);
                 // The model receives only the dynamic tool schema. The gateway capability stays in this
                 // Java process and is never inherited by the provider process as an environment variable.
                 process = launcher.start(List.of(executable, "app-server"), workspace, Map.of());
@@ -266,24 +304,35 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     long initializeId = send("initialize", initializeParams());
                     waitForResponse(reader, initializeId);
                     notify("initialized", JSON.createObjectNode());
-                    long threadIdRequest = send("thread/start", threadParams());
+                    long threadIdRequest = send(request.threadId().isBlank() ? "thread/start" : "thread/resume",
+                            threadParams());
                     JsonNode threadResponse = waitForResponse(reader, threadIdRequest);
                     threadId = threadResponse.path("result").path("thread").path("id").asText("");
                     if (threadId.isBlank()) throw new IOException("Codex thread ID를 받지 못했습니다.");
+                    if (!request.threadId().isBlank() && !request.threadId().equals(threadId)) {
+                        throw new IOException("재개한 Codex thread ID가 요청한 대화와 다릅니다.");
+                    }
+                    listener.threadReady(threadId);
                     long turnRequest = send("turn/start", turnParams());
                     JsonNode turnResponse = waitForResponse(reader, turnRequest);
                     turnId = turnResponse.path("result").path("turn").path("id").asText("");
                     readTurn(reader);
                     if (cancelled.get()) return;
-                    Result result = parseResult(finalMessage, threadId);
-                    deleteThread(reader);
+                    Result result = request.userMessage().isBlank()
+                            ? parseResult(finalMessage, threadId)
+                            : new Result(finalMessage, List.of(), threadId);
+                    if (request.userMessage().isBlank()) deleteThread(reader);
+                    synchronized (CodexAppServerProvider.this) {
+                        if (active == this) active = null;
+                    }
                     listener.completed(result);
                 }
             } catch (Exception error) {
-                if (!cancelled.get()) listener.failed("Codex Explorer 실패: " + safe(error.getMessage()));
+                if (!cancelled.get()) listener.failed((request.rawCodex()
+                        ? "Codex 대화 실패: " : "Codex Explorer 실패: ") + safe(error.getMessage()));
             } finally {
                 terminate(process);
-                deleteWorkspace(workspace);
+                if (temporaryWorkspace) deleteWorkspace(workspace);
                 synchronized (CodexAppServerProvider.this) {
                     if (active == this) active = null;
                 }
@@ -373,11 +422,14 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         }
 
         private void handleNotification(JsonNode message) {
+            if (message.path("method").asText("").equals("item/agentMessage/delta")) {
+                listener.assistantDelta(message.path("params").path("delta").asText(""));
+            }
             if (message.path("method").asText("").equals("item/completed")
                     && message.path("params").path("item").path("type").asText("").equals("agentMessage")) {
                 finalMessage = message.path("params").path("item").path("text").asText(finalMessage);
             }
-            Activity activity = activityFor(message);
+            Activity activity = activityFor(message, request.rawCodex());
             if (activity != null) listener.activity(activity);
         }
 
@@ -386,6 +438,36 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             String method = message.path("method").asText("");
             if (method.equals("item/tool/call")) {
                 handleDynamicTool(message);
+                return;
+            }
+            if (request.rawCodex() && (method.equals("item/permissions/requestApproval")
+                    || method.contains("requestApproval") || method.equals("applyPatchApproval")
+                    || method.equals("execCommandApproval"))) {
+                JsonNode params = message.path("params");
+                String command = params.path("command").asText("");
+                String reason = params.path("reason").asText("");
+                String description = command.isBlank() ? method : command;
+                if (description.length() > 800) description = description.substring(0, 800) + "…";
+                listener.activity(activity("APPROVAL", "Burp에서 Codex 승인 대기",
+                        "명령과 사유는 Burp 승인 창에서 확인하세요.", "WAITING", null));
+                JsonNode networkContext = params.path("networkApprovalContext");
+                boolean network = !networkContext.isMissingNode() && !networkContext.isNull()
+                        || params.at("/permissions/network/enabled").asBoolean(false);
+                boolean approved = rawApproval.test(description,
+                        network ? "네트워크 권한 요청 · " + reason : reason);
+                listener.activity(activity("APPROVAL", "Codex 승인 결과", "이번 요청의 운영자 선택",
+                        approved ? "APPROVED" : "DECLINED", null));
+                ObjectNode response = JSON.createObjectNode();
+                response.set("id", message.get("id"));
+                ObjectNode result = response.putObject("result");
+                if (method.equals("item/permissions/requestApproval")) {
+                    result.set("permissions", approved ? params.path("permissions").deepCopy()
+                            : JSON.createObjectNode());
+                    result.put("scope", "turn");
+                } else {
+                    result.put("decision", approved ? "accept" : "decline");
+                }
+                write(response);
                 return;
             }
             if (method.equals("item/permissions/requestApproval")) {
@@ -410,14 +492,11 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 write(refusal);
                 return;
             }
-            JsonNode params = message.path("params");
-            JsonNode network = params.path("networkApprovalContext");
-            boolean networkRequest = !network.isMissingNode() && !network.isNull();
             ObjectNode response = JSON.createObjectNode();
             response.set("id", message.get("id"));
-            boolean command = method.equals("item/commandExecution/requestApproval")
-                    || method.equals("execCommandApproval");
-            response.putObject("result").put("decision", command && !networkRequest ? "acceptForSession" : "decline");
+            // Automatic Explorer also runs with networkAccess=false. Re-running an approved command outside
+            // that sandbox would let shell HTTP evade the exact-scope gateway and LLM Evidence capture.
+            response.putObject("result").put("decision", "decline");
             write(response);
         }
 
@@ -426,8 +505,27 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             response.set("id", message.get("id"));
             ObjectNode result = response.putObject("result");
             String tool = message.path("params").path("tool").asText("");
+            JsonNode arguments = message.path("params").path("arguments");
+            String action = switch (tool) {
+                case "flowscope_http_request" -> arguments.path("method").asText("GET") + " "
+                        + arguments.path("url").asText("");
+                case "flowscope_browser" -> arguments.path("action").asText("") + " "
+                        + arguments.path("url").asText("");
+                default -> "";
+            };
+            listener.activity(activity("TOOL", toolLabel(tool) + " 실행 중", action.trim(), "RUNNING", null));
             try {
                 JsonNode params = message.path("params");
+                if (request.rawCodex() && tool.startsWith("flowscope_evidence_")) {
+                    if (projectEvidence == null) throw new IllegalStateException("현재 프로젝트 Evidence 조회가 연결되지 않았습니다.");
+                    result.put("success", true).putArray("contentItems").addObject()
+                            .put("type", "inputText")
+                            .put("text", projectEvidence.execute(request.runId(), request.rawWorkspace(), tool,
+                                    params.path("arguments")).toString());
+                    listener.activity(activity("TOOL", toolLabel(tool) + " 완료", "", "COMPLETED", null));
+                    write(response);
+                    return;
+                }
                 String artifactBase = request.gatewayUrl().replaceFirst("/request$", "/artifacts");
                 String endpoint = switch (tool) {
                     case "flowscope_http_request" -> request.gatewayUrl();
@@ -442,6 +540,9 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 String gatewayResponse = callGateway(endpoint, params.path("arguments"));
                 result.put("success", true).putArray("contentItems").addObject()
                         .put("type", "inputText").put("text", gatewayResponse);
+                if (tool.startsWith("flowscope_artifact_")) {
+                    listener.activity(activity("TOOL", toolLabel(tool) + " 완료", "", "COMPLETED", null));
+                }
             } catch (Exception error) {
                 String reason = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
                 // Codex reports the failure back with no tool and no reason, so the feed used to read
@@ -473,7 +574,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         @Override public void steer(String message) {
             String safe = TextLimits.truncate(message == null ? "" : message.trim(), 4_000);
             if (safe.isBlank() || threadId.isBlank() || turnId.isBlank() || cancelled.get()) {
-                throw new IllegalStateException("진행 중인 Explorer turn이 없습니다.");
+                throw new IllegalStateException(request.rawCodex()
+                        ? "진행 중인 Codex 대화 turn이 없습니다." : "진행 중인 Explorer turn이 없습니다.");
             }
             ObjectNode params = JSON.createObjectNode();
             params.put("threadId", threadId);
@@ -499,7 +601,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             try {
                 long id = send("thread/delete", JSON.createObjectNode().put("threadId", threadId));
                 waitForResponse(reader, id);
-            } catch (Exception ignored) { /* process-local history cleanup failure is reported as a limitation elsewhere */ }
+            } catch (Exception ignored) { /* one-shot cleanup must not erase the completed result */ }
         }
 
         private long send(String method, JsonNode params) {
@@ -538,26 +640,74 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         }
 
         private ObjectNode threadParams() {
-            ObjectNode params = JSON.createObjectNode().put("cwd", workspace.toString())
-                    .put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
-                    .put("serviceName", "flowscope_explorer").put("ephemeral", true)
-                    .put("developerInstructions", request.prompt());
+            ObjectNode params = JSON.createObjectNode().put("cwd", workspace.toString());
+            if (request.threadId().isBlank()) {
+                params.put("serviceName", request.rawCodex() ? "flowscope_raw" : "flowscope_explorer")
+                        .put("ephemeral", !request.rawCodex() && request.userMessage().isBlank());
+            } else {
+                params.put("threadId", request.threadId());
+            }
             if (!request.model().isBlank()) params.put("model", request.model());
+            if (request.rawCodex()) {
+                rawShellProxy(params);
+                params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write");
+                params.put("developerInstructions", "Current FlowScope project target: " + request.target()
+                        + ". This is a free Codex conversation, not an automatic exploration task. "
+                        + "Use flowscope_http_request or flowscope_browser for target HTTP when you need "
+                        + "FlowScope LLM Evidence. Shell HTTP clients have a run-scoped Burp proxy by default; "
+                        + "when this turn selected one FlowScope account, that proxy replaces shell Cookie and "
+                        + "Authorization with the account's prepared session and records the same account ID. "
+                        + "Do not mint or replace target credentials in an account-bound turn. "
+                        + "Only responses actually received by FlowScope are evidence. "
+                        + "If shell or Docker access fails, use the FlowScope HTTP/browser tools before "
+                        + "claiming reconnaissance is impossible. Docker is not required for HTTP reconnaissance.");
+                var tools = params.putArray("dynamicTools");
+                if (projectEvidence != null) tools.add(evidenceListTool()).add(evidenceSearchTool()).add(evidenceReadTool());
+                if (!request.gatewayUrl().isBlank()) tools.add(httpTool()).add(rawBrowserTool())
+                        .add(artifactListTool()).add(artifactSearchTool()).add(artifactReadTool())
+                        .add(artifactIndexTool()).add(discoveryTool());
+                return params;
+            }
+            params.put("approvalPolicy", "on-request").put("sandbox", "workspace-write")
+                    .put("developerInstructions", request.prompt());
             params.putArray("dynamicTools").add(httpTool()).add(browserTool()).add(artifactListTool())
                     .add(artifactSearchTool()).add(artifactReadTool()).add(artifactIndexTool())
                     .add(discoveryTool());
             return params;
         }
 
+        private void rawShellProxy(ObjectNode params) {
+            if (request.rawProxyPort() == 0) return;
+            String proxy = "http://127.0.0.1:" + request.rawProxyPort();
+            ObjectNode values = params.putObject("config").putObject("shell_environment_policy").putObject("set");
+            for (String name : List.of("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")) {
+                values.put(name, proxy);
+            }
+            values.put("NO_PROXY", "").put("no_proxy", "");
+        }
+
         private ObjectNode turnParams() {
             ObjectNode params = JSON.createObjectNode();
-            params.put("threadId", threadId).put("cwd", workspace.toString()).put("approvalPolicy", "on-request");
+            params.put("threadId", threadId).put("cwd", workspace.toString());
+            if (!request.model().isBlank()) params.put("model", request.model());
+            if (!request.effort().isBlank()) params.put("effort", request.effort());
             params.putArray("input").addObject().put("type", "text")
-                    .put("text", "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요.");
+                    .put("text", request.rawCodex()
+                            ? request.userMessage()
+                            : request.userMessage().isBlank()
+                            ? "지정된 FlowScope Explorer 탐색을 지금 시작하고 결과를 스키마에 맞춰 보고하세요."
+                            : request.userMessage());
+            if (request.rawCodex()) {
+                params.put("approvalPolicy", "on-request");
+                params.putObject("sandboxPolicy").put("type", "workspaceWrite")
+                        .put("networkAccess", true).putArray("writableRoots").add(workspace.toString());
+                return params;
+            }
+            params.put("approvalPolicy", "on-request");
             ObjectNode sandbox = params.putObject("sandboxPolicy").put("type", "workspaceWrite")
                     .put("networkAccess", false);
             sandbox.putArray("writableRoots").add(workspace.toString());
-            params.set("outputSchema", outputSchema());
+            if (request.userMessage().isBlank()) params.set("outputSchema", outputSchema());
             return params;
         }
 
@@ -569,8 +719,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             ObjectNode properties = schema.putObject("properties");
             properties.putObject("account").put("type", "string")
                     .put("description", "Opaque account handle, or an empty string for anonymous.");
-            properties.putObject("method").put("type", "string").putArray("enum")
-                    .add("GET").add("HEAD").add("OPTIONS").add("POST");
+            properties.putObject("method").put("type", "string")
+                    .put("description", "HTTP method chosen for this exact-scope request, such as GET, POST, PUT, PATCH or DELETE.");
             properties.putObject("url").put("type", "string");
             properties.putObject("headers").put("type", "object").put("additionalProperties", true);
             properties.putObject("body").put("type", "string");
@@ -595,6 +745,15 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             properties.putObject("text").put("type", "string")
                     .put("description", "Text to type. Never a password: the operator has already logged in.");
             schema.putArray("required").add("account").add("action").add("url").add("ref").add("text");
+            return tool;
+        }
+
+        private ObjectNode rawBrowserTool() {
+            ObjectNode tool = browserTool();
+            tool.put("description", "Drive a FlowScope login window only after the operator completes its browser login. "
+                    + "Available account handles for this turn: "
+                    + (request.accountHandles().isEmpty() ? "none" : String.join(", ", request.accountHandles()))
+                    + ". Its in-scope HTTP responses are stored as LLM Evidence; no automatic exploration plan is imposed.");
             return tool;
         }
 
@@ -652,6 +811,43 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                     .put("description", description);
         }
 
+        private ObjectNode evidenceListTool() {
+            ObjectNode tool = dynamicTool("flowscope_evidence_list",
+                    "List stored HTTP Evidence in the current FlowScope project, newest first, across HUMAN, SCANNER, and LLM. Returns IDs and metadata only, not raw content. If asked whether you can see FlowScope evidence, call this before answering; an empty working folder says nothing about project Evidence.");
+            ObjectNode fields = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false).putObject("properties");
+            fields.putObject("offset").put("type", "integer").put("minimum", 0);
+            fields.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
+            return tool;
+        }
+
+        private ObjectNode evidenceSearchTool() {
+            ObjectNode tool = dynamicTool("flowscope_evidence_search",
+                    "Search current-project HTTP Evidence metadata by URL, path, method, status, source, identity, operation, resource, run ID, or Evidence ID. Search does not inspect raw request or response bodies; read a matching ID for its content.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode fields = schema.putObject("properties");
+            fields.putObject("query").put("type", "string").put("minLength", 1).put("maxLength", 256);
+            fields.putObject("offset").put("type", "integer").put("minimum", 0);
+            fields.putObject("limit").put("type", "integer").put("minimum", 1).put("maximum", 100);
+            schema.putArray("required").add("query");
+            return tool;
+        }
+
+        private ObjectNode evidenceReadTool() {
+            ObjectNode tool = dynamicTool("flowscope_evidence_read",
+                    "Read a bounded part of one stored HTTP request or response by Evidence ID. Returns original unmasked text when retained, otherwise a clearly marked partial preview. Continue with next_char_offset until end_of_text; do not assume a preview is complete.");
+            ObjectNode schema = tool.putObject("inputSchema").put("type", "object")
+                    .put("additionalProperties", false);
+            ObjectNode fields = schema.putObject("properties");
+            fields.putObject("evidence_id").put("type", "string");
+            fields.putObject("part").put("type", "string").putArray("enum").add("request").add("response");
+            fields.putObject("char_offset").put("type", "integer").put("minimum", 0);
+            fields.putObject("max_chars").put("type", "integer").put("minimum", 1).put("maximum", 65536);
+            schema.putArray("required").add("evidence_id").add("part");
+            return tool;
+        }
+
         private ObjectNode discoveryTool() {
             ObjectNode tool = JSON.createObjectNode().put("type", "function")
                     .put("name", "flowscope_record_discoveries")
@@ -683,7 +879,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             parameterProperties.putObject("location").put("type", "string").putArray("enum")
                     .add("PATH").add("QUERY").add("JSON_BODY").add("FORM_BODY")
                     .add("MULTIPART_BODY").add("HEADER").add("GRAPHQL_VARIABLE");
-            parameterProperties.putObject("field_path").put("type", "string");
+            parameterProperties.putObject("field_path").put("type", "string")
+                    .put("description", "PATH: URL placeholder name such as orderId; JSON/GraphQL: pointer such as /criteria/status; QUERY/HEADER: field name. Never send parameter values.");
             parameterProperties.putObject("display_name").put("type", "string");
             parameterProperties.putObject("requirement").put("type", "string").putArray("enum")
                     .add("REQUIRED").add("OPTIONAL").add("UNKNOWN");
@@ -732,12 +929,19 @@ public final class CodexAppServerProvider implements ExplorerProvider {
      * {@code ACTIVITY_LIMIT}. Only what nothing else records survives here.
      */
     static Activity activityFor(JsonNode message) {
+        return activityFor(message, false);
+    }
+
+    static Activity activityFor(JsonNode message, boolean rawCodex) {
         String method = message.path("method").asText("");
         JsonNode item = message.path("params").path("item");
         if (method.equals("turn/started")) {
-            return activity("SYSTEM", "탐색 시작", "독립 Explorer turn이 시작됐습니다.", "RUNNING", null);
+            return rawCodex ? activity("SYSTEM", "Codex 대화 시작", "사용자 메시지를 처리 중입니다.", "RUNNING", null)
+                    : activity("SYSTEM", "탐색 시작", "독립 Explorer turn이 시작됐습니다.", "RUNNING", null);
         }
-        // item/started says only that something began; item/completed says the same and says when.
+        if (method.equals("item/started") && item.path("type").asText("").equals("commandExecution")) {
+            return activity("TOOL", "셸 명령 실행 중", item.path("command").asText(""), "RUNNING", null);
+        }
         if (method.equals("item/completed")) {
             String type = item.path("type").asText("");
             String status = item.path("status").asText("");
@@ -745,7 +949,8 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             Long duration = item.has("durationMs") ? item.path("durationMs").asLong() : null;
             if (type.equals("commandExecution")) {
                 // Sandbox analysis never reaches the gateway, so this is its only record.
-                return activity("TOOL", "응답 산출물 분석", ok ? "명령 완료" : "명령 " + status,
+                return activity("TOOL", rawCodex ? "Codex 셸 명령" : "응답 산출물 분석",
+                        item.path("command").asText(ok ? "명령 완료" : "명령 " + status),
                         ok ? "COMPLETED" : "FAILED", duration);
             }
             if (type.equals("dynamicToolCall")) {
@@ -755,6 +960,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                 return null;
             }
             if (type.equals("agentMessage")) {
+                if (rawCodex) return null; // The chat transcript already shows the answer.
                 return activity("MODEL", "Explorer 모델 메모 (비집계)",
                         displaySummary(item.path("text").asText("")), "COMPLETED", null);
             }
@@ -801,6 +1007,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
             case "flowscope_http_request" -> "HTTP 요청";
             case "flowscope_browser" -> "브라우저 조작";
             case "flowscope_record_discoveries" -> "발견 저장";
+            case "flowscope_evidence_list", "flowscope_evidence_search", "flowscope_evidence_read" -> "프로젝트 요청 기록 조회";
             case "flowscope_artifact_list", "flowscope_artifact_search",
                  "flowscope_artifact_read", "flowscope_artifact_index" -> "산출물 분석";
             default -> tool.isBlank() ? "FlowScope 도구" : tool;

@@ -3,10 +3,16 @@ package io.flowscope.burp;
 import io.flowscope.core.AnalysisConfig;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import io.flowscope.integration.ProjectStore;
 import io.flowscope.integration.SqliteProjectStore;
+import io.flowscope.explorer.ExplorerAccountVault;
+import io.flowscope.explorer.ExplorerChatState;
+import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.explorer.ExplorerProvider;
+import io.flowscope.explorer.ProjectEvidenceReader;
 import burp.api.montoya.MontoyaApi;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -171,6 +177,39 @@ class FlowScopeExtensionLifecycleTest {
     }
 
     @Test
+    void lateLlmRecordCannotEnterTheNextProjectOrAStoppedRun() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        RunContextRegistry contexts = (RunContextRegistry) field("runContexts").get(extension);
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        AtomicLong epoch = (AtomicLong) field("datasetEpoch").get(extension);
+        RequestRecord late = new RequestRecord(Source.LLM, "https://api.example.test:443",
+                "GET", "/late", 200, "anon");
+        late.runId = "llm-old";
+        AtomicBoolean retained = new AtomicBoolean(false);
+        try {
+            contexts.activate(Source.LLM, new RunContextRegistry.Context(
+                    io.flowscope.core.SourceDetail.LLM_EXPLORER,
+                    io.flowscope.core.Orchestrator.LLM, io.flowscope.core.ToolKind.CODEX,
+                    io.flowscope.core.RunPhase.EXPLORATION, "llm-old"));
+            contexts.abort(Source.LLM, "llm-old");
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendControlledLlmRecord(late, epoch.get(), () -> retained.set(true)));
+            contexts.activate(Source.LLM, new RunContextRegistry.Context(
+                    io.flowscope.core.SourceDetail.LLM_EXPLORER,
+                    io.flowscope.core.Orchestrator.LLM, io.flowscope.core.ToolKind.CODEX,
+                    io.flowscope.core.RunPhase.EXPLORATION, "llm-new"));
+            assertThrows(FlowScopeExtension.DatasetReplacedException.class,
+                    () -> extension.appendControlledLlmRecord(late, epoch.getAndIncrement(), () -> retained.set(true)));
+            assertTrue(records.isEmpty());
+            assertTrue(!retained.get());
+        } finally {
+            contexts.abort(Source.LLM, "llm-new");
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
+        }
+    }
+
+    @Test
     void replayResponseIsNotRecordedIntoAProjectOpenedDuringTheSend() throws Exception {
         FlowScopeExtension extension = new FlowScopeExtension();
         @SuppressWarnings("unchecked")
@@ -327,6 +366,98 @@ class FlowScopeExtensionLifecycleTest {
                     .account("acct-candidate").orElseThrow().label());
         } finally {
             worker.shutdownNow();
+        }
+    }
+
+    @Test
+    void openingAProjectRestoresItsChatWithoutRestoringLoginCredentials() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        field("api").set(extension, loggingApi());
+        ScheduledExecutorService worker = (ScheduledExecutorService) field("worker").get(extension);
+        ExplorerChatState chat = new ExplorerChatState("thread-local", "https://api.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Find APIs", "old-run", "2026-10-10T00:00:00Z")));
+        ExplorerChatState raw = new ExplorerChatState("thread-raw", "https://api.example.test/",
+                List.of(new ExplorerChatState.Message("user", "Hi", "raw-run", "2026-10-10T00:01:00Z")),
+                "gpt-6.1-sol", "high", true, 1);
+        ProjectStore.ProjectContext context = new ProjectStore.ProjectContext("Chat project",
+                List.of("https://api.example.test"), Instant.EPOCH, chat, raw);
+        Path database = temp.resolve("chat-project.flowscope.db");
+        new SqliteProjectStore(new ProjectStore()).save(database, List.of(), new AnalysisConfig(),
+                List.of(), List.of(), Map.of(), List.of(), List.of(), context);
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        ExplorerProvider provider = new ExplorerProvider() {
+            @Override public String readiness() { return "READY"; }
+            @Override public Handle start(Request request, Listener listener) { throw new AssertionError("no model turn"); }
+            @Override public void close() {}
+        };
+        try (ExplorerCoordinator explorer = new ExplorerCoordinator(vault,
+                request -> { throw new AssertionError("no HTTP"); }, provider,
+                new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {});
+             ExplorerCoordinator rawChat = new ExplorerCoordinator(new ExplorerAccountVault(),
+                request -> { throw new AssertionError("no HTTP"); }, new ExplorerProvider() {
+                    @Override public String readiness() { return "READY"; }
+                    @Override public Handle start(Request request, Listener listener) { throw new AssertionError("no model turn"); }
+                    @Override public void close() {}
+                }, new io.flowscope.core.RunContextRegistry(), value -> value.startsWith("https://api.example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            field("explorer").set(extension, explorer);
+            field("rawChat").set(extension, rawChat);
+            invoke(extension, "loadProjectFile", new Class<?>[]{java.io.File.class}, database.toFile());
+            worker.submit(() -> {}).get(5, TimeUnit.SECONDS);
+            assertEquals(chat, explorer.chatState());
+            assertEquals(raw, rawChat.chatState());
+            assertTrue(explorer.accounts().isEmpty());
+        } finally { worker.shutdownNow(); }
+    }
+
+    @Test
+    void rawChatCanReadAResponseBeforeTheDelayedAnalysisPublishes() throws Exception {
+        FlowScopeExtension extension = new FlowScopeExtension();
+        Path database = temp.resolve("active.flowscope.db");
+        String runId = "llm-raw-current";
+        field("activeProjectDatabase").set(extension, database);
+        field("rawProxyRunId").set(extension, runId);
+        RequestRecord published = new RequestRecord(Source.HUMAN, "https://api.example.test:443",
+                "GET", "/api/previous", 200, "anon");
+        published.hasResponse = true;
+        RequestRecord pending = new RequestRecord(Source.LLM, "https://api.example.test:443",
+                "GET", "/api/new", 200, "anon");
+        pending.hasResponse = true;
+        pending.runId = runId;
+        pending.respText = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"found\":true}";
+        @SuppressWarnings("unchecked")
+        List<RequestRecord> records = (List<RequestRecord>) field("records").get(extension);
+        synchronized (records) {
+            records.add(published);
+            records.add(pending);
+        }
+        field("latest").set(extension, Pipeline.runIsolated(List.of(published), new AnalysisConfig()));
+        Method digest = FlowScopeExtension.class.getDeclaredMethod("shortDigest", String.class);
+        digest.setAccessible(true);
+        String workspace = database.getParent().resolve("codex-raw-" + digest.invoke(null, database.toString()))
+                .toString();
+        Method read = FlowScopeExtension.class.getDeclaredMethod("rawEvidenceForRun", String.class, String.class);
+        read.setAccessible(true);
+        try {
+            @SuppressWarnings("unchecked")
+            List<RequestRecord> visible = (List<RequestRecord>) read.invoke(extension, runId, workspace);
+            assertEquals(List.of("/api/previous", "/api/new"), visible.stream().map(record -> record.path).toList());
+            assertEquals(Pipeline.runIsolated(List.of(published, pending), new AnalysisConfig())
+                    .records.getLast().evidenceId, visible.getLast().evidenceId,
+                    "the pending ID must remain the same after publication");
+            ProjectEvidenceReader reader = new ProjectEvidenceReader((ignoredRun, ignoredWorkspace) -> visible);
+            var arguments = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+            assertEquals(2, reader.execute(runId, workspace, "flowscope_evidence_list", arguments)
+                    .path("total").asInt());
+            arguments.put("evidence_id", visible.getLast().evidenceId).put("part", "response");
+            assertTrue(reader.execute(runId, workspace, "flowscope_evidence_read", arguments)
+                    .path("text").asText().contains("{\"found\":true}"));
+            InvocationTargetException wrongRun = assertThrows(InvocationTargetException.class,
+                    () -> read.invoke(extension, "llm-raw-other", workspace));
+            assertInstanceOf(IllegalStateException.class, wrongRun.getCause());
+        } finally {
+            ((ScheduledExecutorService) field("worker").get(extension)).shutdownNow();
         }
     }
 

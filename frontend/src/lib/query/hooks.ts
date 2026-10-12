@@ -25,12 +25,18 @@ import {
   startScannerRun,
   unbindSession,
   getExplorerRun,
+  getCodexChat,
   getExplorerModels,
   startExplorerRun,
   controlExplorerRun,
   steerExplorerRun,
+  startCodexChat,
+  controlCodexChat,
+  steerCodexChat,
   openExplorerBrowserLogin,
   completeExplorerBrowserLogin,
+  openCodexChatBrowserLogin,
+  completeCodexChatBrowserLogin,
   deleteExplorerAccount,
   saveZapAccount,
   deleteZapAccount,
@@ -56,6 +62,7 @@ export const queryKeys = {
   zapStatus: ["zap-status"] as const,
   scannerRun: ["scanner-run"] as const,
   explorerRun: ["explorer-run"] as const,
+  codexChat: ["codex-chat"] as const,
   explorerModels: ["explorer-models"] as const,
   projects: ["projects"] as const,
   llmFindings: ["llm-findings"] as const,
@@ -124,9 +131,14 @@ export function useScannerRunQuery() {
 export function useExplorerRunQuery() {
   return useQuery({ queryKey: queryKeys.explorerRun, queryFn: ({ signal }) => getExplorerRun(signal), ...pollingOptions })
 }
+export function useCodexChatQuery(enabled: boolean) {
+  return useQuery({ queryKey: queryKeys.codexChat, queryFn: ({ signal }) => getCodexChat(signal),
+    enabled, ...pollingOptions })
+}
 export function useExplorerModelsQuery(enabled: boolean) {
   return useQuery({ queryKey: queryKeys.explorerModels, queryFn: ({ signal }) => getExplorerModels(signal),
-    enabled, staleTime: 60_000, retry: false, refetchOnWindowFocus: false })
+    enabled, staleTime: 60_000, refetchInterval: 5 * 60_000, refetchIntervalInBackground: false,
+    retry: false, refetchOnWindowFocus: true })
 }
 
 function useInvalidatingMutation<TData, TVariables>(
@@ -142,7 +154,7 @@ function useInvalidatingMutation<TData, TVariables>(
 }
 
 const projectInvalidations = [queryKeys.projects, queryKeys.snapshot, queryKeys.humanRun,
-  queryKeys.scannerRun, queryKeys.explorerRun] as const
+  queryKeys.scannerRun, queryKeys.explorerRun, queryKeys.codexChat] as const
 export function useStartProjectMutation() { return useInvalidatingMutation(startProject, projectInvalidations) }
 export function useUpdateProjectMutation() { return useInvalidatingMutation(updateProject, projectInvalidations) }
 export function useOpenProjectMutation() { return useInvalidatingMutation(openProject, projectInvalidations) }
@@ -166,10 +178,15 @@ export function useZapAccountSaveMutation() { return useInvalidatingMutation(sav
 export function useZapAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteZapAccount(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useZapSessionRefreshMutation() { return useInvalidatingMutation((id: string) => refreshZapSession(id), [queryKeys.scannerRun, queryKeys.snapshot]) }
 export function useExplorerStartMutation() { return useInvalidatingMutation(startExplorerRun, [queryKeys.explorerRun, queryKeys.snapshot]) }
-export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useExplorerControlMutation() { return useInvalidatingMutation((action: "cancel" | "clear" | "new-chat" | "recheck") => controlExplorerRun(action), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useExplorerSteerMutation() { return useInvalidatingMutation((message: string) => steerExplorerRun(message), [queryKeys.explorerRun]) }
+export function useCodexChatStartMutation() { return useInvalidatingMutation(startCodexChat, [queryKeys.codexChat, queryKeys.snapshot]) }
+export function useCodexChatControlMutation() { return useInvalidatingMutation((action: "cancel" | "new-chat" | "recheck") => controlCodexChat(action), [queryKeys.codexChat, queryKeys.snapshot]) }
+export function useCodexChatSteerMutation() { return useInvalidatingMutation((message: string) => steerCodexChat(message), [queryKeys.codexChat]) }
 export function useExplorerBrowserLoginMutation() { return useInvalidatingMutation(({ id, url }: { id: string; url: string }) => openExplorerBrowserLogin(id, url), [queryKeys.explorerRun]) }
 export function useExplorerBrowserCompleteMutation() { return useInvalidatingMutation((id: string) => completeExplorerBrowserLogin(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
+export function useCodexChatBrowserLoginMutation() { return useInvalidatingMutation(({ id, url }: { id: string; url: string }) => openCodexChatBrowserLogin(id, url), [queryKeys.codexChat]) }
+export function useCodexChatBrowserCompleteMutation() { return useInvalidatingMutation((id: string) => completeCodexChatBrowserLogin(id), [queryKeys.codexChat, queryKeys.snapshot]) }
 export function useExplorerAccountDeleteMutation() { return useInvalidatingMutation((id: string) => deleteExplorerAccount(id), [queryKeys.explorerRun, queryKeys.snapshot]) }
 export function useRoleMutation() { return useInvalidatingMutation(({ identity, role }: { identity: string; role: string }) => saveRole(identity, role), [queryKeys.snapshot]) }
 export function useRequirementMutation() { return useInvalidatingMutation(({ operation, role }: { operation: string; role: string }) => saveRequirement(operation, role), [queryKeys.snapshot]) }

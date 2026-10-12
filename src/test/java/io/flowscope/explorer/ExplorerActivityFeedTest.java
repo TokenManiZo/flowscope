@@ -19,14 +19,24 @@ final class ExplorerActivityFeedTest {
     }
 
     @Test
-    void toolCallStartAndSuccessAreNotActivities() {
+    void uninformativeToolStartAndSuccessAreNotActivities() {
         assertNull(CodexAppServerProvider.activityFor(frame(
                 "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"dynamicToolCall\"}}}")));
         assertNull(CodexAppServerProvider.activityFor(frame(
-                "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\"}}}")));
-        assertNull(CodexAppServerProvider.activityFor(frame(
                 "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"dynamicToolCall\","
                         + "\"status\":\"completed\",\"durationMs\":4}}}")));
+    }
+
+    @Test
+    void commandStartReportsTheActualShellActionBeforeItFinishes() {
+        ExplorerProvider.Activity started = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"item/started\",\"params\":{\"item\":{\"type\":\"commandExecution\","
+                        + "\"command\":\"curl -I https://app.example.test/api/items\"}}}"), true);
+        assertNotNull(started);
+        assertEquals("TOOL", started.kind());
+        assertEquals("셸 명령 실행 중", started.title());
+        assertEquals("curl -I https://app.example.test/api/items", started.detail());
+        assertEquals("RUNNING", started.status());
     }
 
     /**
@@ -62,6 +72,20 @@ final class ExplorerActivityFeedTest {
                 "{\"method\":\"warning\",\"params\":{\"message\":\"hook timeout\"}}")).kind());
         assertEquals("ERROR", CodexAppServerProvider.activityFor(frame(
                 "{\"method\":\"error\",\"params\":{\"error\":{\"message\":\"boom\"}}}")).kind());
+    }
+
+    @Test
+    void rawChatDoesNotDuplicateAssistantTextOrUseExplorerLabels() {
+        ExplorerProvider.Activity started = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"turn/started\",\"params\":{}}"), true);
+        assertEquals("Codex 대화 시작", started.title());
+        assertNull(CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"agentMessage\","
+                        + "\"text\":\"안녕하세요\"}}}"), true));
+        ExplorerProvider.Activity shell = CodexAppServerProvider.activityFor(frame(
+                "{\"method\":\"item/completed\",\"params\":{\"item\":{\"type\":\"commandExecution\","
+                        + "\"status\":\"completed\"}}}"), true);
+        assertEquals("Codex 셸 명령", shell.title());
     }
 
     @Test

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, Play, RefreshCw, Send } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { ArrowLeft, ChevronDown, CircleHelp, CircleStop, ExternalLink, LogIn, MessageSquare, Play, RefreshCw, Send } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -7,13 +7,19 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { HttpStatusBadge, MethodBadge } from "@/components/TrafficBadges"
 import { useExplorerDisplay } from "./useExplorerDisplay"
-import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { withEvidenceOrdinals, withoutUnnumberedEvidence } from "@/lib/display/operationLabel"
 import { runStatusLabel } from "@/lib/display/runStatus"
 import {
   useExplorerBrowserCompleteMutation,
   useExplorerBrowserLoginMutation,
+  useCodexChatControlMutation,
+  useCodexChatQuery,
+  useCodexChatStartMutation,
+  useCodexChatSteerMutation,
+  useCodexChatBrowserLoginMutation,
+  useCodexChatBrowserCompleteMutation,
   useExplorerControlMutation,
   useExplorerModelsQuery,
   useExplorerRunQuery,
@@ -30,6 +36,13 @@ function formatElapsed(value: number): string {
   const seconds = Math.max(0, Math.floor(value / 1_000))
   const minutes = Math.floor(seconds / 60)
   return `${minutes.toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`
+}
+
+function llmStatus(status: string, raw: boolean): string {
+  if (!raw) return runStatusLabel(status)
+  if (status === "COMPLETED") return "답변 완료"
+  if (status === "COMPLETED_WITH_LIMITATIONS") return "답변 완료 (수집 제한)"
+  return runStatusLabel(status)
 }
 
 function message(error: unknown): string {
@@ -62,55 +75,120 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   /** 대상 서비스의 등록 계정. */
   accounts?: readonly { id: string; label: string }[]
 }) {
-  const query = useExplorerRunQuery()
-  const start = useExplorerStartMutation()
-  const control = useExplorerControlMutation()
-  const steer = useExplorerSteerMutation()
+  const [selectedView, setSelectedView] = useState<"auto" | "raw" | null>(null)
+  const autoQuery = useExplorerRunQuery()
+  const rawQuery = useCodexChatQuery(true)
+  const autoStart = useExplorerStartMutation()
+  const rawStart = useCodexChatStartMutation()
+  const autoControl = useExplorerControlMutation()
+  const rawControl = useCodexChatControlMutation()
+  const autoSteer = useExplorerSteerMutation()
+  const rawSteer = useCodexChatSteerMutation()
   const openLogin = useExplorerBrowserLoginMutation()
   const completeLogin = useExplorerBrowserCompleteMutation()
+  const openRawLogin = useCodexChatBrowserLoginMutation()
+  const completeRawLogin = useCodexChatBrowserCompleteMutation()
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<string[] | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [rawAnonymous, setRawAnonymous] = useState<boolean | null>(null)
+  const [rawSelected, setRawSelected] = useState<string[] | null>(null)
+  const [autoSelectedModel, setAutoSelectedModel] = useState<string | null>(null)
+  const [rawSelectedModel, setRawSelectedModel] = useState<string | null>(null)
+  const [autoSelectedEffort, setAutoSelectedEffort] = useState<string | null>(null)
+  const [rawSelectedEffort, setRawSelectedEffort] = useState<string | null>(null)
   const [operatorMessage, setOperatorMessage] = useState("")
+  const [chatOpen, setChatOpen] = useState(false)
+  const composer = useRef<HTMLTextAreaElement>(null)
+  const feedScroll = useRef<HTMLDivElement>(null)
+  const followLatest = useRef(true)
   const [accountsOpen, setAccountsOpen] = useState(false)
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [feedOpen, setFeedOpen] = useState(true)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const [steerState, setSteerState] = useState<"sent" | "failed" | null>(null)
 
+  const rawView = selectedView === "raw"
+  const selectedModel = rawView ? rawSelectedModel : autoSelectedModel
+  const selectedEffort = rawView ? rawSelectedEffort : autoSelectedEffort
+  const setSelectedModel = rawView ? setRawSelectedModel : setAutoSelectedModel
+  const setSelectedEffort = rawView ? setRawSelectedEffort : setAutoSelectedEffort
+  const query = rawView ? rawQuery : autoQuery
+  const start = rawView ? rawStart : autoStart
+  const control = rawView ? rawControl : autoControl
+  const steer = rawView ? rawSteer : autoSteer
   const data = query.data
   useEffect(() => { setSteerState(null) }, [data?.run.runId, datasetRevision])
+  useEffect(() => {
+    setChatOpen(false); setSelectedView(null); setOperatorMessage(""); setActionsOpen(false)
+    setRawAnonymous(null); setRawSelected(null)
+    setAutoSelectedModel(null); setRawSelectedModel(null)
+    setAutoSelectedEffort(null); setRawSelectedEffort(null)
+  }, [datasetRevision])
+  useEffect(() => { if (chatOpen) composer.current?.focus() }, [chatOpen])
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
+  const automaticActive = activeStates.has(autoQuery.data?.run.status ?? "IDLE")
+  const rawActive = Boolean(rawQuery.data?.rawActive)
+  const chatMessages = data?.messages ?? []
+  const visibleRun = run
+  const legacyRawChat = Boolean(data?.chat?.threadId && data.chat.rawCodex
+    && !data.chat.rawProtocolVersion)
+  const chatVisible = rawView
+  useEffect(() => {
+    if (followLatest.current && feedScroll.current) feedScroll.current.scrollTop = feedScroll.current.scrollHeight
+  }, [chatMessages.length, chatMessages.at(-1)?.text, visibleRun?.activities.length])
   // Active runs show their fixed selection. Terminal runs return to editable next-run controls.
   const canConfigure = !active
-  const hasRun = Boolean(run && run.status !== "IDLE")
+  const hasRun = Boolean(visibleRun && visibleRun.status !== "IDLE")
   const readyAccounts = new Set((data?.accounts ?? []).filter((item) => item.status === "READY").map((item) => item.id))
   const availableAccounts = new Set(accounts.map((item) => item.id))
-  const nextAnonymous = anonymous ?? (run && run.status !== "IDLE" ? run.anonymous : false)
-  const nextSelected = (selected ?? (run && run.status !== "IDLE" ? run.accountIds : []))
+  const defaultRawSelected = readyAccounts.size === 1 ? [...readyAccounts] : []
+  const configuredAnonymous = rawView ? rawAnonymous : anonymous
+  const configuredSelected = rawView ? rawSelected : selected
+  const nextAnonymous = configuredAnonymous ?? (visibleRun && visibleRun.status !== "IDLE"
+    ? visibleRun.anonymous : rawView && defaultRawSelected.length === 0)
+  const nextSelected = (configuredSelected ?? (visibleRun && visibleRun.status !== "IDLE"
+    ? visibleRun.accountIds : rawView ? defaultRawSelected : []))
     .filter((id) => readyAccounts.has(id) && availableAccounts.has(id))
-  const shownAnonymous = canConfigure ? nextAnonymous : (run?.anonymous ?? nextAnonymous)
-  const shownSelected = canConfigure ? nextSelected : (run?.accountIds ?? nextSelected)
+  const shownAnonymous = canConfigure ? nextAnonymous : (visibleRun?.anonymous ?? nextAnonymous)
+  const shownSelected = canConfigure ? nextSelected : (visibleRun?.accountIds ?? nextSelected)
   const providerReady = run?.providerReadiness === "READY"
   const models = useExplorerModelsQuery(providerReady && canConfigure)
   const modelLoading = providerReady && canConfigure && models.isPending
   const catalog = models.isError ? undefined : models.data
-  const nextModel = catalog ? (selectedModel ?? (run && run.status !== "IDLE"
-    ? run.model : catalog.configuredModel)) : ""
+  const previousModel = visibleRun && visibleRun.status !== "IDLE" ? visibleRun.model : data?.chat?.model ?? ""
+  const previousEffort = visibleRun && visibleRun.status !== "IDLE" ? visibleRun.effort ?? "" : data?.chat?.effort ?? ""
+  const nextModel = catalog ? (selectedModel ?? (previousModel || catalog.configuredModel)) : ""
   const modelUnavailable = Boolean(nextModel && catalog
     && !catalog.models.some((item) => item.id === nextModel))
+  const modelOption = catalog?.models.find((item) => item.id === nextModel)
+  const effortOptions = modelOption?.efforts ?? []
+  const nextEffort = selectedEffort ?? (previousModel === nextModel ? previousEffort
+    : chatMessages.length > 0 ? modelOption?.defaultEffort ?? "" : "")
+  const effortUnavailable = Boolean(nextEffort && !effortOptions.some((item) => item.effort === nextEffort))
+  const rawLaneReady = nextAnonymous ? nextSelected.length === 0 : nextSelected.length === 1
+  const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable
+    && Boolean(target) && !(rawView ? automaticActive : rawActive) && (!rawView || rawLaneReady)
+  const readyToExplore = readyToSend && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
+    ?? openRawLogin.error ?? completeRawLogin.error
 
-  const feedItems: readonly SourceFeedItem[] = (run?.activities ?? []).map((item) => ({
+  const allFeedItems: readonly SourceFeedItem[] = (visibleRun?.activities ?? [])
+    .map((item) => ({
     id: String(item.sequence),
     badge: item.kind,
     title: item.title,
     status: item.durationMillis == null ? item.status : `${item.status} · ${item.durationMillis}ms`,
     detail: item.detail && withoutUnnumberedEvidence(withEvidenceOrdinals(item.detail, evidenceOrdinals)),
   }))
+  const actionItems = allFeedItems.filter((item) => item.badge !== "SYSTEM" && item.badge !== "MODEL")
+  const currentAction = actionItems.at(-1)
+  const feedItems = rawView ? [] : allFeedItems
+  const visibleFeedItems = rawView ? actionsOpen ? actionItems : [] : feedItems
 
   const notices = <>
-    {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>Explorer 요청 실패</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
+    {failure && <Alert variant="destructive" aria-label={message(failure)}><AlertTitle>{rawView ? "Codex 대화 요청 실패" : "Explorer 요청 실패"}</AlertTitle><AlertDescription>{message(failure)}</AlertDescription></Alert>}
+    {legacyRawChat && rawView && <Alert><AlertTitle>이전 자유 대화는 새 채팅이 필요합니다</AlertTitle><AlertDescription>이전 Codex thread에는 자동 Explorer 도구 문맥이 남아 있습니다. 아래의 새 채팅을 눌러 현재 자유 대화로 시작하세요. 저장된 요청 기록은 유지됩니다.</AlertDescription></Alert>}
     {run && !providerReady ? <Alert variant="destructive"><AlertTitle>Codex 준비가 필요합니다</AlertTitle><AlertDescription className="space-y-3">
       <p>{run.providerReadiness}</p>
       <ol className="list-decimal space-y-1 pl-5">
@@ -128,15 +206,15 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
 
   const display = useExplorerDisplay(data, datasetRevision)
   const browser = display.browser
-  const browserCard = hasRun ? <section className="rounded-md border" aria-label="실행 세부정보">
+  const browserCard = hasRun && !rawView ? <section className="rounded-md border" aria-label="실행 세부정보">
     <button type="button" aria-expanded={detailsOpen} onClick={() => setDetailsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50">
-      <span>실행 세부정보 <span className="ml-2 text-muted-foreground">{formatElapsed(display.elapsedMillis)} · HTTP {run?.attempts ?? 0} / {run?.responses ?? 0}</span></span>
+      <span>실행 세부정보 <span className="ml-2 text-muted-foreground">{formatElapsed(display.elapsedMillis)} · HTTP {visibleRun?.attempts ?? 0} / {visibleRun?.responses ?? 0}</span></span>
       <span className="flex items-center gap-1 font-medium">{detailsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${detailsOpen ? "rotate-180" : ""}`} /></span>
     </button>
     {detailsOpen && <div className="border-t px-3 py-3 text-xs">
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="font-medium">{active ? "브라우저 탐색 중" : runStatusLabel(run?.status ?? "IDLE")}</p>
-        <p className="text-muted-foreground" aria-label={active ? "요청 모델" : "지난 실행 요청 모델"}>요청 모델 <span className="font-mono">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</span></p>
+        <p className="text-muted-foreground" aria-label={active ? "요청 모델" : "지난 실행 요청 모델"}>요청 모델 <span className="font-mono">{visibleRun?.model || "Codex 기본 설정 (실제 모델 미확인)"}</span> · 추론 강도 <span className="font-mono">{visibleRun?.effort || "Codex 설정"}</span></p>
       </div>
       {browser ? <div role="group" aria-label="브라우저 탐색 진행" className="grid gap-3">
         <dl className="grid grid-cols-3 gap-x-6 gap-y-3 [&_dt]:text-[11px] [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:font-medium [&_dd]:tabular-nums" aria-label="브라우저 실행 수치">
@@ -144,15 +222,19 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
           <div><dt>브라우저 동작</dt><dd>{browser.actions}회</dd></div>
           <div><dt className="flex items-center gap-1">화면 상태 조회 횟수<TooltipProvider delayDuration={200}><Tooltip><TooltipTrigger asChild><button type="button" aria-label="화면 상태 조회 횟수 도움말" className="inline-flex size-5 items-center justify-center rounded hover:bg-muted focus-visible:outline-2"><CircleHelp className="size-3.5" aria-hidden="true" /></button></TooltipTrigger><TooltipContent>브라우저 화면 상태를 읽은 횟수입니다.</TooltipContent></Tooltip></TooltipProvider></dt><dd>{browser.snapshots}회</dd></div>
           <div><dt>관측 엔드포인트</dt><dd>{browser.endpoints}개</dd></div>
-          <DeclarationCounts endpoints={run?.endpointDeclarations ?? 0} parameters={run?.parameterDeclarations ?? 0} />
-          <div><dt>종료 기준</dt><dd title="동작 또는 시간 상한 중 먼저 도달하면 종료합니다. 창을 닫아도 종료합니다.">{browser.maxActions}회 · {browser.minutes}분</dd></div>
+          <DeclarationCounts endpoints={visibleRun?.endpointDeclarations ?? 0} parameters={visibleRun?.parameterDeclarations ?? 0} />
+          <div><dt>종료 기준</dt><dd title={browser.maxActions === 0 && browser.minutes === 0
+            ? "실행은 중단 버튼이나 브라우저 창을 닫으면 종료됩니다."
+            : "동작 또는 시간 상한 중 먼저 도달하면 종료합니다. 창을 닫아도 종료합니다."}>
+            {browser.maxActions === 0 && browser.minutes === 0 ? "직접 중단" : `${browser.maxActions}회 · ${browser.minutes}분`}
+          </dd></div>
         </dl>
-      </div> : <dl><DeclarationCounts endpoints={run?.endpointDeclarations ?? 0} parameters={run?.parameterDeclarations ?? 0} /></dl>}
+      </div> : <dl><DeclarationCounts endpoints={visibleRun?.endpointDeclarations ?? 0} parameters={visibleRun?.parameterDeclarations ?? 0} /></dl>}
     </div>}
   </section> : null
 
   const sessions = new Map((data?.accounts ?? []).map((item) => [item.id, item]))
-  const loginBusy = openLogin.isPending || completeLogin.isPending
+  const loginBusy = openLogin.isPending || completeLogin.isPending || openRawLogin.isPending || completeRawLogin.isPending
   const rows = accounts.map((account) => {
     const session = sessions.get(account.id)
     const ready = session?.status === "READY"
@@ -161,19 +243,29 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       id: account.id, label: account.label, configured: ready,
       statusText: ready ? "세션 있음" : waiting ? "로그인 대기" : "로그인 필요",
       action: waiting
-        ? <Button type="button" size="sm" disabled={active || loginBusy} aria-label={`${account.label} 로그인 완료`} onClick={() => completeLogin.mutate(account.id)}>로그인 완료</Button>
-        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
+        ? <Button type="button" size="sm" disabled={active || loginBusy} aria-label={`${account.label} 로그인 완료`} onClick={() => rawView ? completeRawLogin.mutate(account.id) : completeLogin.mutate(account.id)}>로그인 완료</Button>
+        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => rawView ? openRawLogin.mutate({ id: account.id, url: target }) : openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
     }
   })
-  const modelControl = <div className="flex shrink-0 items-center gap-2 text-sm">
-        <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
+  const modelControl = <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
+        {!rawView && <Button type="button" size="sm" variant="outline" disabled={!providerReady || !target}
+          onClick={() => { setAccountsOpen(false); setSelectedView("raw"); setChatOpen(true) }}><MessageSquare className="size-4" />Codex 자유 대화</Button>}
+        <label className="shrink-0 text-muted-foreground" htmlFor="explorer-model">{canConfigure ? rawView ? "대화 모델" : hasRun ? "다음 탐색 모델" : "탐색 모델" : "실행 모델"}</label>
         {canConfigure ? <select id="explorer-model" className="h-9 w-[250px] rounded-md border border-input bg-background px-3 text-sm"
           value={nextModel} disabled={!providerReady || !catalog?.models.length}
-          onChange={(event) => setSelectedModel(event.target.value)}>
-          <option value="">Codex 기본 설정{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>
+          onChange={(event) => { setSelectedModel(event.target.value); setSelectedEffort(null) }}>
+          {(chatMessages.length === 0 || !previousModel || !nextModel) && <option value="">{chatMessages.length ? "대화 설정 유지" : "Codex 기본 설정"}{catalog?.configuredModel ? ` (${catalog.configuredModel})` : ""}</option>}
           {modelUnavailable && <option value={nextModel} disabled>{nextModel} · 현재 사용 불가</option>}
           {(catalog?.models ?? []).map((option) => <option key={option.id} value={option.id}>{option.label}{option.recommended ? " · Codex 추천" : ""}</option>)}
-        </select> : <p className="font-mono text-sm" id="explorer-model">{run?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
+        </select> : <p className="font-mono text-sm" id="explorer-model">{visibleRun?.model || "Codex 기본 설정 (실제 모델 미확인)"}</p>}
+        <label className="shrink-0 text-muted-foreground" htmlFor="explorer-effort">추론 강도</label>
+        {canConfigure ? <select id="explorer-effort" className="h-9 w-[155px] rounded-md border border-input bg-background px-3 text-sm"
+          value={nextEffort} disabled={!providerReady || !modelOption || effortOptions.length === 0}
+          onChange={(event) => setSelectedEffort(event.target.value)}>
+          {(chatMessages.length === 0 || !previousEffort || !nextEffort) && <option value="">{chatMessages.length ? "대화 설정 유지" : "Codex 설정 사용"}</option>}
+          {effortUnavailable && <option value={nextEffort} disabled>{nextEffort} · 현재 사용 불가</option>}
+          {effortOptions.map((option) => <option key={option.effort} value={option.effort} title={option.description}>{option.effort}</option>)}
+        </select> : <p className="font-mono text-sm" id="explorer-effort">{visibleRun?.effort || "Codex 설정"}</p>}
         {providerReady && canConfigure && <Button type="button" variant="outline" size="icon" className="size-9" disabled={control.isPending || modelLoading} aria-label="모델 목록 다시 확인" title="모델 목록 다시 확인" onClick={() => control.mutate("recheck", { onSuccess: () => void models.refetch() })}><RefreshCw className="size-3.5" /></Button>}
       </div>
   const control_ = <div className="grid gap-2">
@@ -183,8 +275,9 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     {models.isError && canConfigure && <p className="text-xs text-amber-800 dark:text-amber-300">모델 목록을 확인하지 못했습니다. Codex 기본 설정으로는 실행할 수 있습니다.</p>}
     {modelLoading && <p className="text-xs text-muted-foreground">현재 계정의 모델 목록을 확인 중입니다.</p>}
     {modelUnavailable && canConfigure && <p role="alert" className="text-xs text-destructive">선택 모델이 현재 목록에 없습니다. 다시 고르세요.</p>}
-    <section className="rounded-md border">
-      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">탐색할 계정 <span className="ml-2 font-normal text-muted-foreground">{[...(shownAnonymous ? ["비로그인"] : []), ...shownSelected.map((id) => accounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
+    {effortUnavailable && canConfigure && <p role="alert" className="text-xs text-destructive">선택한 추론 강도는 현재 모델에서 지원되지 않습니다. 다시 고르세요.</p>}
+    {!rawView && <section className="rounded-md border">
+      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">탐색할 계정 <span className="font-normal text-muted-foreground">(자동 탐색용)</span><span className="ml-2 font-normal text-muted-foreground">{[...(shownAnonymous ? ["비로그인"] : []), ...shownSelected.map((id) => accounts.find((account) => account.id === id)?.label ?? id)].join(" · ") || "선택 없음"}</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
       {accountsOpen && <div className="grid gap-2 border-t p-3">
       <AccountLaneTable lane="LLM" rows={rows}
         anonymous={shownAnonymous} onAnonymousChange={setAnonymous} selected={shownSelected}
@@ -194,37 +287,107 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
         disabled={active} />
       <p className="text-xs text-muted-foreground">[브라우저 로그인] → 열린 창에서 로그인 → [로그인 완료]. 이 창의 기록은 직접 둘러보기와 섞이지 않습니다.</p>
     </div>}
-    </section>
-    {browserCard}
+    </section>}
+    {rawView && <section className="rounded-md border">
+      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">LLM 공용 브라우저 로그인 <span className="ml-2 font-normal text-muted-foreground">{readyAccounts.size}개 준비 · Explorer와 자유 대화가 함께 사용</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
+      {accountsOpen && <div className="grid gap-2 border-t p-3 text-xs">
+        <AccountLaneTable lane="자유 대화" rows={rows} anonymous={shownAnonymous}
+          onAnonymousChange={(value) => { setRawAnonymous(value); if (value) setRawSelected([]) }}
+          selected={shownSelected}
+          onToggle={(id, value) => { setRawSelected(value ? [id] : []); if (value) setRawAnonymous(false) }}
+          disabled={active} />
+        <p className="text-muted-foreground">한 turn은 비로그인 또는 로그인 완료한 계정 하나로 실행합니다. 셸·HTTP·브라우저 요청은 같은 계정으로 기록됩니다. 로그인 브라우저와 메모리 세션은 자동 Explorer와 공유합니다.</p>
+      </div>}
+    </section>}
+    {!rawView && browserCard}
     <div className="flex flex-wrap items-center justify-start gap-2 border-t pt-3">
-      <Button size="sm" disabled={!providerReady || active || start.isPending || modelLoading || modelUnavailable || !target || (!nextAnonymous && nextSelected.length === 0)} onClick={() => start.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous, model: nextModel })}><Play className="size-4" />탐색 시작</Button>
-      {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />중단</Button>
-        : run && run.status !== "IDLE" ? <Button variant="outline" onClick={() => control.mutate("clear")}>실행 표시 지우기</Button> : null}
-      <span className="text-xs text-muted-foreground">{(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>
+      {!rawView && <Button size="sm" disabled={!readyToExplore || active || start.isPending} onClick={() => {
+        setSelectedView("auto")
+        setChatOpen(false)
+        autoStart.mutate({ target, accounts: nextSelected.join(","), anonymous: nextAnonymous,
+          model: nextModel, effort: nextEffort })
+      }}><Play className="size-4" />탐색 시작</Button>}
+      {rawView && Boolean(chatMessages.length > 0 || data?.chat?.threadId) && !active && <Button type="button" size="sm" variant="outline" disabled={control.isPending} onClick={() => {
+        if (!window.confirm("현재 대화 표시와 이어쓰기 참조를 지웁니다. 수집된 Evidence는 유지됩니다. 새 채팅을 시작할까요?")) return
+        rawControl.mutate("new-chat", { onSuccess: () => {
+          setSelectedView("raw")
+          setSelectedModel(nextModel); setSelectedEffort(nextEffort)
+          setOperatorMessage(""); setChatOpen(true)
+        } })
+      }}>새 채팅</Button>}
+      {active ? <Button variant="destructive" onClick={() => control.mutate("cancel")}><CircleStop className="size-4" />{rawView ? "대화 중단" : "중단"}</Button>
+        : !rawView && visibleRun && visibleRun.status !== "IDLE" && chatMessages.length === 0 ? <Button variant="outline" onClick={() => autoControl.mutate("clear")}>실행 표시 지우기</Button> : null}
+      {!rawView && <span className="text-xs text-muted-foreground">자동 탐색 {(shownAnonymous ? 1 : 0) + shownSelected.length}개 선택됨</span>}
     </div>
   </div>
 
+  const sendMessage = () => {
+    const text = operatorMessage.trim()
+    if (!rawView || !text || legacyRawChat || start.isPending || steer.isPending) return
+    setSteerState(null)
+    if (run?.status === "RUNNING" && data?.rawActive) {
+      rawSteer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
+    } else if (!active && readyToSend) {
+      rawStart.mutate({ target, model: nextModel, effort: nextEffort, message: text,
+        accounts: nextSelected.join(","), anonymous: nextAnonymous },
+        { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
+    }
+  }
+  const sendDisabled = !operatorMessage.trim() || start.isPending || steer.isPending
+    || !rawView || legacyRawChat || (active ? run?.status !== "RUNNING" || !data?.rawActive : !readyToSend)
+
   const feedFooter = <>
-    {run?.unresolved.length ? <details className="border-t border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs">
-      <summary className="cursor-pointer font-medium text-amber-800 dark:text-amber-300">확인하지 못한 항목 {run.unresolved.length}건 · 펼치기</summary>
-      <div className="mt-2 grid gap-3">{run.unresolved.map((item, index) => <div key={`${item.kind}-${index}`}><p className="break-words">{item.reason}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{item.kind} · {item.target}</p></div>)}</div>
+    {visibleRun?.unresolved.length ? <details className="border-t border-amber-400/30 bg-amber-400/5 px-4 py-2 text-xs">
+      <summary className="cursor-pointer font-medium text-amber-800 dark:text-amber-300">확인하지 못한 항목 {visibleRun.unresolved.length}건 · 펼치기</summary>
+      <div className="mt-2 grid gap-3">{visibleRun.unresolved.map((item, index) => <div key={`${item.kind}-${index}`}><p className="break-words">{item.reason}</p><p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{item.kind} · {item.target}</p></div>)}</div>
     </details> : null}
-    <form className="grid gap-1.5 border-t p-3" onSubmit={(event) => {
-      event.preventDefault()
-      if (!operatorMessage.trim() || steer.isPending) return
-      setSteerState(null)
-      steer.mutate(operatorMessage, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
-    }}>
-      <div className="flex gap-2"><Input aria-label="Explorer에게 추가 지시" value={operatorMessage} onChange={(event) => setOperatorMessage(event.target.value)} placeholder="실행 중 추가할 사실 기반 지시" disabled={run?.status !== "RUNNING" || steer.isPending} />
-      <Button type="submit" size="icon" aria-label="메시지 전송" disabled={run?.status !== "RUNNING" || !operatorMessage.trim() || steer.isPending}><Send className="size-4" /></Button></div>
-      <p role="status" className="text-xs text-muted-foreground">{steer.isPending ? "추가 지시 전송 중…" : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : ""}</p>
-    </form>
+    {chatVisible && <form className="grid gap-1.5 border-t p-3" onSubmit={(event) => { event.preventDefault(); sendMessage() }}>
+      <div className="flex items-end gap-2"><Textarea ref={composer} aria-label={visibleRun?.status === "RUNNING" ? "Codex에게 추가 지시" : "LLM에게 메시지"} value={operatorMessage}
+        onChange={(event) => setOperatorMessage(event.target.value)}
+        onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); sendMessage() } }}
+        placeholder={visibleRun?.status === "RUNNING" ? "진행 중 추가할 지시를 입력하세요" : "원하는 탐색 작업을 입력하세요"}
+        className="min-h-18 max-h-48 resize-y" disabled={start.isPending || steer.isPending} />
+      <Button type="submit" size="icon" aria-label="메시지 전송" disabled={sendDisabled}><Send className="size-4" /></Button></div>
+      <p className="break-all text-xs text-muted-foreground">현재 대상 <code>{target}</code> · 탐색 순서는 직접 지시하세요. FlowScope 도구 또는 Burp 프록시를 지난 셸 HTTP 응답만 LLM 증거로 기록됩니다.</p>
+      <p role="status" className="text-xs text-muted-foreground">{start.isPending || steer.isPending ? "메시지 전송 중…" : run?.status === "AUTHENTICATING" ? "Codex 연결 중 · 시작되면 추가 메시지를 보낼 수 있습니다." : steerState === "sent" ? "서버 전송 완료" : steerState === "failed" ? "전송 실패 · 내용을 확인하고 다시 전송하세요." : "Enter로 전송 · Shift+Enter로 줄바꿈"}</p>
+    </form>}
   </>
   const feed = (view: RecordView) => <Card className={`flex flex-col gap-0 overflow-hidden py-0 ${feedOpen ? "min-h-32 flex-1" : "shrink-0"}`}>
-    <CardHeader className="shrink-0 border-b py-3"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">진행 기록 <span className="ml-2 text-sm font-normal text-muted-foreground">{runStatusLabel(run?.status ?? "IDLE")}</span></CardTitle><div className="flex shrink-0 items-center gap-2"><RecordViewButton view={view} onExpand={() => setFeedOpen(true)} /><Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button></div></div>{view.focused && <p className="text-xs text-muted-foreground">LLM 탐색 · {target} · 실행 모델 {run?.model || "Codex 기본 설정"}</p>}<p className="break-words text-sm font-medium" aria-live="polite">{run?.message ?? "Explorer 상태를 불러오는 중입니다."}</p></CardHeader>
+    <CardHeader className="shrink-0 border-b py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {rawView && <Button type="button" variant="ghost" size="sm" onClick={() => {
+            if (view.focused) view.toggleFocus()
+            setSelectedView("auto"); setChatOpen(false)
+          }}><ArrowLeft className="size-4" />자동 탐색으로 돌아가기</Button>}
+          <CardTitle className="text-base">{rawView ? "Codex 대화" : "진행 기록"} <span className="ml-2 text-sm font-normal text-muted-foreground">{llmStatus(visibleRun?.status ?? "IDLE", rawView)}</span></CardTitle>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {rawView && <Button type="button" variant="outline" size="sm" aria-expanded={actionsOpen} onClick={() => { setActionsOpen((value) => !value); setFeedOpen(true) }}>{actionsOpen ? "실행 과정 접기" : "실행 과정 보기"}</Button>}
+          <RecordViewButton view={view} onExpand={() => setFeedOpen(true)} />
+          <Button type="button" variant="outline" size="sm" aria-expanded={feedOpen} onClick={() => setFeedOpen((value) => !value)}>{feedOpen ? "진행 기록 접기" : "진행 기록 펼치기"}<ChevronDown className={`size-3.5 ${feedOpen ? "rotate-180" : ""}`} /></Button>
+        </div>
+      </div>
+      {rawView && modelControl}
+      {view.focused && <p className="text-xs text-muted-foreground">{rawView ? "Codex 자유 대화" : "LLM 탐색"} · {target} · 실행 모델 {visibleRun?.model || "Codex 기본 설정"}</p>}
+      <p className="break-words text-sm font-medium">{visibleRun?.message ?? (rawView ? "메시지를 보내면 Codex 대화가 시작됩니다." : "자동 탐색 실행 대기")}</p>
+      {currentAction && <p role="status" aria-label="현재 LLM 행동" className="truncate text-xs text-muted-foreground" title={`${currentAction.title}${currentAction.detail ? ` · ${currentAction.detail}` : ""}`}>{currentAction.title}{currentAction.detail ? ` · ${currentAction.detail}` : ""}</p>}
+    </CardHeader>
     <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-      {feedOpen && <div data-record-list className="min-h-0 flex-1 overflow-y-auto" aria-label="LLM 진행 메시지 및 수집 트래픽">
-        {feedItems.length ? feedItems.slice().reverse().map((item) => {
+      {feedOpen && <div ref={feedScroll} data-record-list className="min-h-0 flex-1 overflow-y-auto" aria-label={rawView ? "Codex 대화 내용" : "LLM 진행 메시지 및 수집 트래픽"} onScroll={(event) => {
+        const element = event.currentTarget
+        followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
+      }}>
+        {chatVisible && <div className="grid gap-4 border-b border-border/60 px-4 py-5" aria-label="LLM 대화" role="log">
+          {chatMessages.length ? chatMessages.map((entry, index) => <div key={`${entry.runId}-${entry.role}-${index}`} className={`flex ${entry.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`min-w-[7rem] max-w-[90%] rounded-xl px-4 py-3 text-sm ${entry.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}>
+              <p className="mb-1 text-[11px] font-medium opacity-70">{entry.role === "user" ? "나" : "LLM"}</p>
+              <p className="whitespace-pre-wrap break-words">{entry.text}</p>
+            </div>
+          </div>) : <p className="py-5 text-center text-sm text-muted-foreground">메시지를 보내면 LLM이 이 대화에서 작업을 시작합니다. 버튼만 눌러서는 요청하지 않습니다.</p>}
+        </div>}
+        {rawView && actionsOpen && <p className="border-b px-4 py-2 text-xs font-medium text-muted-foreground">실행 과정 · 최근 {actionItems.length}건</p>}
+        {visibleFeedItems.length ? visibleFeedItems.slice().reverse().map((item) => {
           const http = item.badge === "HTTP" ? item.detail?.match(/\bHTTP (\d{3})/)?.[1] : undefined
           const method = item.title.split(" ")[0]
           return <article key={item.id} className="grid grid-cols-[60px_minmax(0,1fr)_1.5rem_6rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0">
@@ -233,12 +396,12 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
             <span className="text-xs" title={item.badge === "HTTP" ? "LLM" : undefined}>{item.badge === "HTTP" ? "L" : ""}</span>
             <span className="text-right font-mono text-[11px] text-muted-foreground">{http ? <HttpStatusBadge status={http} /> : item.status}</span>
           </article>
-        }) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">실행하면 인증 준비, HTTP 요청과 요청 기록(#번호)이 여기에 순서대로 표시됩니다.</p>}
+        }) : !chatVisible && <p className="px-4 py-8 text-center text-sm text-muted-foreground">탐색을 시작하면 HTTP 요청과 요청 기록(#번호)이 여기에 표시됩니다.</p>}
       </div>}
       <div className="max-h-[40%] shrink-0 overflow-y-auto border-t">{feedFooter}</div>
     </CardContent>
   </Card>
 
-  return <SourcePassLayout label="LLM" title="LLM 탐색" titleControl={modelControl} onRecordFocusChange={onRecordFocusChange} description="LLM이 서비스를 둘러보며 API 요청과 응답을 기록합니다." control={control_} notices={notices}
+  return <SourcePassLayout label="LLM" title="LLM 탐색" titleControl={rawView ? undefined : modelControl} onRecordFocusChange={onRecordFocusChange} description="LLM이 서비스를 둘러보며 API 요청과 응답을 기록합니다." control={control_} notices={notices}
     feedItems={feedItems} feedTitle="진행 기록" emptyHint="" feedContent={feed} />
 }

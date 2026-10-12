@@ -3,6 +3,7 @@ package io.flowscope.explorer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.flowscope.core.TextLimits;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -210,7 +211,17 @@ final class ChromiumLoginBrowser implements LoginBrowser {
 
     private record ChromiumSession(Process process, Path profile, Cdp cdp) implements Session {
         @Override public List<HttpCookie> cookies(URI target) throws IOException {
-            JsonNode result = cdp.call("Storage.getCookies");
+            JsonNode result = cookieResult(new CookieReader() {
+                @Override public JsonNode storageCookies() throws IOException {
+                    return cdp.call("Storage.getCookies");
+                }
+
+                @Override public JsonNode networkCookies(URI uri) throws IOException {
+                    ObjectNode params = JSON.createObjectNode();
+                    params.putArray("urls").add(origin(uri) + "/");
+                    return cdp.onPage("Network.getCookies", params);
+                }
+            }, target);
             List<HttpCookie> cookies = new ArrayList<>();
             long now = System.currentTimeMillis() / 1000;
             for (JsonNode value : result.path("cookies")) {
@@ -318,6 +329,20 @@ final class ChromiumLoginBrowser implements LoginBrowser {
         @Override public void close() {
             cdp.close();
             stop(process, profile);
+        }
+    }
+
+    interface CookieReader {
+        JsonNode storageCookies() throws IOException;
+        JsonNode networkCookies(URI target) throws IOException;
+    }
+
+    /** Burp Chromium builds may reject the browser-level Storage domain; the attached page has an exact-origin fallback. */
+    static JsonNode cookieResult(CookieReader reader, URI target) throws IOException {
+        try {
+            return reader.storageCookies();
+        } catch (IOException unsupportedStorageDomain) {
+            return reader.networkCookies(target);
         }
     }
 
@@ -448,7 +473,11 @@ final class ChromiumLoginBrowser implements LoginBrowser {
                 if (sessionId != null) request.put("sessionId", sessionId);
                 sendText(request);
                 JsonNode message = response.get(30, TimeUnit.SECONDS);
-                if (message.has("error")) throw new IOException("DevTools " + method + " failed");
+                if (message.has("error")) {
+                    String detail = message.path("error").path("message").asText("");
+                    throw new IOException("DevTools " + method + " failed"
+                            + (detail.isBlank() ? "" : ": " + TextLimits.truncate(detail, 300)));
+                }
                 return message.path("result");
             } catch (IOException error) {
                 throw error;

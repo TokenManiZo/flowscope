@@ -669,8 +669,8 @@ describe("unified inspection hub", () => {
       expect(within(panel).queryByRole("separator", { name: /높이 조절/ })).not.toBeInTheDocument()
     }
 
-    expect(screen.getByRole("button", { name: /탐색 시작/ })).toBeVisible()
-    expect(screen.getByLabelText("Explorer에게 추가 지시")).toBeVisible()
+    await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
+    expect(screen.getByLabelText("LLM에게 메시지")).toBeVisible()
 
     expect(screen.queryByRole("button", { name: "Judge 시작" })).not.toBeInTheDocument()
   })

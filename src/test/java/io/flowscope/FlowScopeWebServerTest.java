@@ -417,6 +417,7 @@ final class FlowScopeWebServerTest {
         JsonNode catalog = json(get("/api/explorer-models", token, origin()));
         assertEquals("gpt-5.6-sol", catalog.path("configuredModel").asText());
         assertEquals("gpt-6.1-sol", catalog.at("/models/1/id").asText());
+        assertEquals("high", catalog.at("/models/1/efforts/0/effort").asText());
 
         assertEquals(400, post("/api/explorer-accounts", "action=save&id=human-a&loginUrl=x", token).statusCode());
         HttpResponse<String> opened = post("/api/explorer-accounts",
@@ -432,12 +433,69 @@ final class FlowScopeWebServerTest {
 
         HttpResponse<String> started = post("/api/explorer-run",
                 "action=start&target=" + encode(state.record.service + "/")
-                        + "&anonymous=false&accounts=" + accountId + "&model=gpt-6.1-sol",
+                        + "&anonymous=false&accounts=" + accountId + "&model=gpt-6.1-sol"
+                        + "&effort=high"
+                        + "&message=" + encode("Find the documented APIs"),
                 token);
         assertEquals(202, started.statusCode());
         assertEquals("RUNNING", JSON.readTree(started.body()).at("/run/status").asText());
         assertEquals(accountId, JSON.readTree(started.body()).at("/run/accountIds/0").asText());
         assertEquals("gpt-6.1-sol", JSON.readTree(started.body()).at("/run/model").asText());
+        assertEquals("high", JSON.readTree(started.body()).at("/run/effort").asText());
+        assertEquals("Find the documented APIs", state.explorerStartMessage);
+        assertEquals("Find the documented APIs", json(get("/api/explorer-run", token, origin()))
+                .at("/messages/0/text").asText());
+        assertEquals("high", json(get("/api/explorer-run", token, origin()))
+                .at("/chat/effort").asText());
+    }
+
+    @Test
+    void rawChatHasAnIndependentEndpointAndDoesNotReplaceExplorerState() throws Exception {
+        start();
+        String target = state.record.service + "/";
+        state.explorerMessages.add(new ExplorerCoordinator.ChatMessage("user", "Previous Explorer turn",
+                "auto-old", java.time.Instant.now()));
+        assertEquals(400, post("/api/explorer-run", "action=start&target=" + encode(target)
+                + "&raw=true&message=Inspect", token).statusCode());
+        HttpResponse<String> started = post("/api/codex-chat",
+                "action=start&target=" + encode(target) + "&message=Inspect", token);
+        assertEquals(202, started.statusCode());
+        assertTrue(JSON.readTree(started.body()).at("/run/anonymous").asBoolean(),
+                "free chat without a selected account is explicitly anonymous");
+        assertTrue(json(get("/api/codex-chat", token, origin())).path("rawActive").asBoolean());
+        assertEquals("IDLE", json(get("/api/explorer-run", token, origin())).at("/run/status").asText());
+        assertEquals("Previous Explorer turn", json(get("/api/explorer-run", token, origin()))
+                .at("/messages/0/text").asText());
+        assertEquals("Inspect", json(get("/api/codex-chat", token, origin())).at("/messages/0/text").asText());
+        post("/api/codex-chat", "action=new-chat", token);
+        assertEquals(0, json(get("/api/codex-chat", token, origin())).path("messages").size());
+        assertEquals("Previous Explorer turn", json(get("/api/explorer-run", token, origin()))
+                .at("/messages/0/text").asText());
+    }
+
+    @Test
+    void rawChatLoginAndSelectedAccountsStaySeparateFromAutomaticExplorer() throws Exception {
+        start();
+        String target = state.record.service + "/";
+        assertEquals(403, post("/api/codex-chat-accounts", "action=browser-open&id=user-a&url="
+                + encode(target), "wrong-token").statusCode());
+        assertEquals(200, post("/api/codex-chat-accounts", "action=browser-open&id=user-a&url="
+                + encode(target), token).statusCode());
+        assertEquals("NEEDS_INPUT", json(get("/api/codex-chat", token, origin()))
+                .at("/accounts/0/status").asText());
+        assertEquals(200, post("/api/codex-chat-accounts", "action=browser-complete&id=user-a", token).statusCode());
+        assertEquals("READY", json(get("/api/codex-chat", token, origin()))
+                .at("/accounts/0/status").asText());
+        assertTrue(json(get("/api/explorer-run", token, origin())).path("accounts").isEmpty());
+        HttpResponse<String> started = post("/api/codex-chat", "action=start&target=" + encode(target)
+                + "&accounts=user-a&anonymous=false&message=Inspect", token);
+        assertEquals(202, started.statusCode());
+        assertEquals("user-a", JSON.readTree(started.body()).at("/run/accountIds/0").asText());
+        assertFalse(JSON.readTree(started.body()).at("/run/anonymous").asBoolean());
+
+        HttpResponse<String> ambiguous = post("/api/codex-chat", "action=start&target=" + encode(target)
+                + "&accounts=user-a&anonymous=true&message=Inspect", token);
+        assertEquals(409, ambiguous.statusCode(), "one free-chat turn cannot mix account-bound and anonymous shell traffic");
     }
 
     @Test
@@ -449,6 +507,32 @@ final class FlowScopeWebServerTest {
         assertEquals(200, response.statusCode());
         assertEquals("READY", JSON.readTree(response.body()).at("/run/providerReadiness").asText());
         assertEquals(1, state.explorerReadinessChecks);
+    }
+
+    @Test
+    void explicitNewChatClearsConversationMetadataWithoutDeletingEvidence() throws Exception {
+        start();
+        state.explorerMessages.add(new ExplorerCoordinator.ChatMessage("user", "Previous target",
+                "old-run", java.time.Instant.now()));
+        assertEquals(1, json(get("/api/explorer-run", token, origin())).path("messages").size());
+        HttpResponse<String> reset = post("/api/explorer-run", "action=new-chat", token);
+        assertEquals(200, reset.statusCode());
+        assertEquals(0, json(get("/api/explorer-run", token, origin())).path("messages").size());
+        assertEquals(1, state.snapshot().records.size(), "new chat must not clear captured Evidence");
+    }
+
+    @Test
+    void chatPromptSuggestionsAreGenericAndOptional() throws Exception {
+        start();
+        JsonNode prompts = json(get("/api/explorer-prompts", token, origin()));
+        assertTrue(prompts.path("prompts").isArray());
+        assertTrue(prompts.path("prompts").size() >= 2);
+        for (JsonNode item : prompts.path("prompts")) {
+            assertFalse(item.path("id").asText().isBlank());
+            assertFalse(item.path("label").asText().isBlank());
+            assertFalse(item.path("text").asText().isBlank());
+            assertFalse(item.toString().toLowerCase(java.util.Locale.ROOT).contains("crapi"));
+        }
     }
 
     @Test
@@ -1877,9 +1961,16 @@ final class FlowScopeWebServerTest {
         private volatile String refreshedZapSessionAccountId = "";
         private volatile String linkedCandidateId = "";
         private final List<ExplorerAccountVault.View> explorerAccounts = new ArrayList<>();
+        private final List<ExplorerAccountVault.View> codexAccounts = new ArrayList<>();
+        private final List<ExplorerCoordinator.ChatMessage> explorerMessages = new ArrayList<>();
+        private final List<ExplorerCoordinator.ChatMessage> codexMessages = new ArrayList<>();
+        private volatile String explorerStartMessage = "";
         private volatile ExplorerCoordinator.Snapshot explorerRun = new ExplorerCoordinator.Snapshot(
                 ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Explorer 실행 대기", "READY",
                 List.of(), false, 0, 0, 0, 0, 0, List.of(), List.of());
+        private volatile ExplorerCoordinator.Snapshot codexChatRun = new ExplorerCoordinator.Snapshot(
+                ExplorerCoordinator.Status.IDLE, "", "", null, null, 0, "Codex 대화 대기", "READY",
+                List.of(), true, 0, 0, 0, 0, 0, List.of(), List.of());
         private volatile int explorerReadinessChecks;
         private volatile String manualRequest = "";
         private volatile String manualService = "";
@@ -2044,6 +2135,36 @@ final class FlowScopeWebServerTest {
             return JSON.createObjectNode().put("status", "CANCELLED");
         }
         @Override public ExplorerCoordinator.Snapshot explorerStatus() { return explorerRun; }
+        @Override public ExplorerCoordinator.Snapshot codexChatStatus() { return codexChatRun; }
+        @Override public List<ExplorerAccountVault.View> codexChatAccounts() { return List.copyOf(codexAccounts); }
+        @Override public ExplorerAccountVault.View openCodexChatBrowserLogin(String id, String url) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", url,
+                    ExplorerAccountVault.AuthStatus.NEEDS_INPUT, "로그인 대기",
+                    java.time.Instant.now().toString(), 0, List.of(), true);
+            codexAccounts.clear();
+            codexAccounts.add(value);
+            return value;
+        }
+        @Override public ExplorerAccountVault.View completeCodexChatBrowserLogin(String id) {
+            ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", "",
+                    ExplorerAccountVault.AuthStatus.READY, "브라우저 로그인 세션 (사용자 확인)",
+                    java.time.Instant.now().toString(), 1, List.of("Authorization"), true);
+            codexAccounts.clear();
+            codexAccounts.add(value);
+            return value;
+        }
+        @Override public boolean codexChatActive() { return codexChatRun.status() == ExplorerCoordinator.Status.RUNNING; }
+        @Override public List<ExplorerCoordinator.ChatMessage> codexChatMessages() { return List.copyOf(codexMessages); }
+        @Override public io.flowscope.explorer.ExplorerChatState codexChatState() {
+            return new io.flowscope.explorer.ExplorerChatState("", "", List.of(), codexChatRun.model(), codexChatRun.effort(), true, 1);
+        }
+        @Override public List<ExplorerCoordinator.ChatMessage> explorerChatMessages() {
+            return List.copyOf(explorerMessages);
+        }
+        @Override public io.flowscope.explorer.ExplorerChatState explorerChatState() {
+            return new io.flowscope.explorer.ExplorerChatState("", "", List.of(),
+                    explorerRun.model(), explorerRun.effort());
+        }
         @Override public List<ExplorerAccountVault.View> explorerAccounts() { return List.copyOf(explorerAccounts); }
         @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
             ExplorerAccountVault.View value = new ExplorerAccountVault.View(id, "A", "USER", url,
@@ -2062,15 +2183,40 @@ final class FlowScopeWebServerTest {
             return value;
         }
         @Override public ExplorerCoordinator.Snapshot startExplorer(ExplorerCoordinator.StartRequest request) {
+            explorerStartMessage = request.userMessage();
+            if (!request.userMessage().isBlank()) explorerMessages.add(new ExplorerCoordinator.ChatMessage(
+                    "user", request.userMessage(), "llm-test-run", java.time.Instant.now()));
             explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "llm-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "탐색 중", "READY",
-                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model());
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(),
+                    request.model(), request.effort());
+            return explorerRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot startCodexChat(ExplorerCoordinator.StartRequest request) {
+            codexMessages.add(new ExplorerCoordinator.ChatMessage("user", request.userMessage(), "raw-test-run", java.time.Instant.now()));
+            codexChatRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "raw-test-run",
+                    request.target(), java.time.Instant.now(), null, 0, "Codex 대화 중", "READY",
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model(), request.effort());
+            return codexChatRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot newCodexChat() {
+            codexMessages.clear();
+            codexChatRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "", null, null,
+                    0, "Codex 대화 대기", "READY", List.of(), true, 0, 0, 0, 0, 0, List.of(), List.of());
+            return codexChatRun;
+        }
+        @Override public ExplorerCoordinator.Snapshot newExplorerChat() {
+            explorerMessages.clear();
+            explorerRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.IDLE, "", "",
+                    null, null, 0, "Explorer 실행 대기", "READY", List.of(), false,
+                    0, 0, 0, 0, 0, List.of(), List.of());
             return explorerRun;
         }
         @Override public io.flowscope.explorer.ExplorerProvider.ModelCatalog explorerModels() {
             return new io.flowscope.explorer.ExplorerProvider.ModelCatalog("gpt-5.6-sol", List.of(
                     new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-5.6-sol", "GPT-5.6 Sol", false),
-                    new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true)));
+                    new io.flowscope.explorer.ExplorerProvider.ModelOption("gpt-6.1-sol", "GPT-6.1 Sol", true,
+                            "high", List.of(new io.flowscope.explorer.ExplorerProvider.ReasoningOption("high", "Deeper")))));
         }
         @Override public ExplorerCoordinator.Snapshot recheckExplorerProvider() {
             explorerReadinessChecks++;

@@ -115,19 +115,35 @@ export const deleteZapAccount = (id: string) => postForm<ApiSuccess>("/api/zap-a
 /** 크롤 없이 ZAP 인증만 실행해 이 계정의 세션을 확보(refresh-session → startAuthenticationOnly). 202로 시작을 알린다. */
 export const refreshZapSession = (id: string) => postForm<{ status?: string }>("/api/zap-accounts", { action: "refresh-session", id }, [202])
 export const getExplorerRun = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/explorer-run", formSignal(signal))
+export const getCodexChat = (signal?: AbortSignal) => apiFetch<ExplorerRunEnvelope>("/api/codex-chat", formSignal(signal))
 export const getExplorerModels = (signal?: AbortSignal) => apiFetch<ExplorerModelCatalog>("/api/explorer-models", formSignal(signal))
-export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean; model: string }) =>
-  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "start", ...values, anonymous: String(values.anonymous) }, [202])
-export const controlExplorerRun = (action: "cancel" | "clear" | "recheck") =>
+export const startExplorerRun = (values: { target: string; accounts: string; anonymous: boolean; model: string; effort: string; message?: string; raw?: boolean }) =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", {
+    action: "start", target: values.target, accounts: values.accounts, anonymous: String(values.anonymous),
+    model: values.model, effort: values.effort, message: values.message ?? "", raw: String(values.raw ?? false),
+  }, [202])
+export const controlExplorerRun = (action: "cancel" | "clear" | "new-chat" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
+export const startCodexChat = (values: { target: string; model: string; effort: string; message: string; accounts: string; anonymous: boolean }) =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action: "start", target: values.target,
+    model: values.model, effort: values.effort, message: values.message, anonymous: String(values.anonymous),
+    ...(values.accounts ? { accounts: values.accounts } : {}) }, [202])
+export const controlCodexChat = (action: "cancel" | "new-chat" | "recheck") =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action })
+export const steerCodexChat = (message: string) =>
+  postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action: "steer", message })
 /** Opens a FlowScope login window through the dedicated LLM proxy; the operator logs in there. */
 export const openExplorerBrowserLogin = (id: string, url: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-open", id, url })
 /** Adopts the login window's session once the operator says the login is done. */
 export const completeExplorerBrowserLogin = (id: string) =>
   postForm<ExplorerAccountSaveResult>("/api/explorer-accounts", { action: "browser-complete", id })
+export const openCodexChatBrowserLogin = (id: string, url: string) =>
+  postForm<ExplorerAccountSaveResult>("/api/codex-chat-accounts", { action: "browser-open", id, url })
+export const completeCodexChatBrowserLogin = (id: string) =>
+  postForm<ExplorerAccountSaveResult>("/api/codex-chat-accounts", { action: "browser-complete", id })
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })

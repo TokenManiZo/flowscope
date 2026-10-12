@@ -6,11 +6,36 @@ import java.util.List;
 /** LLM 공급자와 Explorer 코어 사이의 streaming 계약. */
 public interface ExplorerProvider extends AutoCloseable {
     record Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
-                   String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model) {
+                   String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
+                   String effort, String threadId, String userMessage, boolean rawCodex,
+                   int rawProxyPort, String rawWorkspace) {
         public Request {
             exactScope = List.copyOf(exactScope);
             accountHandles = List.copyOf(accountHandles);
             model = model == null ? "" : model;
+            effort = effort == null ? "" : effort;
+            threadId = threadId == null ? "" : threadId;
+            userMessage = userMessage == null ? "" : userMessage;
+            rawWorkspace = rawWorkspace == null ? "" : rawWorkspace;
+            if (rawProxyPort < 0 || rawProxyPort > 65535) throw new IllegalArgumentException("invalid raw proxy port");
+            if (rawCodex && userMessage.isBlank()) throw new IllegalArgumentException("raw Codex needs a message");
+        }
+        public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
+                       String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
+                       String effort, String threadId, String userMessage) {
+            this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt,
+                    model, effort, threadId, userMessage, false, 0, "");
+        }
+        public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
+                       String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model,
+                       String threadId, String userMessage) {
+            this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt,
+                    model, "", threadId, userMessage);
+        }
+        public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
+                       String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt, String model) {
+            this(runId, target, exactScope, accountHandles, gatewayUrl, discoveryUrl, gatewayToken, prompt,
+                    model, "", "", "");
         }
         public Request(String runId, String target, List<String> exactScope, List<String> accountHandles,
                        String gatewayUrl, String discoveryUrl, String gatewayToken, String prompt) {
@@ -18,7 +43,19 @@ public interface ExplorerProvider extends AutoCloseable {
         }
     }
 
-    record ModelOption(String id, String label, boolean recommended) {}
+    record ReasoningOption(String effort, String description) {
+        public ReasoningOption { description = description == null ? "" : description; }
+    }
+    record ModelOption(String id, String label, boolean recommended,
+                       String defaultEffort, List<ReasoningOption> efforts) {
+        public ModelOption {
+            defaultEffort = defaultEffort == null ? "" : defaultEffort;
+            efforts = List.copyOf(efforts == null ? List.of() : efforts);
+        }
+        public ModelOption(String id, String label, boolean recommended) {
+            this(id, label, recommended, "", List.of());
+        }
+    }
     record ModelCatalog(String configuredModel, List<ModelOption> models) {
         public ModelCatalog { models = List.copyOf(models); }
     }
@@ -34,6 +71,8 @@ public interface ExplorerProvider extends AutoCloseable {
 
     interface Listener {
         void activity(Activity activity);
+        default void threadReady(String threadId) {}
+        default void assistantDelta(String delta) {}
         void completed(Result result);
         void failed(String message);
     }

@@ -93,6 +93,31 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
+    void rawAccountTurnDefaultsEveryHttpToolRequestToTheSelectedAccount() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        vault.register("user-a", "USER A", "USER");
+        vault.adoptSession("user-a", URI.create("https://app.example.test/"), List.of(),
+                Map.of("Authorization", "Bearer selected-account"));
+        AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
+        ExplorerTransport transport = request -> {
+            captured.set(request);
+            return new ExplorerTransport.Response(200, request.url(), "", "application/json", Map.of(),
+                    "{}", false, "ev-bound", 1, Instant.now());
+        };
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                value -> true, "raw-account", ignored -> {}, ignored -> {}, true, null, "user-a")) {
+            assertEquals(200, post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/me","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals("user-a", captured.get().accountId());
+            assertEquals("Bearer selected-account", captured.get().headers().get("Authorization"));
+            assertEquals(400, post(gateway, """
+                    {"account":"user-b","method":"GET","url":"https://app.example.test/me","headers":{},"body":""}
+                    """).statusCode());
+        }
+    }
+
+    @Test
     void exposesLargeBodyAsLoopbackArtifact() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
@@ -111,6 +136,35 @@ final class ExplorerHttpGatewayTest {
             assertEquals(200, artifact.statusCode());
             assertTrue(artifact.body().length > 512 * 1024);
             assertTrue(new String(artifact.body(), StandardCharsets.UTF_8).contains("secret-value"), "산출물은 원문 그대로다");
+        }
+    }
+
+    @Test
+    void aSecondChatTurnCanReadTheFirstTurnsResponseArtifact() throws Exception {
+        ExplorerArtifactStore shared = new ExplorerArtifactStore("chat-artifacts");
+        try {
+            ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                    "application/javascript", Map.of(), "x".repeat(70_000), false,
+                    "ev-first-turn", 1, Instant.now());
+            String artifactId;
+            try (ExplorerHttpGateway first = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                    value -> true, "chat-turn-1", ignored -> {}, ignored -> {}, true, shared)) {
+                JsonNode response = JSON.readTree(post(first, """
+                        {"account":"","method":"GET","url":"https://app.example.test/main.js","headers":{},"body":""}
+                        """).body());
+                artifactId = response.path("artifact_id").asText();
+                assertFalse(artifactId.isBlank());
+            }
+            try (ExplorerHttpGateway second = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                    value -> true, "chat-turn-2", ignored -> {}, ignored -> {}, true, shared)) {
+                var request = JSON.createObjectNode().put("artifact_id", artifactId)
+                        .put("char_offset", 0).put("max_chars", 20);
+                JsonNode response = JSON.readTree(post(second, second.artifactsUrl() + "/read",
+                        request.toString()).body());
+                assertEquals("x".repeat(20), response.path("text").asText());
+            }
+        } finally {
+            shared.close();
         }
     }
 
@@ -174,14 +228,47 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
-    void blocksMutationMethodsOutsideExplorerSurfaceContract() throws Exception {
+    void forwardsOperatorDirectedHttpMethodsThroughTheEvidenceTransport() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
-        ExplorerTransport transport = request -> fail("blocked method must not reach transport");
+        java.util.List<String> methods = new java.util.ArrayList<>();
+        ExplorerTransport transport = request -> {
+            methods.add(request.method());
+            return new ExplorerTransport.Response(204, request.url(), "", "application/json", Map.of(),
+                    "", false, "ev-" + request.method(), 1, Instant.now());
+        };
         try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
                 value -> true, "run-method", ignored -> {})) {
-            String payload = JSON.createObjectNode().put("method", "DELETE")
-                    .put("url", "https://app.example.test/api/orders/1").toString();
-            assertEquals(400, post(gateway, payload).statusCode());
+            for (String method : List.of("PUT", "PATCH", "DELETE")) {
+                var payload = JSON.createObjectNode().put("method", method)
+                        .put("url", "https://app.example.test/api/orders/1").put("account", "");
+                payload.putObject("headers");
+                HttpResponse<String> response = post(gateway, payload.toString());
+                assertEquals(200, response.statusCode(), method + " · " + response.body());
+            }
+            assertEquals(List.of("PUT", "PATCH", "DELETE"), methods);
+        }
+    }
+
+    @Test
+    void directRequestsContinueBeyondTheFormerFiveHundredRequestCeiling() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger seen = new java.util.concurrent.atomic.AtomicInteger();
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/json", Map.of(), "{}", false, "ev-" + seen.incrementAndGet(), 1, Instant.now());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                value -> value.startsWith("https://app.example.test/"), "run-many", ignored -> {},
+                ignored -> {}, true)) {
+            for (int index = 0; index < 501; index++) {
+                var request = JSON.createObjectNode().put("account", "").put("method", "GET")
+                        .put("url", "https://app.example.test/api/" + index).put("body", "");
+                request.putObject("headers");
+                HttpResponse<String> response = post(gateway, request.toString());
+                assertEquals(200, response.statusCode(), "request " + index + " · " + response.body());
+            }
+            var repeated = JSON.createObjectNode().put("account", "").put("method", "GET")
+                    .put("url", "https://app.example.test/api/0").put("body", "");
+            repeated.putObject("headers");
+            assertEquals(200, post(gateway, repeated.toString()).statusCode());
+            assertEquals(502, seen.get(), "a user-directed chat may retry a request in the same turn");
         }
     }
 
@@ -258,13 +345,15 @@ final class ExplorerHttpGatewayTest {
             assertEquals(400, post(gateway, gateway.discoveriesUrl(), inventedEvidence).statusCode());
             String secretHeader = declaration.replace("\"PATH\",\"field_path\":\"path[3]\"",
                     "\"HEADER\",\"field_path\":\"Authorization\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), secretHeader).statusCode());
+            assertEquals(200, post(gateway, gateway.discoveriesUrl(), secretHeader).statusCode(),
+                    "an auth header name is a declaration, not the secret header value");
             String unknownRootField = declaration.replaceFirst("\\{", "{\"unexpected\":true,");
             assertEquals(400, post(gateway, gateway.discoveriesUrl(), unknownRootField).statusCode());
             String ambiguousJson = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"criteria.status\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), ambiguousJson).statusCode(),
-                    "점 표기 JSON 경로는 canonical pointer가 아니면 추정 없이 거부");
+            JsonNode ambiguousResult = JSON.readTree(post(gateway, gateway.discoveriesUrl(), ambiguousJson).body());
+            assertEquals(1, ambiguousResult.path("rejected_parameters").size(),
+                    "ambiguous JSON coordinate is rejected individually without losing its endpoint");
             // RFC 6901: 빈 참조 토큰(빈 문자열 키)은 유효하다. 엔진도 {"a":{"":{"b":1}}}에서 /a//b를 만든다.
             String emptyKeyPointer = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"/a//b\"");
@@ -276,8 +365,8 @@ final class ExplorerHttpGatewayTest {
                     "빈 키 pointer를 새 제한 없이 FLOW_V2로 보존");
             String malformedEscape = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"/a~x\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), malformedEscape).statusCode(),
-                    "~ 뒤에 0/1/2가 아니면 pointer 이스케이프 계약 위반");
+            assertEquals(1, JSON.readTree(post(gateway, gateway.discoveriesUrl(), malformedEscape).body())
+                    .path("rejected_parameters").size(), "invalid pointer is reported for retry");
             String canonicalPointer = declaration.replace("\"field_path\":\"product_id\"",
                     "\"field_path\":\"/criteria/status\"");
             HttpResponse<String> accepted = post(gateway, gateway.discoveriesUrl(), canonicalPointer);
@@ -285,11 +374,45 @@ final class ExplorerHttpGatewayTest {
             assertEquals(1, JSON.readTree(accepted.body()).path("accepted_parameters").asInt());
             // PATH 위치는 변수 개수가 아니라 실제 placeholder 위치여야 한다: /api/orders/{id}는 /segments/2만 유효.
             String wrongSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/0\"");
-            assertEquals(400, post(gateway, gateway.discoveriesUrl(), wrongSlot).statusCode(),
+            assertEquals(1, JSON.readTree(post(gateway, gateway.discoveriesUrl(), wrongSlot).body())
+                    .path("rejected_parameters").size(),
                     "/segments/0은 'api' 세그먼트이지 placeholder가 아니다");
             String rightSlot = declaration.replace("\"field_path\":\"path[3]\"", "\"field_path\":\"/segments/2\"");
             HttpResponse<String> slotOk = post(gateway, gateway.discoveriesUrl(), rightSlot);
             assertEquals(200, slotOk.statusCode(), slotOk.body());
+        }
+    }
+
+    @Test
+    void oneBadDeclarationOrParameterDoesNotDiscardValidEvidenceBoundFacts() throws Exception {
+        ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",
+                "application/javascript", Map.of(), "const route='/api/orders/{orderId}'", false,
+                "ev-artifact", 1, Instant.now());
+        AtomicReference<List<RouteCandidate>> stored = new AtomicReference<>(List.of());
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(new ExplorerAccountVault(), transport,
+                value -> value.startsWith("https://app.example.test/"), "run-partial", ignored -> {},
+                stored::set)) {
+            assertEquals(200, post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/main.js","headers":{},"body":""}
+                    """).statusCode());
+            HttpResponse<String> response = post(gateway, gateway.discoveriesUrl(), """
+                    {"discoveries":[
+                      {"method":"GET","url":"https://app.example.test/api/orders/{orderId}",
+                       "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT","locator":"main.js:1",
+                       "reason":"route table","parameters":[
+                         {"location":"PATH","field_path":"orderId","display_name":"orderId","requirement":"REQUIRED"},
+                         {"location":"JSON_BODY","field_path":"criteria.status","display_name":"criteria.status","requirement":"UNKNOWN"}]},
+                      {"method":"GET","url":"https://outside.example.test/api/other",
+                       "evidence_ids":["ev-artifact"],"artifact_kind":"JAVASCRIPT","locator":"main.js:2",
+                       "reason":"out of scope","parameters":[]}]}
+                    """);
+            assertEquals(200, response.statusCode(), response.body());
+            JsonNode result = JSON.readTree(response.body());
+            assertEquals(1, result.path("accepted_endpoints").asInt());
+            assertEquals(1, result.path("accepted_parameters").asInt());
+            assertEquals(1, result.path("rejected_parameters").size());
+            assertEquals(1, result.path("rejected_discoveries").size());
+            assertEquals("/segments/2", stored.get().getFirst().declaredParameters().getFirst().fieldPath());
         }
     }
 
