@@ -1,6 +1,6 @@
 # LLM 자동 탐색·자유 대화 계약 (로컬 검증 중)
 
-> 로컬 구현·자동 검증 및 실물 Codex 증거 조회 확인 (2026-10-12), 실제 Burp 재로드 gate 대기: 자유 대화에 현재 프로젝트 Evidence 조회와 별도 로그인 브라우저를 연결했습니다. 기존 자동 Explorer와 대화·세션은 분리하고 LLM 증거 저장 경로만 공유합니다. 최신 변경은 자유 대화의 셸 네트워크·실행별 프록시 복구이며, 아래 과거 검증 기록은 당시 계약에만 적용됩니다.
+> 로컬 구현·자동 검증·실물 Codex 증거 조회와 실제 Burp 재로드 gate 확인 (2026-10-12): 자유 대화에 현재 프로젝트 Evidence 조회와 별도 로그인 브라우저를 연결했습니다. 기존 자동 Explorer와 대화·세션은 분리하고 LLM 증거 저장 경로만 공유합니다. 로그인 계정 블라인드 실행에서 셸·브라우저 요청이 선택 계정으로 저장되고 그래프에 표시되는 것을 확인했습니다. 아래 과거 검증 기록은 당시 계약에만 적용됩니다.
 
 이 문서는 `v1.0.2` 기반 로컬 작업의 두 실행 방식을 설명합니다. **탐색 시작**은 계정·비로그인 lane을 선택하는 기존 자동 Explorer입니다. 카드 제목 옆 **Codex 자유 대화**는 자동 탐색 컨트롤을 숨기고 별도 대화 보기를 열며, 버튼만으로 네트워크 실행을 시작하지 않습니다. 저장된 프로젝트에서 첫 메시지를 전송하면 별도의 turn을 시작하고, 완료 뒤의 메시지는 저장된 Codex thread를 재개합니다. 추천 문장을 자동 실행하지 않습니다.
 
@@ -8,7 +8,7 @@
 
 자유 대화에서는 사용자가 작성한 메시지를 그대로 Codex turn에 전달합니다. FlowScope의 고정 정찰 순서, 대상 URL 접두 문구, JSON 출력 형식은 붙이지 않습니다. 대신 현재 프로젝트 대상과 증거가 되는 전송 경로를 짧은 실행 문맥으로 전달합니다. 자동 Explorer와는 다른 대화 thread·로그인 창을 쓰지만, 준비된 계정 handle과 범위 안 HTTP·브라우저·산출물 도구, 현재 프로젝트 Evidence 읽기 도구는 제공합니다. Codex 자체의 셸·에이전트 루프와 운영자 승인도 유지합니다. 이는 “도구 없는 LLM”이나 자동 탐색기 복제가 아니라, 진단자가 자유롭게 지시하면서 실제로 기록된 응답을 같은 LLM lane에 쌓는 대화입니다. [공식 앱 서버 문서](https://learn.chatgpt.com/docs/app-server)는 실행 이벤트와 승인 요청을 구분합니다.
 
-Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 turn·`runId`입니다. 자유 대화의 네이티브 셸에는 실행별 Burp 프록시 주소를 표준 HTTP(S) 환경 변수로 설정합니다. `flowscope_http_request`, 로그인 완료한 `flowscope_browser`, 그 프록시를 실제로 지난 셸 HTTP의 범위 안 응답은 `source=LLM` 프로젝트 Evidence로 저장합니다. 브라우저 교환에서 Cookie·Authorization이 없는 요청은 로그인 계정으로 추정하지 않고 비로그인으로 기록합니다. 일반 8082 요청은 `UNVERIFIED_RUNTIME`이며, 신뢰 가능한 자유 대화 run으로 승격하지 않습니다. 프록시를 우회한 셸 요청·Docker 내부 요청·모델의 서술은 자동 Evidence가 아닙니다. 실제로 기록된 Evidence만 결정론적 분석·그래프 입력에 들어갑니다. 답변에 HTTP 응답이 0건이어도 대화는 남지만 완료된 수집 lane으로 승격하지 않습니다.
+Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 turn·`runId`입니다. 자유 대화는 한 turn에 비로그인 또는 로그인 완료 계정 하나를 선택합니다. 네이티브 셸에는 실행별 임시 loopback Burp 프록시 주소를 표준 HTTP(S) 환경 변수로 설정합니다. 계정 turn에서는 프록시가 활성 run 문맥을 확인하고 Explorer 로그인 vault의 Cookie·Authorization을 주입하며, Evidence의 계정 ID도 같은 선택값으로 고정합니다. 모델이 임의로 보낸 target Cookie·Authorization이나 계정 이름은 귀속 근거로 사용하지 않습니다. `flowscope_http_request`, 로그인 완료한 `flowscope_browser`, 그 프록시를 실제로 지난 셸 HTTP의 범위 안 응답은 `source=LLM` 프로젝트 Evidence로 저장합니다. 일반 8082 요청은 `UNVERIFIED_RUNTIME`이며, 신뢰 가능한 자유 대화 run으로 승격하지 않습니다. 프록시를 우회한 셸 요청·Docker 내부 요청·모델의 서술은 자동 Evidence가 아닙니다. 실제로 기록된 Evidence만 결정론적 분석·그래프 입력에 들어갑니다. 답변에 HTTP 응답이 0건이어도 대화는 남지만 완료된 수집 lane으로 승격하지 않습니다.
 
 ## 로컬 Web API
 
@@ -17,7 +17,7 @@ Codex thread는 프로젝트의 대화 문맥입니다. 각 메시지는 별도 
 - `GET /api/explorer-run`: 자동 Explorer의 `run`, `browser`, `accounts`, `scope`, 자동 탐색 대화만 반환합니다.
 - `GET /api/codex-chat`: 자유 대화의 `run`, `messages: [{role,text,runId,at}]`, `chat`, `rawActive`, 자체 계정·브라우저 상태를 반환합니다. 자동 Explorer의 대화·로그인 상태는 섞지 않습니다.
 - `POST /api/explorer-run action=start`: 기존 자동 Explorer만 시작합니다. `raw=true`는 거부합니다.
-- `POST /api/codex-chat action=start`: `target`, `model`, `effort`, `message`, 선택적인 준비 계정 `accounts`로 첫 turn 또는 저장된 thread의 후속 turn을 시작합니다. `steer`, `cancel`, `new-chat`, `recheck`도 이 경로의 자유 대화에만 적용합니다. 작업 폴더는 Web 입력에서 받지 않고 확장이 정합니다. `target`은 정확한 범위 검사와 모델의 대상 문맥에 쓰되 사용자 메시지에 자동 탐색 지시로 덧붙이지 않습니다.
+- `POST /api/codex-chat action=start`: `target`, `model`, `effort`, `message`, `anonymous`, 준비 계정 `accounts`로 첫 turn 또는 저장된 thread의 후속 turn을 시작합니다. `anonymous=true`와 계정은 동시에 보낼 수 없고 계정은 한 개만 허용합니다. `steer`, `cancel`, `new-chat`, `recheck`도 이 경로의 자유 대화에만 적용합니다. 작업 폴더는 Web 입력에서 받지 않고 확장이 정합니다. `target`은 정확한 범위 검사와 모델의 대상 문맥에 쓰되 사용자 메시지에 자동 탐색 지시로 덧붙이지 않습니다.
 - `POST /api/codex-chat-accounts action=browser-open|browser-complete`: 자유 대화 전용 로그인 창을 열고 사용자가 완료한 세션을 메모리에 연결합니다. 자동 Explorer의 `/api/explorer-accounts`와는 별개입니다.
 - `POST action=steer`: 실행 중 turn에 지시를 추가하고 화면 대화에 기록합니다. 끝난 turn에는 새 `action=start&message=...`를 사용합니다.
 - `POST action=cancel`: 현재 turn을 중단합니다. 저장된 대화와 기존 Evidence는 유지됩니다.
@@ -53,9 +53,11 @@ FlowScope 밖의 별도 브라우저나 자유 대화 셸 클라이언트가 Bur
 
 두 방식의 `flowscope_record_discoveries`는 유효한 선언은 저장하고 잘못된 발견·파라미터의 인덱스와 이유를 `rejected_discoveries`·`rejected_parameters`로 돌려줍니다. 선언은 실제 HTTP 응답이 아니며, Evidence ID에 묶인 후보로만 저장합니다.
 
-이번 자유 대화 변경만으로 API 발견률 상승은 입증되지 않습니다. 사용자 메시지, Codex가 고른 도구, 브라우저 조작 범위에 따라 수집 건수가 달라집니다. 브라우저 로그인을 완료한 등록 계정의 opaque handle은 자유 대화의 HTTP·브라우저 도구에 제공하지만 인증 비밀값은 전달하지 않습니다. 실제 Burp에서 로그인 브라우저·HTTP 도구의 수집·취소·프로젝트 전환을 확인해야 합니다. 기존 로컬 crAPI 비교는 성능 합격 자료로 쓰지 않습니다.
+이번 자유 대화 변경만으로 일반적인 API 발견률 상승을 입증한 것은 아닙니다. 사용자 메시지, Codex가 고른 도구, 브라우저 조작 범위에 따라 수집 건수가 달라집니다. 브라우저 로그인을 완료한 등록 계정의 opaque handle은 자유 대화의 HTTP·브라우저 도구에 제공하지만 인증 비밀값은 전달하지 않습니다. 실제 Burp의 Keycloak 로컬 실습 환경에서는 로그인 브라우저·셸 프록시 요청 수집과 계정 귀속·그래프 표시를 확인했습니다. 취소·프로젝트 전환·HTTPS 대상과 복수 계정 후속 turn은 별도 gate이며, 기존 로컬 crAPI 비교는 성능 합격 자료로 쓰지 않습니다.
 
 ## 개발·검증 기록
+
+- 2026-10-12 자유 대화 계정 귀속 공통화: 실제 Keycloak 블라인드 자유대화에서 인증된 셸 요청이 `source=LLM`이지만 계정은 비로그인으로 표시된 사례를 재현했습니다. 계정 이름 헤더나 JWT 내용으로 귀속하는 안은 위장이 가능해 기각했습니다. 자유 대화 시작을 비로그인 또는 READY 계정 하나로 제한하고, 선택 계정을 LLM run context·HTTP gateway·브라우저·셸 프록시가 함께 사용하도록 했습니다. 계정 turn의 셸 프록시는 모델이 넣은 Cookie·Authorization을 Explorer vault 세션으로 교체하고 요청 기록에 같은 계정 ID를 고정합니다. 비로그인+계정 혼합, 복수 계정 turn, 다른 계정 handle은 거부합니다. 매 요청 proxy auth를 강제하는 안은 HTTPS CONNECT 뒤의 복호화 요청에 인증 헤더가 없을 수 있어 호환성 근거가 부족하므로 기각하고, 기존 실행별 임시 loopback listener·활성 run gate를 유지했습니다. UI·Web API·Coordinator·gateway·Burp proxy·Codex app-server와 회귀를 수정했고 README·점검 흐름·신뢰 경계·미배포 기록을 동기화했습니다. 집중 회귀는 React 32건과 Java 129건이 통과했습니다. JDK 21 `mvn clean verify`는 React 103파일/898건, Java 1005건(실패·오류 0, opt-in 9 skip), JAR·bundle 검증까지 통과했습니다. 산출물은 JAR 32,234,967 bytes/SHA-256 `a11607d3e9cce889d0d19cb466ed50fe8cddab79b6745f97f507bfe8d4d8247a`, bundle 30,409,035 bytes/SHA-256 `fdcbf7d4711d4fc4e8e39e7e5fc2a70489f79c28cae31364a0ddc8e47821d66d`입니다. 같은 JAR을 실제 Burp에 재로드한 뒤 새 프로젝트 `Keycloak blind free-chat account-binding gate`에서 CVE 이름·문제 endpoint·client 이름·UUID·기대 status를 주지 않은 읽기 전용 자유대화를 실행했습니다. Daybreak Blue/xhigh가 화면·번들·API를 독립 탐색해 185개 신규 HTTP 응답을 기록했고, 직접 secret API 403(`ev-a8f8e7df28c4dc40`)과 설치 구성 API 200 및 비마스킹 secret(`ev-c0ae7ae7a8745f25`)을 찾았습니다. 요청 기록 #142와 #265는 모두 `source=LLM`, 계정 `client-viewer`이며 그래프의 설치 구성 API 노드도 `client-viewer · LLM · GET 200`으로 표시됐습니다. 인증 헤더가 없는 정적 자산은 비로그인으로 남아 계정 강제 귀속과 구분됐습니다. 자동 Explorer와 자유 대화가 로그인 창을 따로 요구하고 로그인 시작 URL이 대상 루트로 고정되어 Keycloak realm URL을 수동 입력해야 한 UX debt는 미수정 상태입니다.
 
 - 2026-10-12 자유 대화의 분석 대기 Evidence 조회: 프록시·브라우저가 응답을 `records`에 저장한 직후 지연 재분석 전에는 `flowscope_evidence_list/read`가 게시된 `latest.records`만 읽어 새 응답을 놓치는 문제를 RED 회귀로 재현했습니다. 매 조회마다 전체 재분석을 강제하는 안은 큰 JS 자산의 분석 비용과 충돌해 기각했습니다. `FlowScopeExtension.rawEvidenceForRun`이 게시된 분석본은 그대로 쓰고 아직 게시되지 않은 기록만 복사해 안정 ID를 부여하도록 바꿨습니다. `FlowScopeExtensionLifecycleTest`는 새 응답의 목록·원문 읽기, 재분석 후 ID 일치, 다른 run 거부를 검사합니다. 최종 `mvn clean verify`는 React 897건·Java 1001건(실패/오류 0, opt-in 9 skip) 및 JAR 검증까지 통과했습니다. 실제 Burp 재로드·HTTP 수집은 후속 gate입니다. 자동 Explorer 대화·로그인 세션과 자유 대화의 분리는 그대로 유지합니다.
 
@@ -76,4 +78,4 @@ FlowScope 밖의 별도 브라우저나 자유 대화 셸 클라이언트가 Bur
 - 이전 커밋 `8dfaed7` 검증: 2026-10-11 `mvn clean verify` 통과(React 889/889, Java 986건 중 실패·오류 0, opt-in 8건 skip). opt-in 실물 Codex app-server가 네이티브 `curl` 요청을 로컬 모의 프록시로 보내는 시험과 Playwright 자유 대화 화면 1건을 별도로 통과했습니다. 현재 UI·상태 문구 수정의 최종 검증으로 전용하지 않습니다.
 - 이번 표시 수정 검증: 2026-10-11 `mvn clean verify` 통과(React 890/890, Java 988건 중 실패·오류 0, opt-in 8건 skip). raw 답변 0건·1건의 완료 문구, 자동 Explorer 문구 보존, raw 모델 메모 중복 제거, Web `rawRun`, 두 보기 전환과 짧은 말풍선 회귀를 추가했습니다. 수정 JAR의 별도 포트 Standalone에서 Playwright 자유 대화 화면 1건을 통과했고 `하이` 말풍선의 실제 너비가 최소 96px 이상임을 확인했습니다. 사용자 Burp의 실제 프록시·HTTPS CA·대상 수집은 여전히 미검증입니다.
 - 백엔드 세션 분리(2026-10-11): 한 `ExplorerCoordinator`와 `/api/explorer-run`에서 raw 플래그만 바꾸던 방식은 진행 이벤트·채팅·모델 선택이 섞여 기각했습니다. 별도 coordinator/공급자, `/api/codex-chat`, 프로젝트의 `codex_chat`, React 조회·조작 키와 모델 선택을 분리했습니다. 단일 LLM 수집 lane은 유지해 동시 실행만 거부합니다. Java `FlowScopeExtension`, `ExplorerCoordinator`, `ProjectStore`, `ProjectWorkspace`, `FlowScopeWebServer`; React `LlmPass`, API·훅; JSON/SQLite·Web·프록시·대화 회귀와 이 문서·README·화면 설명·다음 릴리스 문구를 변경했습니다. 회귀는 자동/자유 대화 조회 분리, 옛 raw chat 이관, 프로젝트 재열기, raw 프록시 귀속, raw SYSTEM/MODEL 이벤트 배제와 화면에서 자동 탐색 완료 기록 미노출을 확인합니다. `mvn clean verify`는 React 890건·Java 990건(실패/오류 0, opt-in 8건 skip), 별도 17778 Standalone의 Playwright 대화 1건을 통과했습니다. 실물 Burp JAR 재로드·HTTPS 대상 요청/응답·프로젝트 전환 후 후속 turn은 미검증으로 남습니다.
-- 다음 gate: 실제 Burp에서 비로그인/두 계정의 후속 turn까지 수집·그래프 확인, 전역 저장 상한 제거를 위한 디스크 기반 기록 설계.
+- 다음 gate: 실제 Burp에서 비로그인/두 계정의 후속 turn, 취소·프로젝트 전환·HTTPS 대상까지 수집·그래프 확인. 자동 Explorer와 자유 대화의 계정 로그인 준비를 중복시키지 않는 공용 세션 수명주기와 계정별 로그인 URL UX를 설계하고, 전역 저장 상한 제거를 위한 디스크 기반 기록을 별도로 검토합니다.

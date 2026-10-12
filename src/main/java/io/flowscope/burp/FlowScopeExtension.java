@@ -769,8 +769,16 @@ public final class FlowScopeExtension implements BurpExtension {
             if (context == null) return request;
             if (profile.source() == Source.LLM && listenerPort(request.listenerInterface()) == rawProxyPort
                     && rawChat.rawActiveRun(context.runId())) {
-                // Native Codex tools manage their own login state. Never replace the operator's headers.
-                return request.withRemovedHeader("Proxy-Authorization");
+                HttpRequest prepared = request.withRemovedHeader("Proxy-Authorization");
+                if (context.accountId() == null) return prepared;
+                for (String header : SessionBroker.managedHeaderNames()) {
+                    prepared = prepared.withRemovedHeader(header);
+                }
+                for (Map.Entry<String, String> header : rawChat.authenticationHeaders(
+                        context.accountId(), target).entrySet()) {
+                    prepared = prepared.withHeader(header.getKey(), header.getValue());
+                }
+                return prepared;
             }
             if (profile.source() == Source.SCANNER && !scope.allows(request.url())) {
                 // FLEXIBLE Client Spider may load linked static resources. They are not ZAP campaign

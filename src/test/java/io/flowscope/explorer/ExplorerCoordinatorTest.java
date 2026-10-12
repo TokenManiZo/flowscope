@@ -59,7 +59,7 @@ final class ExplorerCoordinatorTest {
             coordinator.openBrowserLogin("user-a", "USER A", "USER", "https://app.example.test/");
             coordinator.completeBrowserLogin("user-a");
             coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
-                    true, "", "", "Inspect", true, 19417, temp.resolve("raw").toString()));
+                    false, "", "", "Inspect", true, 19417, temp.resolve("raw").toString()));
             await(() -> provider.request.get() != null);
             assertEquals(List.of("user-a"), provider.request.get().accountHandles());
             assertFalse(provider.request.get().gatewayUrl().isBlank());
@@ -74,7 +74,7 @@ final class ExplorerCoordinatorTest {
             await(() -> !activeStatus(coordinator));
             assertFalse(window.recording);
             coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
-                    true, "", "", "Continue", true, 19418, temp.resolve("raw").toString()));
+                    false, "", "", "Continue", true, 19418, temp.resolve("raw").toString()));
             await(() -> provider.request.get() != null && !firstRun.equals(provider.request.get().runId()));
             assertEquals("raw-thread", provider.request.get().threadId());
             assertTrue(window.recording, "the completed login window must resume collection on the next turn");
@@ -92,7 +92,7 @@ final class ExplorerCoordinatorTest {
                 contexts, value -> value.startsWith("https://app.example.test/"),
                 () -> Pipeline.run(List.of()), ignored -> {})) {
             coordinator.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of(),
-                    false, "", "", "Use your normal tools", true, 19417, temp.resolve("raw").toString()));
+                    true, "", "", "Use your normal tools", true, 19417, temp.resolve("raw").toString()));
             await(() -> provider.request.get() != null);
             ExplorerProvider.Request started = provider.request.get();
             assertTrue(started.rawCodex());

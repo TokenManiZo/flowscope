@@ -1728,7 +1728,12 @@ public final class FlowScopeWebServer implements AutoCloseable {
                     if (isOwnControlPlane(target)) throw new IllegalArgumentException("FlowScope 제어면은 Codex 대상이 될 수 없습니다.");
                     List<String> accounts = java.util.Arrays.stream(form.getOrDefault("accounts", "").split(","))
                             .map(String::trim).filter(value -> !value.isBlank()).distinct().toList();
-                    snapshot = state.startCodexChat(new ExplorerCoordinator.StartRequest(target, accounts, true,
+                    boolean anonymous = Boolean.parseBoolean(form.getOrDefault("anonymous",
+                            accounts.isEmpty() ? "true" : "false"));
+                    if (anonymous == !accounts.isEmpty() || accounts.size() > 1) {
+                        throw new IllegalStateException("Codex 자유 대화는 비로그인 또는 로그인 완료 계정 하나를 선택하세요.");
+                    }
+                    snapshot = state.startCodexChat(new ExplorerCoordinator.StartRequest(target, accounts, anonymous,
                             form.getOrDefault("model", ""), form.getOrDefault("effort", ""),
                             required(form, "message"), true));
                     status = 202;

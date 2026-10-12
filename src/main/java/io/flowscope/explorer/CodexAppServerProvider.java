@@ -655,7 +655,10 @@ public final class CodexAppServerProvider implements ExplorerProvider {
                         + ". This is a free Codex conversation, not an automatic exploration task. "
                         + "Use flowscope_http_request or flowscope_browser for target HTTP when you need "
                         + "FlowScope LLM Evidence. Shell HTTP clients have a run-scoped Burp proxy by default; "
-                        + "only responses actually received by FlowScope are evidence. "
+                        + "when this turn selected one FlowScope account, that proxy replaces shell Cookie and "
+                        + "Authorization with the account's prepared session and records the same account ID. "
+                        + "Do not mint or replace target credentials in an account-bound turn. "
+                        + "Only responses actually received by FlowScope are evidence. "
                         + "If shell or Docker access fails, use the FlowScope HTTP/browser tools before "
                         + "claiming reconnaissance is impossible. Docker is not required for HTTP reconnaissance.");
                 var tools = params.putArray("dynamicTools");

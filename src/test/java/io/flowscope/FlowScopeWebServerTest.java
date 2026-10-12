@@ -460,6 +460,8 @@ final class FlowScopeWebServerTest {
         HttpResponse<String> started = post("/api/codex-chat",
                 "action=start&target=" + encode(target) + "&message=Inspect", token);
         assertEquals(202, started.statusCode());
+        assertTrue(JSON.readTree(started.body()).at("/run/anonymous").asBoolean(),
+                "free chat without a selected account is explicitly anonymous");
         assertTrue(json(get("/api/codex-chat", token, origin())).path("rawActive").asBoolean());
         assertEquals("IDLE", json(get("/api/explorer-run", token, origin())).at("/run/status").asText());
         assertEquals("Previous Explorer turn", json(get("/api/explorer-run", token, origin()))
@@ -486,9 +488,14 @@ final class FlowScopeWebServerTest {
                 .at("/accounts/0/status").asText());
         assertTrue(json(get("/api/explorer-run", token, origin())).path("accounts").isEmpty());
         HttpResponse<String> started = post("/api/codex-chat", "action=start&target=" + encode(target)
-                + "&accounts=user-a&message=Inspect", token);
+                + "&accounts=user-a&anonymous=false&message=Inspect", token);
         assertEquals(202, started.statusCode());
         assertEquals("user-a", JSON.readTree(started.body()).at("/run/accountIds/0").asText());
+        assertFalse(JSON.readTree(started.body()).at("/run/anonymous").asBoolean());
+
+        HttpResponse<String> ambiguous = post("/api/codex-chat", "action=start&target=" + encode(target)
+                + "&accounts=user-a&anonymous=true&message=Inspect", token);
+        assertEquals(409, ambiguous.statusCode(), "one free-chat turn cannot mix account-bound and anonymous shell traffic");
     }
 
     @Test
@@ -2189,7 +2196,7 @@ final class FlowScopeWebServerTest {
             codexMessages.add(new ExplorerCoordinator.ChatMessage("user", request.userMessage(), "raw-test-run", java.time.Instant.now()));
             codexChatRun = new ExplorerCoordinator.Snapshot(ExplorerCoordinator.Status.RUNNING, "raw-test-run",
                     request.target(), java.time.Instant.now(), null, 0, "Codex 대화 중", "READY",
-                    request.accountIds(), true, 0, 0, 0, 0, 0, List.of(), List.of(), request.model(), request.effort());
+                    request.accountIds(), request.includeAnonymous(), 0, 0, 0, 0, 0, List.of(), List.of(), request.model(), request.effort());
             return codexChatRun;
         }
         @Override public ExplorerCoordinator.Snapshot newCodexChat() {

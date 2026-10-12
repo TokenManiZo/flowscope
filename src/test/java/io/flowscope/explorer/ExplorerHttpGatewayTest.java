@@ -93,6 +93,31 @@ final class ExplorerHttpGatewayTest {
     }
 
     @Test
+    void rawAccountTurnDefaultsEveryHttpToolRequestToTheSelectedAccount() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        vault.register("user-a", "USER A", "USER");
+        vault.adoptSession("user-a", URI.create("https://app.example.test/"), List.of(),
+                Map.of("Authorization", "Bearer selected-account"));
+        AtomicReference<ExplorerTransport.Request> captured = new AtomicReference<>();
+        ExplorerTransport transport = request -> {
+            captured.set(request);
+            return new ExplorerTransport.Response(200, request.url(), "", "application/json", Map.of(),
+                    "{}", false, "ev-bound", 1, Instant.now());
+        };
+        try (ExplorerHttpGateway gateway = new ExplorerHttpGateway(vault, transport,
+                value -> true, "raw-account", ignored -> {}, ignored -> {}, true, null, "user-a")) {
+            assertEquals(200, post(gateway, """
+                    {"account":"","method":"GET","url":"https://app.example.test/me","headers":{},"body":""}
+                    """).statusCode());
+            assertEquals("user-a", captured.get().accountId());
+            assertEquals("Bearer selected-account", captured.get().headers().get("Authorization"));
+            assertEquals(400, post(gateway, """
+                    {"account":"user-b","method":"GET","url":"https://app.example.test/me","headers":{},"body":""}
+                    """).statusCode());
+        }
+    }
+
+    @Test
     void exposesLargeBodyAsLoopbackArtifact() throws Exception {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         ExplorerTransport transport = request -> new ExplorerTransport.Response(200, request.url(), "",

@@ -90,6 +90,8 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const completeRawLogin = useCodexChatBrowserCompleteMutation()
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<string[] | null>(null)
+  const [rawAnonymous, setRawAnonymous] = useState<boolean | null>(null)
+  const [rawSelected, setRawSelected] = useState<string[] | null>(null)
   const [autoSelectedModel, setAutoSelectedModel] = useState<string | null>(null)
   const [rawSelectedModel, setRawSelectedModel] = useState<string | null>(null)
   const [autoSelectedEffort, setAutoSelectedEffort] = useState<string | null>(null)
@@ -118,6 +120,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   useEffect(() => { setSteerState(null) }, [data?.run.runId, datasetRevision])
   useEffect(() => {
     setChatOpen(false); setSelectedView(null); setOperatorMessage(""); setActionsOpen(false)
+    setRawAnonymous(null); setRawSelected(null)
     setAutoSelectedModel(null); setRawSelectedModel(null)
     setAutoSelectedEffort(null); setRawSelectedEffort(null)
   }, [datasetRevision])
@@ -139,8 +142,13 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const hasRun = Boolean(visibleRun && visibleRun.status !== "IDLE")
   const readyAccounts = new Set((data?.accounts ?? []).filter((item) => item.status === "READY").map((item) => item.id))
   const availableAccounts = new Set(accounts.map((item) => item.id))
-  const nextAnonymous = anonymous ?? (visibleRun && visibleRun.status !== "IDLE" ? visibleRun.anonymous : false)
-  const nextSelected = (selected ?? (visibleRun && visibleRun.status !== "IDLE" ? visibleRun.accountIds : []))
+  const defaultRawSelected = readyAccounts.size === 1 ? [...readyAccounts] : []
+  const configuredAnonymous = rawView ? rawAnonymous : anonymous
+  const configuredSelected = rawView ? rawSelected : selected
+  const nextAnonymous = configuredAnonymous ?? (visibleRun && visibleRun.status !== "IDLE"
+    ? visibleRun.anonymous : rawView && defaultRawSelected.length === 0)
+  const nextSelected = (configuredSelected ?? (visibleRun && visibleRun.status !== "IDLE"
+    ? visibleRun.accountIds : rawView ? defaultRawSelected : []))
     .filter((id) => readyAccounts.has(id) && availableAccounts.has(id))
   const shownAnonymous = canConfigure ? nextAnonymous : (visibleRun?.anonymous ?? nextAnonymous)
   const shownSelected = canConfigure ? nextSelected : (visibleRun?.accountIds ?? nextSelected)
@@ -158,8 +166,9 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const nextEffort = selectedEffort ?? (previousModel === nextModel ? previousEffort
     : chatMessages.length > 0 ? modelOption?.defaultEffort ?? "" : "")
   const effortUnavailable = Boolean(nextEffort && !effortOptions.some((item) => item.effort === nextEffort))
+  const rawLaneReady = nextAnonymous ? nextSelected.length === 0 : nextSelected.length === 1
   const readyToSend = providerReady && !modelLoading && !modelUnavailable && !effortUnavailable
-    && Boolean(target) && !(rawView ? automaticActive : rawActive)
+    && Boolean(target) && !(rawView ? automaticActive : rawActive) && (!rawView || rawLaneReady)
   const readyToExplore = readyToSend && (nextAnonymous || nextSelected.length > 0)
   const failure = query.error ?? start.error ?? control.error ?? steer.error ?? openLogin.error ?? completeLogin.error
     ?? openRawLogin.error ?? completeRawLogin.error
@@ -282,9 +291,12 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     {rawView && <section className="rounded-md border">
       <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">자유 대화 브라우저 로그인 <span className="ml-2 font-normal text-muted-foreground">{readyAccounts.size}개 준비 · 로그인 완료한 계정은 다음 메시지에 연결</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
       {accountsOpen && <div className="grid gap-2 border-t p-3 text-xs">
-        {rows.length ? rows.map((row) => <div key={row.id} className="flex items-center justify-between gap-3"><span className="min-w-0 truncate">{row.label} · {row.statusText}</span>{row.action}</div>)
-          : <p className="text-muted-foreground">계정·세션에서 점검 계정을 먼저 등록하세요.</p>}
-        <p className="text-muted-foreground">이 브라우저는 자동 Explorer와 별도 세션입니다. 로그인 완료 전 요청은 증거로 수집하지 않습니다.</p>
+        <AccountLaneTable lane="자유 대화" rows={rows} anonymous={shownAnonymous}
+          onAnonymousChange={(value) => { setRawAnonymous(value); if (value) setRawSelected([]) }}
+          selected={shownSelected}
+          onToggle={(id, value) => { setRawSelected(value ? [id] : []); if (value) setRawAnonymous(false) }}
+          disabled={active} />
+        <p className="text-muted-foreground">한 turn은 비로그인 또는 로그인 완료한 계정 하나로 실행합니다. 셸·HTTP·브라우저 요청은 같은 계정으로 기록됩니다. 이 브라우저는 자동 Explorer와 별도 세션입니다.</p>
       </div>}
     </section>}
     {!rawView && browserCard}
@@ -317,7 +329,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
       rawSteer.mutate(text, { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     } else if (!active && readyToSend) {
       rawStart.mutate({ target, model: nextModel, effort: nextEffort, message: text,
-        accounts: [...readyAccounts].filter((id) => availableAccounts.has(id)).join(",") },
+        accounts: nextSelected.join(","), anonymous: nextAnonymous },
         { onSuccess: () => { setOperatorMessage(""); setSteerState("sent") }, onError: () => setSteerState("failed") })
     }
   }

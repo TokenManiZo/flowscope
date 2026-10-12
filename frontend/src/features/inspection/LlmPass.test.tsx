@@ -233,11 +233,38 @@ it("prepares a separate free-chat login and sends its ready account with the nex
   await user.click(await screen.findByRole("button", { name: /^자유 대화 브라우저 로그인/ }))
   await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
   await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
-  await waitFor(() => expect(screen.getByText("USER A · 세션 있음")).toBeVisible())
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked())
+  expect(screen.getByText("세션 있음")).toBeVisible()
   await user.type(screen.getByRole("textbox", { name: "LLM에게 메시지" }), "로그인한 화면을 봐줘")
   await user.click(screen.getByRole("button", { name: "메시지 전송" }))
   await waitFor(() => expect(posted).toHaveLength(1))
   expect(posted[0]).toContain("accounts=user-a")
+  expect(posted[0]).toContain("anonymous=false")
+})
+
+it("keeps a free-chat turn on exactly one anonymous or account lane", async () => {
+  const user = userEvent.setup()
+  const ready = (id: string, label: string) => ({ id, label, status: "READY", browserOpen: true })
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) === "/api/explorer-models") return catalogResponse()
+    if (String(input) === "/api/codex-chat") return new Response(JSON.stringify({ ...idle,
+      accounts: [ready("user-a", "USER A"), ready("user-b", "USER B")],
+    }))
+    if (String(input) === "/api/explorer-run") return new Response(JSON.stringify(idle))
+    throw new Error(`unexpected API ${String(input)}`)
+  }))
+  renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[
+    { id: "user-a", label: "USER A" }, { id: "user-b", label: "USER B" },
+  ]} />)
+  await user.click(await screen.findByRole("button", { name: "Codex 자유 대화" }))
+  await user.click(await screen.findByRole("button", { name: /^자유 대화 브라우저 로그인/ }))
+  expect(screen.getByRole("checkbox", { name: "비로그인" })).toBeChecked()
+  await user.click(screen.getByRole("checkbox", { name: "USER A" }))
+  expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()
+  expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked()
+  await user.click(screen.getByRole("checkbox", { name: "USER B" }))
+  expect(screen.getByRole("checkbox", { name: "USER A" })).not.toBeChecked()
+  expect(screen.getByRole("checkbox", { name: "USER B" })).toBeChecked()
 })
 
 it("warns before resuming an older raw thread that still has Explorer tool context", async () => {

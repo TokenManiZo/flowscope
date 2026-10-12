@@ -126,9 +126,9 @@ export const controlExplorerRun = (action: "cancel" | "clear" | "new-chat" | "re
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action })
 export const steerExplorerRun = (message: string) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/explorer-run", { action: "steer", message })
-export const startCodexChat = (values: { target: string; model: string; effort: string; message: string; accounts: string }) =>
+export const startCodexChat = (values: { target: string; model: string; effort: string; message: string; accounts: string; anonymous: boolean }) =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action: "start", target: values.target,
-    model: values.model, effort: values.effort, message: values.message,
+    model: values.model, effort: values.effort, message: values.message, anonymous: String(values.anonymous),
     ...(values.accounts ? { accounts: values.accounts } : {}) }, [202])
 export const controlCodexChat = (action: "cancel" | "new-chat" | "recheck") =>
   postForm<{ run: ExplorerRunEnvelope["run"] }>("/api/codex-chat", { action })

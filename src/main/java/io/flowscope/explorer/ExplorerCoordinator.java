@@ -221,10 +221,14 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 && !conversationTarget.equals(request.target())) {
             throw new IllegalStateException("다른 대상에서는 새 LLM 대화를 시작하세요.");
         }
+        if (request.rawCodex() && (request.includeAnonymous() == !request.accountIds().isEmpty()
+                || request.accountIds().size() > 1)) {
+            throw new IllegalStateException("Codex 자유 대화는 비로그인 또는 로그인 완료 계정 하나를 선택하세요.");
+        }
         if (!request.rawCodex() && !request.includeAnonymous() && request.accountIds().isEmpty()) {
             throw new IllegalArgumentException("비로그인 또는 하나 이상의 Explorer 계정을 선택하세요.");
         }
-        if (!request.rawCodex()) request.accountIds().forEach(vault::view);
+        request.accountIds().forEach(vault::view);
         String readiness = provider.readiness();
         if (!"READY".equals(readiness)) throw new IllegalStateException(readiness);
         if (!request.rawCodex() && contexts.current(Source.SCANNER) != null) {
@@ -247,8 +251,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
         }
         String runId = (request.rawCodex() ? "llm-raw-" : "llm-explorer-") + System.currentTimeMillis() + "-"
                 + UUID.randomUUID().toString().substring(0, 8);
+        String runAccountId = request.rawCodex() && !request.includeAnonymous()
+                ? request.accountIds().getFirst() : null;
         contexts.activate(Source.LLM, new RunContextRegistry.Context(SourceDetail.LLM_EXPLORER,
-                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId));
+                Orchestrator.LLM, ToolKind.CODEX, RunPhase.EXPLORATION, runId, runAccountId));
         activitySequence.set(0);
         declaredEndpointKeys.clear();
         declaredParameterKeys.clear();
@@ -305,6 +311,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
     public boolean rawActive() { return rawModeActive && active(snapshot.status()); }
 
     public boolean rawRun() { return rawModeActive && snapshot.status() != Status.IDLE; }
+
+    public Map<String, String> authenticationHeaders(String accountId, URI target) {
+        return vault.authenticationHeaders(accountId, target);
+    }
 
     public void rawRunEnded(Consumer<String> handler) {
         rawRunEnded = handler == null ? ignored -> { } : handler;
@@ -608,7 +618,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
                 }
                 ExplorerHttpGateway created = new ExplorerHttpGateway(vault, transport, exactScope, runId,
                         this::gatewayEvent, candidates -> acceptDiscoveries(runId, candidates), true,
-                        conversationArtifacts);
+                        conversationArtifacts, ready.isEmpty() ? "" : ready.getFirst());
                 created.browserDriver(this::browserAction);
                 synchronized (this) {
                     if (!sameActiveRun(runId)) { created.close(); return; }

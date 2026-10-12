@@ -55,7 +55,7 @@ class FlowScopeProxyRoutingTest {
             set(f.extension, "rawChat", coordinator);
             set(f.extension, "rawProxyPort", 19417);
             var started = coordinator.start(new ExplorerCoordinator.StartRequest(TARGET,
-                    java.util.List.of(), false, "", "", "Inspect", true, 19417, "/tmp"));
+                    java.util.List.of(), true, "", "", "Inspect", true, 19417, "/tmp"));
             set(f.extension, "rawProxyRunId", started.runId());
             var credentialed = request(301, 19417, TARGET, Map.of("Cookie", "session=a",
                     "Authorization", "Bearer a"), "");
@@ -86,6 +86,52 @@ class FlowScopeProxyRoutingTest {
             coordinator.cancel();
             assertEquals(MessageReceivedAction.DROP, f.requests.handleRequestReceived(
                     request(303, 19417, TARGET, Map.of(), "")).action());
+            coordinator.close();
+        }
+    }
+
+    @Test void selectedRawAccountUsesItsExplorerSessionForShellEvidence() throws Exception {
+        try (var f = new Fixture()) {
+            ExplorerAccountVault vault = new ExplorerAccountVault();
+            vault.register("user-a", "USER A", "USER");
+            var adopt = ExplorerAccountVault.class.getDeclaredMethod("adoptSession", String.class, URI.class,
+                    java.util.List.class, java.util.Map.class);
+            adopt.setAccessible(true);
+            adopt.invoke(vault, "user-a", URI.create(TARGET), java.util.List.of(),
+                    Map.of("Authorization", "Bearer account-a"));
+            ExplorerProvider provider = new ExplorerProvider() {
+                @Override public String readiness() { return "READY"; }
+                @Override public Handle start(Request request, Listener listener) {
+                    return new Handle() {
+                        @Override public void steer(String message) { }
+                        @Override public void cancel() { }
+                    };
+                }
+                @Override public void close() { }
+            };
+            var contexts = (RunContextRegistry) get(f.extension, "runContexts");
+            var coordinator = new ExplorerCoordinator(vault,
+                    request -> { throw new AssertionError("raw proxy must not use Explorer HTTP transport"); },
+                    provider, contexts, url -> ScopePolicy.parse("https://app.test/").allows(url),
+                    () -> Pipeline.run(java.util.List.of()), ignored -> { });
+            installAliveLoginWindow(coordinator, "user-a");
+            set(f.extension, "rawChat", coordinator);
+            set(f.extension, "rawProxyPort", 19418);
+            var started = coordinator.start(new ExplorerCoordinator.StartRequest(TARGET,
+                    java.util.List.of("user-a"), false, "", "", "Inspect", true, 19418, "/tmp"));
+            set(f.extension, "rawProxyRunId", started.runId());
+            var shell = request(311, 19418, TARGET, Map.of(), "");
+            var accepted = f.requests.handleRequestReceived(shell);
+            assertEquals(MessageReceivedAction.CONTINUE, accepted.action());
+            assertEquals("Bearer account-a", accepted.request().headerValue("Authorization"));
+            assertNull(accepted.request().headerValue("Proxy-Authorization"));
+            f.responses.handleResponseReceived(response(311, (InterceptedRequest) accepted.request()));
+            @SuppressWarnings("unchecked")
+            var records = (java.util.List<RequestRecord>) get(f.extension, "records");
+            assertEquals("user-a", records.getFirst().collectionAccountId);
+            assertEquals("user-a", records.getFirst().laneAccountId);
+            assertEquals(AuthState.ACCOUNT_BOUND, Pipeline.run(records).records.getFirst().authState);
+            coordinator.cancel();
             coordinator.close();
         }
     }
@@ -251,6 +297,12 @@ class FlowScopeProxyRoutingTest {
                 copy.put((String) args[0], (String) args[1]);
                 yield request(id, port, url, copy, notes);
             }
+            case "withHeader" -> {
+                var copy = new LinkedHashMap<>(headers);
+                copy.keySet().removeIf(name -> name.equalsIgnoreCase((String) args[0]));
+                copy.put((String) args[0], (String) args[1]);
+                yield request(id, port, url, copy, notes);
+            }
             case "withRemovedHeader" -> {
                 var copy = new LinkedHashMap<>(headers);
                 copy.keySet().removeIf(name -> name.equalsIgnoreCase((String) args[0]));
@@ -258,6 +310,22 @@ class FlowScopeProxyRoutingTest {
             }
             default -> throw new AssertionError(method.getName());
         });
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void installAliveLoginWindow(ExplorerCoordinator coordinator, String accountId) throws Exception {
+        Class<?> sessionType = Class.forName("io.flowscope.explorer.LoginBrowser$Session");
+        Object session = Proxy.newProxyInstance(sessionType.getClassLoader(), new Class<?>[] { sessionType },
+                (unused, method, args) -> switch (method.getName()) {
+                    case "alive" -> true;
+                    case "cookies" -> java.util.List.of();
+                    case "authHeaders" -> Map.of("Authorization", "Bearer account-a");
+                    case "recording", "close" -> null;
+                    default -> throw new AssertionError(method.getName());
+                });
+        var field = ExplorerCoordinator.class.getDeclaredField("loginWindows");
+        field.setAccessible(true);
+        ((Map) field.get(coordinator)).put(accountId, session);
     }
 
     private static Annotations annotations(String notes) {

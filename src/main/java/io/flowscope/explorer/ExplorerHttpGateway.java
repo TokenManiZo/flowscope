@@ -72,6 +72,8 @@ public final class ExplorerHttpGateway implements AutoCloseable {
     private final Set<String> declaredParameterProvenanceKeys = new LinkedHashSet<>();
     private final ExplorerArtifactStore artifacts;
     private final boolean ownsArtifacts;
+    /** null = unconstrained automatic/chat gateway, empty = explicit anonymous raw turn, value = one raw account. */
+    private final String boundAccountId;
     private final SupportingAssetScope supportingAssets = new SupportingAssetScope();
     private volatile BrowserDriver browser;
 
@@ -110,6 +112,14 @@ public final class ExplorerHttpGateway implements AutoCloseable {
                                Consumer<Event> events,
                                Consumer<List<RouteCandidate>> discoveries, boolean chatTurn,
                                ExplorerArtifactStore sharedArtifacts) throws java.io.IOException {
+        this(vault, transport, exactScope, runId, events, discoveries, chatTurn, sharedArtifacts, null);
+    }
+
+    public ExplorerHttpGateway(ExplorerAccountVault vault, ExplorerTransport transport,
+                               Predicate<String> exactScope, String runId,
+                               Consumer<Event> events,
+                               Consumer<List<RouteCandidate>> discoveries, boolean chatTurn,
+                               ExplorerArtifactStore sharedArtifacts, String boundAccountId) throws java.io.IOException {
         this.vault = vault;
         this.transport = transport;
         this.exactScope = exactScope;
@@ -119,6 +129,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         this.discoveries = discoveries == null ? ignored -> {} : discoveries;
         this.artifacts = sharedArtifacts == null ? new ExplorerArtifactStore(runId) : sharedArtifacts;
         this.ownsArtifacts = sharedArtifacts == null;
+        this.boundAccountId = boundAccountId;
         if (sharedArtifacts != null) sharedArtifacts.list().forEach(metadata -> metadata.provenance()
                 .forEach(provenance -> responseEvidenceIds.add(provenance.evidenceId())));
         this.server = new LoopbackHttpServer(0, REQUEST_LIMIT, this::handle);
@@ -166,7 +177,9 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         }
         String method = body.path("method").asText("GET").toUpperCase(Locale.ROOT);
         String target = body.path("url").asText("");
-        String accountId = body.path("account").asText("").trim();
+        String accountId;
+        try { accountId = boundAccount(body.path("account").asText("").trim()); }
+        catch (IllegalArgumentException error) { return error(400, error.getMessage()); }
         if (!method.matches("[!#$%&'*+.^_`|~0-9A-Za-z-]{1,32}")) {
             return error(400, "HTTP method 형식이 올바르지 않습니다.");
         }
@@ -303,7 +316,7 @@ public final class ExplorerHttpGateway implements AutoCloseable {
         String text;
         try {
             requireOnlyFields(body, Set.of("account", "action", "url", "ref", "text"), "browser 요청");
-            account = requiredText(body, "account", 96);
+            account = boundAccount(requiredText(body, "account", 96));
             action = requiredText(body, "action", 32);
             url = body.path("url").asText("").trim();
             ref = body.path("ref").asText("").trim();
@@ -330,6 +343,18 @@ public final class ExplorerHttpGateway implements AutoCloseable {
             return error(502, TextLimits.truncate(error.getMessage() == null
                     ? error.getClass().getSimpleName() : error.getMessage(), 500));
         }
+    }
+
+    private String boundAccount(String requested) {
+        if (boundAccountId == null) return requested;
+        if (boundAccountId.isBlank()) {
+            if (!requested.isBlank()) throw new IllegalArgumentException("비로그인 자유 대화에는 계정 handle을 사용할 수 없습니다.");
+            return "";
+        }
+        if (!requested.isBlank() && !boundAccountId.equals(requested)) {
+            throw new IllegalArgumentException("자유 대화에서 선택하지 않은 계정 handle입니다.");
+        }
+        return boundAccountId;
     }
 
     private LoopbackHttpServer.Response handleArtifacts(String operation, JsonNode body) {
