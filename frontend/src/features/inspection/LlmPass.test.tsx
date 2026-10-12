@@ -230,7 +230,7 @@ it("prepares a separate free-chat login and sends its ready account with the nex
   }))
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
   await user.click(screen.getByRole("button", { name: "Codex 자유 대화" }))
-  await user.click(await screen.findByRole("button", { name: /^자유 대화 브라우저 로그인/ }))
+  await user.click(await screen.findByRole("button", { name: /^LLM 공용 브라우저 로그인/ }))
   await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
   await user.click(await screen.findByRole("button", { name: "USER A 로그인 완료" }))
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "USER A" })).toBeChecked())
@@ -257,7 +257,7 @@ it("keeps a free-chat turn on exactly one anonymous or account lane", async () =
     { id: "user-a", label: "USER A" }, { id: "user-b", label: "USER B" },
   ]} />)
   await user.click(await screen.findByRole("button", { name: "Codex 자유 대화" }))
-  await user.click(await screen.findByRole("button", { name: /^자유 대화 브라우저 로그인/ }))
+  await user.click(await screen.findByRole("button", { name: /^LLM 공용 브라우저 로그인/ }))
   expect(screen.getByRole("checkbox", { name: "비로그인" })).toBeChecked()
   await user.click(screen.getByRole("checkbox", { name: "USER A" }))
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()

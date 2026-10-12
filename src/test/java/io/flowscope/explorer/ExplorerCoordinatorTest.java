@@ -87,6 +87,45 @@ final class ExplorerCoordinatorTest {
     }
 
     @Test
+    void automaticExplorerAndFreeChatShareOneLoginWindowButKeepRunStateSeparate(@TempDir Path temp) throws Exception {
+        ExplorerLoginSessions sessions = new ExplorerLoginSessions(new ExplorerAccountVault());
+        FakeWindow window = new FakeWindow();
+        window.cookies.add(cookie("session", "shared-login"));
+        FakeProvider automaticProvider = new FakeProvider();
+        FakeProvider chatProvider = new FakeProvider();
+        RunContextRegistry contexts = new RunContextRegistry();
+        List<ExplorerCoordinator.BrowserExchange> automaticRecords = new java.util.ArrayList<>();
+        List<ExplorerCoordinator.BrowserExchange> chatRecords = new java.util.ArrayList<>();
+        try (ExplorerCoordinator automatic = new ExplorerCoordinator(sessions,
+                     request -> { throw new AssertionError("no HTTP call expected"); }, automaticProvider,
+                     contexts, url -> url.startsWith("https://app.example.test/"),
+                     () -> Pipeline.run(List.of()), ignored -> { }, ignored -> { }, () -> { });
+             ExplorerCoordinator chat = new ExplorerCoordinator(sessions,
+                     request -> { throw new AssertionError("no HTTP call expected"); }, chatProvider,
+                     contexts, url -> url.startsWith("https://app.example.test/"),
+                     () -> Pipeline.run(List.of()), ignored -> { }, ignored -> { }, () -> { })) {
+            automatic.loginBrowser(window);
+            automatic.browserRecorder(automaticRecords::add);
+            chat.browserRecorder(chatRecords::add);
+            automatic.openBrowserLogin("user-a", "USER A", "USER", "https://app.example.test/");
+            automatic.completeBrowserLogin("user-a");
+
+            assertEquals(ExplorerAccountVault.AuthStatus.READY, chat.accounts().getFirst().status());
+            chat.start(new ExplorerCoordinator.StartRequest("https://app.example.test/", List.of("user-a"),
+                    false, "", "", "Continue in free chat", true, 19417, temp.resolve("raw").toString()));
+            await(() -> chatProvider.request.get() != null);
+            assertEquals(ExplorerCoordinator.Status.IDLE, automatic.current().status());
+            assertEquals(List.of("user-a"), chatProvider.request.get().accountHandles());
+
+            chat.browserAction("user-a", "navigate", "https://app.example.test/api/me", "", "");
+            assertTrue(automaticRecords.isEmpty(), "the inactive automatic run must not receive free-chat traffic");
+            assertEquals(1, chatRecords.size());
+            assertEquals("user-a", chatRecords.getFirst().accountId());
+            assertEquals(1, window.opened, "free chat must reuse the automatic Explorer login window");
+        }
+    }
+
+    @Test
     void rawCodexStartsWithoutAccountsAndRetainsItsConversation(@TempDir Path temp) throws Exception {
         FakeProvider provider = new FakeProvider();
         RunContextRegistry contexts = new RunContextRegistry();

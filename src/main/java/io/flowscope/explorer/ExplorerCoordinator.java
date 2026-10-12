@@ -146,9 +146,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private ExplorerArtifactStore conversationArtifacts;
     private volatile ExplorerProvider.Handle providerHandle;
     private volatile boolean closed;
-    private LoginBrowser loginBrowser = new ChromiumLoginBrowser();
+    private final ExplorerLoginSessions loginSessions;
     /** Login windows stay open after [로그인 완료]: the Explorer drives the same window the operator logged in to. */
-    private final Map<String, LoginBrowser.Session> loginWindows = new ConcurrentHashMap<>();
+    private final Map<String, LoginBrowser.Session> loginWindows;
+    private final AutoCloseable loginAttachment;
     private volatile Consumer<BrowserExchange> browserSink = exchange -> { };
     /** Distinct method+url the window produced this run, shown as the operator's endpoint counter. */
     private final Set<String> browserEndpoints = ConcurrentHashMap.newKeySet();
@@ -189,7 +190,20 @@ public final class ExplorerCoordinator implements AutoCloseable {
                                Supplier<Pipeline.Result> completionSnapshot,
                                Consumer<List<RouteCandidate>> discoverySink,
                                Consumer<String> logger, Runnable chatChanged) {
-        this.vault = vault;
+        this(new ExplorerLoginSessions(vault), transport, provider, contexts, exactScope,
+                completionSnapshot, discoverySink, logger, chatChanged);
+    }
+
+    public ExplorerCoordinator(ExplorerLoginSessions loginSessions, ExplorerTransport transport,
+                               ExplorerProvider provider, RunContextRegistry contexts,
+                               Predicate<String> exactScope,
+                               Supplier<Pipeline.Result> completionSnapshot,
+                               Consumer<List<RouteCandidate>> discoverySink,
+                               Consumer<String> logger, Runnable chatChanged) {
+        this.loginSessions = java.util.Objects.requireNonNull(loginSessions);
+        this.vault = loginSessions.vault();
+        this.loginWindows = loginSessions.windows();
+        this.loginAttachment = loginSessions.attach(this::record);
         this.transport = transport;
         this.provider = provider;
         this.contexts = contexts;
@@ -364,11 +378,10 @@ public final class ExplorerCoordinator implements AutoCloseable {
         chatMessages.addAll(parsed);
     }
 
-    void loginBrowser(LoginBrowser browser) { this.loginBrowser = browser; }
+    void loginBrowser(LoginBrowser browser) { loginSessions.browser(browser); }
 
     public void browserProxy(ExplorerBrowserProxy proxy) {
-        if (!loginWindows.isEmpty()) throw new IllegalStateException("로그인 브라우저를 닫은 뒤 프록시를 변경하세요.");
-        loginBrowser = new ChromiumLoginBrowser(proxy);
+        loginSessions.browserProxy(proxy);
     }
 
     /** One request/response the driven window performed, handed to FlowScope to store as LLM Evidence. */
@@ -422,12 +435,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
             throw new IllegalArgumentException("로그인 URL이 현재 exact scope 밖입니다.");
         }
         vault.register(accountId, label, role);
-        LoginBrowser.Session window = loginWindows.get(accountId);
-        if (window == null || !window.alive()) {
-            if (window != null) window.close();
-            window = loginBrowser.open(target, exchange -> record(accountId, exchange));
-            loginWindows.put(accountId, window);
-        }
+        LoginBrowser.Session window = loginSessions.open(accountId, target);
         // Nothing is recorded until the operator says the login is done, so the password never becomes Evidence.
         window.recording(false);
         vault.awaitBrowserLogin(accountId, target);
@@ -517,19 +525,15 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     public void removeAccount(String id) {
-        closeLoginWindow(id);
-        if (vault.contains(id)) vault.remove(id);
+        loginSessions.remove(id);
     }
 
     public void clearAccounts() {
-        List.copyOf(loginWindows.keySet()).forEach(this::closeLoginWindow);
-        vault.clear();
+        loginSessions.clear();
     }
 
     private void closeLoginWindow(String accountId) {
-        LoginBrowser.Session window = loginWindows.remove(accountId);
-        if (window != null) window.close();
-        vault.browserClosed(accountId);
+        loginSessions.closeWindow(accountId);
     }
 
     public synchronized Snapshot steer(String message) {
@@ -997,10 +1001,9 @@ public final class ExplorerCoordinator implements AutoCloseable {
         if (conversationArtifacts != null) conversationArtifacts.close();
         conversationArtifacts = null;
         provider.close();
-        List.copyOf(loginWindows.keySet()).forEach(this::closeLoginWindow);
-        vault.close();
         stopBrowserWatch();
         stopBrowserRecording();
+        try { loginAttachment.close(); } catch (Exception ignored) { }
         watchdog.shutdownNow();
         worker.shutdownNow();
     }

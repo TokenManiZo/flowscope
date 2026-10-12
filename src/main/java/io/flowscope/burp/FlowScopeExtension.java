@@ -76,6 +76,7 @@ import io.flowscope.explorer.ExplorerCoordinator;
 import io.flowscope.explorer.ExplorerTransport;
 import io.flowscope.explorer.ProjectEvidenceReader;
 import io.flowscope.explorer.ExplorerBrowserProxy;
+import io.flowscope.explorer.ExplorerLoginSessions;
 import io.flowscope.ui.FlowScopeControlTab;
 import io.flowscope.web.FlowScopeWebServer;
 
@@ -433,12 +434,13 @@ public final class FlowScopeExtension implements BurpExtension {
                 crossIdentityReplay::kill,
                 authorizationReplayWorker);
         explorerAccounts = new ExplorerAccountVault();
-        explorer = new ExplorerCoordinator(explorerAccounts, this::executeExplorerRequest,
+        ExplorerLoginSessions explorerLoginSessions = new ExplorerLoginSessions(explorerAccounts);
+        explorer = new ExplorerCoordinator(explorerLoginSessions, this::executeExplorerRequest,
                 new CodexAppServerProvider(api.logging()::logToOutput, this::approveCodexAction),
                 runContexts, value -> scope.allows(value),
                 () -> { rebuildImmediately(); return latest; }, this::acceptExplorerDiscoveries,
                 api.logging()::logToOutput, this::explorerChatChanged);
-        rawChat = new ExplorerCoordinator(new ExplorerAccountVault(), this::executeExplorerRequest,
+        rawChat = new ExplorerCoordinator(explorerLoginSessions, this::executeExplorerRequest,
                 new CodexAppServerProvider(api.logging()::logToOutput, this::approveCodexAction,
                         new ProjectEvidenceReader(this::rawEvidenceForRun)),
                 runContexts, value -> scope.allows(value),
@@ -453,7 +455,6 @@ public final class FlowScopeExtension implements BurpExtension {
                 .ifPresent(port -> {
                     explorerBrowserProxy = new ExplorerBrowserProxy(port);
                     explorer.browserProxy(explorerBrowserProxy);
-                    rawChat.browserProxy(explorerBrowserProxy);
                 });
         try {
             startWebUi();

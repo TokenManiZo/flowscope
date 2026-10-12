@@ -289,14 +289,14 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
     </div>}
     </section>}
     {rawView && <section className="rounded-md border">
-      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">자유 대화 브라우저 로그인 <span className="ml-2 font-normal text-muted-foreground">{readyAccounts.size}개 준비 · 로그인 완료한 계정은 다음 메시지에 연결</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
+      <button type="button" aria-expanded={accountsOpen} onClick={() => setAccountsOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-muted/50"><span className="font-medium">LLM 공용 브라우저 로그인 <span className="ml-2 font-normal text-muted-foreground">{readyAccounts.size}개 준비 · Explorer와 자유 대화가 함께 사용</span></span><span className="flex items-center gap-1 font-medium">{accountsOpen ? "접기" : "펼치기"}<ChevronDown className={`size-3.5 ${accountsOpen ? "rotate-180" : ""}`} /></span></button>
       {accountsOpen && <div className="grid gap-2 border-t p-3 text-xs">
         <AccountLaneTable lane="자유 대화" rows={rows} anonymous={shownAnonymous}
           onAnonymousChange={(value) => { setRawAnonymous(value); if (value) setRawSelected([]) }}
           selected={shownSelected}
           onToggle={(id, value) => { setRawSelected(value ? [id] : []); if (value) setRawAnonymous(false) }}
           disabled={active} />
-        <p className="text-muted-foreground">한 turn은 비로그인 또는 로그인 완료한 계정 하나로 실행합니다. 셸·HTTP·브라우저 요청은 같은 계정으로 기록됩니다. 이 브라우저는 자동 Explorer와 별도 세션입니다.</p>
+        <p className="text-muted-foreground">한 turn은 비로그인 또는 로그인 완료한 계정 하나로 실행합니다. 셸·HTTP·브라우저 요청은 같은 계정으로 기록됩니다. 로그인 브라우저와 메모리 세션은 자동 Explorer와 공유합니다.</p>
       </div>}
     </section>}
     {!rawView && browserCard}
