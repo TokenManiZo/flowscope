@@ -158,6 +158,19 @@ class ZapClientTest {
     }
 
     @Test
+    void wildcardScopeRegexCoversApexAndNestedSubdomainsOnly() {
+        Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex(
+                java.util.List.of("https://*.example.test:443/")));
+
+        assertTrue(pattern.matcher("https://example.test/").matches());
+        assertTrue(pattern.matcher("https://api.example.test/orders").matches());
+        assertTrue(pattern.matcher("https://a.b.example.test/admin").matches());
+        assertFalse(pattern.matcher("https://badexample.test/").matches());
+        assertFalse(pattern.matcher("http://api.example.test/").matches());
+        assertFalse(pattern.matcher("https://api.example.test:8443/").matches());
+    }
+
+    @Test
     void exactSubtreeRegexUnionOfOneEqualsSingleTargetRegex() {
         // 단일 항목이면 기존 단일 target 동작과 완전히 동일해야 한다(회귀 방지).
         assertEquals(ZapClient.exactSubtreeRegex("https://api.example.test/v1"),

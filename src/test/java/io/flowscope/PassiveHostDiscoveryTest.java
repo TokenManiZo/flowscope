@@ -29,6 +29,16 @@ class PassiveHostDiscoveryTest {
         assertFalse(scope.allows("https://api.example.test/"));
     }
 
+    @Test void wildcard로_이미_허용된_하위_도메인은_추가_후보로_내놓지_않는다() {
+        ScopePolicy wildcard = ScopePolicy.parse("*.example.test");
+        discovery.observe(1, wildcard, "https://api.example.test/orders");
+        discovery.observe(1, wildcard, "https://a.b.example.test/admin");
+
+        assertTrue(discovery.candidates(1, wildcard).isEmpty());
+        assertEquals(List.of("https://a.b.example.test:443", "https://api.example.test:443"),
+                discovery.observedOrigins(1, wildcard));
+    }
+
     @Test void keepsProtocolAndPortAndDoesNotOfferRegisteredPathAsWiderScope() {
         discovery.observe(1, scope, "http://api.example.test/");
         discovery.observe(1, scope, "https://api.example.test:8443/");

@@ -58,7 +58,10 @@ it("normalizes typed scope entries to scheme://host:port[/path]", () => {
   expect(normalizeScopeEntry("Example.COM").entry).toBe("https://example.com:443")
   expect(normalizeScopeEntry("https://user:pass@example.com").entry).toBeNull()
   expect(normalizeScopeEntry("127.0.0.1").entry).toBeNull()
-  expect(normalizeScopeEntry("*.example.com").entry).toBeNull()
+  expect(normalizeScopeEntry("*.Example.COM")).toEqual({
+    entry: "https://*.example.com:443",
+    note: "루트 도메인과 모든 하위 도메인을 HTTPS 범위로 등록했습니다.",
+  })
 })
 
 it("creates a project from a bare root domain using the existing exact URL scope", async () => {

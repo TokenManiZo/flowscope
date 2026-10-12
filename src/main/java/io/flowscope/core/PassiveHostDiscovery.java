@@ -24,7 +24,9 @@ public final class PassiveHostDiscovery {
         if (scope == null) return List.of();
         Set<String> registered = new LinkedHashSet<>();
         scope.entries().forEach(entry -> registered.add(origin(entry)));
-        return observedOrigins(datasetEpoch, scope).stream().filter(value -> !registered.contains(value)).toList();
+        return observedOrigins(datasetEpoch, scope).stream()
+                .filter(value -> !registered.contains(value) && !scope.allows(value))
+                .toList();
     }
 
     public synchronized List<String> observedOrigins(long datasetEpoch, ScopePolicy scope) {

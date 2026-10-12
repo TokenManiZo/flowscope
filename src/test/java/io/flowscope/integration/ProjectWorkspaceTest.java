@@ -35,6 +35,17 @@ class ProjectWorkspaceTest {
     }
 
     @Test
+    void wildcardScope를_프로젝트에_그대로_보존한다() throws Exception {
+        ProjectWorkspace workspace = new ProjectWorkspace(temporary,
+                Clock.fixed(Instant.parse("2026-09-10T01:02:03Z"), ZoneOffset.UTC));
+
+        ProjectWorkspace.Allocation allocation = workspace.allocate("", "*.Example.test");
+
+        assertEquals("example-test-443-20260910-010203", allocation.id());
+        assertEquals(List.of("https://*.example.test:443/"), allocation.context().scope());
+    }
+
+    @Test
     void listsSavedProjectsAndRejectsPathTraversal() throws Exception {
         ProjectStore codec = new ProjectStore();
         SqliteProjectStore store = new SqliteProjectStore(codec);

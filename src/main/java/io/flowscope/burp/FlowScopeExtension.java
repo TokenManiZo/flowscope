@@ -1563,7 +1563,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private String archiveScopeText() {
-        List<String> entries = new ArrayList<>(scope.entries());
+        List<String> entries = new ArrayList<>(scope.configuredEntries());
         if (entries.isEmpty()) {
             synchronized (records) {
                 records.stream().map(record -> record.service).filter(java.util.Objects::nonNull)
@@ -1749,7 +1749,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private ProjectStore.ProjectContext currentProjectContext(String fallbackName) {
         if (activeProjectContext != null && activeProjectContext.present()) return activeProjectContext;
-        List<String> entries = scope.entries();
+        List<String> entries = scope.configuredEntries();
         String name = fallbackName == null ? "" : fallbackName
                 .replaceFirst("(?i)\\.(flowscope\\.db|json|db)$", "").trim();
         if (name.isBlank() && !entries.isEmpty()) name = entries.getFirst();
