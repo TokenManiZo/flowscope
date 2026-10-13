@@ -42,7 +42,7 @@ for (const width of [1280, 1920]) test(`graph filters and long object identifier
   })
   await page.goto(`${baseURL}?flowscope-e2e-geometry=1#graph`)
   await expect(page.getByRole("alert")).toHaveCount(0)
-  const modes = page.getByRole("group", { name: "그래프 기록 보기" })
+  const modes = page.getByRole("group", { name: "그래프 기록 보기", exact: true })
   await expect(modes).toBeVisible()
   await expect(page.getByRole("navigation", { name: "그래프 계층" }).getByRole("button", { name: "수집 그래프" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "수집 그래프", exact: true })).toHaveAttribute("aria-pressed", "true")

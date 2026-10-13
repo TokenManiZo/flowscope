@@ -63,7 +63,7 @@ export function SourcePassLayout({
     <section ref={root} onKeyDown={view.onKeyDown} className="flex h-full min-h-0 flex-col gap-3" aria-label={`${label} 실행 영역`}>
       {notices}
 
-      <div hidden={view.focused} className={view.focused ? "hidden" : aside ? "grid shrink-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "grid shrink-0 gap-4"}>
+      <div hidden={view.focused} className={view.focused ? "hidden" : aside ? "source-run-controls grid shrink-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]" : "source-run-controls grid shrink-0 gap-4"}>
         <Card className="gap-0 py-0">
           <CardContent className="grid gap-4 p-5">
             <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-1"><h2 className="text-base font-semibold">{title}</h2>{description && <HelpHint label={title}>{description}</HelpHint>}</div>{titleControl}</div>

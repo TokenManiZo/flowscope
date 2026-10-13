@@ -52,7 +52,7 @@ export function ReferenceAppShell({ route, children }: ReferenceAppShellProps) {
 
   return (
     <div className="flex h-svh min-h-svh min-w-0 overflow-x-hidden bg-background text-foreground">
-      <aside data-expanded={expanded} className={`hidden shrink-0 overflow-hidden border-e border-border bg-card transition-[width] duration-150 lg:block ${expanded ? "w-60" : "w-14"}`}>
+      <aside data-expanded={expanded} className={`flowscope-navigation hidden shrink-0 overflow-hidden border-e border-border bg-card transition-[width] duration-150 lg:block ${expanded ? "w-60" : "w-14"}`}>
         <SidebarNav route={route} theme={theme} onToggleTheme={toggleTheme} collapsed={!expanded} onToggleSidebar={() => setExpanded((value) => !value)} />
       </aside>
 
@@ -64,7 +64,7 @@ export function ReferenceAppShell({ route, children }: ReferenceAppShellProps) {
             onClick={() => setMobileOpen(false)}
             className="absolute inset-0 bg-background/70"
           />
-          <aside className="absolute inset-y-0 start-0 w-60 border-e border-border bg-card">
+          <aside className="flowscope-navigation absolute inset-y-0 start-0 w-60 border-e border-border bg-card">
             <SidebarNav route={route} theme={theme} onToggleTheme={toggleTheme} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
@@ -78,7 +78,7 @@ export function ReferenceAppShell({ route, children }: ReferenceAppShellProps) {
             <Menu className="size-5" aria-hidden="true" />
           </button>
         </div>
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto">{children}</main>
+        <main className="flowscope-content min-h-0 min-w-0 flex-1 overflow-auto">{children}</main>
       </div>
     </div>
   )

@@ -181,3 +181,22 @@ it("separates verdicts, limits long lists, and keeps the judgment action in unju
   expect(screen.getByRole("dialog", { name: "GET /records/candidate 소견 상세" })).toBeInTheDocument()
   view.unmount()
 })
+
+it("keeps a resend status beside the message even when no request can be opened", async () => {
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} })
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    const value = path === "/api/snapshot" ? snapshotFixture
+      : path.startsWith("/api/llm-feed") ? { entries: [{ seq: 1, timestamp: 1, type: "resend", summary: "GET /api/orders/101 · HTTP 200", risk: false }] }
+      : path === "/api/llm-findings" ? { findings: [] }
+      : path === "/api/llm-verify" ? { status: "IDLE", accountId: "", message: "" }
+      : path === "/api/explorer-run" ? { run: { status: "IDLE", providerReadiness: "READY" }, accounts: [], scope: [] }
+      : path === "/api/explorer-models" ? { models: [], configuredModel: "" } : {}
+    return new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } })
+  }))
+  const view = renderWithQueryClient(<LlmJudgmentPage />)
+  const summary = await screen.findByText("GET /api/orders/101")
+  expect(within(summary.parentElement!).getByText("200")).toBeInTheDocument()
+  expect(summary.closest("article")!.children).toHaveLength(3)
+  view.unmount()
+})

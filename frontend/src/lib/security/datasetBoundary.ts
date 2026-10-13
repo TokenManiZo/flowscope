@@ -7,3 +7,7 @@ export async function prepareDatasetReplacement() {
   await Promise.all(pending)
 }
 export function notifyDatasetReplacing() { window.dispatchEvent(new Event(DATASET_REPLACING)) }
+
+/** A successful open/create starts a fresh project viewing session; traffic reset does not. */
+export const PROJECT_OPENED = "flowscope:project-opened"
+export function notifyProjectOpened() { window.dispatchEvent(new Event(PROJECT_OPENED)) }

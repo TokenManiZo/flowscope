@@ -1,5 +1,5 @@
 import { apiFetch, postForm } from "./client"
-import { notifyDatasetReplacing, prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
+import { notifyDatasetReplacing, notifyProjectOpened, prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
 import type {
   AccountSaveResult,
   ApiSuccess,
@@ -62,16 +62,17 @@ export const getMatrixExclusions = (signal?: AbortSignal) => apiFetch<MatrixExcl
 export const replaceMatrixExclusions = (datasetRevision: number, entries: readonly MatrixExclusionEntry[]) =>
   postForm<MatrixExclusionsResponse>("/api/matrix-exclusions", { datasetRevision: String(datasetRevision), entries: JSON.stringify(entries) })
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
-const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promise<T> => {
+const confirmedDatasetReplacement = async <T>(request: () => Promise<T>, opensProject = false): Promise<T> => {
   await prepareDatasetReplacement()
   const result = await request()
   notifyDatasetReplacing()
+  if (opensProject) notifyProjectOpened()
   return result
 }
 export const startProject = (values: { name: string; scope: string; startUrl?: string }) =>
-  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
+  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "start", ...values }), true)
 export const openProject = (id: string) =>
-  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "open", id }))
+  confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "open", id }), true)
 /** 현재 프로젝트의 이름·점검 범위 수정. 이미 모은 기록은 그대로 두고 이후 수집만 새 범위를 따른다. */
 export const updateProject = (values: { name: string; scope: string; startUrl?: string }) =>
   postForm<ProjectStatus>("/api/projects", { action: "update", ...values })

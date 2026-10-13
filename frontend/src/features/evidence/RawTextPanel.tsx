@@ -48,7 +48,7 @@ function revealActiveMark(layer: HTMLElement | null, scroller: HTMLElement | nul
  * 원문 편집/열람 패널. 편집 가능한 textarea 위에 같은 좌표의 하이라이트 층을 겹쳐
  * 값은 그대로 두고 색만 입힌다(Burp 유사 표시).
  */
-export function RawTextPanel({ id, label, value, readOnly = false, disabled = false, onChange, fontSize = 12, fill = false, wrap = true, inputRef, marks, activeMark = -1, revealKey, markStyle = "search" }: Props) {
+export function RawTextPanel({ id, label, value, readOnly = false, disabled = false, onChange, fontSize = 15, fill = false, wrap = true, inputRef, marks, activeMark = -1, revealKey, markStyle = "search" }: Props) {
   const highlightRef = useRef<HTMLPreElement>(null)
   const tokens = useMemo(() => value.length <= 262_144 ? highlightRaw(value) : null, [value])
   // 색을 입히지 못하는 큰 원문도 찾은 위치는 표시한다. 그때는 줄을 나누지 않고 통째로 자른다.

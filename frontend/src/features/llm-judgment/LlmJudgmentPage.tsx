@@ -69,20 +69,20 @@ function FeedRow({ entry, onOpenFinding, onOpenEvidence }: { entry: LlmFeedEntry
   const method = entry.type === "resend" ? entry.summary.match(/\b(GET|HEAD|OPTIONS)\b/)?.[1] : undefined
   const status = entry.type === "resend" ? entry.summary.match(/HTTP (\d{3})\s*$/)?.[1] : undefined
   const linked = Boolean(entry.findingId || entry.evidenceId)
-  return <article className={cn("grid grid-cols-[64px_minmax(0,1fr)_4.5rem_5.5rem] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0",
+  const summary = status ? entry.summary.replace(/\s*·?\s*HTTP \d{3}\s*$/, "") : entry.summary
+  return <article className={cn("grid grid-cols-[64px_minmax(0,1fr)_max-content] items-start gap-3 border-b border-border/60 px-4 py-3 last:border-b-0",
     entry.risk && "bg-destructive/5")}>
     {method ? <MethodBadge method={method} />
       : <Badge variant="outline" className={cn("h-[22px] w-[64px] justify-center text-xs", entry.risk && "border-destructive/40 text-destructive")}>{BADGE_LABEL[entry.type] ?? entry.type}</Badge>}
     <div className="min-w-0">
       {answer != null ? <p className="whitespace-pre-wrap break-words text-sm leading-6">{answer}</p> : output == null
-        ? linked ? <button type="button" className="w-full break-words text-left text-sm font-medium underline-offset-2 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-ring" onClick={() => entry.findingId ? onOpenFinding(entry.findingId) : entry.evidenceId && onOpenEvidence(entry.evidenceId)}>{entry.summary}</button>
-          : <p className="break-words text-sm font-medium">{entry.summary}</p>
+        ? linked ? <div className="flex flex-wrap items-center gap-2"><button type="button" className="min-w-0 break-words text-left text-sm font-medium underline-offset-2 hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-ring" onClick={() => entry.findingId ? onOpenFinding(entry.findingId) : entry.evidenceId && onOpenEvidence(entry.evidenceId)}>{summary}</button>{status && <HttpStatusBadge status={status} />}</div>
+          : <div className="flex flex-wrap items-center gap-2"><p className="break-words text-sm font-medium">{summary}</p>{status && <HttpStatusBadge status={status} />}</div>
         : <details>
           <summary className="cursor-pointer text-sm font-medium">Codex 최종 출력 <span className="font-normal text-muted-foreground">· 펼치기</span></summary>
           <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 font-mono text-xs">{output}</pre>
         </details>}
     </div>
-    <span className="text-right">{status ? <HttpStatusBadge status={status} /> : null}</span>
     <span className="text-right font-mono text-xs text-muted-foreground">{time}</span>
   </article>
 }
@@ -219,7 +219,7 @@ export function LlmJudgmentPage() {
     return {
       id: account.id, label: account.label, configured: ready,
       statusText: ready ? "세션 있음" : "로그인 필요",
-      action: <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]"
+      action: <Button type="button" size="sm" variant="outline" className="grid h-[32px] min-w-[110px] grid-cols-[16px_minmax(0,1fr)] gap-2 px-3 text-sm [&_svg]:size-4"
         disabled={running} aria-label={`${account.label} 로그인`}
         onClick={() => { window.location.hash = "#accounts/" + encodeURIComponent(account.id) }}>
         <LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "로그인"}</span>
