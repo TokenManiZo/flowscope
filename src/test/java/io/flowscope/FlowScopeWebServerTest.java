@@ -411,13 +411,16 @@ final class FlowScopeWebServerTest {
 
         // LLM 직접 판정은 서버가 강등·재검사 없이 그대로 저장한다(MCP 설계 §11).
         String findingId = state.findings.get(0).id();
-        String verdict = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_verdict\",\"arguments\":{\"finding_id\":\"" + findingId + "\",\"verdict\":\"vulnerable\",\"reason\":\"타인 주문 본문 노출\",\"evidence_ids\":[\"ev-missing\"]}}}";
+        String verdict = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_verdict\",\"arguments\":{\"finding_id\":\"" + findingId + "\",\"verdict\":\"vulnerable\",\"reason\":\"타인 주문 본문 노출\",\"verification_result\":\"다른 계정의 주문이 반환됐습니다.\",\"judgment_basis\":\"응답에 주문자 정보가 포함됐습니다.\",\"issue_title\":\"다른 회원의 주문 조회 (IDOR)\",\"evidence_ids\":[\"ev-missing\"]}}}";
         assertFalse(json(mcp(verdict, server.mcpToken())).at("/result/isError").asBoolean());
         assertEquals(1, state.findings.size());
         assertEquals("IDOR 의심", state.findings.get(0).verdict(), "기존 소견은 그대로 둔다");
         JsonNode judged = json(get("/api/llm-findings", token, origin()));
         assertEquals("vulnerable", judged.at("/findings/0/judgment").asText());
         assertEquals("타인 주문 본문 노출", judged.at("/findings/0/judgmentReason").asText());
+        assertEquals("다른 계정의 주문이 반환됐습니다.", judged.at("/findings/0/verificationResult").asText());
+        assertEquals("응답에 주문자 정보가 포함됐습니다.", judged.at("/findings/0/judgmentBasis").asText());
+        assertEquals("다른 회원의 주문 조회 (IDOR)", judged.at("/findings/0/issueTitle").asText());
         assertEquals("ev-missing", judged.at("/findings/0/judgmentEvidenceIds/0").asText());
 
         // 정해진 세 값 밖의 판정과 없는 소견은 거부한다.

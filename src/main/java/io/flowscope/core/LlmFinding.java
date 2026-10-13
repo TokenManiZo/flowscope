@@ -22,6 +22,9 @@ public record LlmFinding(
         long createdAt,
         String judgment,
         String judgmentReason,
+        String verificationResult,
+        String judgmentBasis,
+        String issueTitle,
         List<String> judgmentEvidenceIds,
         long judgedAt) {
 
@@ -38,6 +41,9 @@ public record LlmFinding(
         evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
         judgment = judgment == null ? "" : judgment;
         judgmentReason = judgmentReason == null ? "" : judgmentReason;
+        verificationResult = verificationResult == null ? "" : verificationResult;
+        judgmentBasis = judgmentBasis == null ? "" : judgmentBasis;
+        issueTitle = issueTitle == null ? "" : issueTitle;
         judgmentEvidenceIds = judgmentEvidenceIds == null ? List.of() : List.copyOf(judgmentEvidenceIds);
     }
 
@@ -45,15 +51,25 @@ public record LlmFinding(
     public LlmFinding(String id, String operation, String identity, String resource, String verdict,
                       String confidence, String note, List<String> evidenceIds, long createdAt) {
         this(id, operation, identity, resource, verdict, confidence, note, evidenceIds, createdAt,
-                "", "", List.of(), 0L);
+                "", "", "", "", "", List.of(), 0L);
     }
 
     /** 같은 소견에 LLM 판정을 붙인 사본. */
     public LlmFinding withJudgment(String value, String reason, List<String> judgmentEvidence, long at) {
+        return withJudgment(value, reason, "", "", "", judgmentEvidence, at);
+    }
+
+    public LlmFinding withJudgment(String value, String reason, String result, String basis,
+                                   List<String> judgmentEvidence, long at) {
+        return withJudgment(value, reason, result, basis, "", judgmentEvidence, at);
+    }
+
+    public LlmFinding withJudgment(String value, String reason, String result, String basis, String title,
+                                   List<String> judgmentEvidence, long at) {
         if (!JUDGMENTS.contains(value)) {
             throw new IllegalArgumentException("verdict는 vulnerable, not_vulnerable, inconclusive 중 하나여야 합니다.");
         }
         return new LlmFinding(id, operation, identity, resource, verdict, confidence, note, evidenceIds, createdAt,
-                value, reason, judgmentEvidence, at);
+                value, reason, result, basis, title, judgmentEvidence, at);
     }
 }

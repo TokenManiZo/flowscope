@@ -142,6 +142,9 @@ export const startLlmVerify = (values: { sources: string; accounts: string; mode
 /** 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다. */
 export const startLlmJudgment = (values: { findings: readonly string[]; model: string }) =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "judge", findings: JSON.stringify(values.findings), model: values.model })
+
+export const askLlmJudgment = (values: { message: string; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "ask", message: values.message, model: values.model })
 /** 실행 중인 LLM 판정을 중단한다. */
 export const cancelLlmVerify = () =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })

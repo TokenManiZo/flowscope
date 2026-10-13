@@ -33,6 +33,8 @@ interface Props {
   verifications?: readonly ManualVerification[]
   /** 경로 후보처럼 캡처 원문 대신 미리 채운 요청으로 열 때 쓴다. 있으면 첫 편집본을 이 전문으로 직접 입력(RAW) 모드로 만든다. */
   prefillRequest?: string
+  /** 판정 근거에서 열 때 저장된 요청·응답을 먼저 보여준다. */
+  initialView?: "original" | "draft"
   /** Test-only inspection seam; production always owns a new instance locally. */
   rawState?: MemoryOnlyRawState
 }
@@ -46,7 +48,7 @@ export function activeAccounts(sessions: readonly ManagedSession[], service: str
   return [...unique.values()]
 }
 
-export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, prefillRequest, rawState }: Props) {
+export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions, datasetRevision = 0, snapshotRevision, suspended = false, prefillRequest, initialView = "draft", rawState }: Props) {
   const queryClient = useQueryClient()
   const raw = useRef<MemoryOnlyRawState>(rawState ?? createMemoryOnlyRawState())
   const context = useRef<{ generation: number; sendController: AbortController | null; submission: { request: string } | null; preview: { mode: RequestLabCredentialMode; accountId: string; sessionHandle?: string } | null }>({ generation: 0, sendController: null, submission: null, preview: null })
@@ -321,7 +323,10 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
         const entries = Object.entries(workspace.tab.entries).sort(([a], [b]) => Number(a) - Number(b)).map(([id, value]) => ({ ...value, id: Number(id) }))
         if (!raw.current.restoreRequests(entries, workspace.tab.nextId, workspace.tab.selectedId)) throw new Error("저장 요청이 메모리 한도를 초과했습니다. 다른 요청을 닫고 다시 열어 주세요.")
         persistence.current = new RequestLabPersistence(raw.current, event.eventId, datasetRevision, workspace, setSaveStatus)
-        setView(raw.current.selectedId ?? "original")
+        if (initialView === "original") {
+          returnView.current = raw.current.selectedId
+          raw.current.selectedId = null
+        } else setView(raw.current.selectedId ?? "original")
       }
       draftRef.current = metadata
       setDraft(metadata)
@@ -358,6 +363,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   useEffect(() => {
     if (!open || !draft || prepared.current || loading || busy || suspended) return
     prepared.current = true
+    if (initialView === "original") return
     // 프리필 모드는 복원된 초안이 아니라 항상 후보 경로로 새 편집본을 만든다(선택한 후보와 전송 요청이 어긋나지 않게).
     const unsent = prefillRequest ? undefined : [...raw.current.requests].reverse().find(item => !item.result)
     if (unsent) changeView(unsent.id)

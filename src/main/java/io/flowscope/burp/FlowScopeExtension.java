@@ -2167,6 +2167,10 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public FlowScopeWebServer.LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
                 return startMcpJudgment(findingIds, model);
             }
+            @Override public FlowScopeWebServer.LlmVerifyState askLlmJudgment(String message, String model) {
+                if (mcpVerificationRunner == null) throw new IllegalStateException("LLM 판정을 먼저 실행하세요.");
+                return mcpVerificationRunner.ask(message, model);
+            }
             @Override public FlowScopeWebServer.LlmVerifyState llmVerifyState() {
                 return mcpVerificationRunner == null
                         ? FlowScopeWebServer.LlmVerifyState.idle() : mcpVerificationRunner.state();

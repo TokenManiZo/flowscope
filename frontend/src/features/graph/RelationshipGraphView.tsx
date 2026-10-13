@@ -13,6 +13,7 @@ import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { EventRecord, Source, Verdict } from "@/lib/api/types"
 import { useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
+import { takeResendSelection } from "./resendNavigation"
 import { SourceIcon } from "@/features/evidence/SourceIcon"
 
 import { CytoscapeGraph } from "./CytoscapeGraph"
@@ -131,6 +132,14 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const [pendingReplay, setPendingReplay] = useState<{ dataset: number; eventId: string; requestId: number } | null>(null)
   const [revealRequest, setRevealRequest] = useState<{ nodeId: string; requestId: number } | null>(null)
   const searchRequestId = useRef(0)
+  useEffect(() => {
+    if (!graphData || snapshot.isError) return
+    const eventId = takeResendSelection(dataset)
+    if (!eventId) return
+    setShownResendTools(current => current.includes("lab") ? current : [...current, "lab"])
+    setGraphMode("resend")
+    setPendingReplay({ dataset, eventId, requestId: ++searchRequestId.current })
+  }, [graphData, snapshot.isError, dataset])
   const anchor = searchAnchor && (!searchAnchor.key || searchIndex.byKey.has(searchAnchor.key)) && graphViewKey(searchAnchor.destination.navigation) === viewKey ? searchAnchor : null
   const setExpandedGroups = (change: Change<readonly string[]>) => workspaceState.update(current => {
     const saved = current.views[viewKey] ?? emptyGraphView

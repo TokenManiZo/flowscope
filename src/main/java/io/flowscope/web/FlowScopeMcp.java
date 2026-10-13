@@ -309,7 +309,7 @@ final class FlowScopeMcp {
         result.put("durationMs", sent.durationMs());
         String response = sent.response() == null ? "" : sent.response();
         result.put("responsePreview", response.length() > 4000 ? response.substring(0, 4000) : response);
-        log("resend", (anon ? "비로그인" : accountId) + "으로 " + firstLine(requestText) + " 재전송 → HTTP " + sent.status(), false);
+        log("resend", (anon ? "비로그인" : accountId) + "으로 " + firstLine(requestText) + " 재전송 → HTTP " + sent.status(), false, null, sent.eventId());
         return result;
     }
 
@@ -329,7 +329,7 @@ final class FlowScopeMcp {
                 evidenceIds, System.currentTimeMillis());
         state.submitFinding(finding);
         log("finding", (verdict.isBlank() ? "소견" : verdict) + " · " + identity + " · "
-                + (resource != null ? resource : operation), true);
+                + (resource != null ? resource : operation), false, id, null);
         ObjectNode result = json.createObjectNode();
         result.put("saved", true);
         result.put("id", id);
@@ -361,20 +361,23 @@ final class FlowScopeMcp {
         String findingId = required(args, "finding_id");
         String verdict = required(args, "verdict");
         String reason = args.path("reason").asText("");
+        String verificationResult = args.path("verification_result").asText("");
+        String basis = args.path("judgment_basis").asText("");
+        String title = args.path("issue_title").asText("");
         java.util.List<String> evidenceIds = new java.util.ArrayList<>();
         if (args.path("evidence_ids").isArray()) {
             args.get("evidence_ids").forEach(value -> { if (value.isTextual()) evidenceIds.add(value.asText()); });
         }
         LlmFinding finding = state.findings().stream().filter(item -> item.id().equals(findingId)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("소견을 찾지 못했습니다: " + findingId));
-        state.submitFinding(finding.withJudgment(verdict, reason, evidenceIds, System.currentTimeMillis()));
+        state.submitFinding(finding.withJudgment(verdict, reason, verificationResult, basis, title, evidenceIds, System.currentTimeMillis()));
         String label = switch (verdict) {
             case "vulnerable" -> "취약";
             case "not_vulnerable" -> "취약 아님";
             default -> "판단 불가";
         };
         log("verdict", "LLM 판정 " + label + " · " + finding.identity() + " · "
-                + (finding.resource() != null ? finding.resource() : finding.operation()), verdict.equals("vulnerable"));
+                + (finding.resource() != null ? finding.resource() : finding.operation()), verdict.equals("vulnerable"), findingId, null);
         ObjectNode result = json.createObjectNode();
         result.put("saved", true);
         result.put("id", findingId);
@@ -383,6 +386,10 @@ final class FlowScopeMcp {
 
     private void log(String type, String summary, boolean risk) {
         if (activity != null) activity.record(type, summary, risk);
+    }
+
+    private void log(String type, String summary, boolean risk, String findingId, String evidenceId) {
+        if (activity != null) activity.record(type, summary, risk, findingId, evidenceId);
     }
 
     private static String firstLine(String requestText) {
@@ -513,6 +520,9 @@ final class FlowScopeMcp {
         verdict.put("type", "string");
         verdict.putArray("enum").add("vulnerable").add("not_vulnerable").add("inconclusive");
         props.putObject("reason").put("type", "string");
+        props.putObject("verification_result").put("type", "string");
+        props.putObject("judgment_basis").put("type", "string");
+        props.putObject("issue_title").put("type", "string");
         ObjectNode evidence = props.putObject("evidence_ids");
         evidence.put("type", "array");
         evidence.putObject("items").put("type", "string");

@@ -1,10 +1,14 @@
 package io.flowscope.explorer;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.flowscope.integration.SessionBroker;
 import io.flowscope.web.FlowScopeWebServer.LlmVerifyState;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,6 +28,7 @@ import java.util.function.Consumer;
  * Codex를 read-only·ephemeral로 띄워 FlowScope MCP(/mcp)에만 연결한다. 모델 제공자 토큰은 취급하지 않는다.
  */
 public final class McpVerificationRunner implements AutoCloseable {
+    private static final ObjectMapper JSON = new ObjectMapper();
     @FunctionalInterface
     public interface ProcessLauncher {
         Process start(List<String> command, Path directory, Map<String, String> environment) throws IOException;
@@ -47,7 +52,8 @@ public final class McpVerificationRunner implements AutoCloseable {
 
     public McpVerificationRunner(String mcpUrl, String mcpToken, SessionBroker sessions,
                                  io.flowscope.core.McpActivityLog activity, Consumer<String> logger) {
-        this(mcpUrl, mcpToken, sessions, activity, McpVerificationRunner::startProcess, logger);
+        this(mcpUrl, mcpToken, sessions, activity, (command, directory, environment) -> CodexAppServerProvider.launch(
+                command, directory, environment, ProcessBuilder.Redirect.PIPE, true), logger);
     }
 
     McpVerificationRunner(String mcpUrl, String mcpToken, SessionBroker sessions,
@@ -100,6 +106,26 @@ public final class McpVerificationRunner implements AutoCloseable {
                         + " · 소견 " + findingIds.size() + "건");
     }
 
+    /** 완료된 판정에 대한 후속 질문. 별도 Codex 실행에서 현재 프로젝트의 MCP 근거를 다시 읽는다. */
+    public synchronized LlmVerifyState ask(String message, String model) {
+        String question = message == null ? "" : message.trim();
+        if (question.isBlank() || question.length() > 2_000) {
+            throw new IllegalArgumentException("질문은 1~2000자로 입력하세요.");
+        }
+        if (state.get().status().equals("IDLE")) {
+            throw new IllegalStateException("먼저 LLM 판정을 실행하세요.");
+        }
+        if (running || closed) throw new IllegalStateException("진행 중인 판정이 끝난 뒤 질문하세요.");
+        String chosenModel = model(model);
+        String followUp = "# FlowScope 판정 후속 질문\n\n현재 프로젝트의 판정 결과와 요청 근거를 FlowScope MCP에서 다시 읽고 한국어로 답하세요. "
+                + "필요하면 flowscope_list_findings와 flowscope_get_evidence를 사용하세요. "
+                + "재검증은 GET 요청과 선택된 프로젝트 범위에서만 하며 쓰기 요청, 외부 네트워크, 쉘은 사용하지 마세요. "
+                + "확인하지 못한 것은 추측하지 말고 확인 불가라고 설명하세요.\n\n사용자 질문: " + question;
+        LlmVerifyState started = launch("question", followUp, chosenModel, "후속 질문에 답하는 중", "후속 질문 시작 · Codex");
+        feed("operator", "사용자 질문 · " + question);
+        return started;
+    }
+
     private static String model(String model) {
         String chosen = model == null ? "" : model.trim();
         if (!chosen.isEmpty() && !TOKEN.matcher(chosen).matches()) throw new IllegalArgumentException("모델 이름이 올바르지 않습니다.");
@@ -137,14 +163,19 @@ public final class McpVerificationRunner implements AutoCloseable {
                 stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
             }
             StringBuilder tail = new StringBuilder();
-            Thread reader = drain(process, tail);
+            AtomicReference<String> answer = new AtomicReference<>("");
+            Thread reader = drain(process, tail, answer);
             int exit = process.waitFor();
             reader.join();
             if (state.get().status().equals("CANCELLED")) return;
             String output;
             synchronized (tail) { output = tail.toString().strip(); }
             feed("info", "Codex 종료 · exit " + exit + (output.isEmpty() ? " · 출력 없음" : " · 출력 " + output.length() + "자"));
-            if (!output.isEmpty()) feed("info", "Codex 출력: " + (output.length() > 1500 ? output.substring(output.length() - 1500) : output));
+            if (runningState.accountId().equals("question") && !answer.get().isBlank()) {
+                feed("assistant", "Codex 답변: " + answer.get());
+            } else if (!output.isEmpty()) {
+                feed("info", "Codex 출력: " + (output.length() > 1500 ? output.substring(output.length() - 1500) : output));
+            }
             LlmVerifyState terminal = exit == 0
                     ? new LlmVerifyState("SUCCEEDED", runningState.accountId(),
                             "LLM 판정이 끝났습니다. 작업 피드를 확인하세요. 도구 호출이 없으면 대상 데이터나 Codex·MCP 연결을 확인하세요.",
@@ -239,9 +270,15 @@ public final class McpVerificationRunner implements AutoCloseable {
                 + "2. flowscope_get_evidence로 원본 요청/응답과 재전송 응답 원문을 읽는다.\n"
                 + "3. 확인이 더 필요하면 flowscope_get_status로 usable 계정을 보고, flowscope_cross_send_get으로 GET만 재전송해 대조한다.\n"
                 + "4. 응답 본문에 요청자가 아닌 다른 사용자의 데이터가 실제로 노출됐는지, 200이어도 오류 본문인지, 공개 데이터인지 직접 따진다.\n"
-                + "5. 소견마다 flowscope_submit_verdict(finding_id, verdict, reason, evidence_ids)로 판정을 남긴다.\n"
+                + "5. 소견마다 flowscope_submit_verdict(finding_id, verdict, reason, verification_result, judgment_basis, issue_title, evidence_ids)로 판정을 남긴다.\n"
                 + "   verdict: vulnerable(취약) · not_vulnerable(취약 아님) · inconclusive(판단 불가: 근거가 부족하거나 GET으로 확인할 수 없음).\n"
-                + "   reason은 한국어로, 어떤 응답의 무엇을 보고 그렇게 판단했는지 구체적으로 쓴다. evidence_ids에는 판단에 쓴 기록 번호를 넣는다.\n\n"
+                + "   verification_result에는 실제로 보낸 요청의 계정 조건과 응답 상태·핵심 본문을 적는다. 원본과 재전송의 차이가 중요하면 함께 적는다.\n"
+                + "   judgment_basis에는 그 관측이 verdict를 뒷받침하는 이유를 적는다. 취약은 실제 데이터 노출과 권한 경계의 근거를, 정상은 시험한 조건에서의 차단을, 판단 불가는 빠진 근거를 설명한다.\n"
+                + "   두 항목은 한국어로 각각 보통 1~3개의 짧은 문장으로 작성한다. 추상적인 결론만 쓰지 말고 판단에 필요한 구체적 사실은 남긴다.\n"
+                + "   issue_title은 대상 기능과 문제 유형을 나타내는 짧은 이름이다(예: 차량 위치의 교차 계정 조회 (IDOR)).\n"
+                + "   취약으로 판정했을 때만 확정형 이름을 쓴다. 판단 불가여도 교차 계정 객체 조회처럼 유형이 관측되면 '(IDOR 의심)'처럼 표시하고, 취약 아님은 '권한 검증'처럼 결과에 맞춰 쓴다. 유형을 모르면 IDOR/BFLA 등을 추측하지 않는다.\n"
+                + "   계정명·식별자·이메일·위치 등은 비교나 영향 설명에 실제로 필요할 때만 쓴다. JWT·쿠키·비밀번호 같은 인증 원문은 적지 않는다.\n"
+                + "   원문 번호와 장문의 응답은 반복해서 나열하지 말고 evidence_ids로 연결한다. reason에는 필요하면 자세한 분석을 남긴다.\n\n"
                 + "규칙:\n"
                 + "- GET만 재전송한다. 쓰기(POST/PUT/PATCH/DELETE)는 실행하지 않는다.\n"
                 + "- FlowScope MCP 도구만 사용한다. 외부 네트워크·웹 검색·직접 요청은 금지한다.\n"
@@ -251,34 +288,38 @@ public final class McpVerificationRunner implements AutoCloseable {
     private static final int OUTPUT_TAIL_LIMIT = 2000;
 
     /** Codex 출력을 소비하면서 끝부분만 제한 길이로 모은다(실패 진단용). */
-    private static Thread drain(Process process, StringBuilder tail) {
+    private static Thread drain(Process process, StringBuilder tail, AtomicReference<String> answer) {
         return Thread.ofVirtual().start(() -> {
-            try (var input = process.getInputStream()) {
-                byte[] buffer = new byte[4096];
-                int read;
-                while ((read = input.read(buffer)) >= 0) {
+            try (var input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = input.readLine()) != null) {
                     synchronized (tail) {
-                        tail.append(new String(buffer, 0, read, StandardCharsets.UTF_8));
+                        tail.append(line).append('\n');
                         if (tail.length() > OUTPUT_TAIL_LIMIT) tail.delete(0, tail.length() - OUTPUT_TAIL_LIMIT);
                     }
+                    String message = agentMessage(line);
+                    if (!message.isBlank()) answer.set(message);
                 }
             } catch (IOException ignored) { }
         });
+    }
+
+    static String agentMessage(String line) {
+        try {
+            JsonNode event = JSON.readTree(line);
+            JsonNode item = event.path("item");
+            return "item.completed".equals(event.path("type").asText())
+                    && "agent_message".equals(item.path("type").asText())
+                    ? item.path("text").asText("") : "";
+        } catch (Exception ignored) {
+            return "";
+        }
     }
 
     private static String outputSuffix(StringBuilder tail) {
         String text;
         synchronized (tail) { text = tail.toString().strip(); }
         return text.isEmpty() ? "" : " · 출력: " + text;
-    }
-
-    private static Process startProcess(List<String> command, Path directory,
-                                        Map<String, String> environment) throws IOException {
-        ProcessBuilder builder = new ProcessBuilder(command).directory(directory.toFile()).redirectErrorStream(true);
-        builder.environment().remove("OPENAI_API_KEY");
-        builder.environment().remove("ANTHROPIC_API_KEY");
-        builder.environment().putAll(environment);
-        return builder.start();
     }
 
     private static String requireLoopback(String value) {

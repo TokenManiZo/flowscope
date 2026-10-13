@@ -45,6 +45,7 @@ import {
   getLlmVerifyState,
   startLlmVerify,
   startLlmJudgment,
+  askLlmJudgment,
   cancelLlmVerify,
   getLlmFeed,
 } from "@/lib/api/endpoints"
@@ -210,6 +211,14 @@ export function useStartLlmJudgmentMutation() {
   const client = useQueryClient()
   return useMutation({ mutationFn: (values: { findings: readonly string[]; model: string }) => startLlmJudgment(values),
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
+}
+export function useAskLlmJudgmentMutation() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: (values: { message: string; model: string }) => askLlmJudgment(values),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.llmVerify })
+      void client.invalidateQueries({ queryKey: queryKeys.llmFeed })
+    } })
 }
 export function useCancelLlmVerifyMutation() {
   const client = useQueryClient()

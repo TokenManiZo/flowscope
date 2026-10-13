@@ -10,7 +10,8 @@ import java.util.List;
  * 메모리 전용 링 버퍼이며 실행 시작 때 비운다. 비밀값은 담지 않는다(요약 문자열만).
  */
 public final class McpActivityLog {
-    public record Entry(long seq, long timestamp, String type, String summary, boolean risk) {}
+    public record Entry(long seq, long timestamp, String type, String summary, boolean risk,
+                        String findingId, String evidenceId) {}
 
     private static final int MAX = 500;
     private final Deque<Entry> entries = new ArrayDeque<>();
@@ -23,9 +24,15 @@ public final class McpActivityLog {
 
     /** type: read·resend·finding·info. risk=true면 LLM이 취약점으로 추천한 항목(위험 필터 대상). */
     public synchronized long record(String type, String summary, boolean risk) {
+        return record(type, summary, risk, null, null);
+    }
+
+    public synchronized long record(String type, String summary, boolean risk,
+                                    String findingId, String evidenceId) {
         long seq = nextSeq++;
         entries.addLast(new Entry(seq, System.currentTimeMillis(),
-                type == null ? "info" : type, summary == null ? "" : summary, risk));
+                type == null ? "info" : type, summary == null ? "" : summary, risk,
+                findingId, evidenceId));
         while (entries.size() > MAX) entries.removeFirst();
         return seq;
     }

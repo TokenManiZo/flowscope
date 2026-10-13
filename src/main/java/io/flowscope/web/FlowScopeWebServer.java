@@ -101,6 +101,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
             throw new UnsupportedOperationException("LLM 판정 실행을 사용할 수 없습니다.");
         }
+        default LlmVerifyState askLlmJudgment(String message, String model) {
+            throw new UnsupportedOperationException("LLM 후속 질문을 사용할 수 없습니다.");
+        }
         /** 현재 LLM 검증 실행 상태. */
         default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
         /** 실행 중인 LLM 검증을 중단한다. */
@@ -1829,6 +1832,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             node.put("createdAt", finding.createdAt());
             node.put("judgment", finding.judgment());
             node.put("judgmentReason", finding.judgmentReason());
+            node.put("verificationResult", finding.verificationResult());
+            node.put("judgmentBasis", finding.judgmentBasis());
+            node.put("issueTitle", finding.issueTitle());
             node.set("judgmentEvidenceIds", json.valueToTree(finding.judgmentEvidenceIds()));
             node.put("judgedAt", finding.judgedAt());
         }
@@ -1850,6 +1856,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             node.put("type", entry.type());
             node.put("summary", entry.summary());
             node.put("risk", entry.risk());
+            if (entry.findingId() != null) node.put("findingId", entry.findingId());
+            if (entry.evidenceId() != null) node.put("evidenceId", entry.evidenceId());
         }
         return json(200, body);
     }
@@ -1864,6 +1872,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 String action = form.getOrDefault("action", "").trim();
                 if ("cancel".equals(action)) {
                     verifyState = state.cancelLlmVerify();
+                } else if ("ask".equals(action)) {
+                    verifyState = state.askLlmJudgment(required(form, "message"), form.getOrDefault("model", "").trim());
                 } else if ("judge".equals(action)) {
                     List<String> findingIds = new java.util.ArrayList<>();
                     JsonNode ids;

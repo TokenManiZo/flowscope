@@ -263,6 +263,9 @@ export interface LlmFinding {
   /** LLM이 직접 내린 판정(MCP 설계 §11). 판정 전이면 빈 문자열. FlowScope 판정 규칙과 무관하다. */
   judgment: "" | "vulnerable" | "not_vulnerable" | "inconclusive"
   judgmentReason: string
+  verificationResult?: string
+  judgmentBasis?: string
+  issueTitle?: string
   judgmentEvidenceIds: readonly string[]
   judgedAt: number
 }
@@ -283,6 +286,8 @@ export interface LlmFeedEntry {
   type: string
   summary: string
   risk: boolean
+  findingId?: string
+  evidenceId?: string
 }
 
 export interface ManagedSession {
