@@ -13,6 +13,7 @@ import io.flowscope.core.HarParser;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.ResourcePolicy;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.RunPhase;
@@ -1430,6 +1431,71 @@ final class FlowScopeWebServerTest {
             assertFalse(state.config.resourceOwners().containsKey(resource));
         }
         assertEquals(400, post("/api/owner", "resource=" + encode(service + " observed-object:invented") + "&identity=same", token).statusCode());
+    }
+
+    @Test
+    void appliesObjectGroupChoiceToAllMembersBeyondGraphVisibilityLimit() throws Exception {
+        start();
+        String service = state.record.service;
+        state.config.upsertAccount(new AccountProfile("same", "Same", service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("other", "Other", service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
+        for (int i = 0; i < 12; i++) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, service, "GET", "/lookup", 200, "fp");
+            record.query = "report_id=" + i;
+            record.hasResponse = true;
+            state.records.add(record);
+        }
+        state.rebuild();
+        var first = state.snapshot().objects.observations().stream()
+                .filter(object -> object.operation().endsWith(" GET /lookup")).findFirst().orElseThrow();
+        var members = state.snapshot().objects.observations().stream()
+                .filter(object -> object.groupKey().equals(first.groupKey())).toList();
+        assertEquals(12, members.size());
+        String form = "groupKey=" + encode(first.groupKey()) + "&datasetRevision=" + state.datasetRevision() + "&choice=";
+        assertEquals(400, post("/api/object-group-owner", form + "foreign", token).statusCode());
+        assertTrue(members.stream().noneMatch(object -> state.config.resourceOwners().containsKey(
+                io.flowscope.core.ObservedObjectIndex.resource(object))));
+        assertEquals(200, post("/api/object-group-owner", form + "PUBLIC", token).statusCode());
+        JsonNode inheritedSnapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals("PUBLIC", inheritedSnapshot.path("directResourcePolicyOverrides")
+                .path(AnalysisConfig.objectGroupKey(first.groupKey())).asText());
+        var effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        for (var object : members) assertEquals(ResourcePolicy.PUBLIC, effective.resourcePolicy(
+                object.operation(), io.flowscope.core.ObservedObjectIndex.resource(object)));
+        var privateObject = members.getFirst();
+        String privateResource = io.flowscope.core.ObservedObjectIndex.resource(privateObject);
+        assertTrue(inheritedSnapshot.path("directOwnerOverrides").path(privateResource).isMissingNode());
+        assertEquals("PUBLIC", inheritedSnapshot.path("resourcePolicyOverrides")
+                .path(AnalysisConfig.operationObjectPolicyKey(privateObject.operation(), privateResource)).asText());
+        assertEquals(200, post("/api/owner", "resource=" + encode(privateResource) + "&identity=other", token).statusCode());
+        assertEquals(ResourcePolicy.PUBLIC, state.config.resourcePolicies().get(AnalysisConfig.objectGroupKey(first.groupKey())));
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        assertEquals(ResourcePolicy.OWNER_ONLY, effective.resourcePolicy(privateObject.operation(), privateResource));
+        assertEquals("other", effective.resourceOwner(privateResource));
+        assertEquals(200, post("/api/object-group-owner", form + "same", token).statusCode());
+        assertEquals("same", state.config.resourceOwners().get(AnalysisConfig.objectGroupKey(first.groupKey())));
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        for (var object : members) {
+            String resource = io.flowscope.core.ObservedObjectIndex.resource(object);
+            assertEquals(object.objectKey().equals(privateObject.objectKey()) ? "other" : "same", effective.resourceOwner(resource));
+            assertEquals(ResourcePolicy.OWNER_ONLY, effective.resourcePolicy(object.operation(), resource));
+        }
+        RequestRecord later = new RequestRecord(Source.HUMAN, service, "GET", "/lookup", 200, "fp");
+        later.query = "report_id=12";
+        later.hasResponse = true;
+        state.records.add(later);
+        state.rebuild();
+        var newObject = state.snapshot().objects.observations().stream()
+                .filter(object -> object.eventId().equals(later.evidenceId)).findFirst().orElseThrow();
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        assertEquals("same", effective.resourceOwner(io.flowscope.core.ObservedObjectIndex.resource(newObject)));
+        assertEquals(200, post("/api/resource-policy", "operation=" + encode(privateObject.operation())
+                + "&resource=" + encode(privateResource) + "&policy=PUBLIC", token).statusCode());
+        assertEquals("same", state.config.resourceOwners().get(AnalysisConfig.objectGroupKey(first.groupKey())));
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        assertEquals(ResourcePolicy.PUBLIC, effective.resourcePolicy(privateObject.operation(), privateResource));
+        assertEquals(400, post("/api/object-group-owner", form.replace("datasetRevision=" + state.datasetRevision(), "datasetRevision=-1") + "PUBLIC", token).statusCode());
     }
 
     @Test

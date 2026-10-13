@@ -137,6 +137,8 @@ export const completeExplorerBrowserLogin = (id: string) =>
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })
+export const saveObjectGroupOwner = (values: { groupKey: string; choice: string; datasetRevision: number }) =>
+  postForm<ApiSuccess>("/api/object-group-owner", { ...values, datasetRevision: String(values.datasetRevision) })
 
 /** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
 export const getLlmFindings = (signal?: AbortSignal) =>

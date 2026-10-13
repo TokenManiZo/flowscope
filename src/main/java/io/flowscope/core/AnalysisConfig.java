@@ -253,6 +253,11 @@ public final class AnalysisConfig {
         return this;
     }
 
+    /** Stored parent setting for an observed OBJ group; individual OBJ keys always win. */
+    public static String objectGroupKey(String groupKey) {
+        return "observed-group:" + groupKey;
+    }
+
     /** Project legacy location settings onto a single request OBJ without changing stored keys. */
     public synchronized AnalysisConfig withCanonicalObjects(ObservedObjectIndex objects) {
         Map<String, Set<String>> owners = new LinkedHashMap<>();
@@ -277,6 +282,20 @@ public final class AnalysisConfig {
             if (!resourcePolicies.containsKey(target) && values.size() == 1)
                 resourcePolicies.put(target, values.iterator().next());
         });
+        for (var object : objects.observations()) {
+            String group = objectGroupKey(object.groupKey());
+            String resource = ObservedObjectIndex.resource(object);
+            String pair = operationObjectPolicyKey(object.operation(), resource);
+            String childOwner = resourceOwners.get(resource);
+            String groupOwner = resourceOwners.get(group);
+            if (childOwner == null && groupOwner != null) resourceOwners.put(resource, groupOwner);
+            ResourcePolicy groupPolicy = resourcePolicies.get(group);
+            if (!resourcePolicies.containsKey(pair)) {
+                if (childOwner != null && groupPolicy == ResourcePolicy.PUBLIC)
+                    resourcePolicies.put(pair, ResourcePolicy.OWNER_ONLY);
+                else if (groupPolicy != null) resourcePolicies.put(pair, groupPolicy);
+            }
+        }
         List<MatrixExclusion> canonicalExclusions = new ArrayList<>();
         for (MatrixExclusion entry : matrixExclusions.values()) if (entry.resource() != null) {
             String canonical = objects.canonicalResource(entry.resource());

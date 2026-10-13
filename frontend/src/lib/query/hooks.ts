@@ -14,6 +14,7 @@ import {
   resetIdentities,
   saveAccount,
   saveOwner,
+  saveObjectGroupOwner,
   saveRequirement,
   saveResourcePolicy,
   saveOperationObjectPolicy,
@@ -191,6 +192,7 @@ export function useSessionUnbindMutation() { return useInvalidatingMutation(({ s
 export function useSessionCaptureMutation() { return useInvalidatingMutation(({ action, account }: { action: "begin" | "end" | "revoke"; account: string }) => manageSessionCapture(action, account), [queryKeys.snapshot]) }
 export function useIdentityResetMutation() { return useInvalidatingMutation(resetIdentities, [queryKeys.snapshot]) }
 export function useOwnerMutation() { return useInvalidatingMutation(({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity), [queryKeys.snapshot]) }
+export function useObjectGroupOwnerMutation() { return useInvalidatingMutation(saveObjectGroupOwner, [queryKeys.snapshot]) }
 export function useRequestLabSendMutation() { return useInvalidatingMutation(sendRequestLab, [queryKeys.snapshot]) }
 export function useAuthorizationReplayMutation() { return useInvalidatingMutation(({ itemId, armed }: { itemId: string; armed: boolean }) => runAuthorizationReplay(itemId, armed), [queryKeys.snapshot]) }
 

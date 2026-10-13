@@ -124,6 +124,8 @@ public final class SnapshotJsonWriter {
                         List<RunExecutionLedger.Summary> executionSummaries,
                         java.util.function.Predicate<RequestRecord> rawAvailable,
                         java.util.function.Function<RequestRecord, String> collectionAccount) throws JsonProcessingException {
+        var directOwners = config.resourceOwners();
+        var directPolicies = config.resourcePolicies();
         config = config.snapshotCopy().withCanonicalObjects(result.objects);
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
@@ -169,6 +171,8 @@ public final class SnapshotJsonWriter {
         root.set("owners", owners(result));
         root.set("ownerOverrides", json.valueToTree(config.resourceOwners()));
         root.set("resourcePolicyOverrides", json.valueToTree(config.resourcePolicies()));
+        root.set("directOwnerOverrides", json.valueToTree(directOwners));
+        root.set("directResourcePolicyOverrides", json.valueToTree(directPolicies));
         ArrayNode manual = root.putArray("manualVerifications");
         for (RequestRecord record : result.records) {
             if (record.source == Source.HUMAN && record.phase == io.flowscope.core.RunPhase.VALIDATION

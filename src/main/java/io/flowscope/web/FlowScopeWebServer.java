@@ -414,6 +414,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
+            case "/api/object-group-owner" -> objectGroupOwner(request);
             case "/api/llm-findings" -> llmFindings(request);
             case "/api/llm-verify" -> llmVerify(request);
             case "/api/llm-feed" -> llmFeed(request, target);
@@ -1853,6 +1854,48 @@ public final class FlowScopeWebServer implements AutoCloseable {
             state.config().withResourceOwner(resource, identity);
             state.rebuild();
             return success("소유자를 저장했습니다.");
+        } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
+    /** Store the group default once; explicit child settings take precedence. */
+    private LoopbackHttpServer.Response objectGroupOwner(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String groupKey = required(form, "groupKey");
+            String choice = required(form, "choice");
+            long dataset = Long.parseLong(required(form, "datasetRevision"));
+            if (dataset != state.datasetRevision()) throw new IllegalArgumentException("프로젝트가 변경되었습니다. 화면을 새로고침하세요.");
+            var members = state.snapshot().objects.observations().stream()
+                    .filter(object -> groupKey.equals(object.groupKey()))
+                    .collect(java.util.stream.Collectors.toMap(
+                            object -> AnalysisConfig.operationObjectPolicyKey(object.operation(),
+                                    io.flowscope.core.ObservedObjectIndex.resource(object)),
+                            object -> object, (first, ignored) -> first, LinkedHashMap::new));
+            if (members.isEmpty()) throw new IllegalArgumentException("관측된 객체 묶음을 선택하세요.");
+            String service = members.values().iterator().next().operation().split(" ")[0];
+            if (members.values().stream().anyMatch(object -> !object.operation().startsWith(service + " ")))
+                throw new IllegalArgumentException("서로 다른 서비스의 객체가 섞여 있습니다.");
+            boolean publicRead = "PUBLIC".equals(choice);
+            if (publicRead && members.values().stream().anyMatch(object -> {
+                String method = object.operation().split(" ")[1];
+                return !method.equals("GET") && !method.equals("HEAD");
+            })) throw new IllegalArgumentException("조회 API만 공개로 설정할 수 있습니다.");
+            if (!publicRead && state.config().account(choice)
+                    .filter(account -> account.service().equals(service)).isEmpty())
+                throw new IllegalArgumentException("같은 서비스에 등록된 계정을 선택하세요.");
+            AnalysisConfig config = state.config();
+            synchronized (config) {
+                if (dataset != state.datasetRevision() || config != state.config())
+                    throw new IllegalArgumentException("프로젝트가 변경되었습니다. 화면을 새로고침하세요.");
+                AnalysisConfig next = config.snapshotCopy();
+                String group = AnalysisConfig.objectGroupKey(groupKey);
+                next.withResourcePolicy(group, publicRead ? ResourcePolicy.PUBLIC : ResourcePolicy.OWNER_ONLY);
+                next.withResourceOwner(group, publicRead ? "" : choice);
+                config.replaceWith(next);
+            }
+            state.rebuild();
+            return success("객체 묶음의 기본 설정을 저장했습니다. 개별 객체 설정이 우선합니다.");
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
