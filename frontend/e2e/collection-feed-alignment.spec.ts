@@ -21,8 +21,12 @@ test("keeps source, collection method and time headers aligned with scrollable r
   await page.addStyleTag({ content: "::-webkit-scrollbar { width: 16px; height: 16px; }" })
   const list = page.getByLabel("기록된 요청 목록")
   await expect(list.locator(":scope > button")).toHaveCount(60)
-  for (const width of [1024, 1440, 2560]) {
+  for (const width of [600, 1024, 1440, 2560]) {
     await page.setViewportSize({ width, height: 900 })
+    const row = list.locator(":scope > button").first()
+    expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(48)
+    expect(await row.locator(":scope > span").nth(2).evaluate(el => getComputedStyle(el).fontSize)).toBe("17px")
+    expect(await row.locator(":scope > span").last().evaluate(el => getComputedStyle(el).whiteSpace)).toBe("nowrap")
     for (const scrollLeft of [0, 400]) {
       const geometry = await list.evaluate((element, offset) => {
         element.scrollTop = 100

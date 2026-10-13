@@ -11,7 +11,7 @@ async function syntheticApi(page:Page){
  page.on("pageerror",error=>console.error("PRODUCT PAGE ERROR",error.message));page.on("console",msg=>{if(msg.type()==="error")console.error("PRODUCT CONSOLE",msg.text())})
  await page.addInitScript(()=>{localStorage.setItem("flowscope-theme","dark");localStorage.setItem("flowscope.sidebar","open")})
  const snapshot={...snapshotFixture,datasetRevision:1,events:[event],cells:[cell],activeSources:["human"],evidenceOrdinals:{[event.eventId]:1},accounts:[{id:"user-a",label:"USER A",role:"USER",target:"https://shop.synthetic.test",color:"",authArtifactCount:0}]}
- const values:Record<string,unknown>={"/api/snapshot":snapshot,"/api/projects":{active:null,projects:[],saveState:"UNMANAGED"},"/api/human-run":humanRunFixture,"/api/scanner-run":scannerRunFixture,"/api/zap-status":zapStatusFixture,"/api/explorer-run":{run:{status:"IDLE",providerReadiness:"READY"},accounts:[],scope:[]},"/api/explorer-models":{configuredModel:"synthetic",models:[{id:"synthetic",label:"합성 모델",recommended:true}]},"/api/llm-findings":{findings:[finding]},"/api/llm-verify":{status:"SUCCEEDED",accountId:"",message:"합성 검증",startedAt:1,endedAt:2},"/api/llm-feed":{entries:[{seq:1,timestamp:1,type:"assistant",summary:"Codex 답변: 합성 예시의 긴 답변입니다. ".repeat(8),risk:false},{seq:2,timestamp:1,type:"resend",summary:"재전송: GET /api/orders/101 · HTTP 200",risk:false,evidenceId:event.eventId},{seq:3,timestamp:1,type:"verdict",summary:"합성 판정 열기",risk:false,findingId:finding.id}]},"/api/matrix-exclusions":{datasetRevision:1,entries:[]},"/api/graph-workspace":{datasetRevision:1,revision:1,workspace:emptyGraphWorkspace}}
+ const values:Record<string,unknown>={"/api/snapshot":snapshot,"/api/projects":{active:null,projects:[],saveState:"UNMANAGED"},"/api/human-run":humanRunFixture,"/api/scanner-run":scannerRunFixture,"/api/zap-status":zapStatusFixture,"/api/explorer-run":{run:{status:"IDLE",providerReadiness:"READY",unresolved:[],activities:[],accountIds:[],anonymous:false},accounts:[],scope:[]},"/api/explorer-models":{configuredModel:"synthetic",models:[{id:"synthetic",label:"합성 모델",recommended:true}]},"/api/llm-findings":{findings:[finding]},"/api/llm-verify":{status:"SUCCEEDED",accountId:"",message:"합성 검증",startedAt:1,endedAt:2},"/api/llm-feed":{entries:[{seq:1,timestamp:1,type:"assistant",summary:"Codex 답변: 합성 예시의 긴 답변입니다. ".repeat(8),risk:false},{seq:2,timestamp:1,type:"resend",summary:"재전송: GET /api/orders/101 · HTTP 200",risk:false,evidenceId:event.eventId},{seq:3,timestamp:1,type:"verdict",summary:"합성 판정 열기",risk:false,findingId:finding.id}]},"/api/matrix-exclusions":{datasetRevision:1,entries:[]},"/api/graph-workspace":{datasetRevision:1,revision:1,workspace:emptyGraphWorkspace}}
  await page.route("**/api/**",route=>{const path=new URL(route.request().url()).pathname;return path.startsWith("/api/")?route.fulfill({json:values[path]??{}}):route.continue()})
 }
 for(const width of [600,1280,1920,2560]){
@@ -56,4 +56,40 @@ test("graph help, input padding, quiet actions and persistent minimap",async({pa
  await page.getByRole("link",{name:"요청 기록",exact:true}).click();await page.getByRole("link",{name:"점검 그래프",exact:true}).click()
  await expect(page.getByRole("button",{name:"미니맵 펼치기"})).toBeVisible();await page.getByRole("button",{name:"미니맵 펼치기"}).click();await expect(page.getByRole("img",{name:"그래프 미니맵"})).toBeVisible()
  await page.screenshot({path:info.outputPath("graph.png")})
+})
+
+for (const width of [600, 1920]) {
+ test(`larger project manager and unclipped browser login at ${width}px`, async ({page}, info) => {
+  await page.setViewportSize({width, height:1080}); await syntheticApi(page)
+  const project = {id:"synthetic-project",name:"읽기 크기 확인",scope:["https://shop.synthetic.test"],createdAt:"2026-10-14",modifiedAtMillis:1,sizeBytes:1024,active:true,readable:true,managed:true}
+  await page.route("**/api/projects", route => route.fulfill({json:{active:project,projects:[project,{...project,id:"other",name:"다른 프로젝트",active:false}],saveState:"SAVED"}}))
+  await page.goto("./#inspection")
+  await page.getByRole("tab",{name:"LLM 탐색",exact:true}).click()
+  await page.getByRole("button",{name:/^판정할 계정|^탐색할 계정|^탐색 계정/}).click()
+  const login = page.getByRole("button",{name:/브라우저 로그인/}).first()
+  await expect(login).toBeVisible()
+  expect((await login.boundingBox())!.width).toBeGreaterThanOrEqual(164)
+  expect(await login.locator("span").evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  if (width < 1024) await page.getByRole("button",{name:"메뉴 열기",exact:true}).click()
+  await page.getByRole("button",{name:"프로젝트 관리",exact:true}).click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toBeVisible()
+  await expect.poll(async () => Math.round(parseFloat(await dialog.evaluate(el => getComputedStyle(el).width)))).toBe(width < 1040 ? width-24 : 1040)
+  expect(await dialog.getByRole("heading",{name:"프로젝트 관리",exact:true}).evaluate(el => getComputedStyle(el).fontSize)).toBe("28px")
+  expect((await dialog.getByRole("list",{name:"프로젝트 목록"}).locator("li > div").first().boundingBox())!.height).toBeGreaterThanOrEqual(76)
+  await page.screenshot({path:info.outputPath("project-manager.png")})
+ })
+}
+test("graph inspector preserves large API action targets",async({page})=>{
+ await page.setViewportSize({width:1920,height:1080}); await syntheticApi(page); await page.goto("./#graph")
+ await page.getByRole("combobox",{name:"프로젝트 전체 노드 검색"}).fill("/api/orders")
+ await page.getByRole("option",{name:/^API GET/}).first().click()
+ const inspector = page.getByRole("complementary",{name:"선택 작업",exact:true})
+ for (const name of ["API 하이라이트","취약점으로 표시","API 삭제"]) {
+  const button = inspector.getByRole("button",{name,exact:true})
+  await expect(button).toBeVisible()
+  const box = (await button.boundingBox())!
+  expect(box.width).toBe(58); expect(box.height).toBe(58)
+  expect(await button.locator("svg").evaluate(el=>el.getBoundingClientRect().width)).toBe(30)
+ }
 })

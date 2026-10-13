@@ -659,11 +659,155 @@
 }
 
 /* Enlarged setup forms must leave room for the live request list on small windows. */
-@media (max-width: 899px) {
+@media (max-width: 899px), (max-height: 850px) {
   .source-run-controls {
     min-height: 0;
     max-height: 55%;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+}
+
+/* Collection feeds and project management: approved readability adjustments. */
+.flowscope-content [data-record-list]>button{
+  min-height:48px;
+  padding:12px 16px;
+  gap:12px;
+  font-size:17px;
+  line-height:24px;
+  grid-template-columns:64px 80px minmax(300px,1fr) 144px 80px 112px
+}
+.flowscope-content [data-record-list]>button>span{
+  font-size:17px!important;
+  line-height:24px
+}
+.flowscope-content [data-record-list]>button>span.inline-flex{
+  font-size:16px!important;
+  min-height:28px;
+  line-height:22px;
+  padding-block:2px
+}
+.flowscope-content [data-record-list]>button>:nth-child(2){
+  width:72px
+}
+.flowscope-content [data-record-list]>button>:last-child{
+  white-space:nowrap
+}
+.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-content"]>div[aria-hidden="true"]{
+  min-height:44px;
+  padding:10px 16px;
+  gap:12px;
+  grid-template-columns:64px 80px minmax(300px,1fr) 144px 80px 112px
+}
+.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-content"]>div[aria-hidden="true"]>span{
+  font-size:16px
+}
+.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-title"]{
+  font-size:20px
+}
+.flowscope-content [data-record-list],.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-content"]>div[aria-hidden="true"]{
+  min-width:892px
+}
+.flowscope-content [data-slot="card"]:has([aria-label="수집 출처 필터"]) :is([data-record-list]>button,[data-slot="card-content"]>div[aria-hidden="true"]){
+  grid-template-columns:64px 80px minmax(320px,1fr) 56px 144px 144px 80px 112px
+}
+.flowscope-content [data-slot="card"]:has([aria-label="수집 출처 필터"]) :is([data-record-list],[data-slot="card-content"]>div[aria-hidden="true"]){
+  min-width:1220px
+}
+/* Keep source-account action labels fully visible. */
+.flowscope-content [role="group"][aria-label$="대상 계정"]>:is(label,div){
+  grid-template-columns:16px minmax(120px,1fr) 140px 164px;
+  gap:12px;
+  min-height:48px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"]{
+  width:164px;
+  min-width:164px;
+  height:40px;
+  min-height:40px;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:8px;
+  padding:8px 12px;
+  font-size:15px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"] svg{
+  width:18px;
+  height:18px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"]>span{
+  font-size:15px;
+  white-space:nowrap
+}
+/* Project manager stays content-sized; only its usable width and typography grow. */
+[role="dialog"][aria-describedby="project-manager-description"]{
+  width:calc(100vw - 48px);
+  max-width:1040px;
+  max-height:90svh;
+  padding:28px;
+  gap:24px;
+  font-size:18px
+}
+[aria-describedby="project-manager-description"] [data-slot="dialog-title"]{
+  font-size:28px;
+  line-height:1.35
+}
+[aria-describedby="project-manager-description"] :is([data-slot="dialog-description"],[class~="text-sm"]){
+  font-size:18px;
+  line-height:1.5
+}
+[aria-describedby="project-manager-description"] [class~="text-xs"]{
+  font-size:16px;
+  line-height:1.5
+}
+[aria-describedby="project-manager-description"] [class~="text-base"]{
+  font-size:24px;
+  line-height:1.4
+}
+[aria-describedby="project-manager-description"] :is([data-size][data-variant],input){
+  height:44px;
+  min-height:44px;
+  font-size:17px
+}
+[aria-describedby="project-manager-description"] [role="tablist"]{
+  min-height:48px;
+  padding:4px;
+  align-items:center
+}
+[aria-describedby="project-manager-description"] [role="tab"]{
+  height:40px;
+  min-height:40px;
+  padding:8px 12px;
+  font-size:18px
+}
+[aria-describedby="project-manager-description"] [aria-label="프로젝트 목록"]{
+  max-height:360px
+}
+[aria-describedby="project-manager-description"] [aria-label="프로젝트 목록"] li>div{
+  padding:14px 16px;
+  min-height:76px
+}
+.flowscope-content [class~="size-[58px]"][data-size][data-variant]{
+  width:58px;
+  height:58px;
+  min-width:58px;
+  min-height:58px;
+  padding:12px
+}
+.flowscope-content [class~="size-[58px]"][data-size][data-variant]>svg{
+  width:30px;
+  height:30px
+}
+@media(max-width:639px){
+.flowscope-content [role="group"][aria-label$="대상 계정"]>:is(label,div){
+  grid-template-columns:16px minmax(80px,1fr) 140px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"]{
+  grid-column:2 / span 2;
+  justify-self:end
+}
+[role="dialog"][aria-describedby="project-manager-description"]{
+  width:calc(100vw - 24px);
+  padding:20px;
+  gap:20px
+}
 }
