@@ -867,7 +867,13 @@ public final class CodexAppServerProvider implements ExplorerProvider {
 
     private static Process launch(List<String> command, Path cwd, Map<String, String> required,
                                   ProcessBuilder.Redirect error) throws IOException {
-        ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile()).redirectError(error);
+        return launch(command, cwd, required, error, false);
+    }
+
+    static Process launch(List<String> command, Path cwd, Map<String, String> required,
+                          ProcessBuilder.Redirect error, boolean mergeError) throws IOException {
+        ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile())
+                .redirectError(error).redirectErrorStream(mergeError);
         Map<String, String> environment = builder.environment();
         environment.remove("OPENAI_API_KEY");
         // 다른 공급자 자격증명이 Codex 자식 프로세스로 새지 않게 한다. Claude 실행 경로는 없다.

@@ -56,6 +56,11 @@ export const saveRequestLabWorkspace = (values: { eventId: string; datasetRevisi
   }, undefined, signal)
 export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
+export type MatrixExclusionEntry = { key: string; view: "function" | "object"; operation: string; resource: string | null; label: string }
+export type MatrixExclusionsResponse = { datasetRevision: number; entries: MatrixExclusionEntry[] }
+export const getMatrixExclusions = (signal?: AbortSignal) => apiFetch<MatrixExclusionsResponse>("/api/matrix-exclusions", formSignal(signal))
+export const replaceMatrixExclusions = (datasetRevision: number, entries: readonly MatrixExclusionEntry[]) =>
+  postForm<MatrixExclusionsResponse>("/api/matrix-exclusions", { datasetRevision: String(datasetRevision), entries: JSON.stringify(entries) })
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
 const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promise<T> => {
   await prepareDatasetReplacement()
@@ -63,12 +68,12 @@ const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promis
   notifyDatasetReplacing()
   return result
 }
-export const startProject = (values: { name: string; scope: string }) =>
+export const startProject = (values: { name: string; scope: string; startUrl?: string }) =>
   confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
 export const openProject = (id: string) =>
   confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "open", id }))
 /** 현재 프로젝트의 이름·점검 범위 수정. 이미 모은 기록은 그대로 두고 이후 수집만 새 범위를 따른다. */
-export const updateProject = (values: { name: string; scope: string }) =>
+export const updateProject = (values: { name: string; scope: string; startUrl?: string }) =>
   postForm<ProjectStatus>("/api/projects", { action: "update", ...values })
 export const resetProjectTraffic = () =>
   confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "reset" }))
@@ -86,7 +91,7 @@ export const saveOperationObjectPolicy = (operation: string, resource: string, p
 export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })
 export const saveTrafficOverride = (operation: string, value: string) => postForm<ApiSuccess>("/api/traffic-override", { operation, value })
 export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })
-export const saveAccount = (values: { id: string; label: string; role: string; target: string }) =>
+export const saveAccount = (values: { id: string; label: string; role: string; target: string; startUrl?: string }) =>
   postForm<AccountSaveResult>("/api/account-save", values)
 export const getAccountSettings = <T>(account: string, signal?: AbortSignal) =>
   apiFetch<T>(`/api/account-settings?${new URLSearchParams({ account })}` as `/api/${string}`, formSignal(signal))
@@ -132,6 +137,8 @@ export const completeExplorerBrowserLogin = (id: string) =>
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })
+export const saveObjectGroupOwner = (values: { groupKey: string; choice: string; datasetRevision: number }) =>
+  postForm<ApiSuccess>("/api/object-group-owner", { ...values, datasetRevision: String(values.datasetRevision) })
 
 /** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
 export const getLlmFindings = (signal?: AbortSignal) =>
@@ -142,6 +149,9 @@ export const startLlmVerify = (values: { sources: string; accounts: string; mode
 /** 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다. */
 export const startLlmJudgment = (values: { findings: readonly string[]; model: string }) =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "judge", findings: JSON.stringify(values.findings), model: values.model })
+
+export const askLlmJudgment = (values: { message: string; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "ask", message: values.message, model: values.model })
 /** 실행 중인 LLM 판정을 중단한다. */
 export const cancelLlmVerify = () =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })

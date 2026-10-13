@@ -85,6 +85,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("API 관리를 사용할 수 없습니다.");
         }
         AnalysisConfig config();
+        default void replaceMatrixExclusions(long dataset, List<io.flowscope.core.MatrixExclusion> entries) {
+            throw new UnsupportedOperationException("매트릭스 제외 저장을 사용할 수 없습니다.");
+        }
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
         /** LLM 교차 검증 소견(추천). 판정 엔진 결과와 분리된 참고 자료다. */
@@ -100,6 +103,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
         /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
         default LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
             throw new UnsupportedOperationException("LLM 판정 실행을 사용할 수 없습니다.");
+        }
+        default LlmVerifyState askLlmJudgment(String message, String model) {
+            throw new UnsupportedOperationException("LLM 후속 질문을 사용할 수 없습니다.");
         }
         /** 현재 LLM 검증 실행 상태. */
         default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
@@ -183,10 +189,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("ZAP account session refresh is unavailable");
         }
         default List<String> scopeEntries() { return List.of(); }
-        default List<String> discoveredOrigins() { return List.of(); }
-        default List<String> observedOrigins() { return List.of(); }
         default ProjectWorkspace.Status projectStatus() {
             return new ProjectWorkspace.Status("", null, List.of());
+        }
+        default String projectStartUrl() { return ""; }
+        default List<String> configuredScopeEntries() { return scopeEntries(); }
+        default String accountStartUrl(AccountProfile account) {
+            return account.startUrl().isBlank() ? projectStartUrl() : account.startUrl();
+        }
+        default ProjectWorkspace.Status startProject(String name, String scope, String startUrl) {
+            return startProject(name, scope);
+        }
+        default ProjectWorkspace.Status updateProject(String name, String scope, String startUrl) {
+            return updateProject(name, scope);
         }
         default ProjectWorkspace.Status startProject(String name, String scope) {
             throw new UnsupportedOperationException("project workflow is unavailable");
@@ -379,6 +394,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
             case "/api/requirement" -> requirement(request);
+            case "/api/matrix-exclusions" -> matrixExclusions(request);
             case "/api/resource-policy" -> resourcePolicy(request);
             case "/api/review" -> review(request);
             case "/api/traffic-override" -> trafficOverride(request);
@@ -398,6 +414,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
+            case "/api/object-group-owner" -> objectGroupOwner(request);
             case "/api/llm-findings" -> llmFindings(request);
             case "/api/llm-verify" -> llmVerify(request);
             case "/api/llm-feed" -> llmFeed(request, target);
@@ -853,9 +870,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (form == null) return invalidForm(request);
             String action = required(form, "action").toLowerCase(Locale.ROOT);
             ProjectWorkspace.Status status = switch (action) {
-                case "start" -> state.startProject(form.getOrDefault("name", ""), required(form, "scope"));
+                case "start" -> state.startProject(form.getOrDefault("name", ""), required(form, "scope"), form.getOrDefault("startUrl", ""));
                 case "open" -> state.openProject(required(form, "id"));
-                case "update" -> state.updateProject(form.getOrDefault("name", ""), required(form, "scope"));
+                case "update" -> state.updateProject(form.getOrDefault("name", ""), required(form, "scope"), form.get("startUrl"));
                 case "reset" -> state.resetProjectTraffic();
                 case "delete" -> state.deleteProject(required(form, "id"));
                 default -> throw new IllegalArgumentException("지원하지 않는 프로젝트 작업입니다.");
@@ -872,13 +889,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
 
     private LoopbackHttpServer.Response projectStatus(ProjectWorkspace.Status status) throws IOException {
         long dataset = state.datasetRevision();
-        List<String> discovered = state.discoveredOrigins();
-        List<String> observed = state.observedOrigins();
-        if (dataset != state.datasetRevision()) { discovered = List.of(); observed = List.of(); }
         ObjectNode body = json.createObjectNode();
         body.put("directory", status.directory());
-        body.set("discoveredOrigins", json.valueToTree(discovered));
-        body.set("observedOrigins", json.valueToTree(observed));
         body.put("datasetRevision", dataset);
         body.put("saveState", status.saveState());
         body.put("lastSavedAt", status.lastSavedAt());
@@ -888,6 +900,44 @@ public final class FlowScopeWebServer implements AutoCloseable {
         var projects = body.putArray("projects");
         status.projects().forEach(entry -> projects.add(projectEntry(entry)));
         return json(200, body);
+    }
+
+    private LoopbackHttpServer.Response matrixExclusions(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            long dataset = state.datasetRevision();
+            var objects = state.snapshot().objects;
+            var entries = new java.util.LinkedHashMap<String, io.flowscope.core.MatrixExclusion>();
+            for (var entry : state.config().matrixExclusions().values()) {
+                String resource = entry.resource() == null ? null : objects.canonicalResource(entry.resource());
+                var visible = java.util.Objects.equals(resource, entry.resource()) ? entry
+                        : new io.flowscope.core.MatrixExclusion(io.flowscope.core.MatrixExclusion.keyFor(
+                                entry.view(), entry.operation(), resource), entry.view(), entry.operation(), resource, entry.label());
+                entries.put(visible.key(), visible);
+            }
+            if (dataset != state.datasetRevision()) return error(409, "프로젝트가 변경되었습니다. 다시 불러오세요.");
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", dataset);
+            body.set("entries", json.valueToTree(entries.values()));
+            return json(200, body);
+        }
+        try {
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            JsonNode values = json.readTree(required(form, "entries"));
+            if (!values.isArray() || values.size() > 5000) throw new IllegalArgumentException("잘못된 제외 목록입니다.");
+            if (form.get("entries").length() > 2_000_000) throw new IllegalArgumentException("제외 목록이 너무 큽니다.");
+            List<io.flowscope.core.MatrixExclusion> entries = new java.util.ArrayList<>();
+            for (JsonNode value : values) entries.add(json.treeToValue(value, io.flowscope.core.MatrixExclusion.class));
+            long dataset = Long.parseLong(required(form, "datasetRevision"));
+            state.replaceMatrixExclusions(dataset, entries);
+            if (dataset != state.datasetRevision()) throw new IllegalStateException("프로젝트가 변경되었습니다. 다시 불러오세요.");
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", dataset);
+            body.set("entries", json.valueToTree(entries));
+            return json(200, body);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) { return error(400, "잘못된 제외 목록입니다."); }
+        catch (IllegalStateException error) { return error(409, error.getMessage()); }
+        catch (IllegalArgumentException error) { return error(400, error.getMessage()); }
     }
 
     private ObjectNode projectEntry(ProjectWorkspace.Entry entry) {
@@ -901,6 +951,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("active", entry.active());
         body.put("readable", entry.readable());
         body.put("managed", entry.managed());
+        body.put("startUrl", entry.startUrl());
         return body;
     }
 
@@ -1242,7 +1293,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String service = normalizeService(required(form, "target"));
             String id = form.getOrDefault("id", "").trim();
             if (id.isBlank()) id = uniqueAccountId(label);
-            state.config().upsertAccount(new AccountProfile(id, label, service, parseRole(form.get("role"))));
+            String startUrl = form.containsKey("startUrl") ? form.get("startUrl")
+                    : state.config().account(id).map(AccountProfile::startUrl).orElse("");
+            startUrl = io.flowscope.core.ScopePolicy.parse(String.join("\n", state.configuredScopeEntries())).validateStartUrl(startUrl);
+            state.config().upsertAccount(new AccountProfile(id, label, service, parseRole(form.get("role")), startUrl));
             state.rebuild();
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
@@ -1299,6 +1353,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("label", account.label());
         body.put("role", account.role().label());
         body.put("target", account.service());
+        body.put("startUrl", account.startUrl());
+        body.put("defaultStartUrl", state.projectStartUrl());
 
         SessionBroker.SessionView session = state.sessions() == null ? null
                 : state.sessions().viewForAccount(accountId).orElse(null);
@@ -1330,7 +1386,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         ObjectNode zapNode = body.putObject("zap");
         zapNode.put("enabled", zap != null);
         zapNode.put("status", zap == null ? "UNVERIFIED" : zap.status().name());
-        zapNode.put("loginUrl", zap == null ? "" : zap.loginUrl());
+        zapNode.put("loginUrl", zap == null ? state.accountStartUrl(account) : zap.loginUrl());
         // 사용자 결정: 같은 로컬 UI에서 다시 입력하지 않도록 저장된 ID·비밀번호를 그대로 보여 준다.
         // 이 값은 이 응답(인증된 loopback UI)에만 실리고 프로젝트·snapshot·Evidence·로그·LLM에는 넣지 않는다.
         ZapAccountVault.Credentials credentials = zap == null ? null : state.zapCredentials(accountId).orElse(null);
@@ -1616,6 +1672,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         .put("minutes", budget.minutes());
             }
             body.set("accounts", json.valueToTree(state.explorerAccounts()));
+            body.put("startUrl", state.projectStartUrl());
+            ObjectNode loginUrls = body.putObject("loginUrls");
+            state.config().accounts().values().forEach(account -> loginUrls.put(account.id(), state.accountStartUrl(account)));
             body.set("scope", json.valueToTree(state.scopeEntries()));
             return json(200, body);
         }
@@ -1679,7 +1738,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ExplorerAccountVault.View account;
             String message;
             if (action.equals("browser-open")) {
-                account = state.openExplorerBrowserLogin(required(form, "id"), required(form, "url"));
+                account = state.openExplorerBrowserLogin(required(form, "id"), form.getOrDefault("url", ""));
                 message = "브라우저 창에서 로그인한 뒤 [로그인 완료]를 누르세요.";
             } else if (action.equals("browser-complete")) {
                 account = state.completeExplorerBrowserLogin(required(form, "id"));
@@ -1798,6 +1857,48 @@ public final class FlowScopeWebServer implements AutoCloseable {
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
+    /** Store the group default once; explicit child settings take precedence. */
+    private LoopbackHttpServer.Response objectGroupOwner(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String groupKey = required(form, "groupKey");
+            String choice = required(form, "choice");
+            long dataset = Long.parseLong(required(form, "datasetRevision"));
+            if (dataset != state.datasetRevision()) throw new IllegalArgumentException("프로젝트가 변경되었습니다. 화면을 새로고침하세요.");
+            var members = state.snapshot().objects.observations().stream()
+                    .filter(object -> groupKey.equals(object.groupKey()))
+                    .collect(java.util.stream.Collectors.toMap(
+                            object -> AnalysisConfig.operationObjectPolicyKey(object.operation(),
+                                    io.flowscope.core.ObservedObjectIndex.resource(object)),
+                            object -> object, (first, ignored) -> first, LinkedHashMap::new));
+            if (members.isEmpty()) throw new IllegalArgumentException("관측된 객체 묶음을 선택하세요.");
+            String service = members.values().iterator().next().operation().split(" ")[0];
+            if (members.values().stream().anyMatch(object -> !object.operation().startsWith(service + " ")))
+                throw new IllegalArgumentException("서로 다른 서비스의 객체가 섞여 있습니다.");
+            boolean publicRead = "PUBLIC".equals(choice);
+            if (publicRead && members.values().stream().anyMatch(object -> {
+                String method = object.operation().split(" ")[1];
+                return !method.equals("GET") && !method.equals("HEAD");
+            })) throw new IllegalArgumentException("조회 API만 공개로 설정할 수 있습니다.");
+            if (!publicRead && state.config().account(choice)
+                    .filter(account -> account.service().equals(service)).isEmpty())
+                throw new IllegalArgumentException("같은 서비스에 등록된 계정을 선택하세요.");
+            AnalysisConfig config = state.config();
+            synchronized (config) {
+                if (dataset != state.datasetRevision() || config != state.config())
+                    throw new IllegalArgumentException("프로젝트가 변경되었습니다. 화면을 새로고침하세요.");
+                AnalysisConfig next = config.snapshotCopy();
+                String group = AnalysisConfig.objectGroupKey(groupKey);
+                next.withResourcePolicy(group, publicRead ? ResourcePolicy.PUBLIC : ResourcePolicy.OWNER_ONLY);
+                next.withResourceOwner(group, publicRead ? "" : choice);
+                config.replaceWith(next);
+            }
+            state.rebuild();
+            return success("객체 묶음의 기본 설정을 저장했습니다. 개별 객체 설정이 우선합니다.");
+        } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
     /** LLM 교차 검증 소견 목록(읽기). 프로젝트에 영속된 추천을 그대로 돌려준다. */
     private LoopbackHttpServer.Response llmFindings(LoopbackHttpServer.Request request) throws IOException {
         if (!request.method().equals("GET")) return method("GET");
@@ -1816,6 +1917,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             node.put("createdAt", finding.createdAt());
             node.put("judgment", finding.judgment());
             node.put("judgmentReason", finding.judgmentReason());
+            node.put("verificationResult", finding.verificationResult());
+            node.put("judgmentBasis", finding.judgmentBasis());
+            node.put("issueTitle", finding.issueTitle());
             node.set("judgmentEvidenceIds", json.valueToTree(finding.judgmentEvidenceIds()));
             node.put("judgedAt", finding.judgedAt());
         }
@@ -1837,6 +1941,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
             node.put("type", entry.type());
             node.put("summary", entry.summary());
             node.put("risk", entry.risk());
+            if (entry.findingId() != null) node.put("findingId", entry.findingId());
+            if (entry.evidenceId() != null) node.put("evidenceId", entry.evidenceId());
         }
         return json(200, body);
     }
@@ -1851,6 +1957,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
                 String action = form.getOrDefault("action", "").trim();
                 if ("cancel".equals(action)) {
                     verifyState = state.cancelLlmVerify();
+                } else if ("ask".equals(action)) {
+                    verifyState = state.askLlmJudgment(required(form, "message"), form.getOrDefault("model", "").trim());
                 } else if ("judge".equals(action)) {
                     List<String> findingIds = new java.util.ArrayList<>();
                     JsonNode ids;

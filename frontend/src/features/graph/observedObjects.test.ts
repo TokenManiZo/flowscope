@@ -18,6 +18,26 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("shows the PATH value first and combined locations in the badge", () => {
+    const snapshot = data()
+    snapshot.events[0].path = "/posts/101"
+    snapshot.displayObjects = snapshot.displayObjects!.map((object, index) => index === 0
+      ? { ...object, integerLabel: "101", locations: ["REQUEST_BODY", "QUERY", "PATH"] as const,
+        locationFields: { PATH: ["/segments/1"], QUERY: ["/include"], REQUEST_BODY: ["/decision", "/comment"] } }
+      : object)
+    const graph = projectHierarchy(snapshot, filters, nav)
+    expect(graph.resources).toHaveLength(3)
+    expect(graph.resources[0].label).toBe("101")
+    expect(relationshipNodeCard(graph.resources[0], graph).badge).toBe("PATH · QUERY · BODY")
+    const group = relationshipNodeCard(graph.nodes.find(node => node.kind === "object-group")!, graph)
+    expect(group.badge).toBe("PATH · QUERY · BODY")
+    expect(group.title).toContain("id · include · decision …")
+    expect(group.detail).toBe("필드 PATH 1 · QUERY 1 · BODY 2")
+    expect(group.footer).toBe("객체 3개")
+    const search = buildGraphSearchIndex(snapshot, filters)
+    expect(search.entries.find(entry => entry.value === graph.resources[0].selection.displayObjectKey)?.title)
+      .toBe("101 · PATH · QUERY · BODY")
+  })
   it("restores Public for only the saved API and object while retaining its owner", () => {
     const snapshot = data(), object = snapshot.displayObjects![0]
     const resource = `${service} observed-object:${object.objectKey}`

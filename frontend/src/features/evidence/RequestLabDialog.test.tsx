@@ -120,6 +120,32 @@ async function openDraft(currentSession: boolean | null = false) {
 }
 
 describe("RequestLabDialog", () => {
+  it("shows captured request and response first when opened from judgment evidence", async () => {
+    installTransport()
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} initialView="original" />)
+    const request = await screen.findByLabelText("Request Lab 요청 원문")
+    await waitFor(() => expect(request).toHaveAttribute("readonly"))
+    expect(request).toHaveValue(secret)
+    expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("observed-response")
+    expect(screen.queryByText("미전송")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "편집 화면으로" }))
+    expect(screen.getByRole("button", { name: "작성 중 · 비로그인" })).toHaveAttribute("aria-pressed", "true")
+  })
+
+  it("shows the captured response even when a saved draft tab was selected", async () => {
+    const workspace = { datasetRevision: 7, revision: 1, persisted: true, tab: { nextId: 2, selectedId: 1, entries: {
+      "1": { name: "저장한 요청", request: "GET /edited HTTP/1.1", credentialMode: "ANONYMOUS", result: null, dirty: true },
+    } } }
+    vi.stubGlobal("fetch", vi.fn(async () => json({ ...requestLabDraft(), workspace })))
+    const user = userEvent.setup()
+    renderWithQueryClient(<RequestLabDialog accounts={registeredAccounts} open onOpenChange={vi.fn()} event={event} sessions={[activeSession]} datasetRevision={7} initialView="original" />)
+    await waitFor(() => expect(screen.getByLabelText("Request Lab 응답 원문")).toHaveValue("observed-response"))
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue(secret)
+    await user.click(screen.getByRole("button", { name: "편집 화면으로" }))
+    expect(screen.getByLabelText("Request Lab 요청 원문")).toHaveValue("GET /edited HTTP/1.1")
+  })
+
   it("opens ready to send without logging in, offers registered accounts, and shows the original read-only on demand", async () => {
     const fetch = installTransport()
     const user = userEvent.setup()

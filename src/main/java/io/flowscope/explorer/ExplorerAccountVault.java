@@ -94,6 +94,7 @@ public final class ExplorerAccountVault implements AutoCloseable {
             entry.cookies.getCookieStore().add(origin, cookie);
         }
         entry.headers.clear();
+        entry.headerOrigin = origin;
         headers.forEach((name, value) -> {
             if (value != null && !value.isBlank() && value.indexOf('\r') < 0 && value.indexOf('\n') < 0) {
                 entry.headers.put(name, value);
@@ -108,7 +109,8 @@ public final class ExplorerAccountVault implements AutoCloseable {
         if (entry.status != AuthStatus.READY) {
             throw new IllegalStateException(entry.label + " 인증 상태가 READY가 아닙니다: " + entry.status);
         }
-        Map<String, String> headers = new LinkedHashMap<>(entry.headers);
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (sameOrigin(entry.headerOrigin, target)) headers.putAll(entry.headers);
         Map<String, List<String>> cookieHeaders;
         try { cookieHeaders = entry.cookies.get(target, Map.of()); }
         catch (java.io.IOException error) { cookieHeaders = Map.of(); }
@@ -132,6 +134,14 @@ public final class ExplorerAccountVault implements AutoCloseable {
 
     @Override public synchronized void close() {
         clear();
+    }
+
+    private static boolean sameOrigin(URI left, URI right) {
+        if (left == null || right == null) return false;
+        int leftPort = left.getPort() < 0 ? ("https".equalsIgnoreCase(left.getScheme()) ? 443 : 80) : left.getPort();
+        int rightPort = right.getPort() < 0 ? ("https".equalsIgnoreCase(right.getScheme()) ? 443 : 80) : right.getPort();
+        return left.getScheme().equalsIgnoreCase(right.getScheme())
+                && left.getHost().equalsIgnoreCase(right.getHost()) && leftPort == rightPort;
     }
 
     private static void setStatus(Entry entry, AuthStatus status, String message) {
@@ -163,6 +173,7 @@ public final class ExplorerAccountVault implements AutoCloseable {
         private String label = "";
         private String role = "";
         private URI loginUrl;
+        private URI headerOrigin;
         private final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
         private final Map<String, String> headers = new LinkedHashMap<>();
         private boolean browserOpen;

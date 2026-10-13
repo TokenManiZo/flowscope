@@ -14,6 +14,7 @@ import {
   resetIdentities,
   saveAccount,
   saveOwner,
+  saveObjectGroupOwner,
   saveRequirement,
   saveResourcePolicy,
   saveOperationObjectPolicy,
@@ -45,8 +46,10 @@ import {
   getLlmVerifyState,
   startLlmVerify,
   startLlmJudgment,
+  askLlmJudgment,
   cancelLlmVerify,
   getLlmFeed,
+  getMatrixExclusions,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -63,6 +66,7 @@ export const queryKeys = {
   llmFindings: ["llm-findings"] as const,
   llmVerify: ["llm-verify"] as const,
   llmFeed: ["llm-feed"] as const,
+  matrixExclusions: (datasetRevision: number) => ["matrix-exclusions", datasetRevision] as const,
 }
 
 const pollingOptions = {
@@ -188,6 +192,7 @@ export function useSessionUnbindMutation() { return useInvalidatingMutation(({ s
 export function useSessionCaptureMutation() { return useInvalidatingMutation(({ action, account }: { action: "begin" | "end" | "revoke"; account: string }) => manageSessionCapture(action, account), [queryKeys.snapshot]) }
 export function useIdentityResetMutation() { return useInvalidatingMutation(resetIdentities, [queryKeys.snapshot]) }
 export function useOwnerMutation() { return useInvalidatingMutation(({ resource, identity }: { resource: string; identity: string }) => saveOwner(resource, identity), [queryKeys.snapshot]) }
+export function useObjectGroupOwnerMutation() { return useInvalidatingMutation(saveObjectGroupOwner, [queryKeys.snapshot]) }
 export function useRequestLabSendMutation() { return useInvalidatingMutation(sendRequestLab, [queryKeys.snapshot]) }
 export function useAuthorizationReplayMutation() { return useInvalidatingMutation(({ itemId, armed }: { itemId: string; armed: boolean }) => runAuthorizationReplay(itemId, armed), [queryKeys.snapshot]) }
 
@@ -195,6 +200,10 @@ export function useLlmFindingsQuery(enabled: boolean, polling = false) {
   return useQuery({ queryKey: queryKeys.llmFindings, queryFn: ({ signal }) => getLlmFindings(signal),
     enabled, staleTime: FLOW_SCOPE_STALE_TIME_MS,
     refetchInterval: polling ? FLOW_SCOPE_POLL_INTERVAL_MS : false, refetchIntervalInBackground: false })
+}
+export function useMatrixExclusionsQuery(datasetRevision: number) {
+  return useQuery({ queryKey: queryKeys.matrixExclusions(datasetRevision), queryFn: ({ signal }) => getMatrixExclusions(signal),
+    enabled: datasetRevision > 0, staleTime: 0, refetchOnMount: "always", retry: 1 })
 }
 export function useLlmVerifyStateQuery(enabled: boolean, polling: boolean) {
   return useQuery({ queryKey: queryKeys.llmVerify, queryFn: ({ signal }) => getLlmVerifyState(signal),
@@ -210,6 +219,14 @@ export function useStartLlmJudgmentMutation() {
   const client = useQueryClient()
   return useMutation({ mutationFn: (values: { findings: readonly string[]; model: string }) => startLlmJudgment(values),
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
+}
+export function useAskLlmJudgmentMutation() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: (values: { message: string; model: string }) => askLlmJudgment(values),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: queryKeys.llmVerify })
+      void client.invalidateQueries({ queryKey: queryKeys.llmFeed })
+    } })
 }
 export function useCancelLlmVerifyMutation() {
   const client = useQueryClient()

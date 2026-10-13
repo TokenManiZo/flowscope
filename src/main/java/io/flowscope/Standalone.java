@@ -219,10 +219,15 @@ public final class Standalone {
             return status.withPersistence(activeProjectDatabase == null ? "UNMANAGED" : "SAVED",
                     lastSavedAt == null ? "" : lastSavedAt.toString(), "");
         }
+        @Override public synchronized String projectStartUrl() { return activeProjectContext.startUrl(); }
+        @Override public synchronized List<String> configuredScopeEntries() { return activeProjectContext.scope(); }
         @Override public synchronized ProjectWorkspace.Status startProject(String name, String scope) {
+            return startProject(name, scope, "");
+        }
+        @Override public synchronized ProjectWorkspace.Status startProject(String name, String scope, String startUrl) {
             try {
                 preserveCurrentProject();
-                ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, scope);
+                ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, scope, startUrl);
                 try {
                     sqliteProjectStore.save(next.database(), List.of(), new AnalysisConfig(), List.of(), List.of(),
                             Map.of(), List.of(), List.of(), next.context());
@@ -277,8 +282,11 @@ public final class Standalone {
             }
         }
         @Override public synchronized ProjectWorkspace.Status updateProject(String name, String scope) {
+            return updateProject(name, scope, null);
+        }
+        @Override public synchronized ProjectWorkspace.Status updateProject(String name, String scope, String startUrl) {
             if (activeProjectDatabase == null) throw new IllegalStateException("수정할 현재 프로젝트가 없습니다.");
-            ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, scope);
+            ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, scope, startUrl);
             try {
                 activeProjectContext = next;
                 saveProject(activeProjectDatabase, activeProjectContext);

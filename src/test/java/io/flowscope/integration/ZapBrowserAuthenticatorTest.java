@@ -16,13 +16,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ZapBrowserAuthenticatorTest {
     @Test
-    void configuresChromeUserWithExplicitVerificationIndicators() throws Exception {
+    void configuresChromeUserWithQueryAndExplicitVerificationIndicators() throws Exception {
         List<String> requests = new ArrayList<>();
         HttpServer server = authenticationApi(requests, "{\"authSuccessful\":\"true\"}");
         server.start();
         try {
             ZapClient zap = new ZapClient("http://127.0.0.1:" + server.getAddress().getPort(), "");
             ZapAccountVault vault = accountVault();
+            vault.save(new ZapAccountVault.Input("zap-a", "A", "USER", "https://app.example.test",
+                    "https://app.example.test/login?next=dashboard", "alice", "password-secret",
+                    "Signed in", "Invalid credentials"));
             ZapBrowserAuthenticator authenticator = new ZapBrowserAuthenticator(zap, new ObjectMapper(),
                     value -> value.startsWith("https://app.example.test/"),
                     () -> List.of(authenticationEvidence("Signed in")));
@@ -32,6 +35,9 @@ final class ZapBrowserAuthenticatorTest {
 
             assertEquals("7", identity.userId());
             assertEquals("chrome-headless", identity.browser());
+            assertTrue(requests.stream().anyMatch(value -> value.startsWith(
+                    "/JSON/authentication/action/setAuthenticationMethod/") && value.contains("next%253Ddashboard")),
+                    "인증 설정에는 원래 로그인 URL의 쿼리가 보존돼야 한다");
             assertTrue(requests.stream().anyMatch(value -> value.startsWith(
                     "/JSON/context/action/includeInContext/")));
             assertTrue(requests.stream().anyMatch(value -> value.contains("browserId%3Dchrome-headless")));

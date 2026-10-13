@@ -62,7 +62,7 @@ public final class Pipeline {
     }
 
     private static Result runInternal(List<RequestRecord> all, AnalysisConfig config, boolean isolate) {
-        AnalysisConfig effectiveConfig = isolate ? config.snapshotCopy() : config;
+        AnalysisConfig effectiveConfig = config.snapshotCopy();
         List<RequestRecord> input = all == null ? List.of() : all;
         List<RequestRecord> records = isolate
                 ? input.stream().map(RequestRecord::analysisCopy)
@@ -111,6 +111,7 @@ public final class Pipeline {
             if (record.trafficClassification.disposition() == TrafficClassification.Disposition.REVIEW) review++;
         }
         ObservedObjectIndex objects = ObservedObjectIndex.build(coverage);
+        effectiveConfig.withCanonicalObjects(objects);
         AuthorizationAnalysis analysis = AuthorizationAnalyzer.analyze(coverage, effectiveConfig, objects);
         FlowGraph graph = FlowGraphBuilder.build(coverage, analysis, effectiveConfig);
         return new Result(graph, analysis, records, coverage, excluded, review, objects);

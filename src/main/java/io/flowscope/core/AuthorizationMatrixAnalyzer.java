@@ -39,7 +39,8 @@ public final class AuthorizationMatrixAnalyzer {
     public static AuthorizationMatrix analyze(Pipeline.Result result, AnalysisConfig config,
                                               List<ValidationDecision> validations) {
         Objects.requireNonNull(result, "result");
-        AnalysisConfig policy = config == null ? new AnalysisConfig() : config.snapshotCopy();
+        AnalysisConfig policy = (config == null ? new AnalysisConfig() : config.snapshotCopy())
+                .withCanonicalObjects(result.objects);
         List<ValidationDecision> history = validations == null ? List.of() : List.copyOf(validations);
 
         Map<String, AuthorizationAnalysis.CoverageCell> cells = new LinkedHashMap<>();

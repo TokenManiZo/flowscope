@@ -20,6 +20,28 @@ class ProjectWorkspaceTest {
     @TempDir Path temporary;
 
     @Test
+    void startUrlAndAccountOverrideSurviveSaveAndReopenWhileWildcardScopeIsPreserved() throws Exception {
+        ProjectWorkspace workspace = new ProjectWorkspace(temporary);
+        String start = "https://mobile.example.test/login?next=dashboard";
+        var allocation = workspace.allocate("Login project", "https://*.example.test/", start);
+        AnalysisConfig config = new AnalysisConfig();
+        config.upsertAccount(new io.flowscope.core.AccountProfile("a", "A", "https://example.test",
+                io.flowscope.core.AccessRole.USER, "https://other.example.test/login"));
+        SqliteProjectStore store = new SqliteProjectStore(new ProjectStore());
+        store.save(allocation.database(), List.of(), config, List.of(), List.of(), Map.of(), List.of(), List.of(), allocation.context());
+        var restored = store.load(allocation.database());
+        assertEquals(start, restored.context().startUrl());
+        assertEquals(start, store.readContext(allocation.database()).startUrl());
+        assertEquals(start, workspace.status(allocation.database(), allocation.context(), store).active().startUrl());
+        assertEquals(List.of("https://*.example.test:443/"), restored.context().scope());
+        assertEquals("https://other.example.test/login", restored.config().account("a").orElseThrow().startUrl());
+        assertEquals(start, ProjectWorkspace.updatedContext(restored.context(), "Renamed", "https://*.example.test/", null).startUrl());
+        assertEquals("", ProjectWorkspace.updatedContext(restored.context(), "Renamed", "https://*.example.test/", "").startUrl());
+        assertThrows(IllegalArgumentException.class, () -> workspace.allocate("bad", "https://*.example.test/", "https://outside.test/"));
+        assertThrows(IllegalArgumentException.class, () -> workspace.allocate("bad", "https://*.example.test/", "https://*.example.test/"));
+    }
+
+    @Test
     void allocatesOnePrivateScopeNamedDirectoryPerDiagnosisAndAvoidsCollisions() throws Exception {
         Clock clock = Clock.fixed(Instant.parse("2026-09-10T01:02:03Z"), ZoneOffset.UTC);
         ProjectWorkspace workspace = new ProjectWorkspace(temporary, clock);
@@ -32,6 +54,17 @@ class ProjectWorkspaceTest {
         assertEquals(List.of("https://example.test:443/app"), first.context().scope());
         assertTrue(first.directory().startsWith(temporary));
         assertFalse(first.database().toFile().exists());
+    }
+
+    @Test
+    void wildcardScope를_프로젝트에_그대로_보존한다() throws Exception {
+        ProjectWorkspace workspace = new ProjectWorkspace(temporary,
+                Clock.fixed(Instant.parse("2026-09-10T01:02:03Z"), ZoneOffset.UTC));
+
+        ProjectWorkspace.Allocation allocation = workspace.allocate("", "*.Example.test");
+
+        assertEquals("example-test-443-20260910-010203", allocation.id());
+        assertEquals(List.of("https://*.example.test:443/"), allocation.context().scope());
     }
 
     @Test

@@ -28,6 +28,19 @@ class HumanChromiumBrowserTest {
         assertEquals("about:blank", args.getLast());
     }
 
+    @Test void realChromiumCanOpenABlankIsolatedWindowWithoutASiteUrl() throws Exception {
+        assumeTrue(Boolean.getBoolean("flowscope.human.runtime"), "Actual Chromium runtime test is opt-in");
+        Path executable = ChromiumLoginBrowser.resolveExecutable(Path.of(System.getProperty("java.home")));
+        assertNotNull(executable);
+        try (var proxy = new LocalProxy("blank");
+             var window = new HumanChromiumBrowser().open(executable, URI.create("about:blank"), proxy.port(), true)) {
+            assertTrue(window.alive());
+            var targets = ((HumanChromiumBrowser.BrowserWindow) window).connection().call("Target.getTargets").path("targetInfos");
+            assertTrue(java.util.stream.StreamSupport.stream(targets.spliterator(), false)
+                    .anyMatch(target -> "page".equals(target.path("type").asText()) && "about:blank".equals(target.path("url").asText())));
+        }
+    }
+
     /** Opt-in actual Chromium test. Same origin and three proxies, with separate cookies/localStorage in each. */
     @Test void realChromiumKeepsThreeSameOriginAccountsIsolated() throws Exception {
         assumeTrue(Boolean.getBoolean("flowscope.human.runtime"), "Actual Chromium runtime test is opt-in");

@@ -304,28 +304,10 @@ public final class ZapClient {
 
     public static String exactSubtreeRegex(String target) {
         URI uri = URI.create(target);
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
-        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.ROOT);
-        if ((!"http".equals(scheme) && !"https".equals(scheme)) || host.isBlank()) {
-            throw new IllegalArgumentException("ZAP context target must be an HTTP(S) URL");
-        }
-        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length() - 1);
-        String displayHost = host.indexOf(':') >= 0 ? "[" + host + "]" : host;
-        StringBuilder regex = new StringBuilder("^")
-                .append("(?i:").append(java.util.regex.Pattern.quote(scheme + "://" + displayHost)).append(')');
-        int defaultPort = "https".equals(scheme) ? 443 : 80;
-        if (uri.getPort() >= 0 && uri.getPort() != defaultPort) {
-            regex.append(java.util.regex.Pattern.quote(":" + uri.getPort()));
-        } else {
-            regex.append("(?::").append(defaultPort).append(")?");
-        }
-        String path = uri.getRawPath();
-        if (path == null || path.isBlank() || "/".equals(path)) regex.append("(?:/.*)?");
-        else {
-            String prefix = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-            regex.append(java.util.regex.Pattern.quote(prefix)).append("(?:/.*)?");
-        }
-        return regex.append("(?:\\?.*)?$").toString();
+        if (uri.getRawFragment() != null) throw new IllegalArgumentException("ZAP context target must not contain a fragment");
+        // 로그인 URL의 쿼리는 인증 설정에 보존하고 Context의 경로 범위에서는 제외한다.
+        int query = target.indexOf('?');
+        return io.flowscope.core.ScopePolicy.parse(query < 0 ? target : target.substring(0, query)).urlRegex();
     }
 
     private String get(String path, String query) {

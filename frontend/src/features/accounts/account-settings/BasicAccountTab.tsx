@@ -1,6 +1,8 @@
+import { InfoHint } from "@/components/ui/info-hint";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TabsContent } from "@/components/ui/tabs";
+import { normalizeStartUrl } from "@/lib/scopeInput";
 import { cn } from "@/lib/utils";
 import type { AccountSettingsDraft } from "./AccountSettingsSheet";
 import type { AccountRole, AccountSettings } from "./types";
@@ -23,12 +25,14 @@ export function BasicAccountTab({ settings, draft, patch, targetError, pending }
   patch: (value: Partial<AccountSettingsDraft>) => void; targetError: string | null;
   pending: boolean;
 }) {
+  const startError = draft.startUrl.trim() ? normalizeStartUrl(draft.startUrl).note : null;
   return <TabsContent value="basic" className="space-y-5">
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="grid gap-1.5"><Label htmlFor="account-label">표시 이름</Label><Input id="account-label" value={draft.label} onChange={(event) => patch({ label: event.target.value })} /></div>
       <div className="grid gap-1.5"><Label id="account-role">역할</Label><RoleSegment labelledBy="account-role" value={draft.role} onChange={(role) => patch({ role })} disabled={pending} /></div>
     </div>
     <div className="grid gap-1.5"><Label htmlFor="account-target">대상 서비스</Label><Input id="account-target" value={draft.target} onChange={(event) => patch({ target: event.target.value })} className="font-mono" />{targetError ? <p role="alert" className="text-xs text-destructive">{targetError}</p> : <p className="text-xs text-muted-foreground">바꾸면 연결된 세션이 끊길 수 있습니다.</p>}</div>
+    <div className="grid gap-1.5"><div className="flex items-center gap-1"><Label htmlFor="account-start-url">로그인 시작 주소</Label><InfoHint label="로그인 시작 주소">비워 두면 프로젝트의 시작 주소를 사용합니다. 로그인 페이지와 API 대상 서비스는 달라도 됩니다.</InfoHint></div><Input id="account-start-url" value={draft.startUrl} placeholder={settings.defaultStartUrl || "미설정 시 빈 브라우저"} onChange={event => patch({ startUrl: event.target.value })} className="font-mono" />{startError && <p role="alert" className="text-xs text-destructive">{startError}</p>}</div>
     <p className="text-sm text-muted-foreground">계정 ID <span className="font-mono text-foreground">{settings.id}</span></p>
   </TabsContent>;
 }

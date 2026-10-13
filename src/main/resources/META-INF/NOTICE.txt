@@ -12,11 +12,11 @@ Frontend production dependencies
              preserved in META-INF/NOTICE-frontend.txt
 
 --------------------------------------------------------------------
-Jackson JSON processor 2.22.2
-  Artifacts: com.fasterxml.jackson.core:jackson-databind:2.22.2
-             com.fasterxml.jackson.core:jackson-core:2.22.2
+Jackson JSON processor 2.22.3
+  Artifacts: com.fasterxml.jackson.core:jackson-databind:2.22.3
+             com.fasterxml.jackson.core:jackson-core:2.22.3
              com.fasterxml.jackson.core:jackson-annotations:2.22
-             com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.2
+             com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.22.3
   Source   : https://github.com/FasterXML/jackson
   License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
   Copyright 2007-, Tatu Saloranta and Jackson contributors
@@ -33,14 +33,14 @@ SnakeYAML 2.5
   License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
   Project developers include Andrey Somov and Alexander Maslov.
 --------------------------------------------------------------------
-jsoup 1.23.1
-  Artifact : org.jsoup:jsoup:1.23.1
+jsoup 1.23.2
+  Artifact : org.jsoup:jsoup:1.23.2
   Source   : https://github.com/jhy/jsoup
   License  : MIT — full text in META-INF/LICENSE-jsoup.txt
   Copyright © 2009-2026 Jonathan Hedley and contributors
 --------------------------------------------------------------------
-Xerial SQLite JDBC 3.53.1.0
-  Artifact : org.xerial:sqlite-jdbc:3.53.1.0
+Xerial SQLite JDBC 3.53.4.0
+  Artifact : org.xerial:sqlite-jdbc:3.53.4.0
   Source   : https://github.com/xerial/sqlite-jdbc
   License  : Apache License 2.0 — full text in META-INF/LICENSE-apache-2.0.txt
              Bundled Zentus-derived code — BSD 2-Clause text in

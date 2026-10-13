@@ -142,6 +142,80 @@ it("blocks duplicate confirmation and option changes while a save is pending", a
 
 const operation = `${service} GET /posts/{id}`
 const policyKey = `${operation} @ ${resource}`
+it("reuses the owner picker for a group and sends one bulk save for all members", async () => {
+  const fetch = installFetch()
+  const user = userEvent.setup()
+  const groupKey = "group-all-objects"
+  const objects = Array.from({ length: 12 }, (_, index) => ({
+    eventId: `ev-${index}`, operation, apiKey: operation, groupKey, objectKey: `obj-${index}`,
+    kind: "QUERY" as const, fields: ["id"], legacyResource: null, ordinal: index + 1,
+  }))
+  renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, displayObjects: objects, datasetRevision: 42 }}
+    resource={`object-group:${groupKey}`} groupKey={groupKey} />)
+  expect(screen.getByText(/객체 12개에 적용할 기본 설정/)).toBeVisible()
+  await user.click(screen.getByRole("radio", { name: /USER A/ }))
+  await user.click(screen.getByRole("button", { name: "소유자로 확정" }))
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => String(url) === "/api/object-group-owner")
+    .map(([, init]) => String(init?.body))).toEqual([
+      String(new URLSearchParams({ groupKey, choice: "acct-demo-user-a", datasetRevision: "42" })),
+    ]))
+  expect(posts(fetch)).toEqual([])
+})
+
+it("allows explicitly confirming a group whose members only have the same inferred owner", async () => {
+  const fetch = installFetch()
+  const user = userEvent.setup()
+  const groupKey = "group-inferred"
+  const object = { eventId: "ev-inferred", operation, apiKey: operation, groupKey, objectKey: "obj-inferred",
+    kind: "QUERY" as const, fields: ["id"], legacyResource: null, ordinal: 1 }
+  const inferredResource = `${service} observed-object:${object.objectKey}`
+  renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, displayObjects: [object], owners: { [inferredResource]: "acct-demo-user-a" }, ownerOverrides: {} }}
+    resource={`object-group:${groupKey}`} groupKey={groupKey} />)
+  await user.click(screen.getByRole("radio", { name: /USER A/ }))
+  await user.click(screen.getByRole("button", { name: "소유자로 확정" }))
+  await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url) === "/api/object-group-owner")).toBe(true))
+})
+
+it("keeps the parent selection visible when a child has its own Public setting", () => {
+  installFetch()
+  const groupKey = "group-parent"
+  const object = { eventId: "ev-child", operation, apiKey: operation, groupKey, objectKey: "obj-child",
+    kind: "QUERY" as const, fields: ["id"], legacyResource: null, ordinal: 1 }
+  const child = `${service} observed-object:${object.objectKey}`
+  const parent = `observed-group:${groupKey}`
+  renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, displayObjects: [object],
+    ownerOverrides: { [parent]: "acct-demo-user-a" },
+    resourcePolicyOverrides: { [parent]: "OWNER_ONLY", [`${operation} @ ${child}`]: "PUBLIC" } }}
+    resource={`object-group:${groupKey}`} groupKey={groupKey} />)
+  expect(screen.getByRole("heading", { name: /소유자 USER A/ })).toBeVisible()
+})
+
+it("lets a child override inherited Public and undo back to inheritance", async () => {
+  const fetch = installFetch()
+  const user = userEvent.setup()
+  const groupKey = "group-public-parent"
+  const object = { eventId: "ev-private", operation, apiKey: operation, groupKey, objectKey: "obj-private",
+    kind: "QUERY" as const, fields: ["id"], legacyResource: null, ordinal: 1 }
+  const child = `${service} observed-object:${object.objectKey}`
+  const parent = `observed-group:${groupKey}`
+  renderWithQueryClient(<GraphOwnerControl snapshot={{ ...unknown, displayObjects: [object], ownerOverrides: {},
+    resourcePolicyOverrides: { [parent]: "PUBLIC", [`${operation} @ ${child}`]: "PUBLIC" },
+    directOwnerOverrides: {}, directResourcePolicyOverrides: { [parent]: "PUBLIC" } }}
+    operation={operation} resource={child} inheritedGroupKey={groupKey} />)
+  expect(screen.getByRole("heading", { name: /누구나 조회 가능/ })).toHaveTextContent("묶음 기본값")
+  await user.click(screen.getByRole("button", { name: "공개 설정 바꾸기" }))
+  await user.click(screen.getByRole("radio", { name: /USER A/ }))
+  await user.click(screen.getByRole("button", { name: "소유자로 확정" }))
+  await screen.findByRole("status")
+  await user.click(screen.getByRole("button", { name: "되돌리기" }))
+  await waitFor(() => expect(fetch.mock.calls.filter(([url]) => ["/api/resource-policy", "/api/owner"].includes(String(url)))
+    .map(([url, init]) => [String(url), new URLSearchParams(String(init?.body))])).toHaveLength(4))
+  const writes = fetch.mock.calls.filter(([url]) => ["/api/resource-policy", "/api/owner"].includes(String(url)))
+  expect(writes.map(([url, init]) => [String(url), new URLSearchParams(String(init?.body)).get("policy") ?? new URLSearchParams(String(init?.body)).get("identity")]))
+    .toEqual([["/api/resource-policy", "UNKNOWN"], ["/api/owner", "acct-demo-user-a"],
+      ["/api/resource-policy", "UNKNOWN"], ["/api/owner", ""]])
+})
+
 it("saves and undoes public read for this API and OBJ without clearing its owner", async () => {
   const fetch = installFetch(), user = userEvent.setup()
   renderWithQueryClient(<GraphOwnerControl snapshot={snapshot} operation={operation} resource={resource} />)

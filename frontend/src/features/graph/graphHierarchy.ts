@@ -2,7 +2,7 @@ import { applyObservedObjects } from "./observedObjects"
 import { applyStaticResources, staticResourceEntries } from "./staticResourceGraph"
 import { graphAccountIdentities, graphAccountLabel } from "./graphAccounts"
 import { operationShapeKey } from "./graphPathShape"
-import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
+import type { Cell, DisplayObject, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
 import { manualResendDetails } from "./resendGraph"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
@@ -39,10 +39,11 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   groupId?: string
   service?: string
   /** Browser-observed host metadata, without API or authorization Evidence. */
-  discovery?: "registered" | "unregistered"
   displayObjectCount?: number
   displayObjectKind?: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  displayObjectLocations?: readonly DisplayObject["kind"][]
   displayObjectFieldCount?: number
+  displayObjectFieldCounts?: Partial<Record<DisplayObject["kind"], number>>
   displayOperations?: readonly string[]
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */
@@ -227,7 +228,7 @@ export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
 
 export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string; staticApiId?: string }
 
-export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}, observedHosts: readonly { service: string; registered: boolean }[] = []): HierarchyProjection {
+export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const { cells, observedEvents, attachedEvents, routeCandidates: candidateList, resolveGroup, staticEntries } = graphContents(snapshot, filters)
   const operationGroup = (operation: string) => { const { service, path } = splitOperation(operation); return resolveGroup(service, path) }
@@ -429,11 +430,6 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       const target = addNode("target", item.service, emptySelection(), { service: item.service })
       const node = addNode("api-group", item.id, emptySelection(), { groupId: item.id, service: item.service, label: item.label, wrappedLabel: item.label })
       addEdge("target-group", target.id, node.id, emptySelection())
-      listItems.push(node)
-    }
-    for (const host of observedHosts) {
-      if (nodes.some(node => node.kind === "target" && node.service === host.service)) continue
-      const node = addNode("target", host.service, emptySelection(), { service: host.service, discovery: host.registered ? "registered" : "unregistered" })
       listItems.push(node)
     }
   } else if (group && resolved.level === "group") {

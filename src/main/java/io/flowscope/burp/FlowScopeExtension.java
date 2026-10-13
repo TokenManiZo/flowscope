@@ -48,7 +48,6 @@ import io.flowscope.core.ToolKind;
 import io.flowscope.core.RunPhase;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.ScopePolicy;
-import io.flowscope.core.PassiveHostDiscovery;
 import io.flowscope.core.SupportingAssetScope;
 import io.flowscope.core.ValidationDecision;
 import io.flowscope.core.BurpXmlParser;
@@ -337,7 +336,6 @@ public final class FlowScopeExtension implements BurpExtension {
     private final List<RouteCandidateExtractor.Seed> siteMapSeeds = new ArrayList<>();
     private final List<RouteCandidate> restoredRouteCandidates = new ArrayList<>();
     private volatile ScopePolicy scope = ScopePolicy.parse("");
-    private final PassiveHostDiscovery hostDiscovery = new PassiveHostDiscovery();
     private volatile String scopeText = "";
     private final AtomicLong revision = new AtomicLong();
     private final AtomicLong databaseSavedRevision = new AtomicLong(-1);
@@ -601,10 +599,8 @@ public final class FlowScopeExtension implements BurpExtension {
     private final class ProxyScopeHandler implements ProxyRequestHandler {
         @Override
         public ProxyRequestReceivedAction handleRequestReceived(InterceptedRequest request) {
-            long discoveryEpoch = datasetEpoch.get();
             String originalUserAgent = explorerOriginalUserAgent(request);
             if (originalUserAgent != null) {
-                hostDiscovery.observe(discoveryEpoch, scope, request.url());
                 // Preserve the direct login browser's redirects and CDN/subresource loads.
                 // Explorer actions and CDP Evidence still use their existing exact-scope gates.
                 // Burp history retains the real exchange; CDP alone retains account/run Evidence.
@@ -633,14 +629,6 @@ public final class FlowScopeExtension implements BurpExtension {
             PortProfile profile = managed != null ? new PortProfile(Source.HUMAN, SourceDetail.BROWSER)
                     : humanListeners.resolve(request.listenerInterface(), request.url(), scope,
                     humanRun, loginCaptureHandle, linkedHumanAsset);
-            if (profile.source() == Source.HUMAN || humanRun != null
-                    && humanListeners.boundPort(humanRun.runId()) == observedPort) {
-                hostDiscovery.observe(discoveryEpoch, scope, request.url());
-                if (profile.source() == Source.UNKNOWN
-                        && hostDiscovery.allowsPassiveCapture(discoveryEpoch, scope, request.url())) {
-                    profile = new PortProfile(Source.HUMAN, SourceDetail.BROWSER);
-                }
-            }
             if (!allowed(request, profile)) return ProxyRequestReceivedAction.drop();
             long captureGeneration = profile.source() == Source.HUMAN && humanRun != null
                     ? runContexts.humanCaptureGeneration(humanRun.runId()) : -1;
@@ -801,15 +789,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (staleObservation(observation)) return ProxyResponseReceivedAction.continueWith(response);
                 PortProfile profile = new PortProfile(observation.source(), observation.detail());
                 boolean captured = capture(response.initiatingRequest(), response, profile, observation);
-                HttpRequest request = response.initiatingRequest();
-                String runId = observation.context() == null ? "live-" + profile.source().name().toLowerCase(Locale.ROOT)
-                        : observation.context().runId();
-                boolean passiveResponse = !scope.allows(request.url()) && profile.source() == Source.HUMAN
-                        && profile.detail() == SourceDetail.BROWSER
-                        && hostDiscovery.allowsPassiveCapture(datasetEpoch.get(), scope, request.url())
-                        && supportingAssets.pageUrlFor(profile.source(), runId, scope::allows, request.method(), request.url(),
-                        request.headerValue("Referer"), request.headerValue("Sec-Fetch-Dest")) == null;
-                if (captured && !passiveResponse) {
+                if (captured) {
                     observeSessionResponse(profile, response.initiatingRequest(), response.statusCode(),
                             response.headerValue("Location"), boundedResponseBody(response), response.headers(), observation);
                 }
@@ -918,10 +898,7 @@ public final class FlowScopeExtension implements BurpExtension {
         String supportingPage = scope.allows(req.url()) ? null : supportingAssets.pageUrlFor(
                 profile.source(), runId, scope::allows, req.method(), req.url(), req.headerValue("Referer"),
                 req.headerValue("Sec-Fetch-Dest"));
-        boolean passiveSubdomain = supportingPage == null && !scope.allows(req.url()) && profile.source() == Source.HUMAN
-                && profile.detail() == SourceDetail.BROWSER && observation != null
-                && hostDiscovery.allowsPassiveCapture(datasetEpoch.get(), scope, req.url());
-        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) && supportingPage == null && !passiveSubdomain) return false;
+        if (!ActiveTrafficGuard.allowsCapture(scope, req.url()) && supportingPage == null) return false;
         if (supportingPage != null && profile.source() == Source.SCANNER) return false;
         synchronized (records) {
             if (records.size() >= MAX_RECORDS) {
@@ -929,7 +906,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 return false;
             }
         }
-        RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation, null, passiveSubdomain);
+        RequestRecord rec = recordFrom(req, response, profile, System.currentTimeMillis(), true, null, observation);
         rec.supportingPageUrl = supportingPage;
 
         // 프록시 콜백은 즉시 반환한다: 여기서 정규화/그래프 재구성을 하면 트래픽마다 O(N) → 누적 O(N²).
@@ -943,7 +920,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 }
                 records.add(rec);
                 retainRawExchange(rec, req, response);
-                if (!passiveSubdomain && liveCrossIdentityReplay != null
+                if (liveCrossIdentityReplay != null
                         && liveCrossIdentityReplay.acceptingCaptures(rec)) {
                     pendingLiveReplays.add(rec.runtimeId());
                 }
@@ -955,7 +932,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 ? runContexts.captureHumanIfCurrent(runId, observation.humanCaptureGeneration(), commit)
                 : commit.getAsBoolean();
         if (!captured) return false;
-        if (!passiveSubdomain && supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
+        if (supportingPage == null && response.statusCode() >= 200 && response.statusCode() < 300
                 && String.valueOf(response.headerValue("Content-Type")).toLowerCase(Locale.ROOT)
                 .contains("text/html")) {
             supportingAssets.observeHtml(profile.source(), rec.runId, scope::allows, req.url(), rec.responseBodyForAnalysis());
@@ -984,13 +961,6 @@ public final class FlowScopeExtension implements BurpExtension {
                                      long timestamp, boolean applyRunContext, String runId,
                                      InFlightRequestTracker.Observation observation,
                                      String forcedAccountId) {
-        return recordFrom(req, response, profile, timestamp, applyRunContext, runId, observation, forcedAccountId, false);
-    }
-
-    private RequestRecord recordFrom(HttpRequest req, HttpResponse response, PortProfile profile,
-                                     long timestamp, boolean applyRunContext, String runId,
-                                     InFlightRequestTracker.Observation observation,
-                                     String forcedAccountId, boolean passiveSubdomain) {
         int status = response.statusCode();
         String location = response.headerValue("Location");
         String responseContentType = response.headerValue("Content-Type");
@@ -1009,19 +979,18 @@ public final class FlowScopeExtension implements BurpExtension {
         String service = serviceOf(req);
         RunContextRegistry.Context context = !applyRunContext ? null : observation == null
                 ? runContexts.current(profile.source()) : observation.context();
-        String humanCaptureAccountId = passiveSubdomain || profile.source() != Source.HUMAN ? null : observation == null
+        String humanCaptureAccountId = profile.source() != Source.HUMAN ? null : observation == null
                 ? sessionBroker.activeCaptureForService(service).flatMap(sessionBroker::accountForHandle).orElse(null)
                 : observation.humanCaptureAccountId();
-        String detectedAccountId = passiveSubdomain ? null : sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
+        String detectedAccountId = sessionBroker.accountForRequest(URI.create(req.url()), headersOf(req.headers()),
                 java.time.Instant.now()).orElse(null);
-        String accountId = passiveSubdomain ? null : forcedAccountId != null ? forcedAccountId
+        String accountId = forcedAccountId != null ? forcedAccountId
                 : resolveObservedAccount(profile.source(), context == null ? null : context.accountId(),
                 humanCaptureAccountId, detectedAccountId);
         String fp = captureFingerprint(profile.source(), context, accountId,
                 req.headerValue("Authorization"), req.headerValue("Cookie"));
         RequestRecord rec = new RequestRecord(
                 profile.source(), service, req.method(), req.pathWithoutQuery(), status, fp);
-        rec.passiveSubdomainTraffic = passiveSubdomain;
         rec.sourceDetail = profile.detail();
         rec.orchestrator = profile.source() == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
         rec.tool = effectiveTool(profile.source(), profile.detail(), null);
@@ -1563,7 +1532,7 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private String archiveScopeText() {
-        List<String> entries = new ArrayList<>(scope.entries());
+        List<String> entries = new ArrayList<>(scope.configuredEntries());
         if (entries.isEmpty()) {
             synchronized (records) {
                 records.stream().map(record -> record.service).filter(java.util.Objects::nonNull)
@@ -1582,6 +1551,10 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private ProjectWorkspace.Status beginNewProject(String name, String requestedScope) throws IOException {
+        return beginNewProject(name, requestedScope, "");
+    }
+
+    private ProjectWorkspace.Status beginNewProject(String name, String requestedScope, String startUrl) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
             throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
         }
@@ -1589,7 +1562,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (parsed.isEmpty()) throw new IllegalArgumentException("새 진단에는 exact scope가 한 개 이상 필요합니다.");
 
         Path preserved = preserveCurrentProject();
-        ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, requestedScope);
+        ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, requestedScope, startUrl);
         try {
             sqliteProjectStore.save(next.database(), List.of(), new AnalysisConfig(), List.of(), List.of(),
                     Map.of(), List.of(), List.of(), next.context());
@@ -1610,11 +1583,15 @@ public final class FlowScopeExtension implements BurpExtension {
      * 새 범위를 따르며, 바뀐 이름·범위를 바로 저장한다. 실행 중인 작업이 있으면 막는다.
      */
     private ProjectWorkspace.Status updateActiveProject(String name, String requestedScope) throws IOException {
+        return updateActiveProject(name, requestedScope, null);
+    }
+
+    private ProjectWorkspace.Status updateActiveProject(String name, String requestedScope, String startUrl) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
             throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
         }
         if (activeProjectDatabase == null) throw new IllegalStateException("수정할 현재 프로젝트가 없습니다.");
-        ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, requestedScope);
+        ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, requestedScope, startUrl);
         ScopePolicy parsed = ScopePolicy.parse(requestedScope);
         activeProjectContext = next;
         scope = parsed;
@@ -1749,7 +1726,7 @@ public final class FlowScopeExtension implements BurpExtension {
 
     private ProjectStore.ProjectContext currentProjectContext(String fallbackName) {
         if (activeProjectContext != null && activeProjectContext.present()) return activeProjectContext;
-        List<String> entries = scope.entries();
+        List<String> entries = scope.configuredEntries();
         String name = fallbackName == null ? "" : fallbackName
                 .replaceFirst("(?i)\\.(flowscope\\.db|json|db)$", "").trim();
         if (name.isBlank() && !entries.isEmpty()) name = entries.getFirst();
@@ -1822,7 +1799,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 throw new IllegalArgumentException("legacy JSON 프로젝트에 복원 가능한 scope가 없습니다.");
             }
             ProjectWorkspace.Allocation migrated = projectWorkspace.allocate(context.name(),
-                    String.join("\n", context.scope()));
+                    String.join("\n", context.scope()), context.startUrl());
             context = migrated.context();
             try {
                 sqliteProjectStore.save(migrated.database(), loaded, data.config(), data.assessments(),
@@ -1983,6 +1960,11 @@ public final class FlowScopeExtension implements BurpExtension {
     /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
     private FlowScopeWebServer.LlmVerifyState startMcpJudgment(List<String> findingIds, String model) {
         if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
+        var exclusions = new io.flowscope.core.MatrixExclusionMatcher(analysisConfig, latest);
+        for (var finding : currentLlmFindings()) {
+            if (findingIds.contains(finding.id()) && exclusions.excluded(finding.operation(), finding.resource()))
+                throw new IllegalArgumentException("제외한 소견은 복원한 뒤 판정할 수 있습니다.");
+        }
         if (mcpVerificationRunner == null) {
             mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
                     webServer.mcpUrl(), webServer.mcpToken(), sessionBroker, webServer.mcpActivity(),
@@ -2182,6 +2164,22 @@ public final class FlowScopeExtension implements BurpExtension {
                 });
             }
             @Override public AnalysisConfig config() { return analysisConfig; }
+            @Override public void replaceMatrixExclusions(long dataset, List<io.flowscope.core.MatrixExclusion> entries) {
+                runProjectTask(() -> {
+                    if (shuttingDown.get() || dataset != datasetEpoch.get())
+                        throw new IllegalStateException("프로젝트가 변경되었습니다. 다시 불러오세요.");
+                    if (activeProjectDatabase == null)
+                        throw new IllegalStateException("먼저 프로젝트를 DB에 저장해 주세요.");
+                    AnalysisConfig next = analysisConfig.snapshotCopy().replaceMatrixExclusions(entries);
+                    sqliteProjectStore.saveMatrixExclusions(activeProjectDatabase, next);
+                    boolean dirty = databaseDirty();
+                    analysisConfig.replaceWith(next);
+                    revision.incrementAndGet();
+                    if (!dirty) markDatabaseSaved(revision.get());
+                    else scheduleDatabaseSave();
+                    return null;
+                });
+            }
             @Override public List<io.flowscope.core.LlmFinding> findings() { return currentLlmFindings(); }
             @Override public void submitFinding(io.flowscope.core.LlmFinding finding) { storeLlmFinding(finding); }
             @Override public FlowScopeWebServer.LlmVerifyState startLlmVerify(String sources, String accounts, String model) {
@@ -2189,6 +2187,10 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public FlowScopeWebServer.LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
                 return startMcpJudgment(findingIds, model);
+            }
+            @Override public FlowScopeWebServer.LlmVerifyState askLlmJudgment(String message, String model) {
+                if (mcpVerificationRunner == null) throw new IllegalStateException("LLM 판정을 먼저 실행하세요.");
+                return mcpVerificationRunner.ask(message, model);
             }
             @Override public FlowScopeWebServer.LlmVerifyState llmVerifyState() {
                 return mcpVerificationRunner == null
@@ -2208,12 +2210,10 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public void humanRunStarted(String runId) {
                 RunContextRegistry.Context context = runContexts.current(Source.HUMAN, runId);
                 if (context == null) throw new IllegalStateException("HUMAN 수집 실행을 찾지 못했습니다.");
-                String service = context.accountId() == null ? null
-                        : analysisConfig.account(context.accountId()).orElseThrow().service();
-                String target = scope.entries().stream()
-                        .filter(entry -> service == null || entry.startsWith(service + "/"))
-                        .findFirst().orElseThrow(() -> new IllegalStateException("계정의 서비스를 점검 범위에 추가하세요."));
-                try { humanBrowsers.start(context, URI.create(target)); }
+                AccountProfile account = context.accountId() == null ? null
+                        : analysisConfig.account(context.accountId()).orElseThrow();
+                String target = scope.validateStartUrl(account == null ? projectStartUrl() : accountStartUrl(account));
+                try { humanBrowsers.start(context, URI.create(target.isBlank() ? "about:blank" : target)); }
                 catch (IOException error) { throw new IllegalStateException(error.getMessage(), error); }
             }
             @Override public void humanRunStopped(String runId) { humanBrowsers.stop(runId); }
@@ -2260,23 +2260,19 @@ public final class FlowScopeExtension implements BurpExtension {
                 return zapCampaign.startAuthenticationOnly(id);
             }
             @Override public List<String> scopeEntries() { return scope.entries(); }
-            @Override public List<String> discoveredOrigins() {
-                return hostDiscovery.candidates(datasetEpoch.get(), scope);
-            }
-            @Override public List<String> observedOrigins() {
-                return hostDiscovery.observedOrigins(datasetEpoch.get(), scope);
-            }
+            @Override public List<String> configuredScopeEntries() { return scope.configuredEntries(); }
+            @Override public String projectStartUrl() { return activeProjectContext == null ? "" : activeProjectContext.startUrl(); }
             @Override public ProjectWorkspace.Status projectStatus() {
                 return currentProjectStatus();
             }
-            @Override public ProjectWorkspace.Status startProject(String name, String projectScope) {
-                return runProjectTask(() -> beginNewProject(name, projectScope));
+            @Override public ProjectWorkspace.Status startProject(String name, String projectScope, String startUrl) {
+                return runProjectTask(() -> beginNewProject(name, projectScope, startUrl));
             }
             @Override public ProjectWorkspace.Status openProject(String id) {
                 return runProjectTask(() -> openWorkspaceProject(id));
             }
-            @Override public ProjectWorkspace.Status updateProject(String name, String projectScope) {
-                return runProjectTask(() -> updateActiveProject(name, projectScope));
+            @Override public ProjectWorkspace.Status updateProject(String name, String projectScope, String startUrl) {
+                return runProjectTask(() -> updateActiveProject(name, projectScope, startUrl));
             }
             @Override public ProjectWorkspace.Status resetProjectTraffic() {
                 return runProjectTask(FlowScopeExtension.this::resetActiveProjectTraffic);
@@ -2318,15 +2314,13 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public List<ExplorerAccountVault.View> explorerAccounts() { return explorer.accounts(); }
             @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
-                // LLM sessions belong to accounts registered under 계정·세션; the login URL must be that account's service.
+                // Login pages may use another scoped host; adopt credentials for the registered account service.
                 AccountProfile account = analysisConfig.account(id == null ? "" : id.trim()).orElseThrow(() ->
                         new IllegalArgumentException("등록되지 않은 계정입니다. 계정·세션에서 먼저 등록하세요."));
-                URI login = URI.create(url.trim());
-                validateRuntimeAccount(account.id(), account.label(),
-                        login.getScheme() + "://" + login.getAuthority(), account.role().name());
+                String login = scope.validateStartUrl(url == null || url.isBlank() ? accountStartUrl(account) : url);
                 try {
                     ensureExplorerProxyListener();
-                    return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), url);
+                    return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), login, account.service());
                 } catch (java.io.IOException error) {
                     throw new IllegalStateException(error.getMessage());
                 }

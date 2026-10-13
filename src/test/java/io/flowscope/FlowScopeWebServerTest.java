@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.MatrixExclusion;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.BurpXmlParser;
@@ -12,6 +13,7 @@ import io.flowscope.core.HarParser;
 import io.flowscope.core.Orchestrator;
 import io.flowscope.core.Pipeline;
 import io.flowscope.core.RequestRecord;
+import io.flowscope.core.ResourcePolicy;
 import io.flowscope.core.RunContextRegistry;
 import io.flowscope.core.RouteCandidate;
 import io.flowscope.core.RunPhase;
@@ -64,6 +66,45 @@ final class FlowScopeWebServerTest {
         if (server != null) server.close();
         state.sessions.close();
         state.zapAccounts.close();
+    }
+
+    @Test void projectExclusionsRejectStaleOrFailedSavesAndRestoreWithoutDeletingTraffic() throws Exception {
+        start();
+        long dataset = state.datasetRevision();
+        String operation = "https://api.example.test:443 GET /v1/orders/{id}";
+        var entry = new MatrixExclusion(MatrixExclusion.keyFor("function", operation, null),
+                "function", operation, null, "GET /v1/orders/{id}");
+        String encoded = encode(JSON.writeValueAsString(List.of(entry)));
+        assertEquals(0, json(get("/api/matrix-exclusions", token, origin())).path("entries").size());
+        assertEquals(409, post("/api/matrix-exclusions", "datasetRevision=-1&entries=" + encoded, token).statusCode());
+        assertEquals(400, post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=" + encode("[{\"key\":\"bad\"}]"), token).statusCode());
+        state.rejectExclusionSave = true;
+        assertEquals(409, post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=" + encoded, token).statusCode());
+        assertTrue(state.config.matrixExclusions().isEmpty());
+        state.rejectExclusionSave = false;
+        assertEquals(1, json(post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=" + encoded, token)).path("entries").size());
+        assertEquals(entry, state.config.matrixExclusions().get(entry.key()));
+        assertEquals(0, json(post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=%5B%5D", token)).path("entries").size());
+        assertTrue(state.config.matrixExclusions().isEmpty());
+        assertFalse(state.records.isEmpty());
+    }
+
+    @Test void accountLoginDefaultsFollowTheProjectWithoutOverwritingIndividualUrls() throws Exception {
+        state.projectStartUrl = "https://mobile.example.test/login?next=home";
+        state.scannerScope = List.of("https://*.example.test/");
+        state.config.upsertAccount(new AccountProfile("a", "A", "https://example.test", io.flowscope.core.AccessRole.USER));
+        start();
+        var inherited = JSON.readTree(get("/api/account-settings?account=a", token, null).body());
+        assertEquals(state.projectStartUrl, inherited.path("defaultStartUrl").asText());
+        assertEquals(state.projectStartUrl, inherited.at("/zap/loginUrl").asText());
+        var saved = post("/api/account-save", "id=a&label=A&target=https%3A%2F%2Fexample.test&role=USER&startUrl=https%3A%2F%2Fother.example.test%2Flogin", token);
+        assertEquals(200, saved.statusCode(), saved.body());
+        state.projectStartUrl = "https://mobile.example.test/changed";
+        var overridden = JSON.readTree(get("/api/account-settings?account=a", token, null).body());
+        assertEquals("https://other.example.test/login", overridden.path("startUrl").asText());
+        assertEquals("https://other.example.test/login", overridden.at("/zap/loginUrl").asText());
+        var llm = JSON.readTree(get("/api/explorer-run", token, null).body());
+        assertEquals("https://other.example.test/login", llm.at("/loginUrls/a").asText());
     }
 
     @Test void snapshotUsesStoredSessionAndNeverCurrentRunToChangeHistoricalIdentity() throws Exception {
@@ -249,29 +290,16 @@ final class FlowScopeWebServerTest {
         assertEquals("https://app.example.test/", state.startedProjectScope);
         assertEquals(200, listed.statusCode());
         assertEquals(1, JSON.readTree(listed.body()).path("projects").size());
-        assertTrue(JSON.readTree(listed.body()).path("discoveredOrigins").isArray());
+        assertFalse(JSON.readTree(listed.body()).has("discoveredOrigins"));
     }
 
-    @Test void projectsExposesObservedOriginMetadataThroughExistingAuthenticatedApi() throws Exception {
-        state.discoveredOrigins = List.of("https://api.example.test:443");
+    @Test void projectsNoLongerExposesAutomaticHostDiscoveryMetadata() throws Exception {
         start();
         assertEquals(403, get("/api/projects", "wrong-token", null).statusCode());
         var body = JSON.readTree(get("/api/projects", token, null).body());
-        assertEquals("https://api.example.test:443", body.path("discoveredOrigins").get(0).asText());
-        assertEquals("https://api.example.test:443", body.path("observedOrigins").get(0).asText());
+        assertFalse(body.has("discoveredOrigins"));
+        assertFalse(body.has("observedOrigins"));
         assertEquals(state.datasetRevision(), body.path("datasetRevision").asLong());
-    }
-
-    @Test void discardsHostMetadataIfProjectDatasetChangesWhileBuildingResponse() throws Exception {
-        state.discoveredOrigins = List.of("https://old.example.test:443");
-        state.replaceDatasetDuringDiscovery = true;
-        long before = state.datasetRevision();
-        start();
-        var body = JSON.readTree(get("/api/projects", token, null).body());
-        assertEquals(before, body.path("datasetRevision").asLong());
-        assertEquals(before + 1, state.datasetRevision());
-        assertTrue(body.path("observedOrigins").isEmpty());
-        assertTrue(body.path("discoveredOrigins").isEmpty());
     }
 
     @Test
@@ -406,13 +434,16 @@ final class FlowScopeWebServerTest {
 
         // LLM 직접 판정은 서버가 강등·재검사 없이 그대로 저장한다(MCP 설계 §11).
         String findingId = state.findings.get(0).id();
-        String verdict = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_verdict\",\"arguments\":{\"finding_id\":\"" + findingId + "\",\"verdict\":\"vulnerable\",\"reason\":\"타인 주문 본문 노출\",\"evidence_ids\":[\"ev-missing\"]}}}";
+        String verdict = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_verdict\",\"arguments\":{\"finding_id\":\"" + findingId + "\",\"verdict\":\"vulnerable\",\"reason\":\"타인 주문 본문 노출\",\"verification_result\":\"다른 계정의 주문이 반환됐습니다.\",\"judgment_basis\":\"응답에 주문자 정보가 포함됐습니다.\",\"issue_title\":\"다른 회원의 주문 조회 (IDOR)\",\"evidence_ids\":[\"ev-missing\"]}}}";
         assertFalse(json(mcp(verdict, server.mcpToken())).at("/result/isError").asBoolean());
         assertEquals(1, state.findings.size());
         assertEquals("IDOR 의심", state.findings.get(0).verdict(), "기존 소견은 그대로 둔다");
         JsonNode judged = json(get("/api/llm-findings", token, origin()));
         assertEquals("vulnerable", judged.at("/findings/0/judgment").asText());
         assertEquals("타인 주문 본문 노출", judged.at("/findings/0/judgmentReason").asText());
+        assertEquals("다른 계정의 주문이 반환됐습니다.", judged.at("/findings/0/verificationResult").asText());
+        assertEquals("응답에 주문자 정보가 포함됐습니다.", judged.at("/findings/0/judgmentBasis").asText());
+        assertEquals("다른 회원의 주문 조회 (IDOR)", judged.at("/findings/0/issueTitle").asText());
         assertEquals("ev-missing", judged.at("/findings/0/judgmentEvidenceIds/0").asText());
 
         // 정해진 세 값 밖의 판정과 없는 소견은 거부한다.
@@ -1386,7 +1417,8 @@ final class FlowScopeWebServerTest {
         state.rebuild();
         var objects = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records).stream()
                 .filter(object -> object.eventId().equals(observed.evidenceId)).toList();
-        assertEquals(java.util.Set.of("PATH", "QUERY", "REQUEST_BODY"), objects.stream().map(object -> object.kind()).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(1, objects.size());
+        assertEquals(java.util.List.of("PATH", "QUERY", "REQUEST_BODY"), objects.getFirst().locations());
         for (var object : objects) {
             assertNull(object.legacyResource());
             String resource = service + " observed-object:" + object.objectKey();
@@ -1399,6 +1431,71 @@ final class FlowScopeWebServerTest {
             assertFalse(state.config.resourceOwners().containsKey(resource));
         }
         assertEquals(400, post("/api/owner", "resource=" + encode(service + " observed-object:invented") + "&identity=same", token).statusCode());
+    }
+
+    @Test
+    void appliesObjectGroupChoiceToAllMembersBeyondGraphVisibilityLimit() throws Exception {
+        start();
+        String service = state.record.service;
+        state.config.upsertAccount(new AccountProfile("same", "Same", service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("other", "Other", service, AccessRole.USER));
+        state.config.upsertAccount(new AccountProfile("foreign", "Foreign", "https://foreign.test", AccessRole.USER));
+        for (int i = 0; i < 12; i++) {
+            RequestRecord record = new RequestRecord(Source.HUMAN, service, "GET", "/lookup", 200, "fp");
+            record.query = "report_id=" + i;
+            record.hasResponse = true;
+            state.records.add(record);
+        }
+        state.rebuild();
+        var first = state.snapshot().objects.observations().stream()
+                .filter(object -> object.operation().endsWith(" GET /lookup")).findFirst().orElseThrow();
+        var members = state.snapshot().objects.observations().stream()
+                .filter(object -> object.groupKey().equals(first.groupKey())).toList();
+        assertEquals(12, members.size());
+        String form = "groupKey=" + encode(first.groupKey()) + "&datasetRevision=" + state.datasetRevision() + "&choice=";
+        assertEquals(400, post("/api/object-group-owner", form + "foreign", token).statusCode());
+        assertTrue(members.stream().noneMatch(object -> state.config.resourceOwners().containsKey(
+                io.flowscope.core.ObservedObjectIndex.resource(object))));
+        assertEquals(200, post("/api/object-group-owner", form + "PUBLIC", token).statusCode());
+        JsonNode inheritedSnapshot = json(get("/api/snapshot", token, origin()));
+        assertEquals("PUBLIC", inheritedSnapshot.path("directResourcePolicyOverrides")
+                .path(AnalysisConfig.objectGroupKey(first.groupKey())).asText());
+        var effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        for (var object : members) assertEquals(ResourcePolicy.PUBLIC, effective.resourcePolicy(
+                object.operation(), io.flowscope.core.ObservedObjectIndex.resource(object)));
+        var privateObject = members.getFirst();
+        String privateResource = io.flowscope.core.ObservedObjectIndex.resource(privateObject);
+        assertTrue(inheritedSnapshot.path("directOwnerOverrides").path(privateResource).isMissingNode());
+        assertEquals("PUBLIC", inheritedSnapshot.path("resourcePolicyOverrides")
+                .path(AnalysisConfig.operationObjectPolicyKey(privateObject.operation(), privateResource)).asText());
+        assertEquals(200, post("/api/owner", "resource=" + encode(privateResource) + "&identity=other", token).statusCode());
+        assertEquals(ResourcePolicy.PUBLIC, state.config.resourcePolicies().get(AnalysisConfig.objectGroupKey(first.groupKey())));
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        assertEquals(ResourcePolicy.OWNER_ONLY, effective.resourcePolicy(privateObject.operation(), privateResource));
+        assertEquals("other", effective.resourceOwner(privateResource));
+        assertEquals(200, post("/api/object-group-owner", form + "same", token).statusCode());
+        assertEquals("same", state.config.resourceOwners().get(AnalysisConfig.objectGroupKey(first.groupKey())));
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        for (var object : members) {
+            String resource = io.flowscope.core.ObservedObjectIndex.resource(object);
+            assertEquals(object.objectKey().equals(privateObject.objectKey()) ? "other" : "same", effective.resourceOwner(resource));
+            assertEquals(ResourcePolicy.OWNER_ONLY, effective.resourcePolicy(object.operation(), resource));
+        }
+        RequestRecord later = new RequestRecord(Source.HUMAN, service, "GET", "/lookup", 200, "fp");
+        later.query = "report_id=12";
+        later.hasResponse = true;
+        state.records.add(later);
+        state.rebuild();
+        var newObject = state.snapshot().objects.observations().stream()
+                .filter(object -> object.eventId().equals(later.evidenceId)).findFirst().orElseThrow();
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        assertEquals("same", effective.resourceOwner(io.flowscope.core.ObservedObjectIndex.resource(newObject)));
+        assertEquals(200, post("/api/resource-policy", "operation=" + encode(privateObject.operation())
+                + "&resource=" + encode(privateResource) + "&policy=PUBLIC", token).statusCode());
+        assertEquals("same", state.config.resourceOwners().get(AnalysisConfig.objectGroupKey(first.groupKey())));
+        effective = state.config.snapshotCopy().withCanonicalObjects(state.snapshot().objects);
+        assertEquals(ResourcePolicy.PUBLIC, effective.resourcePolicy(privateObject.operation(), privateResource));
+        assertEquals(400, post("/api/object-group-owner", form.replace("datasetRevision=" + state.datasetRevision(), "datasetRevision=-1") + "PUBLIC", token).statusCode());
     }
 
     @Test
@@ -1860,14 +1957,10 @@ final class FlowScopeWebServerTest {
     }
 
     private static final class TestState implements FlowScopeWebServer.State {
-        private List<String> discoveredOrigins = List.of();
-        private boolean replaceDatasetDuringDiscovery;
-        @Override public List<String> discoveredOrigins() { return discoveredOrigins; }
-        @Override public List<String> observedOrigins() {
-            if (replaceDatasetDuringDiscovery) { datasetEpoch++; replaceDatasetDuringDiscovery = false; }
-            return discoveredOrigins;
-        }
+        private String projectStartUrl = "";
+        @Override public String projectStartUrl() { return projectStartUrl; }
         private final AnalysisConfig config = new AnalysisConfig();
+        private boolean rejectExclusionSave;
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();
         private final AtomicBoolean opened = new AtomicBoolean();
@@ -1981,6 +2074,10 @@ final class FlowScopeWebServerTest {
             return io.flowscope.core.ApiManagement.prepare(request, result, result.records, config, List.of(), RequestLabWorkspace.empty()).preview();
         }
         @Override public AnalysisConfig config() { return config; }
+        @Override public void replaceMatrixExclusions(long dataset, List<MatrixExclusion> entries) {
+            if (dataset != datasetRevision() || rejectExclusionSave) throw new IllegalStateException("stale or failed exclusion save");
+            config.replaceMatrixExclusions(entries);
+        }
         private List<LegacyAssessment> archivedAssessments = List.of();
         private List<ValidationDecision> archivedValidations = List.of();
         @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }
