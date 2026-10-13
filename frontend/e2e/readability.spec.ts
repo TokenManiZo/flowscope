@@ -93,3 +93,33 @@ test("graph inspector preserves large API action targets",async({page})=>{
   expect(await button.locator("svg").evaluate(el=>el.getBoundingClientRect().width)).toBe(30)
  }
 })
+
+for (const width of [600, 1280, 2560]) {
+ test(`dashboard remains readable without horizontal overflow at ${width}px`, async ({page}, info) => {
+  await page.setViewportSize({width,height:1080}); await syntheticApi(page)
+  const endpoints = Array.from({length:8},(_,i)=>({key:{service:"https://shop.synthetic.test",method:"GET",pathTemplate:`/workshop/api/merchant/service_requests/${i}`},observedSources:["HUMAN"],declarations:[],parameters:[]}))
+  await page.route("**/api/snapshot",route=>route.fulfill({json:{...snapshotFixture,
+   events:endpoints.map((endpoint,i)=>({...event,eventId:`dashboard-${i}`,path:endpoint.key.pathTemplate,lastSeen:1791928800000+i})),
+   trafficStats:{...snapshotFixture.trafficStats,captured:8,coverage:8},
+   surface:{...snapshotFixture.surface,endpoints,parameterGaps:endpoints.slice(0,5).map((endpoint,i)=>({id:`gap-${i}`,endpoint:endpoint.key,status:"OPEN",type:"AUTH_VARIANT_UNTESTED",priorityReasons:["AUTH_VARIANT_UNTESTED","HUMAN_REVIEW_REQUIRED"]}))},
+   scenarios:[{id:"dashboard-scenario",title:"다른 계정 주문 조회",risk:"HIGH",reviewStatus:"UNRESOLVED"}],
+  }}))
+  await page.goto("./#dashboard")
+  const dashboard = page.locator(".flowscope-dashboard")
+  await expect(dashboard.getByRole("heading",{name:"보안 점검 대시보드"})).toBeVisible()
+  expect(await dashboard.locator("h1").evaluate(el=>getComputedStyle(el).fontSize)).toBe("32px")
+  const recent = dashboard.getByRole("region",{name:"최근 관측"})
+  await expect(recent.locator("li")).toHaveCount(6)
+  expect(await recent.locator(".font-mono").first().evaluate(el=>getComputedStyle(el).fontSize)).toBe("18px")
+  expect(await recent.locator("[data-dashboard-time]").first().evaluate(el=>getComputedStyle(el).whiteSpace)).toBe("nowrap")
+  const priority = dashboard.getByRole("region",{name:"우선 점검 API"})
+  const candidate = dashboard.getByRole("region",{name:"IDOR·BFLA 의심"})
+  expect((await candidate.boundingBox())!.height).toBeLessThan((await priority.boundingBox())!.height)
+  const coverage = dashboard.getByRole("region",{name:"출처별 발견"})
+  expect(await coverage.locator(".font-mono").nth(1).evaluate(el=>getComputedStyle(el).fontSize)).toBe("18px")
+  expect(await page.getByRole("main").evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1)
+  const time=(await recent.locator("[data-dashboard-time]").first().boundingBox())!,card=(await recent.boundingBox())!
+  expect(time.x+time.width).toBeLessThanOrEqual(card.x+card.width)
+  await page.screenshot({path:info.outputPath("dashboard.png")})
+ })
+}

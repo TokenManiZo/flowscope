@@ -33,7 +33,7 @@ function StageRows({ rows }: { rows: readonly (Row | "divider")[] }) {
 
 // 칸 전체를 덮는 링크(오버레이) 위에 행 링크를 따로 올린다. 링크 안에 링크를 넣지 않기 위한 구조다.
 function Stage({ step, href, go, value, unit, hot, rows, notch }: { step: string; href: string; go: string; value: number; unit: string; hot?: boolean; rows: readonly (Row | "divider")[]; notch?: boolean }) {
-  return <div className={cn(
+  return <div data-dashboard-stage className={cn(
     "group relative grid grid-rows-[auto_auto_1fr] gap-3.5 p-5 transition-colors hover:bg-muted/50 has-[a[data-stage]:focus-visible]:bg-muted/50",
     notch && "border-t border-border lg:border-t-0 lg:border-l lg:before:absolute lg:before:-left-[9px] lg:before:top-6 lg:before:z-10 lg:before:size-4 lg:before:rotate-45 lg:before:rounded-tr-[3px] lg:before:border-t lg:before:border-r lg:before:border-border lg:before:bg-card lg:before:content-['']",
   )}>
@@ -131,9 +131,9 @@ const sourceShort: Record<string, string> = { human: "H", scanner: "S", llm: "L"
 const sourceColor: Record<string, string> = { human: "text-observation-human", scanner: "text-observation-scanner", llm: "text-observation-llm" }
 
 export function RecentEventList({ events, ordinals }: { events: readonly EventRecord[]; ordinals?: Readonly<Record<string, number>> }) {
-  return <ListCard title="최근 관측" href="#evidence" linkLabel="요청 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
+  return <ListCard title="최근 관측" href="#evidence" linkLabel="요청 기록 모두 보기" empty="아직 관측된 요청이 없습니다.">{events.map(event => <li key={event.eventId} className="border-t border-border first:border-t-0"><a href="#evidence" className="grid grid-cols-[1.5rem_minmax(0,1fr)] 2xl:grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-sm hover:bg-muted/50">
     <span className={cn("text-center text-xs font-semibold", sourceColor[event.source] ?? "text-muted-foreground")}>{sourceShort[event.source] ?? "?"}</span>
     <span className="min-w-0"><span className="block truncate font-mono text-xs">{event.method} {event.path} <span className="text-muted-foreground">({event.status})</span></span><span className="block truncate text-[11px] text-muted-foreground">{evidenceOrdinalLabel(ordinals, event.eventId)} · {identityLabel(event.idn)}</span></span>
-    <span className="text-[11px] tabular-nums text-muted-foreground">{observedTimeLabel(event.lastSeen, event.lastSeen)}</span>
+    <span data-dashboard-time className="col-start-2 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground 2xl:col-auto">{observedTimeLabel(event.lastSeen, event.lastSeen)}</span>
   </a></li>)}</ListCard>
 }
