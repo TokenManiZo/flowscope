@@ -6,9 +6,34 @@ import io.flowscope.core.ScopePolicy;
 import io.flowscope.core.Source;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ScopePolicyTest {
+
+    @Test
+    void wildcard_도메인은_루트와_모든_하위_도메인만_허용한다() {
+        ScopePolicy scope = ScopePolicy.parse("*.Example.test");
+
+        assertTrue(scope.allows("https://example.test/"));
+        assertTrue(scope.allows("https://api.example.test/orders"));
+        assertTrue(scope.allows("https://a.b.example.test/admin"));
+        assertFalse(scope.allows("https://badexample.test/"));
+        assertFalse(scope.allows("http://api.example.test/"));
+        assertFalse(scope.allows("https://api.example.test:8443/"));
+        assertEquals(List.of("https://example.test:443/"), scope.entries());
+        assertEquals(List.of("https://*.example.test:443/"), scope.configuredEntries());
+    }
+
+    @Test
+    void 명시적_URL은_기존처럼_하위_도메인을_허용하지_않는다() {
+        ScopePolicy scope = ScopePolicy.parse("https://example.test/");
+
+        assertTrue(scope.allows("https://example.test/"));
+        assertFalse(scope.allows("https://api.example.test/"));
+        assertEquals(scope.entries(), scope.configuredEntries());
+    }
 
     @Test
     void protocol_host_port_path를_모두_검사한다() {

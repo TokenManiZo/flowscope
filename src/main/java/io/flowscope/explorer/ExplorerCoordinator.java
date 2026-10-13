@@ -99,6 +99,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     private LoginBrowser loginBrowser = new ChromiumLoginBrowser();
     /** Login windows stay open after [로그인 완료]: the Explorer drives the same window the operator logged in to. */
     private final Map<String, LoginBrowser.Session> loginWindows = new ConcurrentHashMap<>();
+    private final Map<String, URI> loginSessionTargets = new ConcurrentHashMap<>();
     private volatile Consumer<BrowserExchange> browserSink = exchange -> { };
     /** Distinct method+url the window produced this run, shown as the operator's endpoint counter. */
     private final Set<String> browserEndpoints = ConcurrentHashMap.newKeySet();
@@ -245,27 +246,36 @@ public final class ExplorerCoordinator implements AutoCloseable {
      */
     public ExplorerAccountVault.View openBrowserLogin(String accountId, String label, String role, String url)
             throws IOException {
+        return openBrowserLogin(accountId, label, role, url, url);
+    }
+
+    public ExplorerAccountVault.View openBrowserLogin(String accountId, String label, String role,
+                                                      String url, String service) throws IOException {
         if (closed) throw new IllegalStateException("Explorer가 종료됐습니다.");
-        URI target;
-        try { target = URI.create(url == null ? "" : url.trim()); }
-        catch (IllegalArgumentException error) { throw new IllegalArgumentException("로그인 URL이 올바르지 않습니다."); }
-        if (target.getHost() == null || !exactScope.test(target.toString())) {
-            throw new IllegalArgumentException("로그인 URL이 현재 exact scope 밖입니다.");
+        String startUrl = io.flowscope.core.ScopePolicy.normalizeStartUrl(url);
+        if (!startUrl.isBlank() && !exactScope.test(startUrl)) {
+            throw new IllegalArgumentException("로그인 URL이 현재 점검 범위 밖입니다.");
         }
+        URI target = URI.create(startUrl.isBlank() ? "about:blank" : startUrl);
+        String sessionUrl = io.flowscope.core.ScopePolicy.normalizeStartUrl(service);
         vault.register(accountId, label, role);
         LoginBrowser.Session window = loginWindows.get(accountId);
         if (window == null || !window.alive()) {
             if (window != null) window.close();
             window = loginBrowser.open(target, exchange -> record(accountId, exchange));
             loginWindows.put(accountId, window);
+        } else if (!target.toString().equals(vault.view(accountId).loginUrl())) {
+            window.recording(false);
+            window.navigate(target.toString());
         }
+        loginSessionTargets.put(accountId, URI.create(sessionUrl.isBlank() ? "about:blank" : sessionUrl));
         // Nothing is recorded until the operator says the login is done, so the password never becomes Evidence.
         window.recording(false);
         vault.awaitBrowserLogin(accountId, target);
         return vault.view(accountId);
     }
 
-    /** The operator says the login is done: adopt the window's cookies and auth headers for the login URL's origin. */
+    /** The operator says the login is done: adopt credentials for the account's target service. */
     public ExplorerAccountVault.View completeBrowserLogin(String accountId) throws IOException {
         LoginBrowser.Session window = loginWindows.get(accountId);
         if (window == null || !window.alive()) {
@@ -337,7 +347,12 @@ public final class ExplorerCoordinator implements AutoCloseable {
 
     private ExplorerAccountVault.View adoptWindowSession(String accountId, LoginBrowser.Session window)
             throws IOException {
-        URI target = URI.create(vault.view(accountId).loginUrl());
+        URI target = loginSessionTargets.getOrDefault(accountId, URI.create(vault.view(accountId).loginUrl()));
+        if ("about".equals(target.getScheme())) {
+            String current = window.snapshot().url();
+            if (!exactScope.test(current)) throw new IllegalStateException("로그인 후 점검 범위 안의 페이지로 이동하세요.");
+            target = URI.create(io.flowscope.core.ScopePolicy.normalizeStartUrl(current));
+        }
         var cookies = window.cookies(target);
         Map<String, String> headers = window.authHeaders(target);
         if (cookies.isEmpty() && headers.isEmpty()) {
@@ -357,6 +372,7 @@ public final class ExplorerCoordinator implements AutoCloseable {
     }
 
     private void closeLoginWindow(String accountId) {
+        loginSessionTargets.remove(accountId);
         LoginBrowser.Session window = loginWindows.remove(accountId);
         if (window != null) window.close();
         vault.browserClosed(accountId);

@@ -241,7 +241,7 @@ it("opens a login window for a registered account and adopts its session on [로
   const fetchStub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     if (path === "/api/explorer-run" && (!init?.method || init.method === "GET")) {
-      return new Response(JSON.stringify({ ...idle, accounts: session ? [session] : [] }), { headers: { "Content-Type": "application/json" } })
+      return new Response(JSON.stringify({ ...idle, startUrl: "https://mobile.example.test/login", accounts: session ? [session] : [] }), { headers: { "Content-Type": "application/json" } })
     }
     if (path === "/api/explorer-models") return catalogResponse()
     if (path === "/api/explorer-accounts" && init?.method === "POST") {
@@ -258,7 +258,9 @@ it("opens a login window for a registered account and adopts its session on [로
   renderWithQueryClient(<LlmPass target="https://app.example.test/" accounts={[{ id: "user-a", label: "USER A" }]} />)
 
   await user.click(await screen.findByRole("button", { name: /^탐색할 계정/ }))
+  expect(screen.queryByRole("textbox", { name: "USER A 로그인 주소" })).not.toBeInTheDocument()
   await user.click(await screen.findByRole("button", { name: "USER A 브라우저 로그인" }))
+  expect(new URLSearchParams(posts[0]).get("url")).toBe("")
   expect(posts[0]).toContain("action=browser-open")
   expect(posts[0]).toContain("id=user-a")
   expect(screen.getByRole("checkbox", { name: "비로그인" })).not.toBeChecked()

@@ -66,6 +66,24 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void accountLoginDefaultsFollowTheProjectWithoutOverwritingIndividualUrls() throws Exception {
+        state.projectStartUrl = "https://mobile.example.test/login?next=home";
+        state.scannerScope = List.of("https://*.example.test/");
+        state.config.upsertAccount(new AccountProfile("a", "A", "https://example.test", io.flowscope.core.AccessRole.USER));
+        start();
+        var inherited = JSON.readTree(get("/api/account-settings?account=a", token, null).body());
+        assertEquals(state.projectStartUrl, inherited.path("defaultStartUrl").asText());
+        assertEquals(state.projectStartUrl, inherited.at("/zap/loginUrl").asText());
+        var saved = post("/api/account-save", "id=a&label=A&target=https%3A%2F%2Fexample.test&role=USER&startUrl=https%3A%2F%2Fother.example.test%2Flogin", token);
+        assertEquals(200, saved.statusCode(), saved.body());
+        state.projectStartUrl = "https://mobile.example.test/changed";
+        var overridden = JSON.readTree(get("/api/account-settings?account=a", token, null).body());
+        assertEquals("https://other.example.test/login", overridden.path("startUrl").asText());
+        assertEquals("https://other.example.test/login", overridden.at("/zap/loginUrl").asText());
+        var llm = JSON.readTree(get("/api/explorer-run", token, null).body());
+        assertEquals("https://other.example.test/login", llm.at("/loginUrls/a").asText());
+    }
+
     @Test void snapshotUsesStoredSessionAndNeverCurrentRunToChangeHistoricalIdentity() throws Exception {
         state.record.collectionAccountId = "anon";
         state.record.runId = "selected-run";
@@ -249,29 +267,16 @@ final class FlowScopeWebServerTest {
         assertEquals("https://app.example.test/", state.startedProjectScope);
         assertEquals(200, listed.statusCode());
         assertEquals(1, JSON.readTree(listed.body()).path("projects").size());
-        assertTrue(JSON.readTree(listed.body()).path("discoveredOrigins").isArray());
+        assertFalse(JSON.readTree(listed.body()).has("discoveredOrigins"));
     }
 
-    @Test void projectsExposesObservedOriginMetadataThroughExistingAuthenticatedApi() throws Exception {
-        state.discoveredOrigins = List.of("https://api.example.test:443");
+    @Test void projectsNoLongerExposesAutomaticHostDiscoveryMetadata() throws Exception {
         start();
         assertEquals(403, get("/api/projects", "wrong-token", null).statusCode());
         var body = JSON.readTree(get("/api/projects", token, null).body());
-        assertEquals("https://api.example.test:443", body.path("discoveredOrigins").get(0).asText());
-        assertEquals("https://api.example.test:443", body.path("observedOrigins").get(0).asText());
+        assertFalse(body.has("discoveredOrigins"));
+        assertFalse(body.has("observedOrigins"));
         assertEquals(state.datasetRevision(), body.path("datasetRevision").asLong());
-    }
-
-    @Test void discardsHostMetadataIfProjectDatasetChangesWhileBuildingResponse() throws Exception {
-        state.discoveredOrigins = List.of("https://old.example.test:443");
-        state.replaceDatasetDuringDiscovery = true;
-        long before = state.datasetRevision();
-        start();
-        var body = JSON.readTree(get("/api/projects", token, null).body());
-        assertEquals(before, body.path("datasetRevision").asLong());
-        assertEquals(before + 1, state.datasetRevision());
-        assertTrue(body.path("observedOrigins").isEmpty());
-        assertTrue(body.path("discoveredOrigins").isEmpty());
     }
 
     @Test
@@ -1842,13 +1847,8 @@ final class FlowScopeWebServerTest {
     }
 
     private static final class TestState implements FlowScopeWebServer.State {
-        private List<String> discoveredOrigins = List.of();
-        private boolean replaceDatasetDuringDiscovery;
-        @Override public List<String> discoveredOrigins() { return discoveredOrigins; }
-        @Override public List<String> observedOrigins() {
-            if (replaceDatasetDuringDiscovery) { datasetEpoch++; replaceDatasetDuringDiscovery = false; }
-            return discoveredOrigins;
-        }
+        private String projectStartUrl = "";
+        @Override public String projectStartUrl() { return projectStartUrl; }
         private final AnalysisConfig config = new AnalysisConfig();
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();

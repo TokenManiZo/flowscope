@@ -1,3 +1,4 @@
+import { normalizeStartUrl } from "@/lib/scopeInput";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -15,13 +16,13 @@ import { validateProofPath, validateResponseMark, validateTarget, type AccountRo
 const SETTINGS_REFRESH_MS = 3000;
 
 export interface AccountSettingsDraft {
-  label: string; role: AccountRole; target: string; proof: LoginProofRule;
+  label: string; role: AccountRole; target: string; startUrl: string; proof: LoginProofRule;
   zapEnabled: boolean; zapLoginUrl: string; zapLoginId: string;
   zapAuthMode: ZapAuthMode; zapCookie: string; zapHeaders: string; zapVerifyUrl: string;
 }
 
 export function toDraft(settings: AccountSettings): AccountSettingsDraft {
-  return { label: settings.label, role: settings.role, target: settings.target,
+  return { label: settings.label, role: settings.role, target: settings.target, startUrl: settings.startUrl ?? "",
     proof: { ...settings.proofRule }, zapEnabled: settings.zap.enabled,
     zapLoginUrl: settings.zap.loginUrl, zapLoginId: settings.zap.loginId,
     // 쿠키·헤더 값은 서버가 되돌려 주지 않으므로 편집창은 빈 값으로 시작한다(모드·검증 URL만 복원).
@@ -85,7 +86,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     if (!settings || !draft) return { basic: false, proof: false, zap: false };
     const original = toDraft(settings);
     return {
-      basic: draft.label !== original.label || draft.role !== original.role || draft.target !== original.target,
+      basic: draft.label !== original.label || draft.role !== original.role || draft.target !== original.target || draft.startUrl !== original.startUrl,
       proof: JSON.stringify(draft.proof) !== JSON.stringify(original.proof),
       zap: draft.zapEnabled !== original.zapEnabled || draft.zapAuthMode !== original.zapAuthMode
         || draft.zapLoginUrl !== original.zapLoginUrl || draft.zapLoginId !== original.zapLoginId
@@ -102,7 +103,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   const zapCredentialsMissing = Boolean(draft && changes.zap && draft.zapEnabled && (draft.zapAuthMode === "INJECT"
     ? !draft.zapCookie.trim() && !draft.zapHeaders.trim()
     : !draft.zapLoginUrl.trim() || !draft.zapLoginId.trim() || !zapPassword));
-  const blocked = Boolean(targetError || pathError || markError || zapCredentialsMissing);
+  const blocked = Boolean(targetError || pathError || markError || zapCredentialsMissing || (draft?.startUrl.trim() && !normalizeStartUrl(draft.startUrl).url));
 
   const requestClose = (nextOpen: boolean) => {
     if (nextOpen) return onOpenChange(true);
@@ -113,7 +114,7 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
     if (!settings || !draft || blocked) return;
     await run(async () => {
       let next = settings;
-      if (changes.basic) next = await adapter.saveBasicInfo(settings.id, { label: draft.label, role: draft.role, target: draft.target });
+      if (changes.basic) next = await adapter.saveBasicInfo(settings.id, { label: draft.label, role: draft.role, target: draft.target, ...(draft.startUrl !== (settings.startUrl ?? "") ? { startUrl: draft.startUrl.trim() ? normalizeStartUrl(draft.startUrl).url ?? draft.startUrl : "" } : {}) });
       if (changes.proof) next = await adapter.saveProofRule(settings.id, proofConfigured ? draft.proof : null);
       if (changes.zap) next = await adapter.saveZapLogin(settings.id, { enabled: draft.zapEnabled, authMode: draft.zapAuthMode, loginUrl: draft.zapLoginUrl, loginId: draft.zapLoginId, password: zapPassword || undefined, cookie: draft.zapCookie, headers: draft.zapHeaders, verifyUrl: draft.zapVerifyUrl });
       onSaved?.(next); return next;

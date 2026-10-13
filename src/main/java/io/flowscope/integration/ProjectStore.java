@@ -23,11 +23,16 @@ import java.util.Set;
 /** Versioned FlowScope session file. Model-provider credentials are never part of this schema. */
 public final class ProjectStore {
     /** A diagnostic workspace's user-visible identity. Secrets are never part of this metadata. */
-    public record ProjectContext(String name, List<String> scope, Instant createdAt) {
+    public record ProjectContext(String name, List<String> scope, Instant createdAt, String startUrl) {
+        public ProjectContext(String name, List<String> scope, Instant createdAt) {
+            this(name, scope, createdAt, "");
+        }
         public ProjectContext {
             name = name == null ? "" : name.trim();
             scope = List.copyOf(scope == null ? List.of() : scope);
             createdAt = createdAt == null ? Instant.EPOCH : createdAt;
+            startUrl = io.flowscope.core.ScopePolicy.normalizeStartUrl(startUrl);
+            if (!startUrl.isEmpty()) io.flowscope.core.ScopePolicy.parse(String.join("\n", scope)).validateStartUrl(startUrl);
         }
 
         public static ProjectContext empty() {
@@ -263,6 +268,7 @@ public final class ProjectStore {
         savedProject.put("name", safeContext.name());
         savedProject.set("scope", json.valueToTree(safeContext.scope()));
         savedProject.put("created_at", safeContext.createdAt().toString());
+        if (!safeContext.startUrl().isBlank()) savedProject.put("start_url", safeContext.startUrl());
         List<RunContextRegistry.CompletedRun> exactRuns =
                 (completedRuns == null ? Map.<Source, RunContextRegistry.CompletedRun>of() : completedRuns)
                         .entrySet().stream().sorted(java.util.Map.Entry.comparingByKey())
@@ -401,7 +407,7 @@ public final class ProjectStore {
             }
             String createdAt = required(projectNode, "created_at");
             context = new ProjectContext(projectNode.path("name").asText(""), projectScope,
-                    Instant.parse(createdAt));
+                    Instant.parse(createdAt), projectNode.path("start_url").asText(""));
         }
         return new ProjectData(List.copyOf(records), config, List.copyOf(assessments), List.copyOf(validations),
                 Set.copyOf(completedLanes), Map.copyOf(completedRuns), List.copyOf(routeCandidates),
@@ -712,6 +718,7 @@ public final class ProjectStore {
             value.put("label", account.label());
             value.put("service", account.service());
             value.put("role", account.role().name());
+            if (!account.startUrl().isBlank()) value.put("start_url", account.startUrl());
         });
         ArrayNode bindings = policy.putArray("session_bindings");
         config.sessionBindings().entrySet().stream().sorted(java.util.Map.Entry.comparingByKey()).forEach(entry -> {
@@ -755,7 +762,7 @@ public final class ProjectStore {
         if (accounts.isArray()) {
             for (JsonNode account : accounts) {
                 config.upsertAccount(new AccountProfile(required(account, "id"), required(account, "label"),
-                        required(account, "service"), enumValue(AccessRole.class, required(account, "role"))));
+                        required(account, "service"), enumValue(AccessRole.class, required(account, "role")), account.path("start_url").asText("")));
             }
         }
         JsonNode bindings = value.path("session_bindings");

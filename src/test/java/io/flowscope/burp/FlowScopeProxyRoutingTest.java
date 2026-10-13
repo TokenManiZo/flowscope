@@ -32,40 +32,44 @@ import static org.junit.jupiter.api.Assertions.*;
 class FlowScopeProxyRoutingTest {
     private static final String TARGET = "https://app.test:443/api";
 
-    @Test void browserSubdomainResponseIsRetainedUnderItsOwnServiceWithoutScopeRegistration() throws Exception {
+    @Test void exactScopeDoesNotRetainUnregisteredSubdomainResponses() throws Exception {
         try (var f = new Fixture()) {
             var child = request(201, 8080, "https://api.app.test/orders", Map.of(), "");
+            assertEquals(MessageReceivedAction.CONTINUE, f.requests.handleRequestReceived(child).action());
+            f.responses.handleResponseReceived(response(201, child));
+            @SuppressWarnings("unchecked")
+            var records = (java.util.List<RequestRecord>) get(f.extension, "records");
+            assertTrue(records.isEmpty());
+            assertFalse(((ScopePolicy) get(f.extension, "scope")).allows(child.url()));
+            assertEquals(MessageReceivedAction.DROP,
+                    f.requests.handleRequestReceived(request(202, 8082, child.url(), Map.of(), "")).action());
+        }
+    }
+
+    @Test void wildcardScopeRetainsSubdomainsAsNormalTrafficAndPreservesUrlBoundaries() throws Exception {
+        try (var f = new Fixture()) {
+            set(f.extension, "scope", ScopePolicy.parse("https://*.app.test/api"));
+            ((RunContextRegistry) get(f.extension, "runContexts")).activateHuman(new RunContextRegistry.Context(
+                    SourceDetail.BROWSER, Orchestrator.HUMAN, ToolKind.BROWSER,
+                    RunPhase.EXPLORATION, "wildcard-run"));
+            var child = request(201, 8080, "https://api.app.test/api/orders", Map.of(), "");
             f.requests.handleRequestReceived(child);
             f.responses.handleResponseReceived(response(201, child));
             @SuppressWarnings("unchecked")
             var records = (java.util.List<RequestRecord>) get(f.extension, "records");
             assertEquals(1, records.size());
             assertEquals("https://api.app.test:443", records.getFirst().service);
-            assertTrue(records.getFirst().passiveSubdomainTraffic);
-            assertTrue(Pipeline.run(records).coverageRecords.isEmpty());
-            assertFalse(((ScopePolicy) get(f.extension, "scope")).allows(child.url()));
-            f.responses.handleResponseReceived(response(201, child));
-            assertEquals(1, records.size(), "one response is retained once");
-            var unrelated = request(202, 8080, "https://unrelated.test/orders", Map.of(), "");
-            f.requests.handleRequestReceived(unrelated);
-            f.responses.handleResponseReceived(response(202, unrelated));
-            assertEquals(1, records.size());
-        }
-    }
-
-    @Test void browserRequestDiscoversRelatedHostWithoutExpandingActiveScope() throws Exception {
-        try (var f = new Fixture()) {
-            String api = "https://api.app.test/orders?token=secret";
-            assertEquals(MessageReceivedAction.CONTINUE,
-                    f.requests.handleRequestReceived(request(100, 8080, api, Map.of(), "")).action());
-            var discovery = (PassiveHostDiscovery) get(f.extension, "hostDiscovery");
-            var scope = (ScopePolicy) get(f.extension, "scope");
-            assertEquals(java.util.List.of("https://api.app.test:443"), discovery.candidates(0, scope));
-            assertFalse(scope.allows(api));
-            assertFalse(ActiveTrafficGuard.allowsCapture(scope, api));
-            assertEquals(MessageReceivedAction.DROP,
-                    f.requests.handleRequestReceived(request(101, 8082, "https://llm.app.test/orders", Map.of(), "")).action());
-            assertEquals(java.util.List.of("https://api.app.test:443"), discovery.candidates(0, scope));
+            assertFalse(records.getFirst().passiveSubdomainTraffic);
+            assertFalse(Pipeline.run(records).coverageRecords.isEmpty());
+            int id = 202;
+            for (String url : java.util.List.of("http://api.app.test/api/orders",
+                    "https://api.app.test:8443/api/orders", "https://api.app.test/admin",
+                    "https://badapp.test/api/orders")) {
+                var outside = request(id++, 8080, url, Map.of(), "");
+                f.requests.handleRequestReceived(outside);
+                f.responses.handleResponseReceived(response(outside.messageId(), outside));
+            }
+            assertEquals(1, records.size(), "와일드카드도 프로토콜·포트·경로·도메인 경계를 지킨다");
         }
     }
 
@@ -225,6 +229,7 @@ class FlowScopeProxyRoutingTest {
             case "headers" -> java.util.List.of();
             case "toByteArray" -> bytes(header + "{}");
             case "bodyOffset" -> header.length();
+            case "body" -> bytes("{}");
             default -> throw new AssertionError(method.getName());
         });
     }

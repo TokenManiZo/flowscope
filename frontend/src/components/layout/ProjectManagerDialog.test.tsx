@@ -22,7 +22,7 @@ vi.mock("@/lib/query/hooks", () => ({
   useDeleteProjectMutation: () => ({ mutate: mutate.remove, ...pending }),
 }))
 
-const app = { id: "app", name: "App", scope: ["https://app.example.test:443"], createdAt: "2026-09-21T01:00:00Z", sizeBytes: 40960, readable: true, managed: true }
+const app = { id: "app", name: "App", startUrl: "https://app.example.test/", scope: ["https://app.example.test:443"], createdAt: "2026-09-21T01:00:00Z", sizeBytes: 40960, readable: true, managed: true }
 const archive = { id: "archive", name: "지난 진단", scope: ["https://old.example.test:443"], createdAt: "2026-09-18T01:00:00Z", sizeBytes: 2097152, readable: true, managed: true }
 
 beforeEach(() => {
@@ -58,34 +58,47 @@ it("normalizes typed scope entries to scheme://host:port[/path]", () => {
   expect(normalizeScopeEntry("Example.COM").entry).toBe("https://example.com:443")
   expect(normalizeScopeEntry("https://user:pass@example.com").entry).toBeNull()
   expect(normalizeScopeEntry("127.0.0.1").entry).toBeNull()
-  expect(normalizeScopeEntry("*.example.com").entry).toBeNull()
+  expect(normalizeScopeEntry("*.Example.COM")).toEqual({
+    entry: "https://*.example.com:443",
+    note: "루트 도메인과 모든 하위 도메인을 HTTPS 범위로 등록했습니다.",
+  })
 })
 
 it("creates a project from a bare root domain using the existing exact URL scope", async () => {
   const dialog = await openDialog()
   await userEvent.click(within(dialog).getByRole("tab", { name: "새 프로젝트" }))
-  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "example.test{Enter}")
+  await userEvent.type(within(dialog).getByLabelText("시작할 사이트 주소"), "example.test{Enter}")
   await userEvent.click(within(dialog).getByRole("button", { name: "프로젝트 만들고 열기" }))
-  expect(mutate.start).toHaveBeenCalledWith({ name: "example.test-443", scope: "https://example.test:443" }, expect.anything())
+  expect(mutate.start).toHaveBeenCalledWith({ name: "example.test-443", scope: "https://example.test:443", startUrl: "https://example.test/" }, expect.anything())
 })
 
-it("stages discovered origins once and saves them through the existing project update", async () => {
-  state.projects = { data: { active: app, projects: [app], discoveredOrigins: ["https://api.app.example.test:443", "https://static.app.example.test:443"] }, isPending: false, isError: false }
+it("moves wildcard input into scope and requires a real browser start URL", async () => {
   const dialog = await openDialog()
-  const first = within(dialog).getByRole("button", { name: "https://api.app.example.test:443 범위에 추가" })
-  await userEvent.click(first)
-  expect(first).toBeDisabled()
-  expect(mutate.update).not.toHaveBeenCalled()
-  await userEvent.click(within(dialog).getByRole("button", { name: "https://static.app.example.test:443 범위에 추가" }))
-  await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }))
-  expect(mutate.update).toHaveBeenCalledWith({ name: "App", scope: "https://app.example.test:443\nhttps://api.app.example.test:443\nhttps://static.app.example.test:443" }, expect.anything())
+  await userEvent.click(within(dialog).getByRole("tab", { name: "새 프로젝트" }))
+  const site = within(dialog).getByLabelText("시작할 사이트 주소")
+  await userEvent.type(site, "*.example.test{Enter}")
+  expect(site).toHaveValue("")
+  expect(within(dialog).getByRole("list", { name: "등록한 점검 대상 주소" })).toHaveTextContent("*.example.test:443")
+  const create = within(dialog).getByRole("button", { name: "프로젝트 만들고 열기" })
+  expect(create).toBeDisabled()
+  await userEvent.type(site, "https://app.example.test/")
+  await userEvent.click(create)
+  expect(mutate.start).toHaveBeenCalledWith({ name: "app.example.test-443", startUrl: "https://app.example.test/", scope: "https://app.example.test:443\nhttps://*.example.test:443" }, expect.anything())
+})
+
+it("keeps help behind the existing question buttons", async () => {
+  const dialog = await openDialog()
+  await userEvent.click(within(dialog).getByRole("tab", { name: "새 프로젝트" }))
+  expect(screen.queryByText(/이 주소로 브라우저를 열어요/)).not.toBeInTheDocument()
+  await userEvent.click(within(dialog).getByRole("button", { name: "시작할 사이트 주소 설명" }))
+  expect(await screen.findByText(/계정·LLM·ZAP 로그인 주소의 기본값/)).toBeVisible()
 })
 
 it("keeps rejected changes editable and shows the save error next to the save controls", async () => {
   state.updateError = new Error("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.")
   const dialog = await openDialog()
   await userEvent.click(within(dialog).getByRole("button", { name: "수정" }))
-  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "https://auth.example.test{Enter}")
+  await userEvent.type(within(dialog).getByLabelText("추가할 스코프 범위"), "https://auth.example.test{Enter}")
   await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }))
   const alert = within(dialog).getByLabelText("프로젝트 변경 저장 실패")
   expect(alert).toHaveTextContent("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.")
@@ -99,8 +112,8 @@ it("rejects a duplicate root scope when the stored URL has a trailing slash", as
   state.projects = { data: { active: rooted, projects: [rooted] }, isPending: false, isError: false }
   const dialog = await openDialog()
   await userEvent.click(within(dialog).getByRole("button", { name: "수정" }))
-  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "app.example.test{Enter}")
-  expect(within(dialog).getByText("이미 등록된 대상입니다.")).toBeInTheDocument()
+  await userEvent.type(within(dialog).getByLabelText("추가할 스코프 범위"), "app.example.test{Enter}")
+  expect(within(dialog).getByText("이미 등록된 범위입니다.")).toBeInTheDocument()
   expect(within(within(dialog).getByRole("list", { name: "등록한 점검 대상 주소" })).getAllByRole("listitem")).toHaveLength(1)
 })
 
@@ -109,12 +122,13 @@ it("creates a project from a typed name and scope list", async () => {
   await userEvent.click(within(dialog).getByRole("tab", { name: "새 프로젝트" }))
   const create = within(dialog).getByRole("button", { name: "프로젝트 만들고 열기" })
   expect(create).toBeDisabled()
-  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "https://shop.example.com{Enter}")
-  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "http://127.0.0.1:8888")
+  await userEvent.type(within(dialog).getByLabelText("시작할 사이트 주소"), "https://shop.example.com{Enter}")
+  await userEvent.click(within(dialog).getByRole("button", { name: "다른 도메인도 포함" }))
+  await userEvent.type(within(dialog).getByLabelText("추가할 스코프 범위"), "http://127.0.0.1:8888")
   await userEvent.click(within(dialog).getByRole("button", { name: "추가" }))
   expect(within(dialog).getByLabelText("프로젝트 이름")).toHaveValue("shop.example.com-443")
   await userEvent.click(create)
-  expect(mutate.start).toHaveBeenCalledWith({ name: "shop.example.com-443", scope: "https://shop.example.com:443\nhttp://127.0.0.1:8888" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
+  expect(mutate.start).toHaveBeenCalledWith({ name: "shop.example.com-443", startUrl: "https://shop.example.com/", scope: "https://shop.example.com:443\nhttp://127.0.0.1:8888" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
 })
 
 it("edits the current project's name and scope, and resets its traffic after confirmation", async () => {
@@ -123,9 +137,9 @@ it("edits the current project's name and scope, and resets its traffic after con
   const nameInput = within(dialog).getByLabelText("프로젝트 이름")
   await userEvent.clear(nameInput)
   await userEvent.type(nameInput, "App 2차")
-  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "https://auth.example.test{Enter}")
+  await userEvent.type(within(dialog).getByLabelText("추가할 스코프 범위"), "https://auth.example.test{Enter}")
   await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }))
-  expect(mutate.update).toHaveBeenCalledWith({ name: "App 2차", scope: "https://app.example.test:443\nhttps://auth.example.test:443" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
+  expect(mutate.update).toHaveBeenCalledWith({ name: "App 2차", startUrl: "https://app.example.test/", scope: "https://app.example.test:443\nhttps://auth.example.test:443" }, expect.objectContaining({ onSuccess: expect.any(Function) }))
 
   await userEvent.click(within(dialog).getByRole("button", { name: "기록 비우기" }))
   await userEvent.click(screen.getByRole("button", { name: "기록 비우기" }))
@@ -169,4 +183,10 @@ it("deletes the open project by switching to the chosen project first, then dele
   await userEvent.click(screen.getByRole("button", { name: "전환하고 삭제" }))
   expect(mutate.open).toHaveBeenCalledWith("archive", expect.anything())
   expect(mutate.remove).toHaveBeenCalledWith("app", expect.anything())
+})
+
+it("preserves wildcard spelling before the Chromium URL parser can encode it", () => {
+  expect(normalizeScopeEntry("https://*.example.com:8443/api").entry).toBe("https://*.example.com:8443/api")
+  expect(normalizeScopeEntry("https://%2A.example.com").entry).toBe("https://*.example.com:443")
+  expect(normalizeScopeEntry("https://*.*.example.com").entry).toBeNull()
 })

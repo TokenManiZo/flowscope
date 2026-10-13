@@ -4,13 +4,17 @@ import java.net.URI;
 import java.util.Locale;
 
 /** 사용자가 등록한 테스트 계정. 비밀번호·토큰·로그인 ID 원문은 보관하지 않는다. */
-public record AccountProfile(String id, String label, String service, AccessRole role) {
+public record AccountProfile(String id, String label, String service, AccessRole role, String startUrl) {
+    public AccountProfile(String id, String label, String service, AccessRole role) {
+        this(id, label, service, role, "");
+    }
     public AccountProfile {
         if (id == null || id.isBlank()) throw new IllegalArgumentException("account id is required");
         if (label == null || label.isBlank()) throw new IllegalArgumentException("account label is required");
         id = id.trim();
         label = label.trim();
         service = normalizeService(service);
+        startUrl = ScopePolicy.normalizeStartUrl(startUrl);
         role = role == null ? AccessRole.UNKNOWN : role;
     }
 

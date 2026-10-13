@@ -91,7 +91,10 @@ public final class HumanChromiumBrowser {
             if (cdp != null) cdp.close();
             stop(process, profile);
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new IOException("수집 브라우저를 열지 못했습니다. Chromium/Chrome 실행 상태를 확인하세요.", error);
+            String detail = error instanceof java.util.concurrent.TimeoutException
+                    ? "Chrome 디버깅 연결 응답 시간이 초과됐습니다."
+                    : error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            throw new IOException("수집 브라우저를 열지 못했습니다. " + io.flowscope.core.TextLimits.truncate(detail, 400), error);
         }
     }
 

@@ -275,7 +275,7 @@ export function InspectionPage() {
         </TabsContent>
 
         <TabsContent value="llm" className="min-h-0 flex-1">
-          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={targetAccounts} evidenceOrdinals={snapshot.data?.evidenceOrdinals} />
+          <LlmPass onRecordFocusChange={setRecordFocused} datasetRevision={datasetRevision} target={target} accounts={snapshot.data?.accounts ?? []} evidenceOrdinals={snapshot.data?.evidenceOrdinals} />
         </TabsContent>
 
       </Tabs>
