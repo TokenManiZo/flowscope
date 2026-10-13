@@ -1,6 +1,6 @@
 import { identityLabel } from "@/lib/display/identityLabel"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { ArrowLeft, ArrowUpRight, ChevronRight, RotateCcw, ShieldCheck, Square, UserRound } from "lucide-react"
+import { ArrowLeft, ArrowUpRight, ChevronRight, RotateCcw, ShieldCheck, UserRound } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -13,9 +13,7 @@ import { exclusionKey, groupApiJudgments, matrixApiResolver, loadMatrixExclusion
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
-import { useProjectsQuery, useRequirementMutation, useReviewMutation, useSnapshotQuery, useLlmFindingsQuery, useLlmVerifyStateQuery, useStartLlmVerifyMutation, useCancelLlmVerifyMutation } from "@/lib/query/hooks"
-import type { LlmFinding, LlmVerifyState, ManagedSession } from "@/lib/api/types"
-import { cn } from "@/lib/utils"
+import { useProjectsQuery, useRequirementMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { observedObjectLabel } from "@/features/graph/observedObjectLabel"
 import { MatrixOwnerControl } from "./MatrixOwnerControl"
@@ -139,42 +137,6 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
   </div>
 }
 
-/**
- * LLM 모드 계정 열 머리 버튼.
- * 세션 없음 → "로그인 필요"(계정·세션 화면에서 그 계정 로그인) → 세션 ACTIVE → "LLM 테스트" → 검증 중 "중단".
- */
-function LlmTestColumnButton({ identity, session, verify, findingCount, disabled, onStart, onCancel, canceling }: {
-  identity: { id: string; label: string }; session: ManagedSession | undefined;
-  verify: LlmVerifyState | undefined; findingCount: number; disabled: boolean;
-  onStart: (accountId: string) => void; onCancel: () => void; canceling: boolean }) {
-  const ready = session?.replayReady === true
-  const mine = verify?.accountId === identity.id
-  const running = verify?.status === "RUNNING" && mine
-  const anotherRunning = verify?.status === "RUNNING" && !mine
-  // 이 계정의 끝난 실행 결과(성공·실패·중단)를 열 머리에 남겨, 동작했는지 보이게 한다.
-  const outcome = mine && (verify?.status === "SUCCEEDED" || verify?.status === "FAILED" || verify?.status === "CANCELLED")
-    ? verify : undefined
-  if (running) return <div className="mt-2 grid gap-1">
-    <p className="flex items-center gap-1 text-xs text-foreground" role="status" aria-live="polite">
-      <ShieldCheck aria-hidden="true" className="size-3 animate-pulse" />검증 중 · 소견 {findingCount}건</p>
-    <Button size="sm" variant="outline" className="h-8 w-full border-destructive/40 text-destructive hover:text-destructive"
-      disabled={canceling} onClick={onCancel}><Square aria-hidden="true" className="size-3.5" />중단</Button>
-  </div>
-  return <div className="mt-2 grid gap-1">
-    {outcome && <p className={cn("text-[11px] leading-4", outcome.status === "FAILED" ? "text-destructive"
-      : outcome.status === "SUCCEEDED" ? "text-emerald-600" : "text-muted-foreground")} role="status">
-      {outcome.status === "SUCCEEDED" ? `검증 완료 · 소견 ${findingCount}건`
-        : outcome.status === "CANCELLED" ? "중단됨"
-        : `검증 실패: ${outcome.message}`}</p>}
-    {ready
-      ? <Button size="sm" className="h-8 w-full" disabled={disabled || anotherRunning} onClick={() => onStart(identity.id)}>
-          <ShieldCheck aria-hidden="true" className="size-3.5" />{outcome ? "다시 테스트" : "LLM 테스트"}</Button>
-      : <Button size="sm" variant="outline" className="h-8 w-full" disabled={disabled}
-          onClick={() => { window.location.hash = "#accounts/" + encodeURIComponent(identity.id) }}>로그인 필요</Button>}
-    {anotherRunning && <span className="text-[11px] text-muted-foreground">다른 계정 검증이 끝나면 실행할 수 있습니다.</span>}
-  </div>
-}
-
 export function JudgmentMatrixView() {
   const snapshot = useSnapshotQuery()
   const projects = useProjectsQuery()
@@ -200,26 +162,6 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const [mode, setMode] = useState<"standard" | "llm">("standard")
-  const verifyStatus = useLlmVerifyStateQuery(mode === "llm", mode === "llm")
-  const verifyRunning = verifyStatus.data?.status === "RUNNING"
-  // 검증이 도는 동안 소견을 계속 새로 불러와, 재전송·소견이 칸에 실시간으로 채워지는 걸 보여 준다.
-  const llmFindings = useLlmFindingsQuery(mode === "llm", verifyRunning)
-  const startVerify = useStartLlmVerifyMutation()
-  const cancelVerify = useCancelLlmVerifyMutation()
-  const sessionFor = (identityId: string): ManagedSession | undefined =>
-    snapshot.data?.managedSessions.find(session => session.accountId === identityId)
-  const findingMap = useMemo(() => {
-    const result = new Map<string, LlmFinding>()
-    for (const finding of llmFindings.data?.findings ?? []) {
-      result.set(`${finding.operation}\u0000${finding.identity}\u0000${finding.resource ?? ""}`, finding)
-    }
-    return result
-  }, [llmFindings.data])
-  const findingCountFor = (identityId: string) =>
-    (llmFindings.data?.findings ?? []).filter(finding => finding.identity === identityId).length
-  // 검증이 끝나면 소견을 한 번 더 불러온다.
-  useEffect(() => { if (verifyStatus.data?.status === "SUCCEEDED") void llmFindings.refetch() }, [verifyStatus.data?.status])
   const matrix = snapshot.data?.authorizationMatrix ?? null
   const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, false) : null, [matrix, view])
   const objectLabels = useMemo(() => new Map(snapshot.data?.displayObjects?.map(object => [`${object.operation.split(" ")[0]} observed-object:${object.objectKey}`, `${object.kind} · ${observedObjectLabel(object)}`])), [snapshot.data?.displayObjects])
@@ -290,15 +232,7 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={null} contentOverflow="hidden" inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4" aria-labelledby="judgment-title">
-      <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2"><h1 id="judgment-title" className="flex h-10 shrink-0 items-center text-lg font-semibold">판정 매트릭스</h1>{controls}
-        <div role="tablist" aria-label="판정 보기 모드" className="ml-auto flex h-10 items-center gap-1 rounded-md bg-muted/50 p-1">
-          {([["standard", "기존"], ["llm", "LLM"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value}
-            onClick={() => { setMode(value); setSelectedId(null); setInspectorOpen(false) }}
-            className={cn("h-8 rounded px-3 text-sm font-medium", mode === value ? "bg-background shadow-none" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
-        </div>
-      </header>
-      {mode === "llm" && <p className="shrink-0 text-xs text-muted-foreground">각 계정 열의 <span className="font-medium text-foreground">LLM 테스트</span>를 누르면, 그 계정 세션으로 보내는 GET 추천만 재전송해 결과를 칸에 표시합니다. 쓰기 요청은 실행하지 않으며, 확정은 칸을 눌러 상세에서 합니다.</p>}
-      {mode === "llm" && startVerify.isError && <p role="alert" className="shrink-0 text-xs text-destructive">LLM 검증을 시작하지 못했습니다: {startVerify.error instanceof Error ? startVerify.error.message : "알 수 없는 오류"}</p>}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2"><h1 id="judgment-title" className="flex h-10 shrink-0 items-center text-lg font-semibold">판정 매트릭스</h1>{controls}</header>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>판정 매트릭스를 불러오지 못했습니다.</AlertTitle><AlertDescription>
         <p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
         {snapshot.data ? <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 && Number.isFinite(snapshot.dataUpdatedAt) ? <time dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 요청 기록 상세와 사람 판정 저장이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
@@ -331,7 +265,7 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
           <OperationColumnResizeHandle width={operationWidth} onWidthChange={setOperationWidth} />
           <Table containerClassName="w-max min-w-full overflow-visible" className="table-fixed min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}>
             <colgroup><col style={{ width: operationWidth }} />{projection.identities.map(identity => <col key={identity.id} />)}</colgroup>
-            <TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{api && view === "object" ? "객체" : "API"}<span className="mt-1 block text-xs font-normal text-muted-foreground">{api ? "결과를 누르면 상세 확인" : "API를 누르면 관련 결과 보기"}</span></TableHead>{projection.identities.map(identity => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span>{mode === "llm" && <LlmTestColumnButton identity={identity} session={sessionFor(identity.id)} verify={verifyStatus.data} findingCount={findingCountFor(identity.id)} disabled={disabled} onStart={(accountId) => startVerify.mutate(accountId)} onCancel={() => cancelVerify.mutate()} canceling={cancelVerify.isPending} />}</TableHead>)}</TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{api && view === "object" ? "객체" : "API"}<span className="mt-1 block text-xs font-normal text-muted-foreground">{api ? "결과를 누르면 상세 확인" : "API를 누르면 관련 결과 보기"}</span></TableHead>{projection.identities.map(identity => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span></TableHead>)}</TableRow></TableHeader>
             <TableBody>{visibleRows.map(row => {
               const group = api ? null : row as ApiJudgmentRow
               const aggregated = !api && (view === "object" || (group?.operations.length ?? 0) > 1)
@@ -354,15 +288,9 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
                   const cell = row.cellsByIdentity[identity.id]
                   const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined
                   const counts = group?.countsByIdentity[identity.id]
-                  const finding = mode === "llm" && cell && !aggregated
-                    ? findingMap.get(`${cell.operation}\u0000${cell.identity}\u0000${"resource" in cell ? (cell.resource ?? "") : ""}`) : undefined
-                  const findingHttp = finding
-                    ? snapshot.data?.events.filter(event => finding.evidenceIds.includes(event.eventId))
-                        .reduce<number | undefined>((latest, event) => event.status, undefined) : undefined
                   return <TableCell key={identity.id} className="whitespace-normal px-3 py-3 align-middle">{cell ? <div className="relative"><button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={!aggregated && cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(aggregated ? row.operation : cell.operation)}${!aggregated && "resource" in cell ? ` · ${rowObjectLabel(cell.resource ?? "")}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `flex h-24 w-full min-w-44 flex-col justify-center gap-1.5 rounded-md border border-border bg-muted/30 px-4 py-3 pr-10 text-left text-sm leading-5 text-muted-foreground hover:bg-muted/50 ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `flex h-24 w-full min-w-44 flex-col justify-center gap-1.5 rounded-md border px-4 py-3 pr-10 text-left text-sm leading-5 ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => aggregated ? openApi(row.operation) : select(cell.id)}>
                     <span className="line-clamp-2 text-base font-semibold leading-6">{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span>
                     {aggregated && counts && (group.objectCount > 1 || group.operations.length > 1) && <span className="truncate text-sm font-normal leading-5 opacity-90" title={counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}>{counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}</span>}
-                    {finding && <span className="mt-0.5 flex flex-col gap-0.5 border-t border-border/60 pt-1 text-xs font-normal leading-4" title={finding.note}><span className="flex items-center gap-1 font-medium"><ShieldCheck aria-hidden="true" className="size-3" />LLM: {finding.verdict || "소견"}</span>{findingHttp !== undefined && <span className="font-mono opacity-80">재전송 HTTP {findingHttp}</span>}</span>}
                   </button><span className="absolute top-3 right-3" title={judgmentStatusDescription(cell.status)}><InfoHint label={`${judgmentStatusLabel(cell)} · ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(aggregated ? row.operation : cell.operation)}${!aggregated && row.resource ? ` · ${rowObjectLabel(row.resource)}` : ""}`}>{judgmentStatusDescription(cell.status)}</InfoHint></span></div> : <span className="flex h-24 min-w-44 items-center rounded-md border border-dashed border-border px-4 text-sm text-muted-foreground">데이터 없음</span>}</TableCell>
                 })}
               </TableRow>

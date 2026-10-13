@@ -34,6 +34,7 @@ public final class McpVerificationRunner implements AutoCloseable {
     private final SessionBroker sessions;
     private final ProcessLauncher launcher;
     private final Consumer<String> logger;
+    private final io.flowscope.core.McpActivityLog activity;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "flowscope-mcp-verify");
         thread.setDaemon(true);
@@ -44,27 +45,70 @@ public final class McpVerificationRunner implements AutoCloseable {
     private volatile boolean running;
     private volatile boolean closed;
 
-    public McpVerificationRunner(String mcpUrl, String mcpToken, SessionBroker sessions, Consumer<String> logger) {
-        this(mcpUrl, mcpToken, sessions, McpVerificationRunner::startProcess, logger);
+    public McpVerificationRunner(String mcpUrl, String mcpToken, SessionBroker sessions,
+                                 io.flowscope.core.McpActivityLog activity, Consumer<String> logger) {
+        this(mcpUrl, mcpToken, sessions, activity, McpVerificationRunner::startProcess, logger);
     }
 
     McpVerificationRunner(String mcpUrl, String mcpToken, SessionBroker sessions,
+                          io.flowscope.core.McpActivityLog activity,
                           ProcessLauncher launcher, Consumer<String> logger) {
         this.mcpUrl = requireLoopback(mcpUrl);
         this.mcpToken = mcpToken == null ? "" : mcpToken;
         this.sessions = sessions;
+        this.activity = activity;
         this.launcher = launcher;
         this.logger = logger == null ? ignored -> {} : logger;
     }
 
+    private void feed(String type, String summary) {
+        if (activity != null) activity.record(type, summary, false);
+    }
+
     public LlmVerifyState state() { return state.get(); }
 
-    public synchronized LlmVerifyState start(String accountId) {
+    private static final java.util.regex.Pattern TOKEN = java.util.regex.Pattern.compile("[A-Za-z0-9._:-]{1,80}");
+
+    /**
+     * sources: 프런트에서 고른 소스 범위(예: "matrix:bola,bfla;graph:core"). 비면 전체.
+     * accounts: 판정할 계정 ID 쉼표 목록(비로그인은 anon). 비면 usable 계정 전체. model: 비면 Codex 기본 설정.
+     */
+    public synchronized LlmVerifyState start(String sources, String accounts, String model) {
+        String scope = sources == null ? "" : sources.trim();
+        String chosenModel = model(model);
+        List<String> identities = new ArrayList<>();
+        for (String id : (accounts == null ? "" : accounts).split(",")) {
+            String trimmed = id.trim();
+            if (trimmed.isEmpty()) continue;
+            if (!TOKEN.matcher(trimmed).matches()) throw new IllegalArgumentException("계정 ID가 올바르지 않습니다: " + trimmed);
+            identities.add(trimmed);
+        }
+        return launch(scope, prompt(scope, identities), chosenModel,
+                "LLM이 선택한 소스를 분석하고 GET 추천을 검증하는 중",
+                "LLM 판정 실행 시작 · Codex" + (chosenModel.isEmpty() ? "" : " " + chosenModel)
+                        + (scope.isBlank() ? "" : " · " + scope)
+                        + (identities.isEmpty() ? "" : " · 계정 " + String.join(", ", identities)));
+    }
+
+    /** 사용자가 고른 소견을 LLM이 근거를 직접 읽고 판정한다(MCP 설계 §11). FlowScope 판정 규칙은 참고일 뿐이다. */
+    public synchronized LlmVerifyState startJudgment(List<String> findingIds, String model) {
+        if (findingIds == null || findingIds.isEmpty()) throw new IllegalArgumentException("판정할 소견을 하나 이상 고르세요.");
+        String chosenModel = model(model);
+        return launch("judge", judgmentPrompt(findingIds), chosenModel,
+                "LLM이 고른 소견 " + findingIds.size() + "건을 직접 판정하는 중",
+                "LLM 직접 판정 시작 · Codex" + (chosenModel.isEmpty() ? "" : " " + chosenModel)
+                        + " · 소견 " + findingIds.size() + "건");
+    }
+
+    private static String model(String model) {
+        String chosen = model == null ? "" : model.trim();
+        if (!chosen.isEmpty() && !TOKEN.matcher(chosen).matches()) throw new IllegalArgumentException("모델 이름이 올바르지 않습니다.");
+        return chosen;
+    }
+
+    private LlmVerifyState launch(String scope, String prompt, String chosenModel, String runningMessage, String startFeed) {
         if (closed) throw new IllegalStateException("검증 실행기가 종료되었습니다.");
-        if (running) throw new IllegalStateException("이전 LLM 검증이 아직 실행 중입니다.");
-        String account = accountId == null ? "" : accountId.trim();
-        if (account.isBlank()) throw new IllegalArgumentException("보내는 계정을 선택하세요.");
-        requireActiveSession(account);
+        if (running) throw new IllegalStateException("이전 LLM 판정이 아직 실행 중입니다.");
         String executable = CodexAppServerProvider.resolveExecutable();
         if (executable == null) {
             throw new IllegalStateException("Codex CLI를 찾지 못했습니다. Burp 시작 PATH 또는 flowscope.llm.codex.path를 설정하세요.");
@@ -72,13 +116,12 @@ public final class McpVerificationRunner implements AutoCloseable {
         Path workspace;
         try { workspace = Files.createTempDirectory("flowscope-mcp-verify-"); }
         catch (IOException error) { throw new IllegalStateException("작업공간 생성 실패: " + error.getMessage(), error); }
-        List<String> command = command(executable, workspace);
-        String prompt = prompt(account);
+        List<String> command = command(executable, workspace, chosenModel);
         Instant startedAt = Instant.now();
-        LlmVerifyState runningState = new LlmVerifyState("RUNNING", account,
-                account + " 세션으로 GET 추천을 검증하는 중", startedAt.toEpochMilli(), null);
+        LlmVerifyState runningState = new LlmVerifyState("RUNNING", scope, runningMessage, startedAt.toEpochMilli(), null);
         state.set(runningState);
         running = true;
+        feed("info", startFeed);
         worker.execute(() -> execute(runningState, command, workspace, prompt));
         return runningState;
     }
@@ -98,9 +141,14 @@ public final class McpVerificationRunner implements AutoCloseable {
             int exit = process.waitFor();
             reader.join();
             if (state.get().status().equals("CANCELLED")) return;
+            String output;
+            synchronized (tail) { output = tail.toString().strip(); }
+            feed("info", "Codex 종료 · exit " + exit + (output.isEmpty() ? " · 출력 없음" : " · 출력 " + output.length() + "자"));
+            if (!output.isEmpty()) feed("info", "Codex 출력: " + (output.length() > 1500 ? output.substring(output.length() - 1500) : output));
             LlmVerifyState terminal = exit == 0
                     ? new LlmVerifyState("SUCCEEDED", runningState.accountId(),
-                            "LLM 검증이 끝났습니다. 결과를 확인하세요.", runningState.startedAt(), Instant.now().toEpochMilli())
+                            "LLM 판정이 끝났습니다. 작업 피드를 확인하세요. 도구 호출이 없으면 대상 데이터나 Codex·MCP 연결을 확인하세요.",
+                            runningState.startedAt(), Instant.now().toEpochMilli())
                     : new LlmVerifyState("FAILED", runningState.accountId(),
                             "Codex 종료 코드 " + exit + outputSuffix(tail), runningState.startedAt(), Instant.now().toEpochMilli());
             state.set(terminal);
@@ -134,26 +182,40 @@ public final class McpVerificationRunner implements AutoCloseable {
                 runningState.startedAt(), Instant.now().toEpochMilli());
     }
 
-    private List<String> command(String executable, Path workspace) {
-        return List.of(executable, "-a", "never", "-s", "read-only", "-C", workspace.toString(),
+    private List<String> command(String executable, Path workspace, String model) {
+        // Codex는 MCP 도구 호출에 승인을 요구한다. -a never면 전부 거부되므로, 비대화형 자동 승인(--approve-for-me)을 쓴다.
+        // 도구는 read-only 주석을 달아 두었고, 위험한 재전송·범위는 FlowScope 서버가 GET·exact scope로 다시 막는다.
+        List<String> command = new ArrayList<>(List.of(executable, "-C", workspace.toString(),
                 "-c", "mcp_servers.flowscope.url=\"" + mcpUrl + "\"",
                 "-c", "mcp_servers.flowscope.bearer_token_env_var=\"FLOWSCOPE_MCP_TOKEN\"",
                 "-c", "mcp_servers.flowscope.required=true",
                 "-c", "shell_environment_policy.filters.FLOWSCOPE_MCP_TOKEN=\"exclude\"",
-                "-c", "tools.web_search=false", "exec", "--strict-config", "--skip-git-repo-check",
-                "--ignore-user-config", "--json", "--ephemeral", "-");
+                "-c", "tools.web_search=false", "exec", "--approve-for-me", "--skip-git-repo-check",
+                "--ignore-user-config", "--json", "--ephemeral"));
+        if (!model.isEmpty()) command.addAll(List.of("-m", model));
+        command.add("-");
+        return List.copyOf(command);
     }
 
-    private String prompt(String accountId) {
-        return "# FlowScope LLM 교차 계정 검증 (추천)\n\n"
-                + "점검이 끝난 데이터에 대해, 보내는 계정 account_id=" + accountId + " 세션으로만 GET 추천을 검증한다.\n\n"
+    private String prompt(String sources, List<String> identities) {
+        String scopeLine = sources.isBlank() ? "소스: 전체(판정 매트릭스 + 점검 그래프)"
+                : "선택한 소스 범위: " + sources;
+        String accountLine = identities.isEmpty() ? ""
+                : "\n판정할 계정(사용자 선택): " + String.join(", ", identities)
+                + ". testIdentity가 이 목록에 없는 추천은 재전송하지 않고 건너뛴다.";
+        return "# FlowScope LLM 판정 (점검 후 취약점 추천)\n\n"
+                + "점검이 끝난 데이터를 보고 IDOR/BOLA/BFLA 취약점을 찾는다. " + scopeLine + accountLine + "\n\n"
                 + "절차:\n"
-                + "1. flowscope_list_recommendations로 추천을 읽는다.\n"
-                + "2. getAutoRunnable=true 이고 testIdentity=" + accountId + " 인 추천만 대상으로,"
-                + " flowscope_cross_send_get(evidence_id=basisEvidenceId, account_id=" + accountId + ")으로 재전송한다.\n"
-                + "3. 필요하면 flowscope_get_evidence로 원본 요청/응답을 확인한다.\n"
-                + "4. 재전송 응답을 원본과 비교해 IDOR/BOLA/BFLA 의심 여부를 판단하고,"
-                + " flowscope_submit_finding(operation, identity=" + accountId + ", resource, verdict, confidence, note, evidence_ids)으로 소견을 남긴다.\n\n"
+                + "1. flowscope_get_status로 점검 범위와 보낼 수 있는 계정을 확인한다. accounts에서 usable=true인 계정만 재전송에 쓴다.\n"
+                + "   비로그인(account_id=anon)은 로그인이 필요 없고 항상 usable=true다. 세션 상태명(CAPTURING 등)이 아니라 usable 값으로 판단한다.\n"
+                + "2. 선택한 소스를 읽는다 — 판정 매트릭스는 flowscope_list_recommendations(scope=bola|bfla|all),"
+                + " 점검 그래프는 flowscope_get_graph(scope=core|all).\n"
+                + "3. GET 추천(getAutoRunnable=true)을 대상으로, 보내는 계정(testIdentity)이 usable일 때"
+                + " flowscope_cross_send_get(evidence_id=basisEvidenceId, account_id=testIdentity)으로 재전송한다."
+                + " testIdentity가 anon이면 account_id=anon으로 보낸다. usable이 아니면 건너뛴다.\n"
+                + "4. 필요하면 flowscope_get_evidence로 원본 요청/응답을 확인한다.\n"
+                + "5. 재전송 응답을 원본과 비교해 취약점 여부를 판단하고,"
+                + " flowscope_submit_finding(operation, identity, resource, verdict, confidence, note, evidence_ids)으로 소견을 남긴다.\n\n"
                 + "규칙:\n"
                 + "- GET만 재전송한다. 쓰기(POST/PUT/PATCH/DELETE)는 실행하지 않는다.\n"
                 + "- FlowScope MCP 도구만 사용한다. 외부 네트워크·웹 검색·직접 요청은 금지한다.\n"
@@ -161,14 +223,29 @@ public final class McpVerificationRunner implements AutoCloseable {
                 + "- 범위를 넓히거나 추론하지 않는다. 서버가 거부하는 요청은 그대로 둔다.\n";
     }
 
-    private void requireActiveSession(String accountId) {
-        if (sessions == null) throw new IllegalStateException("세션 관리자를 사용할 수 없습니다.");
-        SessionBroker.SessionView session = sessions.viewForAccount(accountId)
-                .orElseThrow(() -> new IllegalArgumentException("선택한 계정의 세션이 없습니다. 먼저 로그인하세요."));
-        if (session.status() != SessionBroker.Status.ACTIVE) {
-            throw new IllegalStateException("선택한 계정 세션이 ACTIVE가 아닙니다(" + session.status()
-                    + "). 계정·세션에서 로그인 후 다시 시도하세요.");
+    private static String judgmentPrompt(List<String> findingIds) {
+        StringBuilder ids = new StringBuilder("[");
+        for (int i = 0; i < findingIds.size(); i++) {
+            if (i > 0) ids.append(", ");
+            ids.append('"').append(findingIds.get(i).replace("\\", "\\\\").replace("\"", "\\\"")).append('"');
         }
+        ids.append(']');
+        return "# FlowScope LLM 직접 판정\n\n"
+                + "사용자가 고른 소견을 네가 직접 판정한다. FlowScope의 판정 매트릭스·소유자 추정·소견 verdict는 어디를 볼지 고르는 참고일 뿐이며,"
+                + " 판단 기준이 아니다. 요청/응답 원문을 직접 읽고 독립적으로 판단한다.\n\n"
+                + "판정할 소견 ID: " + ids + "\n\n"
+                + "절차:\n"
+                + "1. flowscope_list_findings(ids=위 목록)로 소견과 근거 기록 번호를 읽는다.\n"
+                + "2. flowscope_get_evidence로 원본 요청/응답과 재전송 응답 원문을 읽는다.\n"
+                + "3. 확인이 더 필요하면 flowscope_get_status로 usable 계정을 보고, flowscope_cross_send_get으로 GET만 재전송해 대조한다.\n"
+                + "4. 응답 본문에 요청자가 아닌 다른 사용자의 데이터가 실제로 노출됐는지, 200이어도 오류 본문인지, 공개 데이터인지 직접 따진다.\n"
+                + "5. 소견마다 flowscope_submit_verdict(finding_id, verdict, reason, evidence_ids)로 판정을 남긴다.\n"
+                + "   verdict: vulnerable(취약) · not_vulnerable(취약 아님) · inconclusive(판단 불가: 근거가 부족하거나 GET으로 확인할 수 없음).\n"
+                + "   reason은 한국어로, 어떤 응답의 무엇을 보고 그렇게 판단했는지 구체적으로 쓴다. evidence_ids에는 판단에 쓴 기록 번호를 넣는다.\n\n"
+                + "규칙:\n"
+                + "- GET만 재전송한다. 쓰기(POST/PUT/PATCH/DELETE)는 실행하지 않는다.\n"
+                + "- FlowScope MCP 도구만 사용한다. 외부 네트워크·웹 검색·직접 요청은 금지한다.\n"
+                + "- 고른 소견 전부에 판정을 남긴다. 확인할 수 없으면 inconclusive로 남긴다.\n";
     }
 
     private static final int OUTPUT_TAIL_LIMIT = 2000;
