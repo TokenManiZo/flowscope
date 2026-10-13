@@ -4,6 +4,9 @@ import java.net.URI;
 import java.util.Map;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Optional;
 import java.time.Instant;
 
@@ -247,6 +250,41 @@ public final class AnalysisConfig {
         String normalizedTarget = target.trim();
         if (policy == null || policy == ResourcePolicy.UNKNOWN) resourcePolicies.remove(normalizedTarget);
         else resourcePolicies.put(normalizedTarget, policy);
+        return this;
+    }
+
+    /** Project legacy location settings onto a single request OBJ without changing stored keys. */
+    public synchronized AnalysisConfig withCanonicalObjects(ObservedObjectIndex objects) {
+        Map<String, Set<String>> owners = new LinkedHashMap<>();
+        resourceOwners.forEach((resource, owner) -> {
+            String canonical = objects.canonicalResource(resource);
+            if (!canonical.equals(resource)) owners.computeIfAbsent(canonical, ignored -> new HashSet<>()).add(owner);
+        });
+        owners.forEach((resource, values) -> {
+            if (!resourceOwners.containsKey(resource) && values.size() == 1)
+                resourceOwners.put(resource, values.iterator().next());
+        });
+        Map<String, Set<ResourcePolicy>> policies = new LinkedHashMap<>();
+        resourcePolicies.forEach((target, policy) -> {
+            int separator = target.lastIndexOf(" @ ");
+            if (separator < 0) return;
+            String resource = target.substring(separator + 3);
+            String canonical = objects.canonicalResource(resource);
+            if (!canonical.equals(resource)) policies.computeIfAbsent(target.substring(0, separator + 3) + canonical,
+                    ignored -> new HashSet<>()).add(policy);
+        });
+        policies.forEach((target, values) -> {
+            if (!resourcePolicies.containsKey(target) && values.size() == 1)
+                resourcePolicies.put(target, values.iterator().next());
+        });
+        List<MatrixExclusion> canonicalExclusions = new ArrayList<>();
+        for (MatrixExclusion entry : matrixExclusions.values()) if (entry.resource() != null) {
+            String canonical = objects.canonicalResource(entry.resource());
+            if (!canonical.equals(entry.resource())) canonicalExclusions.add(new MatrixExclusion(
+                    MatrixExclusion.keyFor(entry.view(), entry.operation(), canonical), entry.view(),
+                    entry.operation(), canonical, entry.label()));
+        }
+        canonicalExclusions.forEach(entry -> matrixExclusions.putIfAbsent(entry.key(), entry));
         return this;
     }
 

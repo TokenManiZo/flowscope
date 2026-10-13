@@ -1416,7 +1416,8 @@ final class FlowScopeWebServerTest {
         state.rebuild();
         var objects = io.flowscope.core.graph.ObservedObjectProjection.build(state.snapshot().records).stream()
                 .filter(object -> object.eventId().equals(observed.evidenceId)).toList();
-        assertEquals(java.util.Set.of("PATH", "QUERY", "REQUEST_BODY"), objects.stream().map(object -> object.kind()).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(1, objects.size());
+        assertEquals(java.util.List.of("PATH", "QUERY", "REQUEST_BODY"), objects.getFirst().locations());
         for (var object : objects) {
             assertNull(object.legacyResource());
             String resource = service + " observed-object:" + object.objectKey();

@@ -904,11 +904,19 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private LoopbackHttpServer.Response matrixExclusions(LoopbackHttpServer.Request request) throws IOException {
         if (request.method().equals("GET")) {
             long dataset = state.datasetRevision();
-            var entries = state.config().matrixExclusions().values();
+            var objects = state.snapshot().objects;
+            var entries = new java.util.LinkedHashMap<String, io.flowscope.core.MatrixExclusion>();
+            for (var entry : state.config().matrixExclusions().values()) {
+                String resource = entry.resource() == null ? null : objects.canonicalResource(entry.resource());
+                var visible = java.util.Objects.equals(resource, entry.resource()) ? entry
+                        : new io.flowscope.core.MatrixExclusion(io.flowscope.core.MatrixExclusion.keyFor(
+                                entry.view(), entry.operation(), resource), entry.view(), entry.operation(), resource, entry.label());
+                entries.put(visible.key(), visible);
+            }
             if (dataset != state.datasetRevision()) return error(409, "프로젝트가 변경되었습니다. 다시 불러오세요.");
             ObjectNode body = json.createObjectNode();
             body.put("datasetRevision", dataset);
-            body.set("entries", json.valueToTree(entries));
+            body.set("entries", json.valueToTree(entries.values()));
             return json(200, body);
         }
         try {

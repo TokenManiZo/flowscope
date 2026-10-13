@@ -542,7 +542,7 @@ it("uses the graph API key for opaque paths, preserves object reviews and latest
   await user.click(screen.getByRole("button", { name: "GET /api/posts/{id} 최신 요청을 Request Lab에서 열기" }))
   expect(screen.getByRole("dialog", { name: "Request Lab" })).toHaveTextContent("newest")
   await user.click(screen.getByRole("button", { name: "GET /api/posts/{id} 관련 결과 보기" }))
-  await user.click(screen.getByRole("button", { name: "BOLA/IDOR 후보: B · GET /api/posts/bbbb · PATH · OBJ 2" }))
+  await user.click(screen.getByRole("button", { name: "BOLA/IDOR 후보: B · GET /api/posts/bbbb · OBJ 2" }))
   await user.click(within(screen.getByRole("region", { name: "취약점 확인" })).getByRole("button", { name: "취약점으로 확정" }))
   await waitFor(() => expect(saveReview).toHaveBeenCalledWith("opaque-b", "CONFIRMED", ""))
   await user.click(screen.getByRole("button", { name: "이 API 제외" }))

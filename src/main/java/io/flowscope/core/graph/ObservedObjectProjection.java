@@ -27,12 +27,12 @@ import org.w3c.dom.Element;
 import org.xml.sax.InputSource;
 import java.io.StringReader;
 
-/** Display-only observations. Never changes operation/resource, authorization or replay targets. */
+/** Request-target observations shared by the graph, authorization matrix and replay index. */
 public final class ObservedObjectProjection {
     private ObservedObjectProjection() {}
     public record ObjectObservation(String eventId, String operation, String apiKey, String groupKey,
             String objectKey, String kind, List<String> fields, String legacyResource, int ordinal, String apiFamily,
-            String integerLabel, int displayOrdinal) {}
+            String integerLabel, int displayOrdinal, List<String> locations, List<String> sourceObjectKeys) {}
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(128).maxStringLength(1_000_000).build()).build())
@@ -118,14 +118,36 @@ public final class ObservedObjectProjection {
                     addBody(out, ordinals, r, api);
                     if (includeResponseObjects && !pathCandidates.contains(r.evidenceId)) addResponse(out, ordinals, r, api);
                 });
+        // A request has one target OBJ. Other input locations describe that target; they do not
+        // create additional authorization/matrix rows. Retain the existing primary key so stored
+        // owner and policy settings for that coordinate keep working.
+        Map<String, List<ObjectObservation>> byEvent = new LinkedHashMap<>();
+        for (ObjectObservation object : out)
+            byEvent.computeIfAbsent(object.eventId(), ignored -> new ArrayList<>()).add(object);
+        List<ObjectObservation> collapsed = new ArrayList<>();
+        for (List<ObjectObservation> candidates : byEvent.values()) {
+            ObjectObservation primary = candidates.stream().min(Comparator.comparingInt(candidate ->
+                    switch (candidate.kind()) {
+                        case "PATH" -> 0;
+                        case "QUERY" -> 1;
+                        case "REQUEST_BODY" -> 2;
+                        default -> 3;
+                    })).orElseThrow();
+            List<String> locations = candidates.stream().map(ObjectObservation::kind).distinct().toList();
+            List<String> sourceKeys = candidates.stream().map(ObjectObservation::objectKey).distinct().toList();
+            collapsed.add(new ObjectObservation(primary.eventId(), primary.operation(), primary.apiKey(),
+                    primary.groupKey(), primary.objectKey(), primary.kind(), primary.fields(),
+                    primary.legacyResource(), primary.ordinal(), primary.apiFamily(), primary.integerLabel(),
+                    primary.displayOrdinal(), locations, sourceKeys));
+        }
         Set<String> successfulObjects = new HashSet<>();
-        for (ObjectObservation object : out) if (successful(unique.get(object.eventId()))) {
+        for (ObjectObservation object : collapsed) if (successful(unique.get(object.eventId()))) {
             successfulObjects.add(object.objectKey());
         }
         // Keep denied access to a confirmed object; denied-only values cannot create objects.
         ordinals.clear();
         Map<String, LinkedHashMap<String, Integer>> displayOrdinals = new HashMap<>();
-        return out.stream().filter(object -> successfulObjects.contains(object.objectKey())).map(object -> {
+        return collapsed.stream().filter(object -> successfulObjects.contains(object.objectKey())).map(object -> {
             var members = ordinals.computeIfAbsent(object.groupKey(), ignored -> new LinkedHashMap<>());
             int ordinal = members.computeIfAbsent(object.objectKey(), ignored -> members.size() + 1);
             var labels = displayOrdinals.computeIfAbsent(object.groupKey(), ignored -> new LinkedHashMap<>());
@@ -133,7 +155,7 @@ public final class ObservedObjectProjection {
                     ? labels.computeIfAbsent(object.objectKey(), ignored -> labels.size() + 1) : 0;
             return new ObjectObservation(object.eventId(), object.operation(), object.apiKey(), object.groupKey(),
                     object.objectKey(), object.kind(), object.fields(), object.legacyResource(), ordinal, object.apiFamily(),
-                    object.integerLabel(), displayOrdinal);
+                    object.integerLabel(), displayOrdinal, object.locations(), object.sourceObjectKeys());
         }).toList();
     }
 
@@ -347,7 +369,7 @@ public final class ObservedObjectProjection {
             String apiFamily, String integerLabel) {
         var members = ordinals.computeIfAbsent(group, ignored -> new LinkedHashMap<>());
         int number = members.computeIfAbsent(object, ignored -> members.size() + 1);
-        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily, integerLabel, number));
+        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily, integerLabel, number, List.of(kind), List.of(object)));
     }
     private static String key(String... parts) {
         StringBuilder framed = new StringBuilder();

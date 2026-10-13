@@ -1,6 +1,6 @@
 import type { DisplayObject, EventRecord, Snapshot, Source } from "@/lib/api/types"
 import { graphAccountLabel } from "./graphAccounts"
-import { observedObjectLabel } from "./observedObjectLabel"
+import { observedObjectDisplayLabel } from "./observedObjectLabel"
 import { graphCellKey, graphCellSelection, sourceStyles, verdictStyles, wrapOperationLabel, type GraphFilters } from "./graphProjection"
 import { isObservedTraffic, type HierarchyEdge, type HierarchyNode, type HierarchySelection, type GraphNavigation, type GraphReveal } from "./graphHierarchy"
 
@@ -128,7 +128,8 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         visibleObjects++
         const selection = { ...select(observations, null, true), displayObjectKey: key, displayApiKey: api }
         const owner = snapshot.owners[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? snapshot.ownerOverrides?.[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? null
-        const label = observedObjectLabel(observations[0].object)
+        const locations = [...new Set(observations.flatMap(observation => observation.object.locations ?? [observation.object.kind]))]
+        const label = observedObjectDisplayLabel({ ...observations[0].object, locations })
         const publicRead = snapshot.resourcePolicyOverrides?.[`${observations[0].object.operation} @ ${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] === "PUBLIC"
         const objectNode = node("resource", key, label, selection, { owner, publicRead, displayObjectKind: first.kind })
         edge("operation-resource", apiNode.id, objectNode.id, observations, true)

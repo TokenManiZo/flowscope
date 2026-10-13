@@ -18,6 +18,18 @@ function data(): Snapshot {
   return targetSnapshot({ events, cells, displayObjects })
 }
 describe("observed display objects", () => {
+  it("shows a request's combined input locations on one OBJ in graph and search", () => {
+    const snapshot = data()
+    snapshot.displayObjects = snapshot.displayObjects!.map((object, index) => index === 0
+      ? { ...object, locations: ["PATH", "QUERY", "REQUEST_BODY"] as const }
+      : object)
+    const graph = projectHierarchy(snapshot, filters, nav)
+    expect(graph.resources).toHaveLength(3)
+    expect(graph.resources[0].label).toBe("OBJ 1 · PATH · QUERY · BODY")
+    const search = buildGraphSearchIndex(snapshot, filters)
+    expect(search.entries.find(entry => entry.value === graph.resources[0].selection.displayObjectKey)?.title)
+      .toBe("OBJ 1 · PATH · QUERY · BODY")
+  })
   it("restores Public for only the saved API and object while retaining its owner", () => {
     const snapshot = data(), object = snapshot.displayObjects![0]
     const resource = `${service} observed-object:${object.objectKey}`

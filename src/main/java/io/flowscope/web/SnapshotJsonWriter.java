@@ -124,7 +124,7 @@ public final class SnapshotJsonWriter {
                         List<RunExecutionLedger.Summary> executionSummaries,
                         java.util.function.Predicate<RequestRecord> rawAvailable,
                         java.util.function.Function<RequestRecord, String> collectionAccount) throws JsonProcessingException {
-        config = config.snapshotCopy();
+        config = config.snapshotCopy().withCanonicalObjects(result.objects);
         ObjectNode root = json.createObjectNode();
         root.put("revision", revision);
         root.put("identityRevision", revision);

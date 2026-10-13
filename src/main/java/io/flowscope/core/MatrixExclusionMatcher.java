@@ -18,7 +18,7 @@ public final class MatrixExclusionMatcher {
         for (MatrixExclusion entry : config.matrixExclusions().values()) {
             if (entry.resource() == null) apiExclusions.add(entry.operation());
             else {
-                objectExclusions.add(new Target(entry.operation(), entry.resource()));
+                objectExclusions.add(new Target(entry.operation(), snapshot.objects.canonicalResource(entry.resource())));
                 objectOperations.add(entry.operation());
             }
         }

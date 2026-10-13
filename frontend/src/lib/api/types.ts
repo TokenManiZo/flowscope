@@ -12,7 +12,7 @@ export interface TrafficStats {
   humanApiOutsideRun?: number
 }
 
-/** Graph-only observations; these keys never identify matrix cells or replay requests. */
+/** One request target, shared by the graph and authorization matrix. */
 export interface DisplayObject {
   eventId: string
   operation: string
@@ -21,6 +21,8 @@ export interface DisplayObject {
   groupKey: string
   objectKey: string
   kind: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  locations?: readonly ("PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY")[]
+  sourceObjectKeys?: readonly string[]
   fields: readonly string[]
   legacyResource: string | null
   ordinal: number

@@ -65,7 +65,7 @@ final class SurfaceAuthorizationLinkTest {
         SurfaceAnalysis result = enrich(List.of(r), authorization(List.of(r), true));
         assertEquals(Confidence.UNKNOWN, link(result, "/status").confidence(), "값이 같아도 의미 필드가 아니면 연결하지 않는다");
         assertEquals(Confidence.OBSERVED, link(result, "/orderId").confidence());
-        assertEquals(Confidence.OBSERVED, link(result, "/userId").confidence());
+        assertEquals(Confidence.UNKNOWN, link(result, "/userId").confidence(), "별도 객체를 만들지 않는 요청에서는 두 번째 식별자를 판정 대상으로 승격하지 않는다");
     }
 
     @Test

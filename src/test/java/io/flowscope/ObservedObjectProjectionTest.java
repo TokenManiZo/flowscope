@@ -55,8 +55,8 @@ class ObservedObjectProjectionTest {
         created.query = "page=1"; created.reqBody = "{\"orderId\":202}";
         var observations = ObservedObjectProjection.build(List.of(success, created));
         assertEquals(2, observations.stream().filter(o -> o.kind().equals("PATH")).count());
-        assertEquals(Set.of("PATH", "QUERY", "REQUEST_BODY"),
-                new HashSet<>(observations.stream().map(ObservedObjectProjection.ObjectObservation::kind).toList()));
+        assertEquals(2, observations.size());
+        assertEquals(List.of("PATH", "QUERY", "REQUEST_BODY"), observations.get(1).locations());
         var failed = record("/orders/202", 2, Source.HUMAN, 404);
         var secondSuccess = record(success.path, 3); secondSuccess.idn = "user-b";
         var confirmed = ObservedObjectProjection.build(List.of(success, secondSuccess, failed));
@@ -71,9 +71,10 @@ class ObservedObjectProjectionTest {
             r.query = "orderId=101"; r.reqBody = "{\"orderId\":101}";
         }
         var observations = ObservedObjectProjection.build(List.of(success, forbidden));
-        assertEquals(6, observations.size());
-        assertEquals(3, observations.stream().filter(o -> o.eventId().equals(forbidden.evidenceId)).count());
-        assertEquals(3, observations.stream().map(ObservedObjectProjection.ObjectObservation::objectKey).distinct().count());
+        assertEquals(2, observations.size());
+        assertEquals(1, observations.stream().filter(o -> o.eventId().equals(forbidden.evidenceId)).count());
+        assertEquals(1, observations.stream().map(ObservedObjectProjection.ObjectObservation::objectKey).distinct().count());
+        assertEquals(List.of("PATH", "QUERY", "REQUEST_BODY"), observations.getFirst().locations());
         assertTrue(ObservedObjectProjection.build(List.of(forbidden)).isEmpty());
     }
 
@@ -201,15 +202,15 @@ class ObservedObjectProjectionTest {
         assertEquals(1, out.stream().filter(o -> "QUERY".equals(o.kind())).count());
         assertEquals(3, out.stream().map(ObservedObjectProjection.ObjectObservation::apiKey).distinct().count());
     }
-    @Test void actualPostQueryAndBodyRemainSeparateAndNumericPathIdsAreSupported() {
+    @Test void actualPostQueryAndBodyDescribeOneRequestObject() {
         var a = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders/101", 200, "A");
         var b = new RequestRecord(Source.HUMAN, "https://t:443", "POST", "/orders/202", 200, "A");
         int i = 0;
         for (var r : List.of(a,b)) { r.hasResponse = true; r.evidenceId = "post-order-" + ++i; r.reqBody = "{\"orderid\":1}"; r.query = "page=1"; }
         Normalizer.normalizeAll(List.of(a,b));
         var out = ObservedObjectProjection.build(List.of(a,b));
-        assertEquals(6, out.size());
-        assertEquals(Set.of("PATH", "QUERY", "REQUEST_BODY"), new HashSet<>(out.stream().map(ObservedObjectProjection.ObjectObservation::kind).toList()));
+        assertEquals(2, out.size());
+        assertTrue(out.stream().allMatch(object -> object.locations().equals(List.of("PATH", "QUERY", "REQUEST_BODY"))));
     }
     @Test void methodAndServiceAndUntrustedTrafficDoNotCorroborate() {
         var a = record("/posts/100", 1);
@@ -266,7 +267,10 @@ class ObservedObjectProjectionTest {
         var b = record("/orders/202", 2);
         var original = a.op + "\0" + a.resource;
         var out = ObservedObjectProjection.build(List.of(a,b));
-        assertEquals(Set.of("PATH","QUERY","REQUEST_BODY"), new HashSet<>(out.stream().filter(o -> o.eventId().equals(a.evidenceId)).map(ObservedObjectProjection.ObjectObservation::kind).toList()));
+        var requestObjects = out.stream().filter(o -> o.eventId().equals(a.evidenceId)).toList();
+        assertEquals(1, requestObjects.size());
+        assertEquals(List.of("PATH", "QUERY", "REQUEST_BODY"), requestObjects.getFirst().locations());
+        assertEquals(3, requestObjects.getFirst().sourceObjectKeys().size());
         assertEquals(original, a.op + "\0" + a.resource);
     }
     @Test void parameterlessGetUsesWholeResponseRatherThanSplittingArrayItems() {
@@ -310,7 +314,7 @@ class ObservedObjectProjectionTest {
         }
         Normalizer.normalizeAll(rows);
         var out = ObservedObjectProjection.build(rows);
-        assertEquals(12, out.size());
+        assertEquals(6, out.size());
         assertTrue(out.stream().noneMatch(o -> "PATH".equals(o.kind())));
         for (var r : rows) for (var o : out.stream().filter(o -> r.evidenceId.equals(o.eventId())).toList())
             assertEquals(r.service + " " + r.method + " " + r.path, o.apiKey());

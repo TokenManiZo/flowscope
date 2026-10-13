@@ -12,15 +12,22 @@ public final class ObservedObjectIndex {
     private final List<ObservedObjectProjection.ObjectObservation> observations;
     private final Map<String, Target> targets;
     private final Map<String, Set<String>> byEvidence;
+    private final Map<String, String> legacyResources;
     private final List<RequestRecord> projectionRecords;
     private ObservedObjectIndex(List<ObservedObjectProjection.ObjectObservation> observations,
-                                Map<String, Target> targets, Map<String, Set<String>> byEvidence, List<RequestRecord> projectionRecords) {
+                                Map<String, Target> targets, Map<String, Set<String>> byEvidence,
+                                Map<String, String> legacyResources, List<RequestRecord> projectionRecords) {
         this.observations = List.copyOf(observations); this.targets = Map.copyOf(targets);
-        this.byEvidence = Map.copyOf(byEvidence); this.projectionRecords = List.copyOf(projectionRecords);
+        this.byEvidence = Map.copyOf(byEvidence); this.legacyResources = Map.copyOf(legacyResources);
+        this.projectionRecords = List.copyOf(projectionRecords);
     }
     public List<ObservedObjectProjection.ObjectObservation> observations() { return observations; }
     public Map<String, Target> targets() { return targets; }
     public Set<String> resources(String evidenceId) { return byEvidence.getOrDefault(evidenceId, Set.of()); }
+    /** Resolve an old location-specific OBJ only when it names exactly one current target. */
+    public String canonicalResource(String resource) {
+        return targets.containsKey(resource) ? resource : legacyResources.getOrDefault(resource, resource);
+    }
     /** Match a stored manual response to an existing OBJ without creating a judgment target. */
     public boolean matchesInput(RequestRecord record, String resource) {
         if (!targets.containsKey(resource) || !targets.get(resource).operation().equals(record.op)) return false;
@@ -52,6 +59,11 @@ public final class ObservedObjectIndex {
             byEvidence.computeIfAbsent(object.eventId(), ignored -> new LinkedHashSet<>()).add(resource);
         }
         Map<String, Target> targets = new LinkedHashMap<>();
+        Map<String, Set<String>> legacyCandidates = new HashMap<>();
+        for (var object : observations) for (String sourceKey : object.sourceObjectKeys()) {
+            String oldResource = object.operation().split(" ")[0] + " observed-object:" + sourceKey;
+            legacyCandidates.computeIfAbsent(oldResource, ignored -> new HashSet<>()).add(resource(object));
+        }
         for (var entry : grouped.entrySet()) {
             var first = entry.getValue().getFirst();
             var references = new HashSet<String>();
@@ -80,7 +92,12 @@ public final class ObservedObjectIndex {
                 byEvidence.computeIfAbsent(object.eventId(), ignored -> new LinkedHashSet<>()).add(target);
         }
         byEvidence.replaceAll((key, value) -> Set.copyOf(value));
-        return new ObservedObjectIndex(observations, targets, byEvidence, projectionInputs);
+        Map<String, String> legacyResources = new HashMap<>();
+        legacyCandidates.forEach((oldResource, candidates) -> {
+            if (candidates.size() == 1 && !targets.containsKey(oldResource))
+                legacyResources.put(oldResource, candidates.iterator().next());
+        });
+        return new ObservedObjectIndex(observations, targets, byEvidence, legacyResources, projectionInputs);
     }
     public static boolean coreApi(RequestRecord record) {
         if (record.trafficClassification == null || !record.trafficClassification.coverageEligible()

@@ -16,15 +16,16 @@ import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
 import { useProjectsQuery, useRequirementMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
-import { observedObjectLabel } from "@/features/graph/observedObjectLabel"
+import { observedObjectDisplayLabel } from "@/features/graph/observedObjectLabel"
 import { MatrixOwnerControl } from "./MatrixOwnerControl"
 import { OperationColumnResizeHandle, OPERATION_COLUMN_DEFAULT_WIDTH } from "./OperationColumnResizeHandle"
 import { latestOperationEvent, requestLabEvent } from "./requestLabEvent"
 import { findJudgmentItem, isReviewable, judgmentStatusDescription, judgmentStatusLabel, judgmentTone, projectJudgmentMatrix, quietStatusLabel, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 function objectLabel(snapshot: Snapshot | undefined, resource: string) {
-  const object = snapshot?.displayObjects?.find(object => `${object.operation.split(" ")[0]} observed-object:${object.objectKey}` === resource)
-  return object ? `${object.kind} · ${observedObjectLabel(object)}` : withoutService(resource)
+  const objects = snapshot?.displayObjects?.filter(object => `${object.operation.split(" ")[0]} observed-object:${object.objectKey}` === resource) ?? []
+  if (!objects.length) return withoutService(resource)
+  return observedObjectDisplayLabel({ ...objects[0], locations: [...new Set(objects.flatMap(object => object.locations ?? [object.kind]))] })
 }
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -167,7 +168,17 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const matrix = snapshot.data?.authorizationMatrix ?? null
   const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, false) : null, [matrix, view])
-  const objectLabels = useMemo(() => new Map(snapshot.data?.displayObjects?.map(object => [`${object.operation.split(" ")[0]} observed-object:${object.objectKey}`, `${object.kind} · ${observedObjectLabel(object)}`])), [snapshot.data?.displayObjects])
+  const objectLabels = useMemo(() => {
+    const grouped = new Map<string, NonNullable<Snapshot["displayObjects"]>[number][]>()
+    for (const object of snapshot.data?.displayObjects ?? []) {
+      const resource = `${object.operation.split(" ")[0]} observed-object:${object.objectKey}`
+      const items = grouped.get(resource) ?? []
+      items.push(object)
+      grouped.set(resource, items)
+    }
+    return new Map([...grouped].map(([resource, objects]) => [resource,
+      observedObjectDisplayLabel({ ...objects[0], locations: [...new Set(objects.flatMap(object => object.locations ?? [object.kind]))] })]))
+  }, [snapshot.data?.displayObjects])
   const rowObjectLabel = (resource: string) => objectLabels.get(resource) ?? withoutService(resource)
   const apiKey = useMemo(() => matrixApiResolver(snapshot.data?.displayObjects), [snapshot.data?.displayObjects])
   const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.resource === null || entry.view === view).map(entry => entry.key)), [exclusions, view])
