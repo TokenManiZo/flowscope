@@ -383,7 +383,7 @@ final class FlowScopeWebServerTest {
         assertEquals(405, get("/mcp", null, null).statusCode());
 
         JsonNode tools = json(mcp(list, server.mcpToken()));
-        assertEquals(5, tools.at("/result/tools").size());
+        assertEquals(8, tools.at("/result/tools").size());
 
         String send = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_cross_send_get\",\"arguments\":{\"evidence_id\":\"" + state.record.evidenceId + "\",\"account_id\":\"user-b\"}}}";
         JsonNode sent = json(mcp(send, server.mcpToken()));
@@ -407,6 +407,24 @@ final class FlowScopeWebServerTest {
         JsonNode listed = json(get("/api/llm-findings", token, origin()));
         assertEquals("user-b", listed.at("/findings/0/identity").asText());
         assertEquals("ev-manual", listed.at("/findings/0/evidenceIds/0").asText());
+        assertEquals("", listed.at("/findings/0/judgment").asText());
+
+        // LLM 직접 판정은 서버가 강등·재검사 없이 그대로 저장한다(MCP 설계 §11).
+        String findingId = state.findings.get(0).id();
+        String verdict = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_submit_verdict\",\"arguments\":{\"finding_id\":\"" + findingId + "\",\"verdict\":\"vulnerable\",\"reason\":\"타인 주문 본문 노출\",\"evidence_ids\":[\"ev-missing\"]}}}";
+        assertFalse(json(mcp(verdict, server.mcpToken())).at("/result/isError").asBoolean());
+        assertEquals(1, state.findings.size());
+        assertEquals("IDOR 의심", state.findings.get(0).verdict(), "기존 소견은 그대로 둔다");
+        JsonNode judged = json(get("/api/llm-findings", token, origin()));
+        assertEquals("vulnerable", judged.at("/findings/0/judgment").asText());
+        assertEquals("타인 주문 본문 노출", judged.at("/findings/0/judgmentReason").asText());
+        assertEquals("ev-missing", judged.at("/findings/0/judgmentEvidenceIds/0").asText());
+
+        // 정해진 세 값 밖의 판정과 없는 소견은 거부한다.
+        String invalid = verdict.replace("\"vulnerable\"", "\"confirmed\"");
+        assertTrue(json(mcp(invalid, server.mcpToken())).at("/result/isError").asBoolean());
+        String unknown = verdict.replace(findingId, "llm:none");
+        assertTrue(json(mcp(unknown, server.mcpToken())).at("/result/isError").asBoolean());
     }
 
     @Test

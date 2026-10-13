@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.LlmFinding;
+import io.flowscope.core.McpActivityLog;
+import io.flowscope.core.RequestRecord;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.SessionBroker;
 
@@ -32,12 +34,14 @@ final class FlowScopeMcp {
     private final FlowScopeWebServer.State state;
     private final String token;
     private final int port;
+    private final McpActivityLog activity;
     private final ObjectMapper json = new ObjectMapper();
 
-    FlowScopeMcp(FlowScopeWebServer.State state, String token, int port) {
+    FlowScopeMcp(FlowScopeWebServer.State state, String token, int port, McpActivityLog activity) {
         this.state = state;
         this.token = token == null ? "" : token;
         this.port = port;
+        this.activity = activity;
     }
 
     LoopbackHttpServer.Response handle(LoopbackHttpServer.Request request) {
@@ -97,7 +101,8 @@ final class FlowScopeMcp {
         result.put("instructions", "점검이 끝난 데이터에 대한 LLM 교차 계정 검증(추천)만 수행한다. "
                 + "flowscope_list_recommendations로 GET 추천을 읽고, flowscope_cross_send_get으로 보내는 계정 세션으로 "
                 + "GET만 재전송하며(쓰기·외부 네트워크·웹 검색 금지), flowscope_submit_finding으로 소견을 남긴다. "
-                + "판정 확정은 사람이 한다. 범위는 서버 exact scope를 벗어날 수 없다.");
+                + "사용자가 고른 소견은 근거를 직접 읽고 flowscope_submit_verdict로 LLM 자신의 판정을 남긴다. "
+                + "범위는 서버 exact scope를 벗어날 수 없다.");
         return result;
     }
 
@@ -106,8 +111,13 @@ final class FlowScopeMcp {
         tools.add(tool("flowscope_get_status",
                 "현재 점검 범위, 계정·역할·세션 상태 요약을 반환한다. 인증값(쿠키·토큰)은 반환하지 않는다.", schema()));
         tools.add(tool("flowscope_list_recommendations",
-                "판정 매트릭스의 교차 테스트 추천 목록. GET만 자동 실행 대상이며 보내는 계정·근거 기록·사유를 포함한다.",
-                schema()));
+                "판정 매트릭스의 교차 테스트 추천 목록. scope로 bola·bfla·all을 거를 수 있다. "
+                        + "GET만 자동 실행 대상이며 보내는 계정·근거 기록·사유를 포함한다.",
+                recommendationSchema()));
+        tools.add(tool("flowscope_get_graph",
+                "관측된 점검 그래프 전체. 어느 계정이 어떤 API·객체에 접근해 어떤 응답을 받았는지와 객체 소유자를 반환한다. "
+                        + "scope=core면 주요 API만, all이면 전체(기본 all).",
+                graphSchema()));
         tools.add(tool("flowscope_get_evidence",
                 "요청 기록 하나의 요청/응답 원문과 메타데이터를 evidence_id로 읽는다.", evidenceSchema()));
         tools.add(tool("flowscope_cross_send_get",
@@ -116,6 +126,13 @@ final class FlowScopeMcp {
         tools.add(tool("flowscope_submit_finding",
                 "교차 재전송 결과를 해석한 LLM 소견(추천)을 남긴다. 판정 엔진 결과를 바꾸지 않으며 사람이 검토한다.",
                 findingSchema()));
+        tools.add(tool("flowscope_list_findings",
+                "저장된 LLM 소견 목록. ids로 특정 소견만 고를 수 있다. 각 소견의 근거 기록 번호와 기존 LLM 판정을 포함한다.",
+                findingIdsSchema()));
+        tools.add(tool("flowscope_submit_verdict",
+                "소견 하나에 대한 LLM 자신의 판정을 저장한다(vulnerable·not_vulnerable·inconclusive). "
+                        + "FlowScope 판정 규칙과 무관하며 서버는 강등·재검사 없이 그대로 저장한다.",
+                verdictSchema()));
         ObjectNode result = json.createObjectNode();
         result.set("tools", tools);
         return result;
@@ -127,10 +144,13 @@ final class FlowScopeMcp {
         try {
             return switch (name) {
                 case "flowscope_get_status" -> toolResult(getStatus(), false);
-                case "flowscope_list_recommendations" -> toolResult(listRecommendations(), false);
+                case "flowscope_list_recommendations" -> toolResult(listRecommendations(args), false);
+                case "flowscope_get_graph" -> toolResult(getGraph(args), false);
                 case "flowscope_get_evidence" -> toolResult(getEvidence(args), false);
                 case "flowscope_cross_send_get" -> toolResult(crossSendGet(args), false);
                 case "flowscope_submit_finding" -> toolResult(submitFinding(args), false);
+                case "flowscope_list_findings" -> toolResult(listFindings(args), false);
+                case "flowscope_submit_verdict" -> toolResult(submitVerdict(args), false);
                 default -> toolError("unknown tool: " + name);
             };
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
@@ -149,6 +169,13 @@ final class FlowScopeMcp {
         summary.put("bflaTest", matrix.summary().bflaTestRecommendations());
         summary.put("bolaIdorTest", matrix.summary().bolaIdorTestRecommendations());
         ArrayNode accounts = result.putArray("accounts");
+        // 비로그인(anon)은 로그인이 필요 없고 항상 재전송할 수 있다.
+        ObjectNode anon = accounts.addObject();
+        anon.put("accountId", "anon");
+        anon.put("label", "비로그인");
+        anon.put("role", "ANONYMOUS");
+        anon.put("sessionStatus", "ANONYMOUS");
+        anon.put("usable", true);
         SessionBroker sessions = state.sessions();
         state.config().accounts().values().forEach(account -> {
             ObjectNode node = accounts.addObject();
@@ -157,22 +184,69 @@ final class FlowScopeMcp {
             node.put("service", account.service());
             node.put("role", account.role().name());
             String sessionStatus = "NONE";
+            boolean usable = false;
             if (sessions != null) {
-                sessionStatus = sessions.viewForAccount(account.id())
-                        .map(view -> view.status().name()).orElse("NONE");
+                var view = sessions.viewForAccount(account.id());
+                sessionStatus = view.map(value -> value.status().name()).orElse("NONE");
+                // 재전송 가능 여부는 상태명이 아니라 replayReady로 판단한다(CAPTURING이어도 응답 확인되면 가능).
+                usable = view.map(SessionBroker.SessionView::replayReady).orElse(false);
             }
             node.put("sessionStatus", sessionStatus);
+            node.put("usable", usable);
         });
         return result;
     }
 
-    private ObjectNode listRecommendations() {
+    private ObjectNode listRecommendations(JsonNode args) {
+        String scope = args == null ? "all" : args.path("scope").asText("all");
+        boolean bfla = scope.equals("all") || scope.equals("bfla");
+        boolean bola = scope.equals("all") || scope.equals("bola");
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
         ObjectNode result = json.createObjectNode();
         ArrayNode list = result.putArray("recommendations");
-        matrix.functions().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), null, cell.identity()));
-        matrix.objects().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), cell.resource(), cell.identity()));
+        if (bfla) matrix.functions().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), null, cell.identity()));
+        if (bola) matrix.objects().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), cell.resource(), cell.identity()));
+        log("read", "추천 목록 읽음 · scope=" + scope + " · " + list.size() + "건", false);
         return result;
+    }
+
+    /** 관측된 점검 그래프 전체: 접근 관측 + 객체 소유자. scope=core면 주요 API만(전체 응답 기준), all이면 전체. */
+    private ObjectNode getGraph(JsonNode args) {
+        String scope = args == null ? "all" : args.path("scope").asText("all");
+        boolean coreOnly = scope.equals("core");
+        var result = state.snapshot();
+        ObjectNode graph = json.createObjectNode();
+        ArrayNode scopeEntries = graph.putArray("scope");
+        state.scopeEntries().forEach(scopeEntries::add);
+
+        // 객체 소유자
+        ObjectNode owners = graph.putObject("owners");
+        result.objects.targets().forEach((resource, target) -> {
+            var owner = result.analysis.owners().get(resource);
+            ObjectNode node = owners.putObject(resource);
+            node.put("label", target.label());
+            node.put("kind", target.kind());
+            node.put("owner", owner == null || owner.identity() == null ? "" : owner.identity());
+        });
+
+        // 관측 접근: 관측(discovery) 기록만. 재전송·검증 트래픽은 그래프에서 제외(순수 관측 유지).
+        ArrayNode access = graph.putArray("access");
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (RequestRecord record : result.coverageRecords) {
+            if (!record.hasResponse || record.op == null) continue;
+            if (coreOnly && record.resource == null) continue;
+            String key = record.idn + "\u0000" + record.op + "\u0000" + record.resource + "\u0000" + record.status;
+            if (!seen.add(key)) continue;
+            ObjectNode node = access.addObject();
+            node.put("identity", record.idn);
+            node.put("method", record.method);
+            node.put("operation", record.op);
+            if (record.resource != null) node.put("resource", record.resource);
+            node.put("status", record.status);
+            node.put("source", record.source == null ? "" : record.source.name());
+        }
+        log("read", "점검 그래프 읽음 · scope=" + scope + " · 접근 " + access.size() + "건", false);
+        return graph;
     }
 
     private void addRecommendation(ArrayNode list, AuthorizationMatrix.TestRecommendation rec,
@@ -223,8 +297,11 @@ final class FlowScopeMcp {
         if (!"GET".equalsIgnoreCase(method)) {
             throw new IllegalArgumentException("flowscope_cross_send_get은 GET만 재전송합니다. 이 기록은 " + method + "입니다.");
         }
-        FlowScopeWebServer.RequestLabResult sent = state.sendRequestLab(evidenceId, requestText,
-                FlowScopeWebServer.CredentialMode.ACCOUNT, accountId);
+        // 비로그인(anon)은 세션이 없으므로 인증 헤더를 모두 지우는 ANONYMOUS 모드로 보낸다. 등록 계정은 세션값을 주입(ACCOUNT).
+        boolean anon = "anon".equalsIgnoreCase(accountId) || "ANONYMOUS".equalsIgnoreCase(accountId);
+        FlowScopeWebServer.CredentialMode mode = anon
+                ? FlowScopeWebServer.CredentialMode.ANONYMOUS : FlowScopeWebServer.CredentialMode.ACCOUNT;
+        FlowScopeWebServer.RequestLabResult sent = state.sendRequestLab(evidenceId, requestText, mode, anon ? "" : accountId);
         ObjectNode result = json.createObjectNode();
         result.put("newEvidenceId", sent.eventId());
         result.put("status", sent.status());
@@ -232,6 +309,7 @@ final class FlowScopeMcp {
         result.put("durationMs", sent.durationMs());
         String response = sent.response() == null ? "" : sent.response();
         result.put("responsePreview", response.length() > 4000 ? response.substring(0, 4000) : response);
+        log("resend", (anon ? "비로그인" : accountId) + "으로 " + firstLine(requestText) + " 재전송 → HTTP " + sent.status(), false);
         return result;
     }
 
@@ -250,10 +328,68 @@ final class FlowScopeMcp {
         LlmFinding finding = new LlmFinding(id, operation, identity, resource, verdict, confidence, note,
                 evidenceIds, System.currentTimeMillis());
         state.submitFinding(finding);
+        log("finding", (verdict.isBlank() ? "소견" : verdict) + " · " + identity + " · "
+                + (resource != null ? resource : operation), true);
         ObjectNode result = json.createObjectNode();
         result.put("saved", true);
         result.put("id", id);
         return result;
+    }
+
+    private ObjectNode listFindings(JsonNode args) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        if (args.path("ids").isArray()) args.get("ids").forEach(value -> { if (value.isTextual()) ids.add(value.asText()); });
+        ObjectNode result = json.createObjectNode();
+        ArrayNode list = result.putArray("findings");
+        for (LlmFinding finding : state.findings()) {
+            if (!ids.isEmpty() && !ids.contains(finding.id())) continue;
+            ObjectNode node = list.addObject();
+            node.put("id", finding.id());
+            node.put("operation", finding.operation());
+            node.put("identity", finding.identity());
+            if (finding.resource() != null) node.put("resource", finding.resource());
+            node.put("findingVerdict", finding.verdict());
+            node.put("note", finding.note());
+            node.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
+            node.put("judgment", finding.judgment());
+        }
+        log("read", "소견 목록 읽음 · " + list.size() + "건", false);
+        return result;
+    }
+
+    private ObjectNode submitVerdict(JsonNode args) {
+        String findingId = required(args, "finding_id");
+        String verdict = required(args, "verdict");
+        String reason = args.path("reason").asText("");
+        java.util.List<String> evidenceIds = new java.util.ArrayList<>();
+        if (args.path("evidence_ids").isArray()) {
+            args.get("evidence_ids").forEach(value -> { if (value.isTextual()) evidenceIds.add(value.asText()); });
+        }
+        LlmFinding finding = state.findings().stream().filter(item -> item.id().equals(findingId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("소견을 찾지 못했습니다: " + findingId));
+        state.submitFinding(finding.withJudgment(verdict, reason, evidenceIds, System.currentTimeMillis()));
+        String label = switch (verdict) {
+            case "vulnerable" -> "취약";
+            case "not_vulnerable" -> "취약 아님";
+            default -> "판단 불가";
+        };
+        log("verdict", "LLM 판정 " + label + " · " + finding.identity() + " · "
+                + (finding.resource() != null ? finding.resource() : finding.operation()), verdict.equals("vulnerable"));
+        ObjectNode result = json.createObjectNode();
+        result.put("saved", true);
+        result.put("id", findingId);
+        return result;
+    }
+
+    private void log(String type, String summary, boolean risk) {
+        if (activity != null) activity.record(type, summary, risk);
+    }
+
+    private static String firstLine(String requestText) {
+        if (requestText == null) return "";
+        int nl = requestText.indexOf('\n');
+        String line = (nl > 0 ? requestText.substring(0, nl) : requestText).strip();
+        return line.length() > 120 ? line.substring(0, 120) : line;
     }
 
     // ---- evidence helpers ----
@@ -311,6 +447,11 @@ final class FlowScopeMcp {
         node.put("name", name);
         node.put("description", description);
         node.set("inputSchema", schema);
+        // read-only 주석: 이 도구들은 사용자 머신·파일을 바꾸지 않는다(재전송은 GET, 소견은 FlowScope 로컬 저장).
+        // Codex가 비대화형에서 승인 없이 실행할 수 있게 한다. 실제 안전장치는 FlowScope 서버가 강제한다.
+        ObjectNode annotations = node.putObject("annotations");
+        annotations.put("readOnlyHint", true);
+        annotations.put("openWorldHint", false);
         return node;
     }
 
@@ -329,6 +470,22 @@ final class FlowScopeMcp {
         return schema;
     }
 
+    private ObjectNode recommendationSchema() {
+        ObjectNode schema = schema();
+        ObjectNode scope = ((ObjectNode) schema.get("properties")).putObject("scope");
+        scope.put("type", "string");
+        scope.putArray("enum").add("all").add("bola").add("bfla");
+        return schema;
+    }
+
+    private ObjectNode graphSchema() {
+        ObjectNode schema = schema();
+        ObjectNode scope = ((ObjectNode) schema.get("properties")).putObject("scope");
+        scope.put("type", "string");
+        scope.putArray("enum").add("all").add("core");
+        return schema;
+    }
+
     private ObjectNode crossSendSchema() {
         ObjectNode schema = schema();
         ObjectNode props = (ObjectNode) schema.get("properties");
@@ -337,6 +494,31 @@ final class FlowScopeMcp {
         ArrayNode required = (ArrayNode) schema.get("required");
         required.add("evidence_id");
         required.add("account_id");
+        return schema;
+    }
+
+    private ObjectNode findingIdsSchema() {
+        ObjectNode schema = schema();
+        ObjectNode ids = ((ObjectNode) schema.get("properties")).putObject("ids");
+        ids.put("type", "array");
+        ids.putObject("items").put("type", "string");
+        return schema;
+    }
+
+    private ObjectNode verdictSchema() {
+        ObjectNode schema = schema();
+        ObjectNode props = (ObjectNode) schema.get("properties");
+        props.putObject("finding_id").put("type", "string");
+        ObjectNode verdict = props.putObject("verdict");
+        verdict.put("type", "string");
+        verdict.putArray("enum").add("vulnerable").add("not_vulnerable").add("inconclusive");
+        props.putObject("reason").put("type", "string");
+        ObjectNode evidence = props.putObject("evidence_ids");
+        evidence.put("type", "array");
+        evidence.putObject("items").put("type", "string");
+        ArrayNode required = (ArrayNode) schema.get("required");
+        required.add("finding_id");
+        required.add("verdict");
         return schema;
     }
 
