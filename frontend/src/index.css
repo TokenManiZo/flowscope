@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "./readability.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -305,4 +306,29 @@ html.flowscope-density-90 {
   background: var(--muted);
   color: var(--muted-foreground);
   border-color: var(--border);
+}
+
+/* Font sizes grow independently of rem-based navigation widths and spacing. */
+@theme {
+  --text-xs: 13px;
+  --text-sm: 15px;
+  --text-base: 17px;
+  --text-lg: 19px;
+  --text-xl: 21px;
+  --text-2xl: 26px;
+  --text-3xl: 32px;
+  --text-4xl: 38px;
+  --text-5xl: 51px;
+}
+.flowscope-navigation {
+  font-size: 14.4px;
+  --text-xs: 10.8px;
+  --text-sm: 12.6px;
+  --text-base: 14.4px;
+  --text-lg: 16.2px;
+  --text-xl: 18px;
+  --text-2xl: 21.6px;
+  --text-3xl: 27px;
+  --text-4xl: 32.4px;
+  --text-5xl: 43.2px;
 }

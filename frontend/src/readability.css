@@ -1,0 +1,835 @@
+/* Shared spacing and reading layout approved in the size preview. */
+.flowscope-content,
+:is([role="dialog"],[role="alertdialog"]) {
+  --flowscope-control-height: 38px;
+  --flowscope-small-height: 32px;
+  --flowscope-tab-height: 34px;
+  --flowscope-tab-padding: 4px;
+  --flowscope-card-padding: 16px;
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) :is(:is([data-slot="button"],[data-size][data-variant]),[data-slot="input"],[data-slot="select-trigger"]) {
+  min-height: var(--flowscope-control-height);
+  padding-inline: var(--flowscope-input-start,12px) var(--flowscope-input-end,12px);
+  line-height: 20px
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) :is([data-slot="button"],[data-size][data-variant]):is([data-size="sm"],[data-size="xs"]) {
+  min-height: var(--flowscope-small-height);
+  padding-block: 5px;
+  line-height: 20px
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) :is([data-slot="button"],[data-size][data-variant])[data-size^="icon"] {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 6px;
+  flex: none
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) :is([data-slot="button"],[data-size][data-variant])[data-size="icon-lg"] {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) :is([data-slot="input"],[data-slot="select-trigger"],select) {
+  min-height: 38px;
+  padding-block: 8px;
+  padding-inline: var(--flowscope-input-start,12px) var(--flowscope-input-end,12px);
+  line-height: 20px
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) [role="tablist"] {
+  height: auto!important;
+  min-height: 42px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  box-sizing: border-box
+}
+:is(.flowscope-content,:is([role="dialog"],[role="alertdialog"])) [role="tablist"]>button {
+  height: auto;
+  min-height: 34px;
+  padding: 5px 12px;
+  line-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box
+}
+.flowscope-content [data-slot="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  flex: none;
+  align-self: center
+}
+.flowscope-content :is([data-slot="table-cell"],[data-slot="table-head"]) {
+  padding: 10px 12px;
+  vertical-align: middle
+}
+.flowscope-content [data-slot="table-head"] {
+  height: 42px
+}
+.flowscope-content [data-slot="table-row"] {
+  height: auto
+}
+.flowscope-content [data-slot="card"] {
+  --card-spacing: 16px;
+  gap: 12px;
+  padding-block: 16px
+}
+.flowscope-content [data-slot="card"][class~="py-0"] {
+  gap: 0;
+  padding-block: 0
+}
+.flowscope-content [data-slot="card"]:has(>[data-slot="card-header"][class~="border-b"]) {
+  gap: 0;
+  padding-block: 0
+}
+.flowscope-content [data-slot="card-header"] {
+  padding: 12px 16px;
+  gap: 4px;
+  min-height: 0;
+  align-items: center
+}
+.flowscope-content [data-slot="card-content"]:is([class~="p-4"],[class~="p-5"]) {
+  padding: 16px
+}
+.flowscope-content [data-slot="card-content"][class~="p-0"] {
+  padding: 0
+}
+.flowscope-content button[data-tone] {
+  height: auto;
+  min-height: 64px;
+  padding: 12px 36px 12px 16px;
+  line-height: 22px;
+  gap: 6px
+}
+.flowscope-content [data-slot="table-cell"]>span[class~="h-24"] {
+  height: auto;
+  min-height: 64px;
+  padding: 12px 16px
+}
+.flowscope-content [data-slot="table-head"] button[class~="min-h-12"] {
+  min-height: 26px;
+  height: auto;
+  line-height: 22px
+}
+.flowscope-content [aria-label="요청 응답 비교"] header {
+  padding: 8px 12px;
+  min-height: 0;
+  gap: 8px
+}
+.flowscope-content [aria-label="요청 응답 비교"] :is([data-slot="button"],[data-size][data-variant]) {
+  min-height: 30px
+}
+.flowscope-content [aria-label="요청 응답 비교"] select {
+  min-height: 32px;
+  padding-block: 5px
+}
+.flowscope-content aside.flowscope-inspector>aside>header {
+  padding: 16px
+}
+.flowscope-content aside.flowscope-inspector>aside>div[class~="p-4"] {
+  padding: 16px
+}
+.flowscope-content section[class~="rounded-xl"]>header {
+  padding: 12px 16px;
+  min-height: 46px;
+  align-items: center;
+  gap: 12px
+}
+.flowscope-content [data-slot="card-header"]>div[class~="flex"] {
+  align-items: center
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"]>label {
+  min-height: 44px;
+  padding-block: 6px
+}
+[data-filter-rail] {
+  height: auto;
+  min-height: 100%;
+  padding: 12px;
+  line-height: 1.45
+}
+[data-filter-rail] .rail-heading {
+  padding-bottom: 12px;
+  margin-bottom: 14px
+}
+[data-filter-rail] .rail-heading-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px
+}
+[data-filter-rail] [data-rail-clear] {
+  min-height: 28px!important;
+  padding: 4px 6px!important;
+  white-space: nowrap;
+  line-height: 20px
+}
+[data-filter-rail] .rail-guide {
+  margin-top: 6px;
+  line-height: 1.5
+}
+[data-filter-rail] .rail-selection {
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4
+}
+[data-filter-rail] fieldset {
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--border)
+}
+[data-filter-rail] legend {
+  float: none;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 8px;
+  line-height: 20px
+}
+[data-filter-rail] [data-filter-rail-row] {
+  grid-template-columns: 16px 20px minmax(0,1fr) var(--rail-count-width,32px) 28px;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 22px;
+  align-items: center;
+  box-sizing: border-box
+}
+[data-filter-rail] [data-filter-rail-row]>svg,[data-filter-rail] .rail-icon-slot>svg {
+  width: 16px;
+  height: 16px
+}
+[data-filter-rail] .rail-icon-slot {
+  display: grid;
+  width: 20px;
+  place-items: center;
+  color: var(--muted-foreground)
+}
+[data-filter-rail] [data-filter-rail-row] .tabular-nums,[data-filter-rail] [data-filter-status-label] .tabular-nums {
+  justify-self: end;
+  text-align: right;
+  min-width: 2ch;
+  font-variant-numeric: tabular-nums
+}
+[data-filter-rail] [data-filter-rail-row]:hover,[data-filter-rail] [data-filter-status-row]:not([data-empty="true"]):hover,[data-filter-rail] [data-filter-code-row]:hover {
+  background: var(--muted)
+}
+[data-filter-rail] [data-selected="true"] {
+  background: color-mix(in oklab,var(--brand) 12%,var(--background))
+}
+[data-filter-rail] [data-filter-rail-row]>[data-slot="checkbox"],
+[data-filter-rail] [data-filter-status-label]>[data-slot="checkbox"],
+[data-filter-rail] [data-filter-code-row]>[data-slot="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  align-self: center
+}
+[data-filter-rail] [data-slot="checkbox"]::after {
+  inset: -5px
+}
+[data-filter-rail] [data-filter-rail-row]:has(:focus-visible),[data-filter-rail] [data-filter-status-row]:has(:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px
+}
+[data-filter-rail] [data-filter-status-row] {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 28px;
+  gap: 6px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px;
+  border-radius: 6px;
+  box-sizing: border-box
+}
+[data-filter-rail] [data-filter-status-label] {
+  display: grid;
+  grid-template-columns: 16px 20px minmax(0,1fr) var(--rail-count-width,32px);
+  gap: 6px;
+  align-items: center;
+  line-height: 22px;
+  min-width: 0
+}
+[data-filter-rail] [data-rail-expand] {
+  width: 28px!important;
+  height: 28px!important;
+  min-width: 28px!important;
+  min-height: 28px!important;
+  padding: 5px!important
+}
+[data-filter-rail] [data-filter-status-row][data-empty="true"] {
+  opacity: .45
+}
+[data-filter-rail] .rail-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-foreground)
+}
+[data-filter-rail] [data-http-class="2xx"] .rail-status-dot {
+  background: #34d399
+}
+[data-filter-rail] [data-http-class="3xx"] .rail-status-dot {
+  background: #60a5fa
+}
+[data-filter-rail] [data-http-class="4xx"] .rail-status-dot {
+  background: #fbbf24
+}
+[data-filter-rail] [data-http-class="5xx"] .rail-status-dot {
+  background: #f87171
+}
+[data-filter-rail] [data-filter-status-children] {
+  margin: 4px 0 8px;
+  padding-left: 28px;
+  border-left: 1px solid var(--border);
+  gap: 2px
+}
+[data-filter-rail] [data-filter-code-row] {
+  grid-template-columns: 16px minmax(0,1fr) var(--rail-count-width,32px);
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 40px 5px 6px;
+  border-radius: 5px;
+  line-height: 22px
+}
+[data-filter-rail] [data-filter-code-row] .tabular-nums {
+  justify-self: end
+}
+[data-filter-rail] [data-rail-actions] {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: 0
+}
+[data-filter-rail] .rail-action-pair {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  gap: 8px
+}
+[data-filter-rail] .rail-action-pair :is([data-slot="button"],[data-size][data-variant]) {
+  height: auto;
+  min-height: 38px!important;
+  padding: 8px 12px!important;
+  gap: 8px;
+  line-height: 20px;
+  justify-content: flex-start
+}
+[data-filter-rail] .rail-action-pair svg,[data-filter-rail] [data-rail-reset] svg {
+  width: 16px;
+  height: 16px;
+  flex: none
+}
+[data-filter-rail] [data-rail-reset] {
+  width: 100%;
+  min-height: 38px!important;
+  margin-top: 8px;
+  justify-content: flex-start;
+  padding: 8px 12px!important;
+  gap: 8px;
+  color: var(--muted-foreground)
+}
+[data-filter-rail] [data-filter-rail-row],[data-filter-rail] [data-filter-status-row] {
+  min-height: 38px;
+  padding: 4px
+}
+[data-filter-rail] fieldset>div[class~="grid"]:not([class*="grid-cols-"]) {
+  gap: 4px
+}
+[data-filter-rail] [data-filter-code-row] {
+  padding-right: 38px
+}
+
+[data-filter-rail] [data-filter-rail-row]>:nth-child(2) {
+  justify-self: center
+}
+[data-filter-rail] .rail-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px
+}
+[data-filter-rail] .rail-count-label {
+  padding-right: 38px;
+  font-weight: 400;
+  white-space: nowrap
+}
+[data-filter-rail] [data-selected="true"]:hover {
+  background: color-mix(in oklab,var(--brand) 18%,var(--background))
+}
+[data-filter-rail] [data-filter-status-row][data-empty="true"] {
+  opacity: 1;
+  color: var(--muted-foreground)
+}
+[data-filter-rail] [data-filter-status-row][data-empty="true"] .rail-status-dot {
+  opacity: .4
+}
+[aria-labelledby="llm-judgment-title"] [aria-label="판정 결과 분류"] {
+  height: auto!important;
+  min-height: 44px;
+  padding: 0 12px;
+  gap: 4px;
+  align-items: stretch
+}
+[aria-labelledby="llm-judgment-title"] [aria-label="판정 결과 분류"]>button {
+  height: 44px;
+  min-height: 44px;
+  padding: 10px 12px;
+  line-height: 22px;
+  border-radius: 0
+}
+[aria-labelledby="llm-judgment-title"] [aria-label="판정 결과 분류"]>div {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 6px
+}
+[aria-labelledby="llm-judgment-title"] [aria-label="판정 결과 분류"]>div>button[role="tab"] {
+  height: 42px;
+  min-height: 42px;
+  padding: 10px 0;
+  line-height: 22px
+}
+[data-finding-id] {
+  container-type: inline-size;
+  border-left-width: 1px
+}
+[data-finding-id] [id^="finding-detail-"] {
+  padding: 18px 20px
+}
+[data-finding-id] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) :is(p,li,li>span) {
+  line-height: 1.7;
+  max-width: none;
+  min-width: 0
+}
+[data-finding-id] [aria-label="판정 요약"] li {
+  row-gap: 6px
+}
+[aria-label="LLM 판정 진행 기록"] article {
+  padding: 12px 16px;
+  grid-template-columns: 64px minmax(0,1fr) max-content;
+  gap: 12px
+}
+[aria-label="LLM 판정 진행 기록"] article :is(p,button,pre) {
+  line-height: 1.65
+}
+[aria-labelledby="llm-judgment-title"] form>input {
+  flex: 1;
+  min-width: 0
+}
+[aria-labelledby="llm-judgment-title"] form>button {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px
+}
+@container(min-width:1050px){
+ [data-finding-id]:not([role="dialog"]) [id^="finding-detail-"]>div.grid {
+  grid-template-columns: minmax(0,1.4fr) minmax(340px,1fr);
+  align-items: start;
+  gap: 24px
+}
+ [data-finding-id]:not([role="dialog"]) [id^="finding-detail-"]>div.grid>section:first-child {
+  grid-column: 1;
+  grid-row: 1
+}
+ [data-finding-id]:not([role="dialog"]) [id^="finding-detail-"]>div.grid>[aria-label="요청 근거"] {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 24px
+}
+ [data-finding-id]:not([role="dialog"]) [id^="finding-detail-"]>div.grid>dl {
+  grid-column: 1;
+  grid-row: 2
+}
+ [data-finding-id]:not([role="dialog"]) [aria-label="판정 요약"] li {
+  grid-template-columns: 8.5rem minmax(0,1fr)
+}
+}
+[data-finding-id][role="dialog"] {
+  width: calc(100vw - 64px);
+  max-width: none;
+  margin-inline: auto
+}
+[data-finding-id][role="dialog"] [id^="finding-detail-"] {
+  padding: 24px
+}
+[data-finding-id][role="dialog"] [id^="finding-detail-"]>div.grid {
+  grid-template-columns: minmax(0,1fr);
+  gap: 24px
+}
+[data-finding-id][role="dialog"] [id^="finding-detail-"]>div.grid>* {
+  grid-column: auto;
+  grid-row: auto
+}
+[data-finding-id][role="dialog"] [aria-label="요청 근거"] {
+  border-left: 0;
+  padding-left: 0;
+  min-width: 0
+}
+[data-finding-id][role="dialog"] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) li {
+  grid-template-columns: 9rem minmax(0,1fr);
+  gap: 12px
+}
+[data-finding-id][role="dialog"] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) :is(p,li,li>span) {
+  line-height: 1.75;
+  max-width: none;
+  min-width: 0
+}
+@media(max-width:640px){[data-finding-id][role="dialog"] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) li {
+  grid-template-columns: minmax(0,1fr);
+  gap: 6px
+}
+}
+[data-slot="input"]:is([class~="pl-8"],[class~="ps-8"]) {
+  --flowscope-input-start: 36px
+}
+[data-slot="input"]:is([class~="pr-8"],[class~="pe-8"]) {
+  --flowscope-input-end: 36px
+}
+[data-slot="input"]:is([class~="pr-16"],[class~="pe-16"]) {
+  --flowscope-input-end: 72px
+}
+:is(.flowscope-content,[role="dialog"],[role="alertdialog"]) :is(div,label):has(>[data-slot="input"])>svg[class~="absolute"]:is([class~="left-2"],[class~="left-2.5"],[class~="right-2.5"]) {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  pointer-events: none
+}
+:is(.flowscope-content,[role="dialog"],[role="alertdialog"]) :is(div,label):has(>[data-slot="input"])>button[class~="absolute"] {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0
+}
+:is(.flowscope-content,[role="dialog"],[role="alertdialog"]) button[aria-label$="도움말"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px!important;
+  height: 24px!important;
+  min-width: 24px!important;
+  min-height: 24px!important;
+  padding: 0!important;
+  flex: 0 0 24px;
+  vertical-align: middle
+}
+:is(.flowscope-content,[role="dialog"],[role="alertdialog"]) button[aria-label$="도움말"]>svg {
+  width: 14px;
+  height: 14px;
+  flex: none
+}
+[data-filter-rail] legend>span:has(>button[aria-label$="도움말"]) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: fit-content
+}
+[data-finding-id][role="dialog"] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) li {
+  max-width: none;
+  width: 100%
+}
+@media(max-width:640px){[data-finding-id][role="dialog"] {
+  width: calc(100vw - 32px)
+}
+}
+[data-finding-id] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) li {
+  width: 100%;
+  max-width: none
+}
+@container(max-width:600px){
+ [data-finding-id]:not([role="dialog"]) :is([aria-label="판정 요약"],[aria-label="소견 요약"]) li {
+  grid-template-columns: minmax(0,1fr);
+  gap: 6px
+}
+}
+[data-filter-rail] :is(.rail-action-pair button,[data-rail-reset]) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground)
+}
+[data-filter-rail] :is(.rail-action-pair button,[data-rail-reset]):hover {
+  background: var(--muted)
+}
+[data-filter-rail] .rail-action-pair button[aria-pressed="true"] {
+  color: var(--brand);
+  font-weight: 600
+}
+
+[data-finding-id] h3 {
+  line-height: 1.4
+}
+[data-finding-id] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) li>strong {
+  line-height: 1.7
+}
+[data-filter-rail] .rail-title-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0
+}
+
+[aria-labelledby="llm-judgment-title"] label {
+  line-height: 1.5
+}
+[aria-labelledby="llm-judgment-title"] input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  flex: none
+}
+[aria-label="LLM 판정 진행 기록"] article {
+  grid-template-columns: 64px minmax(0,1fr) max-content;
+  align-items: center
+}
+[aria-label="LLM 판정 진행 기록"] article>span:last-child {
+  white-space: nowrap;
+  min-width: max-content;
+  align-self: center
+}
+[aria-label="LLM 판정 진행 기록"] article>:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  height: 28px;
+  min-height: 28px;
+  line-height: 22px;
+  box-sizing: border-box
+}
+
+.flowscope-content :is([class~="text-[10px]"],[class~="text-[11px]"]),
+:is([role="dialog"],[role="alertdialog"],[data-slot="popover-content"]) :is([class~="text-[10px]"],[class~="text-[11px]"]) {
+  font-size: 13px
+}
+.flowscope-content [class~="text-[13px]"] {
+  font-size: 15px
+}
+.flowscope-content [class~="text-[14px]"] {
+  font-size: 16.5px
+}
+.flowscope-content [class~="text-[15px]"] {
+  font-size: 18px
+}
+[aria-labelledby="llm-judgment-title"] :is([class~="text-sm"],[class~="text-base"],label) {
+  font-size: 18px
+}
+[aria-labelledby="llm-judgment-title"] :is([class~="text-xs"],[class~="text-[11px]"]) {
+  font-size: 16px
+}
+#llm-judgment-title {
+  font-size: 28px
+}
+[data-finding-id] :is([aria-label="판정 요약"],[aria-label="소견 요약"]) :is(p,li>span,li>strong) {
+  font-size: 20px;
+  line-height: 1.7
+}
+[data-finding-id] h3[class] {
+  font-size: 22px;
+  line-height: 1.4
+}
+[data-finding-id] [aria-label="요청 근거"] {
+  font-size: 17px
+}
+[data-finding-id] [aria-label="요청 근거"] :is([class~="text-xs"],[class~="text-sm"]) {
+  font-size: 17px
+}
+[data-finding-id]>div:first-child :is([class~="text-xs"],[class~="text-sm"],[class~="text-lg"]) {
+  font-size: 18px
+}
+[data-finding-id] dl dd {
+  font-size: 18px
+}
+[data-finding-id] dl dt {
+  font-size: 15px
+}
+
+.flowscope-content [class~="text-[0.8rem]"] {
+  font-size: 13.6px
+}
+
+/* Enlarged setup forms must leave room for the live request list on small windows. */
+@media (max-width: 899px), (max-height: 850px) {
+  .source-run-controls {
+    min-height: 0;
+    max-height: 55%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Collection feeds and project management: approved readability adjustments. */
+.flowscope-content [data-record-list]>button{
+  min-height:48px;
+  padding:12px 16px;
+  gap:12px;
+  font-size:17px;
+  line-height:24px;
+  grid-template-columns:64px 80px minmax(300px,1fr) 144px 80px 112px
+}
+.flowscope-content [data-record-list]>button>span{
+  font-size:17px!important;
+  line-height:24px
+}
+.flowscope-content [data-record-list]>button>span.inline-flex{
+  font-size:16px!important;
+  min-height:28px;
+  line-height:22px;
+  padding-block:2px
+}
+.flowscope-content [data-record-list]>button>:nth-child(2){
+  width:72px
+}
+.flowscope-content [data-record-list]>button>:last-child{
+  white-space:nowrap
+}
+.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-content"]>div[aria-hidden="true"]{
+  min-height:44px;
+  padding:10px 16px;
+  gap:12px;
+  grid-template-columns:64px 80px minmax(300px,1fr) 144px 80px 112px
+}
+.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-content"]>div[aria-hidden="true"]>span{
+  font-size:16px
+}
+.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-title"]{
+  font-size:20px
+}
+.flowscope-content [data-record-list],.flowscope-content [data-slot="card"]:has([data-record-list]) [data-slot="card-content"]>div[aria-hidden="true"]{
+  min-width:892px
+}
+.flowscope-content [data-slot="card"]:has([aria-label="수집 출처 필터"]) :is([data-record-list]>button,[data-slot="card-content"]>div[aria-hidden="true"]){
+  grid-template-columns:64px 80px minmax(320px,1fr) 56px 144px 144px 80px 112px
+}
+.flowscope-content [data-slot="card"]:has([aria-label="수집 출처 필터"]) :is([data-record-list],[data-slot="card-content"]>div[aria-hidden="true"]){
+  min-width:1220px
+}
+/* Keep source-account action labels fully visible. */
+.flowscope-content [role="group"][aria-label$="대상 계정"]>:is(label,div){
+  grid-template-columns:16px minmax(120px,1fr) 140px 164px;
+  gap:12px;
+  min-height:48px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"]{
+  width:164px;
+  min-width:164px;
+  height:40px;
+  min-height:40px;
+  grid-template-columns:18px minmax(0,1fr);
+  gap:8px;
+  padding:8px 12px;
+  font-size:15px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"] svg{
+  width:18px;
+  height:18px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"]>span{
+  font-size:15px;
+  white-space:nowrap
+}
+/* Project manager stays content-sized; only its usable width and typography grow. */
+[role="dialog"][aria-describedby="project-manager-description"]{
+  width:calc(100vw - 48px);
+  max-width:1040px;
+  max-height:90svh;
+  padding:28px;
+  gap:24px;
+  font-size:18px
+}
+[aria-describedby="project-manager-description"] [data-slot="dialog-title"]{
+  font-size:28px;
+  line-height:1.35
+}
+[aria-describedby="project-manager-description"] :is([data-slot="dialog-description"],[class~="text-sm"]){
+  font-size:18px;
+  line-height:1.5
+}
+[aria-describedby="project-manager-description"] [class~="text-xs"]{
+  font-size:16px;
+  line-height:1.5
+}
+[aria-describedby="project-manager-description"] [class~="text-base"]{
+  font-size:24px;
+  line-height:1.4
+}
+[aria-describedby="project-manager-description"] :is([data-size][data-variant],input){
+  height:44px;
+  min-height:44px;
+  font-size:17px
+}
+[aria-describedby="project-manager-description"] [role="tablist"]{
+  min-height:48px;
+  padding:4px;
+  align-items:center
+}
+[aria-describedby="project-manager-description"] [role="tab"]{
+  height:40px;
+  min-height:40px;
+  padding:8px 12px;
+  font-size:18px
+}
+[aria-describedby="project-manager-description"] [aria-label="프로젝트 목록"]{
+  max-height:360px
+}
+[aria-describedby="project-manager-description"] [aria-label="프로젝트 목록"] li>div{
+  padding:14px 16px;
+  min-height:76px
+}
+.flowscope-content [class~="size-[58px]"][data-size][data-variant]{
+  width:58px;
+  height:58px;
+  min-width:58px;
+  min-height:58px;
+  padding:12px
+}
+.flowscope-content [class~="size-[58px]"][data-size][data-variant]>svg{
+  width:30px;
+  height:30px
+}
+@media(max-width:639px){
+.flowscope-content [role="group"][aria-label$="대상 계정"]>:is(label,div){
+  grid-template-columns:16px minmax(80px,1fr) 140px
+}
+.flowscope-content [role="group"][aria-label$="대상 계정"] button[aria-label*="로그인"]{
+  grid-column:2 / span 2;
+  justify-self:end
+}
+[role="dialog"][aria-describedby="project-manager-description"]{
+  width:calc(100vw - 24px);
+  padding:20px;
+  gap:20px
+}
+}
+
+/* Dashboard uses the same readable list density as request records. */
+.flowscope-dashboard { font-size: 18px; line-height: 1.5; }
+.flowscope-dashboard h1 { font-size: 32px; line-height: 1.3; }
+.flowscope-dashboard :is([class~="text-xs"], [class~="text-sm"]) { font-size: 18px; }
+.flowscope-dashboard [class~="text-[11px]"] { font-size: 16px; }
+.flowscope-dashboard [data-dashboard-stage] { padding: 24px; gap: 18px; }
+.flowscope-dashboard [data-dashboard-stage] > div:first-of-type { font-size: 20px; }
+.flowscope-dashboard [data-dashboard-stage] > p { font-size: 48px; }
+.flowscope-dashboard [data-dashboard-stage] [role="group"] { min-height: 28px; }
+.flowscope-dashboard [aria-label="현재 요약"] { font-size: 16px; gap: 4px 8px; }
+.flowscope-dashboard section > header { min-height: 54px; padding: 12px 16px; align-items: center; }
+.flowscope-dashboard section > header h2 { font-size: 20px; }
+.flowscope-dashboard section > header a { font-size: 16px; }
+.flowscope-dashboard section > ul > li > :is(a, div) { min-height: 52px; padding: 12px 16px; }
+.flowscope-dashboard [aria-label="최근 관측"] ul > li > a { min-height: 72px; }
+.flowscope-dashboard [aria-label="출처별 발견"] .size-2 { width: 10px; height: 10px; }
+.flowscope-dashboard [data-dashboard-time] { font-size: 16px; }
+@media (max-width: 639px) {
+  .flowscope-dashboard [data-dashboard-stage] { padding: 20px; gap: 14px; }
+  .flowscope-dashboard section > header { flex-wrap: wrap; }
+}

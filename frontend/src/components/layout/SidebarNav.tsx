@@ -51,7 +51,7 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
 
       </nav>
 
-      <SidebarProject collapsed={collapsed} onNavigate={onNavigate} />
+      <SidebarProject collapsed={collapsed} />
       <div className="shrink-0 border-t border-border p-2">
         <button
           type="button"
@@ -71,7 +71,7 @@ export function SidebarNav({ route, theme, onToggleTheme, onNavigate, collapsed 
  * 사이드바 맨 아래 현재 프로젝트 블록: 이름, [프로젝트 관리], 실시간 상태(상단 상태 표시줄에서 옮김)를 한 카드에 둔다.
  * 평소 저장 상태는 숨기고, 저장 실패만 빨간색으로 남긴다.
  */
-function SidebarProject({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+function SidebarProject({ collapsed }: { collapsed: boolean }) {
   const projects = useProjectsQuery()
   const [open, setOpen] = useState(false)
   const active = projects.data?.active
@@ -83,7 +83,7 @@ function SidebarProject({ collapsed, onNavigate }: { collapsed: boolean; onNavig
         <span className="truncate font-mono text-sm font-semibold" title={active?.name}>{active?.name ?? (projects.isPending ? "불러오는 중" : "미저장 진단")}</span>
         {failed && <span title={projects.data?.saveError || undefined} className="text-[11px] font-medium text-destructive">저장 실패</span>}
       </div>}
-      <button type="button" onClick={() => { setOpen(true); onNavigate?.() }} aria-label="프로젝트 관리" title={collapsed ? "프로젝트 관리" : undefined}
+      <button type="button" onClick={() => setOpen(true)} aria-label="프로젝트 관리" title={collapsed ? "프로젝트 관리" : undefined}
         className={cn("flex h-9 w-full items-center justify-center gap-2 rounded-md border border-border bg-background text-sm font-medium hover:bg-muted", failed && collapsed && "border-destructive")}>
         <FolderCog className="size-4 shrink-0" aria-hidden="true" />
         <span className={collapsed ? "sr-only" : "truncate"}>프로젝트 관리</span>

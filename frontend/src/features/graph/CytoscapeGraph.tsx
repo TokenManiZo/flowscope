@@ -1,3 +1,4 @@
+import {useMinimapVisibility} from "./useMinimapVisibility";
 import { graphApiOperations } from "./graphApiOperations"
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape"
@@ -61,13 +62,17 @@ interface Props {
 
 type ApiCard = ParameterNodeCardView & { apiColor?: string; apiConfirmed?: boolean }
 function renderParameterNodeCardSvg(...args: Parameters<typeof renderBaseCard>): ReturnType<typeof renderBaseCard> {
-  const image = renderBaseCard(...args), card = args[0] as ApiCard
+  // Custom sizes are display pixels; convert once so repeated renders never compound the scale.
+  const scale = 1.18
+  const size = args[2]
+  const image = renderBaseCard(args[0], args[1], size && { width: size.width / scale, height: size.height / scale }, args[3], args[4]), card = args[0] as ApiCard
+  const enlarged = { ...image, width: Math.round(image.width * scale), height: Math.round(image.height * scale) }
   const color = apiColors.find(value => value.id === card.apiColor), theme = args[3] ?? "dark"
-  if (!color && !card.apiConfirmed) return image
+  if (!color && !card.apiConfirmed) return enlarged
   let svg = decodeURIComponent(image.uri.split(",")[1])
   if (color) svg = svg.replace(/(<rect width="[^"]+" height="[^"]+" rx="10" )fill="[^"]+" stroke="[^"]+"/, `$1fill="${color[theme]}" stroke="${color.swatch}"`)
   if (card.apiConfirmed) svg = svg.replace("</svg>", `<rect x="${image.width - 70}" y="9" width="58" height="22" rx="5" fill="${theme === "dark" ? "#450a0a" : "#fee2e2"}"/><text x="${image.width - 41}" y="24" text-anchor="middle" fill="${theme === "dark" ? "#fca5a5" : "#b91c1c"}" font-family="sans-serif" font-size="11" font-weight="600">취약점</text></svg>`)
-  return { ...image, uri: `data:image/svg+xml,${encodeURIComponent(svg)}` }
+  return { ...enlarged, uri: `data:image/svg+xml,${encodeURIComponent(svg)}` }
 }
 
 const noConfirmedNodes = new Set<string>()
@@ -872,7 +877,7 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
           { selector: 'node[kind = "route-candidate"]', style: { "border-width": 2, "border-style": "dotted", "border-color": "#64748b" } },
           { selector: 'node[groupState = "closed"]', style: { "border-width": 1.5, "border-style": "dashed", "border-color": "#94a3b8" } },
           { selector: 'node[groupState = "open"]', style: { "border-width": 2, "border-style": "solid", "border-color": "#0ea5e9" } },
-          { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "9px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "round-taxi", "taxi-direction": "rightward", "taxi-radius": 4, opacity: 0.9 } },
+          { selector: "edge", style: { width: 1.7, "line-color": "data(color)", "line-style": "data(line)", "target-arrow-color": "data(color)", "target-arrow-shape": "triangle", "arrow-scale": 0.65, label: "data(label)", color: "#d4d4d8", "font-size": "12px", "font-family": "Geist Mono, ui-monospace, monospace", "text-background-color": "#090b0d", "text-background-opacity": 0.86, "text-background-padding": "2px", "text-rotation": "autorotate", "text-margin-y": -7, "curve-style": "round-taxi", "taxi-direction": "rightward", "taxi-radius": 4, opacity: 0.9 } },
           { selector: "edge:selected", style: { width: 2.6, "line-color": "data(color)", "target-arrow-color": "data(color)" } },
           // 강조 필터에 맞는 엣지만 색을 입힌다. 선택 강조(focused)는 그 위에 한 번 더 적용되고, 필터에서 빠진 요소는 마지막 규칙으로 늘 흐리게 둔다.
           // 출처가 없는 Site Overview 구조 엣지는 색·굵기를 바꾸지 않고 불일치 요소만 흐린다.
@@ -1378,7 +1383,9 @@ export function CytoscapeGraph({ projection, locked, fitVersion, layoutVersion =
 }
 
 /** 오른쪽 위 미니맵. 누르거나 끌면 그 지점을 화면 가운데로 옮긴다. 강조 필터에서 빠진 노드는 흐리게 그린다. */
-function Minimap({ view, onCenter }: { view: MinimapView; onCenter(point: { x: number; y: number }): void }) {
+export function Minimap({ view, onCenter }: { view: MinimapView; onCenter(point: { x: number; y: number }): void }) {
+  const [expanded, setExpanded] = useMinimapVisibility()
+  const contentId = useId()
   const center = (svg: SVGSVGElement, clientX: number, clientY: number) => {
     const matrix = svg.getScreenCTM?.()
     if (!matrix) return
@@ -1388,12 +1395,15 @@ function Minimap({ view, onCenter }: { view: MinimapView; onCenter(point: { x: n
     onCenter({ x: model.x, y: model.y })
   }
   const { box } = view
-  return <div className="absolute right-3 top-12 z-20 overflow-hidden rounded-md border border-border/70 bg-[var(--flowscope-pane)] shadow-sm" style={{ width: MINIMAP_WIDTH, height: MINIMAP_HEIGHT }}>
+  return <div className={"absolute right-3 top-12 z-20 " + (expanded ? "overflow-hidden rounded-md border border-border/70 bg-[var(--flowscope-pane)] shadow-sm" : "")} style={{ width: expanded ? MINIMAP_WIDTH : 24, height: expanded ? MINIMAP_HEIGHT : 22 }}>
+    <button type="button" title={expanded ? "미니맵 접기" : "미니맵 펼치기"} aria-label={expanded ? "미니맵 접기" : "미니맵 펼치기"} aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)} className="absolute right-0 top-0 z-10 inline-flex h-[22px] w-6 items-center justify-center rounded bg-[var(--flowscope-pane)] text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground hover:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"><span aria-hidden="true">{expanded ? "−" : "+"}</span></button>
+    <div id={contentId} hidden={!expanded}>
     <svg role="img" aria-label="그래프 미니맵" width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT} viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`} preserveAspectRatio="xMidYMid meet" className="cursor-pointer touch-none"
       onPointerDown={(event) => { event.currentTarget.setPointerCapture?.(event.pointerId); center(event.currentTarget, event.clientX, event.clientY) }}
       onPointerMove={(event) => { if (event.buttons === 1) center(event.currentTarget, event.clientX, event.clientY) }}>
       {view.nodes.map((node) => <rect key={node.id} x={node.x} y={node.y} width={node.w} height={node.h} rx={10} className={node.dim ? "fill-muted-foreground/15" : "fill-muted-foreground/55"} />)}
       <rect x={view.view.x} y={view.view.y} width={view.view.w} height={view.view.h} className="fill-sky-400/10 stroke-sky-500" strokeWidth={2} vectorEffect="non-scaling-stroke" />
     </svg>
+    </div>
   </div>
 }

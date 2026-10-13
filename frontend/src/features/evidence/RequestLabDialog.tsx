@@ -77,7 +77,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
   const requestRef = useRef<HTMLTextAreaElement>(null)
   const responseRef = useRef<HTMLTextAreaElement>(null)
   const originalPosition = useRef({ start: 0, end: 0, top: 0, left: 0, responseTop: 0, responseLeft: 0 })
-  const [fontSize, setFontSize] = useState(14)
+  const [fontSize, setFontSize] = useState(15)
   const [panelFocus, setPanelFocus] = useState<"both" | "request" | "response">("both")
   const [jsonView, setJsonView] = useState({ request: false, response: false })
   const [split, setSplit] = useState(50)
@@ -661,7 +661,7 @@ export function RequestLabDialog({ open, onOpenChange, event, accounts, sessions
               </SelectContent>
             </Select></div>
             <Button type="button" variant="outline" size="sm" className={`h-[36px] px-2.5 text-[14px] ${selectedButtonClass}`} aria-pressed={view === "original"} disabled={!draft || suspended || busy || originalOnly} title={originalOnly ? "이 기록은 원문이 일부만 남아 있어 편집할 수 없습니다." : undefined} onClick={toggleOriginal}>{view === "original" ? "편집 화면으로" : "원문 보기"}</Button>
-            <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
+            <label className="flex items-center gap-2">글자 크기<select aria-label="글자 크기" className={settingClass} value={fontSize} onChange={event => setFontSize(Number(event.target.value))}>{[12, 14, 15, 16, 18].map(size => <option key={size} value={size}>{size}px</option>)}</select></label>
             <Button type="button" variant="outline" size="sm" className="h-[36px] min-w-[128px] border-muted-foreground/60 px-2.5 text-[14px] [&_svg]:size-[18px]" aria-pressed={maximized} onClick={() => { finishResize(); setMaximized(current => !current) }}>{maximized ? <Minimize2 aria-hidden="true" className="size-[18px]" /> : <Maximize2 aria-hidden="true" className="size-[18px]" />}{maximized ? "원래 크기" : "전체화면"}</Button>
             <Button type="button" size="sm" className="h-[36px] min-w-[144px] items-center justify-center gap-1.5 px-2.5 text-[14px] [&_svg]:size-[18px]" disabled={suspended || !draft || !editable || editRejected || credentialsRequired || loading || busy || (mode === "ACCOUNT" && !selectedAccountValid)} onClick={() => void send()}><Send aria-hidden="true" className="size-[18px]" /><span>{sending ? "요청 재전송 중" : "요청 재전송"}</span></Button>
           </div>

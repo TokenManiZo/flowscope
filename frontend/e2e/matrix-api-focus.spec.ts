@@ -22,13 +22,21 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
     await page.addInitScript(theme => localStorage.setItem("flowscope-theme", theme), theme)
     const origin = new URL(baseURL!).origin
     const errors: string[] = [], mutations: string[] = []
+    let exclusions: unknown[] = []
     page.on("pageerror", error => errors.push(error.message))
     await page.route("**/*", async route => {
       const request = route.request(), url = new URL(request.url())
       if (url.origin !== origin) { await route.abort(); return }
       if (!url.pathname.startsWith("/api/")) { await route.continue(); return }
-      if (request.method() !== "GET") { mutations.push(url.pathname); await route.abort(); return }
-      const body = url.pathname === "/api/snapshot" ? { ...snapshotFixture, displayObjects, authorizationMatrix: matrix }
+      if (request.method() !== "GET") {
+        if (url.pathname === "/api/matrix-exclusions") {
+          exclusions = JSON.parse(new URLSearchParams(request.postData() ?? "").get("entries") ?? "[]")
+          await route.fulfill({ json: { datasetRevision: 1, entries: exclusions } }); return
+        }
+        mutations.push(url.pathname); await route.abort(); return
+      }
+      const body = url.pathname === "/api/snapshot" ? { ...snapshotFixture, datasetRevision: 1, displayObjects, authorizationMatrix: matrix }
+        : url.pathname === "/api/matrix-exclusions" ? { datasetRevision: 1, entries: exclusions }
         : url.pathname === "/api/projects" ? { directory: "/test/projects", active: { id: "matrix-project", name: "Matrix", scope: [service], managed: true, readable: true }, projects: [], saveState: "SAVED" }
           : url.pathname === "/api/scanner-run" ? scannerRunFixture
             : url.pathname === "/api/human-run" ? humanRunFixture
@@ -42,7 +50,9 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
     await expect(table.getByRole("row")).toHaveCount(3)
     await expect(table.getByText("객체 8개")).toBeVisible()
     const heights = await table.locator("button[data-tone]").evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height))
-    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(1)
+    // Short status cards stay compact; wrapped labels grow with their content.
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(64)
+    expect(Math.max(...heights)).toBeLessThan(86)
     await expect(table.getByText("BOLA/IDOR 후보")).toBeVisible()
     const help = page.getByRole("button", { name: "BOLA/IDOR 후보 · USER B · GET /api/shop/orders/{id} 설명", exact: true })
     await help.scrollIntoViewIfNeeded()
@@ -61,7 +71,7 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
     await expect(table.getByRole("row")).toHaveCount(9)
     await expect(table.getByRole("button", { name: /GET \/api\/shop\/orders\/opaque.* 관련 결과 보기/ })).toHaveCount(8)
     await expect(table.getByText("/api/auth/login")).toHaveCount(0)
-    await page.getByRole("button", { name: "PATH · OBJ 4 매트릭스에서 제외", exact: true }).click()
+    await page.getByRole("button", { name: "OBJ 4 매트릭스에서 제외", exact: true }).click()
     await expect(table.getByRole("row")).toHaveCount(8)
     await page.getByRole("button", { name: "실행 취소" }).click()
     await expect(table.getByRole("row")).toHaveCount(9)
@@ -73,7 +83,7 @@ for (const theme of ["dark", "light"] as const) for (const width of [600, 1280])
     await expect(page.getByRole("tab", { name: /객체 권한/ })).toHaveAttribute("aria-selected", "true")
     await expect(table.getByRole("row")).toHaveCount(2)
     await page.getByRole("button", { name: "제외한 항목 1" }).click()
-    await expect(page.getByText("매트릭스에서만 제외됩니다. 원본 요청과 판정 기록은 유지됩니다.")).toBeVisible()
+    await expect(page.getByText("매트릭스와 이후 LLM 검사에서 제외됩니다. 원본 요청과 기존 판정 기록은 유지됩니다.")).toBeVisible()
     await page.getByRole("button", { name: "전체 복원" }).click()
     await page.keyboard.press("Escape")
     await expect(table.getByRole("row")).toHaveCount(3)

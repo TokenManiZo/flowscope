@@ -65,7 +65,7 @@ for (const theme of ["dark", "light"] as const) {
       for (const edge of current.edges) expect(edge.opacity).toBe(matched === null || matched.includes(edge.target) ? 0.9 : 0.12)
     }
     const rail = page.getByRole("complementary", { name: "분석 필터" })
-    const human = rail.getByRole("checkbox", { name: /^HUMAN/ }), scanner = rail.getByRole("checkbox", { name: /^SCANNER/ }), alice = rail.getByRole("checkbox", { name: /^alice/ }), serverError = rail.getByRole("checkbox", { name: /^5xx/ })
+    const human = rail.getByRole("checkbox", { name: /^사람/ }), scanner = rail.getByRole("checkbox", { name: /^스캐너/ }), alice = rail.getByRole("checkbox", { name: /^alice/ }), serverError = rail.getByRole("checkbox", { name: /^5xx/ })
     const ordersOnly = [`target:${first}`, groupId(first, "orders")]
     await human.click()
     await expectMatches([...ordersOnly, groupId(first, "products")])
@@ -82,7 +82,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "목록", exact: true }).click()
     const otherGroup = page.locator("[data-graph-node-id]").filter({ hasText: second })
     await expect(otherGroup).toHaveClass(/opacity-30/)
-    await rail.getByRole("button", { name: "초기화", exact: true }).click()
+    await rail.getByRole("button", { name: "그래프 초기화", exact: true }).click()
     await expect(otherGroup).not.toHaveClass(/opacity-30/)
 
     // API 그룹·상세 화면의 기존 신원·출처·응답 코드 색 강조는 유지한다.
@@ -90,7 +90,8 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "그래프", exact: true }).click()
     await expect(canvas).toHaveAttribute("data-graph-geometry", /"nodes":\[/)
     const groupBaseline = await readGraph()
-    expect(groupBaseline.nodes).toHaveLength(3)
+    // Registered and anonymous identity nodes are both included in the current graph.
+    expect(groupBaseline.nodes).toHaveLength(4)
     await alice.click()
     await expect.poll(async () => (await readGraph()).edges.map(edge => [edge.color, edge.opacity, edge.width])).toEqual(groupBaseline.edges.map(edge => edge.source === "identity:alice" ? ["rgb(52,211,154)", 1, "2.6px"] : [edge.color, 0.12, edge.width]))
     await page.screenshot({ path: testInfo.outputPath(`api-group-colors-${theme}.png`), animations: "disabled" })
