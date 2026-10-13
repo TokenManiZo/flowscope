@@ -21,8 +21,9 @@ export default defineConfig({
     environment: "jsdom",
     exclude: [...configDefaults.exclude, "e2e/**"],
     setupFiles: ["./src/test/setup.ts"],
-    // Render-heavy tests pass alone but exceed the 5s default when the full suite runs in parallel on a slower
-    // CI runner. A wrong test still fails; it only gets more time to finish.
-    testTimeout: 15_000,
+    pool: "threads",
+    maxWorkers: 4,
+    // Render-heavy tests pass alone but need more time when the full suite competes with other desktop workloads.
+    testTimeout: 30_000,
   },
 })

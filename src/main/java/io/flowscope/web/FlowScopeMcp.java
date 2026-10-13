@@ -98,7 +98,7 @@ final class FlowScopeMcp {
         ObjectNode result = json.createObjectNode();
         result.put("protocolVersion", negotiate(params.path("protocolVersion").asText(LATEST_PROTOCOL)));
         result.putObject("capabilities").putObject("tools").put("listChanged", false);
-        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.1.0");
+        result.putObject("serverInfo").put("name", "flowscope").put("version", "1.2.0");
         result.put("instructions", "점검이 끝난 데이터에 대한 LLM 교차 계정 검증(추천)만 수행한다. "
                 + "flowscope_list_recommendations로 GET 추천을 읽고, flowscope_cross_send_get으로 보내는 계정 세션으로 "
                 + "GET만 재전송하며(쓰기·외부 네트워크·웹 검색 금지), flowscope_submit_finding으로 소견을 남긴다. "

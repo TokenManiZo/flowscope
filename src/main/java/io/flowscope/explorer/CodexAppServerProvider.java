@@ -163,7 +163,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
              BufferedReader input = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
             ObjectNode init = JSON.createObjectNode().put("method", "initialize").put("id", 1);
             init.putObject("params").putObject("clientInfo")
-                    .put("name", "flowscope").put("title", "FlowScope Explorer").put("version", "1.1.0");
+                    .put("name", "flowscope").put("title", "FlowScope Explorer").put("version", "1.2.0");
             writeCatalogMessage(output, init);
             readCatalogResponse(input, 1);
             writeCatalogMessage(output, JSON.createObjectNode().put("method", "initialized")
@@ -532,7 +532,7 @@ public final class CodexAppServerProvider implements ExplorerProvider {
         private ObjectNode initializeParams() {
             ObjectNode params = JSON.createObjectNode();
             params.putObject("clientInfo").put("name", "flowscope")
-                    .put("title", "FlowScope Explorer").put("version", "1.1.0");
+                    .put("title", "FlowScope Explorer").put("version", "1.2.0");
             params.putObject("capabilities").put("experimentalApi", true);
             return params;
         }
