@@ -62,12 +62,12 @@ const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promis
   notifyDatasetReplacing()
   return result
 }
-export const startProject = (values: { name: string; scope: string }) =>
+export const startProject = (values: { name: string; scope: string; startUrl?: string }) =>
   confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "start", ...values }))
 export const openProject = (id: string) =>
   confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "open", id }))
 /** 현재 프로젝트의 이름·점검 범위 수정. 이미 모은 기록은 그대로 두고 이후 수집만 새 범위를 따른다. */
-export const updateProject = (values: { name: string; scope: string }) =>
+export const updateProject = (values: { name: string; scope: string; startUrl?: string }) =>
   postForm<ProjectStatus>("/api/projects", { action: "update", ...values })
 export const resetProjectTraffic = () =>
   confirmedDatasetReplacement(() => postForm<ProjectStatus>("/api/projects", { action: "reset" }))
@@ -85,7 +85,7 @@ export const saveOperationObjectPolicy = (operation: string, resource: string, p
 export const saveReview = (itemId: string, status: ReviewStatus, note: string) => postForm<ApiSuccess>("/api/review", { itemId, status, note })
 export const saveTrafficOverride = (operation: string, value: string) => postForm<ApiSuccess>("/api/traffic-override", { operation, value })
 export const mergeIdentity = (from: string, into: string) => postForm<ApiSuccess>("/api/identity-merge", { from, into })
-export const saveAccount = (values: { id: string; label: string; role: string; target: string }) =>
+export const saveAccount = (values: { id: string; label: string; role: string; target: string; startUrl?: string }) =>
   postForm<AccountSaveResult>("/api/account-save", values)
 export const getAccountSettings = <T>(account: string, signal?: AbortSignal) =>
   apiFetch<T>(`/api/account-settings?${new URLSearchParams({ account })}` as `/api/${string}`, formSignal(signal))

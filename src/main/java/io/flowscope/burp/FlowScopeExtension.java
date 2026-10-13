@@ -1551,6 +1551,10 @@ public final class FlowScopeExtension implements BurpExtension {
     }
 
     private ProjectWorkspace.Status beginNewProject(String name, String requestedScope) throws IOException {
+        return beginNewProject(name, requestedScope, "");
+    }
+
+    private ProjectWorkspace.Status beginNewProject(String name, String requestedScope, String startUrl) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
             throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
         }
@@ -1558,7 +1562,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (parsed.isEmpty()) throw new IllegalArgumentException("새 진단에는 exact scope가 한 개 이상 필요합니다.");
 
         Path preserved = preserveCurrentProject();
-        ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, requestedScope);
+        ProjectWorkspace.Allocation next = projectWorkspace.allocate(name, requestedScope, startUrl);
         try {
             sqliteProjectStore.save(next.database(), List.of(), new AnalysisConfig(), List.of(), List.of(),
                     Map.of(), List.of(), List.of(), next.context());
@@ -1579,11 +1583,15 @@ public final class FlowScopeExtension implements BurpExtension {
      * 새 범위를 따르며, 바뀐 이름·범위를 바로 저장한다. 실행 중인 작업이 있으면 막는다.
      */
     private ProjectWorkspace.Status updateActiveProject(String name, String requestedScope) throws IOException {
+        return updateActiveProject(name, requestedScope, null);
+    }
+
+    private ProjectWorkspace.Status updateActiveProject(String name, String requestedScope, String startUrl) throws IOException {
         if (scopeMutationBlocked(runContexts)) {
             throw new IllegalStateException("활성 HUMAN·ZAP·LLM 실행을 먼저 종료하거나 취소하세요.");
         }
         if (activeProjectDatabase == null) throw new IllegalStateException("수정할 현재 프로젝트가 없습니다.");
-        ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, requestedScope);
+        ProjectStore.ProjectContext next = ProjectWorkspace.updatedContext(activeProjectContext, name, requestedScope, startUrl);
         ScopePolicy parsed = ScopePolicy.parse(requestedScope);
         activeProjectContext = next;
         scope = parsed;
@@ -1791,7 +1799,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 throw new IllegalArgumentException("legacy JSON 프로젝트에 복원 가능한 scope가 없습니다.");
             }
             ProjectWorkspace.Allocation migrated = projectWorkspace.allocate(context.name(),
-                    String.join("\n", context.scope()));
+                    String.join("\n", context.scope()), context.startUrl());
             context = migrated.context();
             try {
                 sqliteProjectStore.save(migrated.database(), loaded, data.config(), data.assessments(),
@@ -2163,12 +2171,10 @@ public final class FlowScopeExtension implements BurpExtension {
             @Override public void humanRunStarted(String runId) {
                 RunContextRegistry.Context context = runContexts.current(Source.HUMAN, runId);
                 if (context == null) throw new IllegalStateException("HUMAN 수집 실행을 찾지 못했습니다.");
-                String service = context.accountId() == null ? null
-                        : analysisConfig.account(context.accountId()).orElseThrow().service();
-                String target = scope.entries().stream()
-                        .filter(entry -> service == null || entry.startsWith(service + "/"))
-                        .findFirst().orElseThrow(() -> new IllegalStateException("계정의 서비스를 점검 범위에 추가하세요."));
-                try { humanBrowsers.start(context, URI.create(target)); }
+                AccountProfile account = context.accountId() == null ? null
+                        : analysisConfig.account(context.accountId()).orElseThrow();
+                String target = scope.validateStartUrl(account == null ? projectStartUrl() : accountStartUrl(account));
+                try { humanBrowsers.start(context, URI.create(target.isBlank() ? "about:blank" : target)); }
                 catch (IOException error) { throw new IllegalStateException(error.getMessage(), error); }
             }
             @Override public void humanRunStopped(String runId) { humanBrowsers.stop(runId); }
@@ -2215,17 +2221,19 @@ public final class FlowScopeExtension implements BurpExtension {
                 return zapCampaign.startAuthenticationOnly(id);
             }
             @Override public List<String> scopeEntries() { return scope.entries(); }
+            @Override public List<String> configuredScopeEntries() { return scope.configuredEntries(); }
+            @Override public String projectStartUrl() { return activeProjectContext == null ? "" : activeProjectContext.startUrl(); }
             @Override public ProjectWorkspace.Status projectStatus() {
                 return currentProjectStatus();
             }
-            @Override public ProjectWorkspace.Status startProject(String name, String projectScope) {
-                return runProjectTask(() -> beginNewProject(name, projectScope));
+            @Override public ProjectWorkspace.Status startProject(String name, String projectScope, String startUrl) {
+                return runProjectTask(() -> beginNewProject(name, projectScope, startUrl));
             }
             @Override public ProjectWorkspace.Status openProject(String id) {
                 return runProjectTask(() -> openWorkspaceProject(id));
             }
-            @Override public ProjectWorkspace.Status updateProject(String name, String projectScope) {
-                return runProjectTask(() -> updateActiveProject(name, projectScope));
+            @Override public ProjectWorkspace.Status updateProject(String name, String projectScope, String startUrl) {
+                return runProjectTask(() -> updateActiveProject(name, projectScope, startUrl));
             }
             @Override public ProjectWorkspace.Status resetProjectTraffic() {
                 return runProjectTask(FlowScopeExtension.this::resetActiveProjectTraffic);
@@ -2267,15 +2275,13 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public List<ExplorerAccountVault.View> explorerAccounts() { return explorer.accounts(); }
             @Override public ExplorerAccountVault.View openExplorerBrowserLogin(String id, String url) {
-                // LLM sessions belong to accounts registered under 계정·세션; the login URL must be that account's service.
+                // Login pages may use another scoped host; adopt credentials for the registered account service.
                 AccountProfile account = analysisConfig.account(id == null ? "" : id.trim()).orElseThrow(() ->
                         new IllegalArgumentException("등록되지 않은 계정입니다. 계정·세션에서 먼저 등록하세요."));
-                URI login = URI.create(url.trim());
-                validateRuntimeAccount(account.id(), account.label(),
-                        login.getScheme() + "://" + login.getAuthority(), account.role().name());
+                String login = scope.validateStartUrl(url == null || url.isBlank() ? accountStartUrl(account) : url);
                 try {
                     ensureExplorerProxyListener();
-                    return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), url);
+                    return explorer.openBrowserLogin(account.id(), account.label(), account.role().name(), login, account.service());
                 } catch (java.io.IOException error) {
                     throw new IllegalStateException(error.getMessage());
                 }

@@ -45,7 +45,7 @@ public final class AnalysisConfig {
         if (identity != null && role != null) {
             identityRoles.put(identity, role);
             accounts.computeIfPresent(identity, (ignored, account) ->
-                    new AccountProfile(account.id(), account.label(), account.service(), role));
+                    new AccountProfile(account.id(), account.label(), account.service(), role, account.startUrl()));
         }
         return this;
     }

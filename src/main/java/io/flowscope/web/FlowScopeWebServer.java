@@ -182,6 +182,17 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default ProjectWorkspace.Status projectStatus() {
             return new ProjectWorkspace.Status("", null, List.of());
         }
+        default String projectStartUrl() { return ""; }
+        default List<String> configuredScopeEntries() { return scopeEntries(); }
+        default String accountStartUrl(AccountProfile account) {
+            return account.startUrl().isBlank() ? projectStartUrl() : account.startUrl();
+        }
+        default ProjectWorkspace.Status startProject(String name, String scope, String startUrl) {
+            return startProject(name, scope);
+        }
+        default ProjectWorkspace.Status updateProject(String name, String scope, String startUrl) {
+            return updateProject(name, scope);
+        }
         default ProjectWorkspace.Status startProject(String name, String scope) {
             throw new UnsupportedOperationException("project workflow is unavailable");
         }
@@ -843,9 +854,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (form == null) return invalidForm(request);
             String action = required(form, "action").toLowerCase(Locale.ROOT);
             ProjectWorkspace.Status status = switch (action) {
-                case "start" -> state.startProject(form.getOrDefault("name", ""), required(form, "scope"));
+                case "start" -> state.startProject(form.getOrDefault("name", ""), required(form, "scope"), form.getOrDefault("startUrl", ""));
                 case "open" -> state.openProject(required(form, "id"));
-                case "update" -> state.updateProject(form.getOrDefault("name", ""), required(form, "scope"));
+                case "update" -> state.updateProject(form.getOrDefault("name", ""), required(form, "scope"), form.get("startUrl"));
                 case "reset" -> state.resetProjectTraffic();
                 case "delete" -> state.deleteProject(required(form, "id"));
                 default -> throw new IllegalArgumentException("지원하지 않는 프로젝트 작업입니다.");
@@ -886,6 +897,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("active", entry.active());
         body.put("readable", entry.readable());
         body.put("managed", entry.managed());
+        body.put("startUrl", entry.startUrl());
         return body;
     }
 
@@ -1227,7 +1239,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             String service = normalizeService(required(form, "target"));
             String id = form.getOrDefault("id", "").trim();
             if (id.isBlank()) id = uniqueAccountId(label);
-            state.config().upsertAccount(new AccountProfile(id, label, service, parseRole(form.get("role"))));
+            String startUrl = form.containsKey("startUrl") ? form.get("startUrl")
+                    : state.config().account(id).map(AccountProfile::startUrl).orElse("");
+            startUrl = io.flowscope.core.ScopePolicy.parse(String.join("\n", state.configuredScopeEntries())).validateStartUrl(startUrl);
+            state.config().upsertAccount(new AccountProfile(id, label, service, parseRole(form.get("role")), startUrl));
             state.rebuild();
             ObjectNode body = json.createObjectNode();
             body.put("success", true);
@@ -1284,6 +1299,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
         body.put("label", account.label());
         body.put("role", account.role().label());
         body.put("target", account.service());
+        body.put("startUrl", account.startUrl());
+        body.put("defaultStartUrl", state.projectStartUrl());
 
         SessionBroker.SessionView session = state.sessions() == null ? null
                 : state.sessions().viewForAccount(accountId).orElse(null);
@@ -1315,7 +1332,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
         ObjectNode zapNode = body.putObject("zap");
         zapNode.put("enabled", zap != null);
         zapNode.put("status", zap == null ? "UNVERIFIED" : zap.status().name());
-        zapNode.put("loginUrl", zap == null ? "" : zap.loginUrl());
+        zapNode.put("loginUrl", zap == null ? state.accountStartUrl(account) : zap.loginUrl());
         // 사용자 결정: 같은 로컬 UI에서 다시 입력하지 않도록 저장된 ID·비밀번호를 그대로 보여 준다.
         // 이 값은 이 응답(인증된 loopback UI)에만 실리고 프로젝트·snapshot·Evidence·로그·LLM에는 넣지 않는다.
         ZapAccountVault.Credentials credentials = zap == null ? null : state.zapCredentials(accountId).orElse(null);
@@ -1601,6 +1618,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
                         .put("minutes", budget.minutes());
             }
             body.set("accounts", json.valueToTree(state.explorerAccounts()));
+            body.put("startUrl", state.projectStartUrl());
+            ObjectNode loginUrls = body.putObject("loginUrls");
+            state.config().accounts().values().forEach(account -> loginUrls.put(account.id(), state.accountStartUrl(account)));
             body.set("scope", json.valueToTree(state.scopeEntries()));
             return json(200, body);
         }
@@ -1664,7 +1684,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             ExplorerAccountVault.View account;
             String message;
             if (action.equals("browser-open")) {
-                account = state.openExplorerBrowserLogin(required(form, "id"), required(form, "url"));
+                account = state.openExplorerBrowserLogin(required(form, "id"), form.getOrDefault("url", ""));
                 message = "브라우저 창에서 로그인한 뒤 [로그인 완료]를 누르세요.";
             } else if (action.equals("browser-complete")) {
                 account = state.completeExplorerBrowserLogin(required(form, "id"));

@@ -114,6 +114,8 @@ final class ExplorerCoordinatorTest {
         final List<java.net.HttpCookie> cookies = new java.util.ArrayList<>();
         final java.util.Map<String, String> headers = new java.util.LinkedHashMap<>();
         int opened;
+        java.net.URI openedUrl;
+        java.net.URI credentialTarget;
         int acted;
         boolean closed;
         boolean recording;
@@ -128,9 +130,10 @@ final class ExplorerCoordinatorTest {
         @Override public Session open(java.net.URI loginUrl,
                 java.util.function.Consumer<Exchange> recorder) {
             opened++;
+            openedUrl = loginUrl;
             sink = recorder;
             return new Session() {
-                @Override public List<java.net.HttpCookie> cookies(java.net.URI target) { return List.copyOf(cookies); }
+                @Override public List<java.net.HttpCookie> cookies(java.net.URI target) { credentialTarget = target; return List.copyOf(cookies); }
                 @Override public java.util.Map<java.lang.String, java.lang.String> authHeaders(java.net.URI target) {
                     return java.util.Map.copyOf(headers);
                 }
@@ -151,6 +154,28 @@ final class ExplorerCoordinatorTest {
                 @Override public boolean alive() { return !closed; }
                 @Override public void close() { closed = true; }
             };
+        }
+    }
+
+    @Test
+    void loginPageAndApiCredentialOriginAreIndependentAndBlankBrowserIsSupported() throws Exception {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        FakeWindow window = new FakeWindow();
+        try (ExplorerCoordinator coordinator = new ExplorerCoordinator(vault,
+                request -> { throw new AssertionError("no HTTP during login"); }, new FakeProvider(),
+                new RunContextRegistry(), value -> value.startsWith("https://mobile.example.test/") || value.startsWith("https://example.test/"),
+                () -> Pipeline.run(List.of()), ignored -> {})) {
+            coordinator.loginBrowser(window);
+            coordinator.openBrowserLogin("a", "A", "USER", "https://mobile.example.test/login", "https://example.test/");
+            assertEquals("https://mobile.example.test/login", window.openedUrl.toString());
+            window.headers.put("Authorization", "Bearer api-session");
+            coordinator.completeBrowserLogin("a");
+            assertEquals("https://example.test/", window.credentialTarget.toString());
+            assertEquals("Bearer api-session", vault.authenticationHeaders("a", java.net.URI.create("https://example.test/api")).get("Authorization"));
+            assertFalse(vault.authenticationHeaders("a", java.net.URI.create("https://mobile.example.test/api")).containsKey("Authorization"));
+            coordinator.removeAccount("a");
+            coordinator.openBrowserLogin("b", "B", "USER", "", "https://example.test/");
+            assertEquals("about:blank", window.openedUrl.toString());
         }
     }
 

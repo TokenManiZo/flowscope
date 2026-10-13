@@ -68,6 +68,25 @@ public final class ScopePolicy {
         }
     }
 
+    /** 브라우저 시작 주소는 실제 HTTP(S) URL이며 수집 범위를 넓히지 않는다. */
+    public static String normalizeStartUrl(String value) {
+        String url = value == null ? "" : value.trim();
+        if (url.isEmpty()) return "";
+        URI uri = URI.create(url);
+        if (!("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                || uri.getHost() == null || uri.getUserInfo() != null || uri.getFragment() != null
+                || uri.getHost().contains("*") || uri.getPort() == 0 || uri.getPort() > 65535) {
+            throw new IllegalArgumentException("시작 주소에는 와일드카드가 아닌 실제 HTTP(S) 사이트 URL을 입력하세요.");
+        }
+        return uri.toASCIIString();
+    }
+
+    public String validateStartUrl(String value) {
+        String url = normalizeStartUrl(value);
+        if (!url.isEmpty() && !allows(url)) throw new IllegalArgumentException("시작할 사이트 주소를 점검 범위에 포함하세요.");
+        return url;
+    }
+
     public boolean isEmpty() { return entries.isEmpty(); }
     /** 실행을 시작할 수 있는 유효한 루트 URL. wildcard 항목은 apex URL로 반환한다. */
     public List<String> entries() {

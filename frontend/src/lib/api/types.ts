@@ -944,6 +944,8 @@ export interface ExplorerBrowserBudget {
 }
 
 export interface ExplorerRunEnvelope {
+  startUrl?: string
+  loginUrls?: Readonly<Record<string, string>>
   run: ExplorerRun
   /** Present only while a login window is being driven. */
   browser: ExplorerBrowserBudget | null
@@ -959,6 +961,7 @@ export interface ApiSuccess {
 }
 
 export interface ProjectEntry {
+  startUrl?: string
   id: string
   name: string
   scope: readonly string[]

@@ -98,6 +98,8 @@ export interface ExplorerLoginSettings {
 }
 
 export interface AccountSettings {
+  startUrl?: string;
+  defaultStartUrl?: string;
   id: string;
   label: string;
   role: AccountRole;
@@ -112,6 +114,7 @@ export interface AccountSettings {
 }
 
 export interface BasicInfoInput {
+  startUrl?: string;
   label: string;
   role: AccountRole;
   target: string;

@@ -12,6 +12,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class ExplorerAccountVaultTest {
     @Test
+    void adoptedHeadersStayOnTheirOriginIncludingTheDefaultPort() {
+        ExplorerAccountVault vault = new ExplorerAccountVault();
+        vault.register("a", "A", "USER");
+        vault.adoptSession("a", URI.create("https://api.example.test/"), List.of(), Map.of("Authorization", "Bearer test"));
+        assertEquals("Bearer test", vault.authenticationHeaders("a", URI.create("https://api.example.test:443/items")).get("Authorization"));
+        assertFalse(vault.authenticationHeaders("a", URI.create("https://other.example.test/items")).containsKey("Authorization"));
+        assertFalse(vault.authenticationHeaders("a", URI.create("http://api.example.test/items")).containsKey("Authorization"));
+    }
+
+    @Test
     void adoptedBrowserSessionIsSentButNeverAppearsInViews() {
         ExplorerAccountVault vault = new ExplorerAccountVault();
         vault.register("human-a", "테스터", "USER");

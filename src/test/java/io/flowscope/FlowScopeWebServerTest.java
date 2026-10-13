@@ -66,6 +66,24 @@ final class FlowScopeWebServerTest {
         state.zapAccounts.close();
     }
 
+    @Test void accountLoginDefaultsFollowTheProjectWithoutOverwritingIndividualUrls() throws Exception {
+        state.projectStartUrl = "https://mobile.example.test/login?next=home";
+        state.scannerScope = List.of("https://*.example.test/");
+        state.config.upsertAccount(new AccountProfile("a", "A", "https://example.test", io.flowscope.core.AccessRole.USER));
+        start();
+        var inherited = JSON.readTree(get("/api/account-settings?account=a", token, null).body());
+        assertEquals(state.projectStartUrl, inherited.path("defaultStartUrl").asText());
+        assertEquals(state.projectStartUrl, inherited.at("/zap/loginUrl").asText());
+        var saved = post("/api/account-save", "id=a&label=A&target=https%3A%2F%2Fexample.test&role=USER&startUrl=https%3A%2F%2Fother.example.test%2Flogin", token);
+        assertEquals(200, saved.statusCode(), saved.body());
+        state.projectStartUrl = "https://mobile.example.test/changed";
+        var overridden = JSON.readTree(get("/api/account-settings?account=a", token, null).body());
+        assertEquals("https://other.example.test/login", overridden.path("startUrl").asText());
+        assertEquals("https://other.example.test/login", overridden.at("/zap/loginUrl").asText());
+        var llm = JSON.readTree(get("/api/explorer-run", token, null).body());
+        assertEquals("https://other.example.test/login", llm.at("/loginUrls/a").asText());
+    }
+
     @Test void snapshotUsesStoredSessionAndNeverCurrentRunToChangeHistoricalIdentity() throws Exception {
         state.record.collectionAccountId = "anon";
         state.record.runId = "selected-run";
@@ -1829,6 +1847,8 @@ final class FlowScopeWebServerTest {
     }
 
     private static final class TestState implements FlowScopeWebServer.State {
+        private String projectStartUrl = "";
+        @Override public String projectStartUrl() { return projectStartUrl; }
         private final AnalysisConfig config = new AnalysisConfig();
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();

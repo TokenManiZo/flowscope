@@ -397,7 +397,7 @@ public final class SqliteProjectStore {
             if (!scopeNode.isArray()) throw new IllegalArgumentException("invalid project scope");
             for (JsonNode entry : scopeNode) scope.add(entry.asText());
             return new ProjectStore.ProjectContext(node.path("name").asText(""), scope,
-                    java.time.Instant.parse(required(node, "created_at")));
+                    java.time.Instant.parse(required(node, "created_at")), node.path("start_url").asText(""));
         } catch (SQLException error) {
             throw new IOException("FlowScope SQLite metadata read failed", error);
         }
@@ -524,6 +524,12 @@ public final class SqliteProjectStore {
                 account.setString(3, required(value, "service"));
                 account.setString(4, required(value, "role"));
                 account.addBatch();
+                if (value.hasNonNull("start_url")) {
+                    policy.setString(1, "account_start_urls");
+                    policy.setString(2, required(value, "id"));
+                    policy.setString(3, value.path("start_url").asText());
+                    policy.addBatch();
+                }
             }
             account.executeBatch();
             for (JsonNode value : policyRoot.path("session_bindings")) {
@@ -619,6 +625,7 @@ public final class SqliteProjectStore {
         readPolicyEntries(connection, policy, "resource_policies");
         readPolicyEntries(connection, policy, "traffic_overrides");
         readPolicyEntries(connection, policy, "llm_findings");
+        readPolicyEntries(connection, policy, "account_start_urls");
         ArrayNode accounts = policy.putArray("accounts");
         try (Statement statement = connection.createStatement();
              ResultSet values = statement.executeQuery(
@@ -629,6 +636,9 @@ public final class SqliteProjectStore {
                 account.put("label", values.getString(2));
                 account.put("service", values.getString(3));
                 account.put("role", values.getString(4));
+                if (policy.path("account_start_urls").has(values.getString(1))) {
+                    account.put("start_url", policy.path("account_start_urls").path(values.getString(1)).asText());
+                }
             }
         }
         ArrayNode bindings = policy.putArray("session_bindings");

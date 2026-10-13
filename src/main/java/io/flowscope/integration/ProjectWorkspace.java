@@ -38,7 +38,11 @@ public final class ProjectWorkspace {
 
     public record Entry(String id, String name, List<String> scope, String createdAt,
                         long modifiedAtMillis, long sizeBytes, boolean active, boolean readable,
-                        boolean managed) {
+                        boolean managed, String startUrl) {
+        public Entry(String id, String name, List<String> scope, String createdAt,
+                     long modifiedAtMillis, long sizeBytes, boolean active, boolean readable, boolean managed) {
+            this(id, name, scope, createdAt, modifiedAtMillis, sizeBytes, active, readable, managed, "");
+        }
         public Entry {
             scope = List.copyOf(scope == null ? List.of() : scope);
         }
@@ -88,8 +92,13 @@ public final class ProjectWorkspace {
     }
 
     public Allocation allocate(String requestedName, String rawScope) throws IOException {
+        return allocate(requestedName, rawScope, "");
+    }
+
+    public Allocation allocate(String requestedName, String rawScope, String startUrl) throws IOException {
         ScopePolicy parsed = ScopePolicy.parse(rawScope);
         if (parsed.isEmpty()) throw new IllegalArgumentException("새 진단에는 exact scope가 한 개 이상 필요합니다.");
+        startUrl = parsed.validateStartUrl(startUrl);
         Instant now = clock.instant();
         String displayName = requestedName == null ? "" : requestedName.trim();
         if (displayName.length() > 120) throw new IllegalArgumentException("프로젝트 이름은 120자 이하여야 합니다.");
@@ -107,7 +116,7 @@ public final class ProjectWorkspace {
         Files.createDirectory(directory);
         restrictDirectory(directory);
         ProjectStore.ProjectContext context = new ProjectStore.ProjectContext(
-                displayName, parsed.configuredEntries(), now);
+                displayName, parsed.configuredEntries(), now, startUrl);
         return new Allocation(directory.getFileName().toString(), directory,
                 directory.resolve(DATABASE_NAME), context);
     }
@@ -118,12 +127,18 @@ public final class ProjectWorkspace {
      */
     public static ProjectStore.ProjectContext updatedContext(ProjectStore.ProjectContext current, String requestedName,
                                                              String rawScope) {
+        return updatedContext(current, requestedName, rawScope, current.startUrl());
+    }
+
+    public static ProjectStore.ProjectContext updatedContext(ProjectStore.ProjectContext current, String requestedName,
+                                                             String rawScope, String startUrl) {
         ScopePolicy parsed = ScopePolicy.parse(rawScope);
         if (parsed.isEmpty()) throw new IllegalArgumentException("점검 대상 주소가 한 개 이상 필요합니다.");
         String displayName = requestedName == null ? "" : requestedName.trim();
         if (displayName.length() > 120) throw new IllegalArgumentException("프로젝트 이름은 120자 이하여야 합니다.");
         if (displayName.isBlank()) displayName = current.name().isBlank() ? defaultName(parsed.entries().getFirst()) : current.name();
-        return new ProjectStore.ProjectContext(displayName, parsed.configuredEntries(), current.createdAt());
+        return new ProjectStore.ProjectContext(displayName, parsed.configuredEntries(), current.createdAt(),
+                startUrl == null ? current.startUrl() : startUrl);
     }
 
     public Path resolveDatabase(String id) {
@@ -217,7 +232,7 @@ public final class ProjectWorkspace {
         boolean selected = active != null && database.toAbsolutePath().normalize().equals(active);
         return new Entry(id, name, context.scope(),
                 context.present() ? context.createdAt().toString() : "",
-                modifiedAt(database), size, selected, readable, managed);
+                modifiedAt(database), size, selected, readable, managed, context.startUrl());
     }
 
     private static long modifiedAt(Path path) {

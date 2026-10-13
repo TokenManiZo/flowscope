@@ -68,6 +68,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const steer = useExplorerSteerMutation()
   const openLogin = useExplorerBrowserLoginMutation()
   const completeLogin = useExplorerBrowserCompleteMutation()
+  const [loginUrls, setLoginUrls] = useState<Record<string, string>>({})
   const [anonymous, setAnonymous] = useState<boolean | null>(null)
   const [selected, setSelected] = useState<string[] | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
@@ -78,6 +79,7 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const [steerState, setSteerState] = useState<"sent" | "failed" | null>(null)
 
   const data = query.data
+  useEffect(() => { setLoginUrls({}) }, [datasetRevision])
   useEffect(() => { setSteerState(null) }, [data?.run.runId, datasetRevision])
   const run = data?.run
   const active = run ? activeStates.has(run.status) : false
@@ -155,14 +157,15 @@ export function LlmPass({ target, accounts = [], datasetRevision = 0, evidenceOr
   const loginBusy = openLogin.isPending || completeLogin.isPending
   const rows = accounts.map((account) => {
     const session = sessions.get(account.id)
+    const loginUrl = loginUrls[account.id] ?? (session?.loginUrl && session.loginUrl !== "about:blank" ? session.loginUrl : data?.loginUrls?.[account.id] || data?.startUrl || "")
     const ready = session?.status === "READY"
     const waiting = Boolean(session?.browserOpen) && !ready
     return {
       id: account.id, label: account.label, configured: ready,
       statusText: ready ? "세션 있음" : waiting ? "로그인 대기" : "로그인 필요",
-      action: waiting
+      action: <div className="flex flex-wrap items-center justify-end gap-2"><Input aria-label={`${account.label} 로그인 주소`} value={loginUrl === "about:blank" ? "" : loginUrl} placeholder="비워 두면 프로젝트 시작 주소 사용" className="h-8 w-[220px] max-w-full font-mono text-xs" disabled={active || loginBusy || waiting} onChange={event => setLoginUrls(current => ({ ...current, [account.id]: event.target.value }))} />{waiting
         ? <Button type="button" size="sm" disabled={active || loginBusy} aria-label={`${account.label} 로그인 완료`} onClick={() => completeLogin.mutate(account.id)}>로그인 완료</Button>
-        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy || !target} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: target })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>,
+        : <Button type="button" size="sm" variant="outline" className="grid h-[24px] w-[110px] grid-cols-[12px_minmax(0,1fr)] gap-1 px-2 text-[11px] [&_svg]:size-[12px]" disabled={active || loginBusy} aria-label={`${account.label} 브라우저 로그인`} onClick={() => openLogin.mutate({ id: account.id, url: loginUrl })}><LogIn aria-hidden="true" /><span className="text-center">{ready ? "다시 로그인" : "브라우저 로그인"}</span></Button>}</div>,
     }
   })
   const modelControl = <div className="flex shrink-0 items-center gap-2 text-sm">

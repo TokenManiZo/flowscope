@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Check, Folder, FolderOpen, Pencil, Plus, RotateCcw, Save, Search, Trash2, X } from "lucide-react"
+import { Check, ChevronDown, Folder, FolderOpen, Pencil, Plus, RotateCcw, Save, Search, Trash2, X } from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
@@ -10,41 +10,18 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { InfoHint } from "@/components/ui/info-hint"
+import { isWildcardScopeInput, normalizeScopeEntry, normalizeStartUrl, siteScope } from "@/lib/scopeInput"
+export { normalizeScopeEntry } from "@/lib/scopeInput"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDeleteProjectMutation, useOpenProjectMutation, useProjectsQuery, useResetProjectTrafficMutation, useStartProjectMutation, useUpdateProjectMutation } from "@/lib/query/hooks"
 import { cn } from "@/lib/utils"
-
-/** Bare DNS names default to HTTPS; a leading *. remains an explicit wildcard scope. */
-export function normalizeScopeEntry(raw: string): { entry: string | null; note?: string } {
-  const value = raw.trim()
-  if (!value) return { entry: null }
-  try {
-    const domainPattern = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
-    const bareDomain = new RegExp(`^${domainPattern}$`, "i").test(value)
-      && !/^[0-9.]+$/.test(value)
-    const bareWildcard = new RegExp(`^\\*\\.${domainPattern}$`, "i").test(value)
-    const url = new URL(bareDomain || bareWildcard ? `https://${value}` : value)
-    if (url.username || url.password) return { entry: null, note: "사용자정보가 포함된 주소는 등록할 수 없습니다." }
-    if (url.protocol !== "http:" && url.protocol !== "https:") return { entry: null, note: "http 또는 https 주소만 등록할 수 있습니다." }
-    const wildcard = url.hostname.startsWith("*.")
-    if (wildcard && !new RegExp(`^\\*\\.${domainPattern}$`, "i").test(url.hostname)) return { entry: null, note: "와일드카드는 *.example.com 형식으로 입력하세요." }
-    if (!wildcard && url.hostname.includes("*")) return { entry: null, note: "와일드카드는 *.example.com 형식으로 입력하세요." }
-    const port = url.port || (url.protocol === "https:" ? "443" : "80")
-    const path = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")
-    const entry = `${url.protocol}//${url.hostname}:${port}${path}`
-    return wildcard ? { entry, note: `루트 도메인과 모든 하위 도메인을 ${url.protocol === "https:" ? "HTTPS" : "HTTP"} 범위로 등록했습니다.` }
-      : bareDomain ? { entry, note: "HTTPS로 등록했습니다. 하위 도메인도 포함하려면 *.example.com 형식을 사용하세요." }
-      : url.search || url.hash ? { entry, note: "쿼리와 뒷부분은 제외하고 등록했습니다." } : { entry }
-  } catch {
-    return { entry: null, note: "주소 형식이 올바르지 않습니다. 예: http://127.0.0.1:8888" }
-  }
-}
 
 function suggestName(scopes: readonly string[]): string {
   const first = scopes[0]
   if (!first) return ""
   try {
-    const url = new URL(first)
+    const url = new URL(first.replace(/^(https?:\/\/)\*\./i, "$1"))
     return `${url.hostname.replace(/^\*\./, "")}-${url.port || (url.protocol === "https:" ? "443" : "80")}`
   } catch {
     return first.replace(/^https?:\/\//, "").replace(/[:/]/g, "-")
@@ -90,13 +67,11 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   const [editOpen, setEditOpen] = useState(false)
   const [editName, setEditName] = useState("")
   const [editScopes, setEditScopes] = useState<string[]>([])
-  const [editDraft, setEditDraft] = useState("")
+  const [editStartUrl, setEditStartUrl] = useState("")
+  const [startUrl, setStartUrl] = useState("")
   const [editNote, setEditNote] = useState<string | null>(null)
   const [fallbackId, setFallbackId] = useState("")
-  const [scopeDraft, setScopeDraft] = useState("")
   const [scopes, setScopes] = useState<string[]>([])
-  const [scopeNote, setScopeNote] = useState<string | null>(null)
-  const [scopeError, setScopeError] = useState(false)
   const [name, setName] = useState("")
   const [nameTouched, setNameTouched] = useState(false)
 
@@ -110,24 +85,19 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
     .filter(project => project.id !== active?.id)
     .filter(project => !needle || project.name.toLowerCase().includes(needle) || project.scope.some(scope => scope.toLowerCase().includes(needle)))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-  const suggested = useMemo(() => suggestName(scopes), [scopes])
+  const baseScope = siteScope(startUrl)
+  const createScopes = [...new Set([...(baseScope ? [baseScope] : []), ...scopes])]
+  const suggested = useMemo(() => suggestName(baseScope ? [baseScope] : scopes), [baseScope, scopes])
   const effectiveName = (nameTouched ? name : suggested).trim()
   const nameTaken = (value: string, except?: string) => list.some(project => project.id !== except && project.name.toLowerCase() === value.toLowerCase())
   const duplicateName = effectiveName.length > 0 && nameTaken(effectiveName)
-  const canCreate = scopes.length > 0 && effectiveName.length > 0 && !duplicateName && !busy
+  const canCreate = Boolean(normalizeStartUrl(startUrl).url) && createScopes.length > 0 && effectiveName.length > 0 && !duplicateName && !busy
 
-  const addTo = (draft: string, current: readonly string[], onAdd: (entry: string) => void, onNote: (note: string | null, failed: boolean) => void) => {
-    const { entry, note } = normalizeScopeEntry(draft)
-    if (!entry) return onNote(note ?? "대상 주소를 입력하세요.", true)
-    if (current.some(scope => normalizeScopeEntry(scope).entry === entry)) return onNote("이미 등록된 대상입니다.", true)
-    onAdd(entry)
-    onNote(note ?? null, false)
-  }
   const beginEdit = () => {
     if (!active) return
     setEditName(active.name)
     setEditScopes([...active.scope])
-    setEditDraft("")
+    setEditStartUrl(active.startUrl ?? "")
     setEditNote(null)
     setEditOpen(true)
   }
@@ -135,7 +105,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
     const nextName = editName.trim()
     if (!active || !nextName || !editScopes.length) return
     if (nameTaken(nextName, active.id)) return setEditNote("같은 이름의 프로젝트가 이미 있습니다.")
-    updateProject.mutate({ name: nextName, scope: editScopes.join("\n") }, { onSuccess: () => { setNotice(`"${nextName}" 프로젝트 정보를 저장했습니다.`); setEditOpen(false) } })
+    updateProject.mutate({ name: nextName, scope: editScopes.join("\n"), startUrl: editStartUrl.trim() ? normalizeStartUrl(editStartUrl).url ?? editStartUrl : "" }, { onSuccess: () => { setNotice(`"${nextName}" 프로젝트 정보를 저장했습니다.`); setEditOpen(false) } })
   }
   const deleteCurrent = () => {
     const current = active, fallback = others.find(project => project.id === fallbackId)
@@ -144,9 +114,9 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   }
   const createProject = () => {
     const projectName = effectiveName
-    startProject.mutate({ name: projectName, scope: scopes.join("\n") }, { onSuccess: () => {
+    startProject.mutate({ name: projectName, scope: createScopes.join("\n"), startUrl: normalizeStartUrl(startUrl).url ?? "" }, { onSuccess: () => {
       setNotice(`"${projectName}" 프로젝트를 만들고 전환했습니다.`)
-      setScopes([]); setScopeDraft(""); setScopeNote(null); setName(""); setNameTouched(false)
+      setScopes([]); setStartUrl(""); setName(""); setNameTouched(false)
       setTab("manage")
     } })
   }
@@ -158,7 +128,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
         <DialogDescription id="project-manager-description">점검 대상 주소 범위를 직접 정하고 프로젝트를 만들 수 있습니다.</DialogDescription>
       </DialogHeader>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={setTab} className="min-w-0">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="manage">현재 프로젝트</TabsTrigger>
           <TabsTrigger value="create"><Plus className="me-1 size-3.5" aria-hidden="true" />새 프로젝트</TabsTrigger>
@@ -185,6 +155,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
               <span className="grid size-9 shrink-0 place-items-center rounded-md border border-border bg-background"><FolderOpen className="size-4 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /></span>
               <div className="min-w-0">
                 <h3 className="truncate font-mono text-base font-semibold">{active?.name ?? (projects.isPending ? "불러오는 중" : "미저장 진단")}</h3>
+                <p className="mt-2 text-xs text-muted-foreground">시작 주소 <span className="break-all font-mono text-foreground">{active?.startUrl || "미설정 · 빈 브라우저"}</span></p>
                 <ul className="mt-2 space-y-1.5" aria-label="현재 점검 범위">
                   {(active?.scope ?? []).map(scope => <li key={scope} className="flex items-center gap-2 font-mono text-sm text-muted-foreground"><Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /><span className="break-all">{scope}</span></li>)}
                 </ul>
@@ -200,17 +171,8 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
                 <Label htmlFor="edit-project-name">프로젝트 이름</Label>
                 <Input id="edit-project-name" value={editName} onChange={event => { setEditName(event.target.value); setEditNote(null) }} />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-scope-input">점검 대상 주소</Label>
-                <div className="flex gap-2">
-                  <Input id="edit-scope-input" value={editDraft} placeholder="*.example.com 또는 https://service.example.com:443" className="font-mono text-xs"
-                    onChange={event => { setEditDraft(event.target.value); setEditNote(null) }}
-                    onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTo(editDraft, editScopes, entry => { setEditScopes(current => [...current, entry]); setEditDraft("") }, note => setEditNote(note)) } }} />
-                  <Button variant="secondary" onClick={() => addTo(editDraft, editScopes, entry => { setEditScopes(current => [...current, entry]); setEditDraft("") }, note => setEditNote(note))}>추가</Button>
-                </div>
-                <ScopeList scopes={editScopes} onRemove={scope => setEditScopes(current => current.filter(item => item !== scope))} />
-                <p className={cn("text-xs", editNote ? "text-destructive" : "text-muted-foreground")}>{editNote ?? "루트 도메인만 입력하면 HTTPS로 등록하고 하위 도메인을 자동 발견합니다. 범위 변경은 이후 수집에 적용됩니다."}</p>
-              </div>
+              <SiteScopeFields id="edit" site={editStartUrl} onSite={setEditStartUrl} scopes={editScopes} onScopes={setEditScopes} editing />
+              {editNote && <p role="alert" className="text-xs text-destructive">{editNote}</p>}
               {errorMessage(updateProject.error) && <Alert variant="destructive" aria-label="프로젝트 변경 저장 실패"><AlertDescription>변경 사항을 저장하지 못했습니다. {errorMessage(updateProject.error)}</AlertDescription></Alert>}
               <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:justify-between">
                 <AlertDialog>
@@ -226,7 +188,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
                     <AlertDialogFooter><AlertDialogCancel>취소</AlertDialogCancel><AlertDialogAction variant="destructive" disabled={!others.length} onClick={deleteCurrent}>전환하고 삭제</AlertDialogAction></AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
-                <Button disabled={!editName.trim() || !editScopes.length || busy} onClick={saveEdit}><Save className="me-1 size-3.5" aria-hidden="true" />변경 저장</Button>
+                <Button disabled={!editName.trim() || !editScopes.length || busy || Boolean(editStartUrl.trim() && !normalizeStartUrl(editStartUrl).url)} onClick={saveEdit}><Save className="me-1 size-3.5" aria-hidden="true" />변경 저장</Button>
               </div>
             </div>}
           </section>
@@ -278,25 +240,61 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
           <section className="space-y-2 rounded-lg border border-border p-3">
             <Label htmlFor="project-name" className="text-sm font-semibold">프로젝트 이름</Label>
             <Input id="project-name" value={nameTouched ? name : suggested} placeholder="예: workshop-local" onChange={event => { setNameTouched(true); setName(event.target.value) }} />
-            <p className={cn("text-xs", duplicateName ? "text-destructive" : "text-muted-foreground")}>{duplicateName ? "같은 이름의 프로젝트가 이미 있습니다." : nameTouched ? "직접 입력한 이름을 사용합니다." : "비워 두면 첫 번째 점검 대상 주소로 이름을 정합니다."}</p>
+            <p className={cn("text-xs", duplicateName ? "text-destructive" : "text-muted-foreground")}>{duplicateName ? "같은 이름의 프로젝트가 이미 있습니다." : nameTouched ? "직접 입력한 이름을 사용합니다." : "비워 두면 시작할 사이트 주소로 이름을 정합니다."}</p>
           </section>
-          <section className="space-y-2 rounded-lg border border-border p-3">
-            <Label htmlFor="scope-input" className="text-sm font-semibold">점검 대상 주소</Label>
-            <div className="flex gap-2">
-              <Input id="scope-input" value={scopeDraft} placeholder="*.example.com 또는 http://127.0.0.1:8888" className="font-mono text-xs"
-                onChange={event => { setScopeDraft(event.target.value); setScopeNote(null); setScopeError(false) }}
-                onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTo(scopeDraft, scopes, entry => { setScopes(current => [...current, entry]); setScopeDraft("") }, (note, failed) => { setScopeNote(note); setScopeError(failed) }) } }} />
-              <Button variant="secondary" onClick={() => addTo(scopeDraft, scopes, entry => { setScopes(current => [...current, entry]); setScopeDraft("") }, (note, failed) => { setScopeNote(note); setScopeError(failed) })}>추가</Button>
-            </div>
-            <ScopeList scopes={scopes} onRemove={scope => setScopes(current => current.filter(item => item !== scope))} />
-            <p className={cn("text-xs", scopeError ? "text-destructive" : "text-muted-foreground")}>{scopeNote ?? "루트 도메인만 입력하면 HTTPS로 등록합니다. 실제 브라우저 요청에서 발견한 하위 도메인은 현재 프로젝트에 표시됩니다."}</p>
-          </section>
+          <SiteScopeFields id="create" site={startUrl} onSite={setStartUrl} scopes={scopes} onScopes={setScopes} />
           <DialogFooter className="sm:justify-end"><Button disabled={!canCreate} onClick={createProject}>프로젝트 만들고 열기</Button></DialogFooter>
         </TabsContent>
       </Tabs>
       {error && !(editOpen && updateProject.error) && <Alert variant="destructive" aria-label={error}><AlertDescription>{error}</AlertDescription></Alert>}
     </DialogContent>
   </Dialog>
+}
+
+function SiteScopeFields({ id, site, onSite, scopes, onScopes, editing = false }: {
+  id: string; site: string; onSite: (value: string) => void; scopes: readonly string[];
+  onScopes: (value: string[]) => void; editing?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(editing)
+  const [draft, setDraft] = useState("")
+  const [note, setNote] = useState<string | null>(null)
+  const base = editing ? null : siteScope(site)
+  const start = normalizeStartUrl(site).url
+  const commitSite = () => {
+    if (isWildcardScopeInput(site)) {
+      const parsed = normalizeScopeEntry(site)
+      if (!parsed.entry) return setNote(parsed.note ?? "와일드카드 형식을 확인하세요.")
+      if (!scopes.some(value => normalizeScopeEntry(value).entry === parsed.entry)) onScopes([...scopes, parsed.entry])
+      onSite(""); setExpanded(true)
+      setNote("와일드카드는 스코프 범위에 추가했습니다. 실제로 열 사이트 주소를 입력하세요.")
+    } else if (site.trim()) {
+      const parsed = normalizeStartUrl(site)
+      if (parsed.url) onSite(parsed.url)
+      setNote(parsed.note ?? null)
+    }
+  }
+  const addScope = () => {
+    const parsed = normalizeScopeEntry(draft)
+    if (!parsed.entry) return setNote(parsed.note ?? "추가할 스코프 범위를 입력하세요.")
+    if ([...(base ? [base] : []), ...scopes].some(value => normalizeScopeEntry(value).entry === parsed.entry)) return setNote("이미 등록된 범위입니다.")
+    onScopes([...scopes, parsed.entry]); setDraft(""); setNote(null)
+  }
+  return <section className="space-y-4 rounded-lg border border-border p-3">
+    <div className="space-y-2">
+      <div className="flex items-center gap-1"><Label htmlFor={`${id}-start-url`}>시작할 사이트 주소</Label><InfoHint label="시작할 사이트 주소">이 주소로 브라우저를 열어요. 계정·LLM·ZAP 로그인 주소의 기본값으로도 사용합니다. 각 설정에서 개별 수정한 주소는 유지합니다.</InfoHint></div>
+      <Input id={`${id}-start-url`} value={site} placeholder="https://app.example.com/" className="font-mono" onChange={event => { onSite(event.target.value); setNote(null) }} onBlur={commitSite} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); commitSite() } }} />
+      <p className="text-xs text-muted-foreground">{editing ? "범위 변경은 이후 수집부터 적용됩니다. 기존 기록은 유지합니다." : start ? `${new URL(start).hostname}의 요청을 기본 수집 범위에 포함합니다.` : "시작할 사이트 주소를 입력하세요."}</p>
+    </div>
+    <div className="border-t border-border pt-3">
+      <div className="flex items-center gap-1"><Button type="button" variant="ghost" size="sm" className="h-auto px-0 py-1" aria-expanded={expanded} aria-controls={`${id}-scope-panel`} onClick={() => setExpanded(!expanded)}><ChevronDown className={cn("size-3.5", !expanded && "-rotate-90")} aria-hidden="true" />다른 도메인도 포함</Button><InfoHint label="다른 도메인도 포함">수집할 스코프 범위를 추가하세요. 도메인이나 URL을 지정할 수 있으며, *.example.com은 루트 도메인과 모든 하위 도메인을 포함합니다.</InfoHint></div>
+      {expanded && <div id={`${id}-scope-panel`} className="mt-3 space-y-3">
+        {base && <p className="break-all font-mono text-xs text-muted-foreground">기본 범위: {base}</p>}
+        <div className="flex gap-2"><Input aria-label="추가할 스코프 범위" value={draft} placeholder="*.example.com 또는 https://api.example.com" className="min-w-0 font-mono text-xs" onChange={event => { setDraft(event.target.value); setNote(null) }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addScope() } }} /><Button variant="secondary" onClick={addScope}>추가</Button></div>
+        <ScopeList scopes={scopes} onRemove={scope => onScopes(scopes.filter(value => value !== scope))} />
+      </div>}
+    </div>
+    {note && <p role="status" className="text-xs text-muted-foreground">{note}</p>}
+  </section>
 }
 
 function ScopeList({ scopes, onRemove }: { scopes: readonly string[]; onRemove(scope: string): void }) {

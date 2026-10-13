@@ -210,3 +210,17 @@ it("has no LLM login menu: LLM sessions come from browser login in the LLM step"
   expect(await screen.findByRole("tab", { name: /^ZAP/ })).toBeInTheDocument();
   expect(screen.queryByRole("tab", { name: /^LLM/ })).not.toBeInTheDocument();
 });
+
+it("uses the project URL as a hint and saves an individual login override", async () => {
+  const user = userEvent.setup();
+  const api = adapter();
+  vi.mocked(api.load).mockResolvedValue({ ...settings, defaultStartUrl: "https://mobile.example.test/login" });
+  render(<AccountSettingsSheet accountId="account-a" adapter={api} open onOpenChange={vi.fn()} />);
+  const field = await screen.findByLabelText("로그인 시작 주소");
+  expect(field).toHaveValue("");
+  expect(field).toHaveAttribute("placeholder", "https://mobile.example.test/login");
+  await user.type(field, "https://other.example.test/login");
+  await user.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(api.saveBasicInfo).toHaveBeenCalledWith("account-a", expect.objectContaining({ startUrl: "https://other.example.test/login" })));
+  expect(api.saveZapLogin).not.toHaveBeenCalled();
+});
