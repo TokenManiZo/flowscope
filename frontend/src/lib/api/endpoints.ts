@@ -136,9 +136,12 @@ export const saveOwner = (resource: string, identity: string) => postForm<ApiSuc
 /** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
 export const getLlmFindings = (signal?: AbortSignal) =>
   apiFetch<{ findings: readonly LlmFinding[] }>("/api/llm-findings", formSignal(signal))
-/** 선택한 소스 범위로 LLM 판정(Codex) 실행을 시작한다. */
-export const startLlmVerify = (sources: string) =>
-  postForm<LlmVerifyState>("/api/llm-verify", { sources })
+/** 선택한 소스 범위·판정할 계정(쉼표, 비로그인=anon)·모델로 LLM 판정(Codex) 실행을 시작한다. */
+export const startLlmVerify = (values: { sources: string; accounts: string; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", values)
+/** 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다. */
+export const startLlmJudgment = (values: { findings: readonly string[]; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "judge", findings: JSON.stringify(values.findings), model: values.model })
 /** 실행 중인 LLM 판정을 중단한다. */
 export const cancelLlmVerify = () =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })

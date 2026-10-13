@@ -101,7 +101,8 @@ final class FlowScopeMcp {
         result.put("instructions", "점검이 끝난 데이터에 대한 LLM 교차 계정 검증(추천)만 수행한다. "
                 + "flowscope_list_recommendations로 GET 추천을 읽고, flowscope_cross_send_get으로 보내는 계정 세션으로 "
                 + "GET만 재전송하며(쓰기·외부 네트워크·웹 검색 금지), flowscope_submit_finding으로 소견을 남긴다. "
-                + "판정 확정은 사람이 한다. 범위는 서버 exact scope를 벗어날 수 없다.");
+                + "사용자가 고른 소견은 근거를 직접 읽고 flowscope_submit_verdict로 LLM 자신의 판정을 남긴다. "
+                + "범위는 서버 exact scope를 벗어날 수 없다.");
         return result;
     }
 
@@ -125,6 +126,13 @@ final class FlowScopeMcp {
         tools.add(tool("flowscope_submit_finding",
                 "교차 재전송 결과를 해석한 LLM 소견(추천)을 남긴다. 판정 엔진 결과를 바꾸지 않으며 사람이 검토한다.",
                 findingSchema()));
+        tools.add(tool("flowscope_list_findings",
+                "저장된 LLM 소견 목록. ids로 특정 소견만 고를 수 있다. 각 소견의 근거 기록 번호와 기존 LLM 판정을 포함한다.",
+                findingIdsSchema()));
+        tools.add(tool("flowscope_submit_verdict",
+                "소견 하나에 대한 LLM 자신의 판정을 저장한다(vulnerable·not_vulnerable·inconclusive). "
+                        + "FlowScope 판정 규칙과 무관하며 서버는 강등·재검사 없이 그대로 저장한다.",
+                verdictSchema()));
         ObjectNode result = json.createObjectNode();
         result.set("tools", tools);
         return result;
@@ -141,6 +149,8 @@ final class FlowScopeMcp {
                 case "flowscope_get_evidence" -> toolResult(getEvidence(args), false);
                 case "flowscope_cross_send_get" -> toolResult(crossSendGet(args), false);
                 case "flowscope_submit_finding" -> toolResult(submitFinding(args), false);
+                case "flowscope_list_findings" -> toolResult(listFindings(args), false);
+                case "flowscope_submit_verdict" -> toolResult(submitVerdict(args), false);
                 default -> toolError("unknown tool: " + name);
             };
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
@@ -326,6 +336,51 @@ final class FlowScopeMcp {
         return result;
     }
 
+    private ObjectNode listFindings(JsonNode args) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        if (args.path("ids").isArray()) args.get("ids").forEach(value -> { if (value.isTextual()) ids.add(value.asText()); });
+        ObjectNode result = json.createObjectNode();
+        ArrayNode list = result.putArray("findings");
+        for (LlmFinding finding : state.findings()) {
+            if (!ids.isEmpty() && !ids.contains(finding.id())) continue;
+            ObjectNode node = list.addObject();
+            node.put("id", finding.id());
+            node.put("operation", finding.operation());
+            node.put("identity", finding.identity());
+            if (finding.resource() != null) node.put("resource", finding.resource());
+            node.put("findingVerdict", finding.verdict());
+            node.put("note", finding.note());
+            node.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
+            node.put("judgment", finding.judgment());
+        }
+        log("read", "소견 목록 읽음 · " + list.size() + "건", false);
+        return result;
+    }
+
+    private ObjectNode submitVerdict(JsonNode args) {
+        String findingId = required(args, "finding_id");
+        String verdict = required(args, "verdict");
+        String reason = args.path("reason").asText("");
+        java.util.List<String> evidenceIds = new java.util.ArrayList<>();
+        if (args.path("evidence_ids").isArray()) {
+            args.get("evidence_ids").forEach(value -> { if (value.isTextual()) evidenceIds.add(value.asText()); });
+        }
+        LlmFinding finding = state.findings().stream().filter(item -> item.id().equals(findingId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("소견을 찾지 못했습니다: " + findingId));
+        state.submitFinding(finding.withJudgment(verdict, reason, evidenceIds, System.currentTimeMillis()));
+        String label = switch (verdict) {
+            case "vulnerable" -> "취약";
+            case "not_vulnerable" -> "취약 아님";
+            default -> "판단 불가";
+        };
+        log("verdict", "LLM 판정 " + label + " · " + finding.identity() + " · "
+                + (finding.resource() != null ? finding.resource() : finding.operation()), verdict.equals("vulnerable"));
+        ObjectNode result = json.createObjectNode();
+        result.put("saved", true);
+        result.put("id", findingId);
+        return result;
+    }
+
     private void log(String type, String summary, boolean risk) {
         if (activity != null) activity.record(type, summary, risk);
     }
@@ -439,6 +494,31 @@ final class FlowScopeMcp {
         ArrayNode required = (ArrayNode) schema.get("required");
         required.add("evidence_id");
         required.add("account_id");
+        return schema;
+    }
+
+    private ObjectNode findingIdsSchema() {
+        ObjectNode schema = schema();
+        ObjectNode ids = ((ObjectNode) schema.get("properties")).putObject("ids");
+        ids.put("type", "array");
+        ids.putObject("items").put("type", "string");
+        return schema;
+    }
+
+    private ObjectNode verdictSchema() {
+        ObjectNode schema = schema();
+        ObjectNode props = (ObjectNode) schema.get("properties");
+        props.putObject("finding_id").put("type", "string");
+        ObjectNode verdict = props.putObject("verdict");
+        verdict.put("type", "string");
+        verdict.putArray("enum").add("vulnerable").add("not_vulnerable").add("inconclusive");
+        props.putObject("reason").put("type", "string");
+        ObjectNode evidence = props.putObject("evidence_ids");
+        evidence.put("type", "array");
+        evidence.putObject("items").put("type", "string");
+        ArrayNode required = (ArrayNode) schema.get("required");
+        required.add("finding_id");
+        required.add("verdict");
         return schema;
     }
 

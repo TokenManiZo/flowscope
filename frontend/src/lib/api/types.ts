@@ -260,6 +260,11 @@ export interface LlmFinding {
   note: string
   evidenceIds: readonly string[]
   createdAt: number
+  /** LLM이 직접 내린 판정(MCP 설계 §11). 판정 전이면 빈 문자열. FlowScope 판정 규칙과 무관하다. */
+  judgment: "" | "vulnerable" | "not_vulnerable" | "inconclusive"
+  judgmentReason: string
+  judgmentEvidenceIds: readonly string[]
+  judgedAt: number
 }
 
 /** LLM 판정 실행 상태. accountId 필드는 선택한 소스 범위 문자열을 담는다. */

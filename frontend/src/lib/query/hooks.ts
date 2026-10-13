@@ -44,6 +44,7 @@ import {
   getLlmFindings,
   getLlmVerifyState,
   startLlmVerify,
+  startLlmJudgment,
   cancelLlmVerify,
   getLlmFeed,
 } from "@/lib/api/endpoints"
@@ -202,7 +203,12 @@ export function useLlmVerifyStateQuery(enabled: boolean, polling: boolean) {
 }
 export function useStartLlmVerifyMutation() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: (sources: string) => startLlmVerify(sources),
+  return useMutation({ mutationFn: (values: { sources: string; accounts: string; model: string }) => startLlmVerify(values),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
+}
+export function useStartLlmJudgmentMutation() {
+  const client = useQueryClient()
+  return useMutation({ mutationFn: (values: { findings: readonly string[]; model: string }) => startLlmJudgment(values),
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
 }
 export function useCancelLlmVerifyMutation() {

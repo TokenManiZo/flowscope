@@ -93,9 +93,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default void submitFinding(io.flowscope.core.LlmFinding finding) {
             throw new UnsupportedOperationException("LLM 소견 저장을 사용할 수 없습니다.");
         }
-        /** 보내는 계정(accountId) 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-        default LlmVerifyState startLlmVerify(String accountId) {
+        /** 선택한 소스 범위·판정할 계정·모델로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+        default LlmVerifyState startLlmVerify(String sources, String accounts, String model) {
             throw new UnsupportedOperationException("LLM 검증 실행을 사용할 수 없습니다.");
+        }
+        /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
+        default LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
+            throw new UnsupportedOperationException("LLM 판정 실행을 사용할 수 없습니다.");
         }
         /** 현재 LLM 검증 실행 상태. */
         default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
@@ -1810,6 +1814,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             node.put("note", finding.note());
             node.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
             node.put("createdAt", finding.createdAt());
+            node.put("judgment", finding.judgment());
+            node.put("judgmentReason", finding.judgmentReason());
+            node.set("judgmentEvidenceIds", json.valueToTree(finding.judgmentEvidenceIds()));
+            node.put("judgedAt", finding.judgedAt());
         }
         return json(200, body);
     }
@@ -1840,11 +1848,25 @@ public final class FlowScopeWebServer implements AutoCloseable {
             if (request.method().equals("POST")) {
                 Map<String, String> form = postForm(request);
                 if (form == null) return invalidForm(request);
-                if ("cancel".equals(form.getOrDefault("action", "").trim())) {
+                String action = form.getOrDefault("action", "").trim();
+                if ("cancel".equals(action)) {
                     verifyState = state.cancelLlmVerify();
+                } else if ("judge".equals(action)) {
+                    List<String> findingIds = new java.util.ArrayList<>();
+                    JsonNode ids;
+                    try { ids = json.readTree(form.getOrDefault("findings", "[]")); }
+                    catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+                        throw new IllegalArgumentException("findings JSON을 읽지 못했습니다.");
+                    }
+                    if (!ids.isArray()) throw new IllegalArgumentException("findings는 소견 ID 배열이어야 합니다.");
+                    ids.forEach(value -> { if (value.isTextual() && !value.asText().isBlank()) findingIds.add(value.asText()); });
+                    if (findingIds.isEmpty()) throw new IllegalArgumentException("판정할 소견을 하나 이상 고르세요.");
+                    mcpActivity.reset();
+                    verifyState = state.startLlmJudgment(findingIds, form.getOrDefault("model", "").trim());
                 } else {
                     mcpActivity.reset();
-                    verifyState = state.startLlmVerify(form.getOrDefault("sources", "").trim());
+                    verifyState = state.startLlmVerify(form.getOrDefault("sources", "").trim(),
+                            form.getOrDefault("accounts", "").trim(), form.getOrDefault("model", "").trim());
                 }
             } else if (request.method().equals("GET")) {
                 verifyState = state.llmVerifyState();
