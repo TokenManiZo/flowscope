@@ -33,7 +33,7 @@ export function normalizeScopeEntry(raw: string): { entry: string | null; note?:
     const path = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")
     const entry = `${url.protocol}//${url.hostname}:${port}${path}`
     return wildcard ? { entry, note: `루트 도메인과 모든 하위 도메인을 ${url.protocol === "https:" ? "HTTPS" : "HTTP"} 범위로 등록했습니다.` }
-      : bareDomain ? { entry, note: "HTTPS로 등록했습니다. 브라우저에서 사용한 하위 도메인을 자동으로 발견합니다." }
+      : bareDomain ? { entry, note: "HTTPS로 등록했습니다. 하위 도메인도 포함하려면 *.example.com 형식을 사용하세요." }
       : url.search || url.hash ? { entry, note: "쿼리와 뒷부분은 제외하고 등록했습니다." } : { entry }
   } catch {
     return { entry: null, note: "주소 형식이 올바르지 않습니다. 예: http://127.0.0.1:8888" }
@@ -77,7 +77,6 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
   const resetTraffic = useResetProjectTrafficMutation()
   const deleteProject = useDeleteProjectMutation()
   const active = projects.data?.active ?? null
-  const discovered = projects.data?.discoveredOrigins ?? []
   const list = projects.data?.projects ?? []
   const others = list.filter(project => project.id !== active?.id && project.readable && project.managed)
   const busy = openProject.isPending || startProject.isPending || updateProject.isPending || resetTraffic.isPending || deleteProject.isPending
@@ -131,15 +130,6 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
     setEditDraft("")
     setEditNote(null)
     setEditOpen(true)
-  }
-  const addDiscovered = (origin: string) => {
-    if (!active) return
-    const { entry } = normalizeScopeEntry(origin)
-    if (!entry) return
-    const current = editOpen ? editScopes : [...active.scope]
-    if (!editOpen) beginEdit()
-    setEditScopes(current.some(scope => normalizeScopeEntry(scope).entry === entry) ? [...current] : [...current, entry])
-    setEditNote("점검 범위에 추가했습니다. 변경 저장을 눌러 적용하세요.")
   }
   const saveEdit = () => {
     const nextName = editName.trim()
@@ -201,20 +191,6 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
               </div>
             </div>
 
-            {active && <section aria-label="발견한 서브도메인" className="mt-4 space-y-2 border-t border-border pt-4">
-              <h3 className="text-sm font-semibold">발견한 서브도메인</h3>
-              <p className="text-xs text-muted-foreground">방문한 서브도메인과 트래픽이 자동으로 표시됩니다.</p>
-              {discovered.length ? <ul className="space-y-1">
-                {discovered.map(origin => {
-                  const staged = editOpen && editScopes.some(scope => normalizeScopeEntry(scope).entry === normalizeScopeEntry(origin).entry)
-                  return <li key={origin} className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2">
-                    <span className="break-all font-mono text-xs">{origin}</span>
-                    <Button size="sm" variant="secondary" disabled={busy || staged} onClick={() => addDiscovered(origin)} aria-label={`${origin} 범위에 추가`}>{staged ? "저장 대기" : "범위에 추가"}</Button>
-                  </li>
-                })}
-              </ul> : null}
-            </section>}
-
             {editOpen && active && <div className="mt-4 space-y-4 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold">프로젝트 수정</h3>
@@ -227,7 +203,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
               <div className="space-y-2">
                 <Label htmlFor="edit-scope-input">점검 대상 주소</Label>
                 <div className="flex gap-2">
-                  <Input id="edit-scope-input" value={editDraft} placeholder="example.com 또는 https://service.example.com:443" className="font-mono text-xs"
+                  <Input id="edit-scope-input" value={editDraft} placeholder="*.example.com 또는 https://service.example.com:443" className="font-mono text-xs"
                     onChange={event => { setEditDraft(event.target.value); setEditNote(null) }}
                     onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTo(editDraft, editScopes, entry => { setEditScopes(current => [...current, entry]); setEditDraft("") }, note => setEditNote(note)) } }} />
                   <Button variant="secondary" onClick={() => addTo(editDraft, editScopes, entry => { setEditScopes(current => [...current, entry]); setEditDraft("") }, note => setEditNote(note))}>추가</Button>
@@ -307,7 +283,7 @@ export function ProjectManagerDialog({ open, onOpenChange }: { open: boolean; on
           <section className="space-y-2 rounded-lg border border-border p-3">
             <Label htmlFor="scope-input" className="text-sm font-semibold">점검 대상 주소</Label>
             <div className="flex gap-2">
-              <Input id="scope-input" value={scopeDraft} placeholder="example.com 또는 http://127.0.0.1:8888" className="font-mono text-xs"
+              <Input id="scope-input" value={scopeDraft} placeholder="*.example.com 또는 http://127.0.0.1:8888" className="font-mono text-xs"
                 onChange={event => { setScopeDraft(event.target.value); setScopeNote(null); setScopeError(false) }}
                 onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addTo(scopeDraft, scopes, entry => { setScopes(current => [...current, entry]); setScopeDraft("") }, (note, failed) => { setScopeNote(note); setScopeError(failed) }) } }} />
               <Button variant="secondary" onClick={() => addTo(scopeDraft, scopes, entry => { setScopes(current => [...current, entry]); setScopeDraft("") }, (note, failed) => { setScopeNote(note); setScopeError(failed) })}>추가</Button>

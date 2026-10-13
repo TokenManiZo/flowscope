@@ -39,7 +39,6 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   groupId?: string
   service?: string
   /** Browser-observed host metadata, without API or authorization Evidence. */
-  discovery?: "registered" | "unregistered"
   displayObjectCount?: number
   displayObjectKind?: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
   displayObjectFieldCount?: number
@@ -227,7 +226,7 @@ export function graphContents(snapshot: Snapshot, filters: GraphFilters) {
 
 export interface GraphReveal { operations?: readonly string[]; resource?: string; routeCandidateId?: string; staticApiId?: string }
 
-export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}, observedHosts: readonly { service: string; registered: boolean }[] = []): HierarchyProjection {
+export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navigation: GraphNavigation, reveal: GraphReveal = {}): HierarchyProjection {
   const identityMatches = (identity: string) => !filters.identity.length || filters.identity.includes(identity)
   const { cells, observedEvents, attachedEvents, routeCandidates: candidateList, resolveGroup, staticEntries } = graphContents(snapshot, filters)
   const operationGroup = (operation: string) => { const { service, path } = splitOperation(operation); return resolveGroup(service, path) }
@@ -429,11 +428,6 @@ export function projectHierarchy(snapshot: Snapshot, filters: GraphFilters, navi
       const target = addNode("target", item.service, emptySelection(), { service: item.service })
       const node = addNode("api-group", item.id, emptySelection(), { groupId: item.id, service: item.service, label: item.label, wrappedLabel: item.label })
       addEdge("target-group", target.id, node.id, emptySelection())
-      listItems.push(node)
-    }
-    for (const host of observedHosts) {
-      if (nodes.some(node => node.kind === "target" && node.service === host.service)) continue
-      const node = addNode("target", host.service, emptySelection(), { service: host.service, discovery: host.registered ? "registered" : "unregistered" })
       listItems.push(node)
     }
   } else if (group && resolved.level === "group") {

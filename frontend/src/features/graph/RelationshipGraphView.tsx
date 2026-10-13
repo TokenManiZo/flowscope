@@ -11,7 +11,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { apiConfirmed } from "@/features/api-management/apiAppearance"
 import { judgmentTone } from "@/features/matrix/judgmentProjection"
 import type { EventRecord, Source, Verdict } from "@/lib/api/types"
-import { useProjectsQuery, useSnapshotQuery } from "@/lib/query/hooks"
+import { useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
 import { SourceIcon } from "@/features/evidence/SourceIcon"
 
@@ -85,13 +85,6 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
   const snapshot = useSnapshotQuery()
   const [objectLabEvent, setObjectLabEvent] = useState<EventRecord | null>(null)
   const graphData = snapshot.data
-  const projects = useProjectsQuery()
-  const observedHosts = useMemo(() => {
-    const project = projects.data
-    if (!project?.active || project.datasetRevision !== dataset) return []
-    const unregistered = new Set(project.discoveredOrigins ?? [])
-    return [...new Set(project.observedOrigins ?? [])].sort().map(service => ({ service, registered: !unregistered.has(service) }))
-  }, [projects.data, dataset])
   const workspaceState = useGraphWorkspace(dataset)
   const workspace = workspaceState.workspace ?? emptyGraphWorkspace
   const navigation = workspace.navigation
@@ -154,7 +147,7 @@ function ProjectGraphView({ dataset }: { dataset: number }) {
     if (graphViewKey(next) !== viewKey) { setOpenObjectGroup(null); setFitVersion(0); setLayoutVersion(0); setLaneLayout({ lane: 0, version: 0 }) }
     workspaceState.update(current => ({ ...current, navigation: next }))
   }
-  const collectedGraph = useMemo(() => graphData && workspaceState.workspace ? projectHierarchy(graphData, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal, observedHosts) : null, [expandedGroups, filters, graphData, navigation, workspaceState.workspace !== null, anchor, observedHosts])
+  const collectedGraph = useMemo(() => graphData && workspaceState.workspace ? projectHierarchy(graphData, { ...filters, expandedObjectGroups: expandedGroups }, navigation, anchor?.destination.reveal) : null, [expandedGroups, filters, graphData, navigation, workspaceState.workspace !== null, anchor])
   const sends = useMemo(() => graphData ? resendSends(snapshot.data!) : [], [graphData])
   const resendGraph = useMemo(() => resend && graphData && workspaceState.workspace ? projectResendGraph(snapshot.data!, navigation, filters.view, shownResendTools) : null, [resend, graphData, workspaceState.workspace !== null, navigation, filters.view, shownResendTools])
   const graph = resend ? resendGraph : collectedGraph

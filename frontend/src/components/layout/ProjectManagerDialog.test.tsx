@@ -72,16 +72,13 @@ it("creates a project from a bare root domain using the existing exact URL scope
   expect(mutate.start).toHaveBeenCalledWith({ name: "example.test-443", scope: "https://example.test:443" }, expect.anything())
 })
 
-it("stages discovered origins once and saves them through the existing project update", async () => {
-  state.projects = { data: { active: app, projects: [app], discoveredOrigins: ["https://api.app.example.test:443", "https://static.app.example.test:443"] }, isPending: false, isError: false }
+it("uses an explicit wildcard without automatic subdomain discovery controls", async () => {
   const dialog = await openDialog()
-  const first = within(dialog).getByRole("button", { name: "https://api.app.example.test:443 범위에 추가" })
-  await userEvent.click(first)
-  expect(first).toBeDisabled()
-  expect(mutate.update).not.toHaveBeenCalled()
-  await userEvent.click(within(dialog).getByRole("button", { name: "https://static.app.example.test:443 범위에 추가" }))
-  await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }))
-  expect(mutate.update).toHaveBeenCalledWith({ name: "App", scope: "https://app.example.test:443\nhttps://api.app.example.test:443\nhttps://static.app.example.test:443" }, expect.anything())
+  expect(within(dialog).queryByRole("region", { name: "발견한 서브도메인" })).not.toBeInTheDocument()
+  await userEvent.click(within(dialog).getByRole("tab", { name: "새 프로젝트" }))
+  await userEvent.type(within(dialog).getByLabelText("점검 대상 주소"), "*.example.test{Enter}")
+  await userEvent.click(within(dialog).getByRole("button", { name: "프로젝트 만들고 열기" }))
+  expect(mutate.start).toHaveBeenCalledWith({ name: "example.test-443", scope: "https://*.example.test:443" }, expect.anything())
 })
 
 it("keeps rejected changes editable and shows the save error next to the save controls", async () => {

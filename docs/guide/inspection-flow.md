@@ -45,7 +45,7 @@ scope가 비어 있으면 ZAP 캠페인 실행은 차단됩니다.
 
 관측 요청 기록이 0건인 Web UI는 분석 수치와 고급 조작을 먼저 펼치지 않습니다. exact scope 설정, 로그인/HUMAN pass, ZAP 기준선, 요청 기록 검토 순서와 빠른 시작·샘플 조작만 보여 주며, 요청 기록이 생기면 기존 분석 작업면으로 자동 전환합니다.
 
-ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 합니다. 따라서 캠페인은 각 계정마다 선택 target의 origin·path subtree만 포함하는 fresh Context를 만들며 sibling path·subdomain·다른 port/scheme은 포함하지 않습니다. Context 생성이나 passive rule 활성 확인에 실패하면 spider를 시작하지 않습니다.
+ZAP의 `scope-only`는 FlowScope scope가 아니라 ZAP Context를 기준으로 합니다. 따라서 캠페인은 각 계정마다 프로젝트에 등록한 범위를 포함하는 fresh Context를 만듭니다. `*.example.com`은 루트와 모든 하위 도메인을 포함하며, 일반 URL은 해당 호스트만 포함합니다. 두 형식 모두 등록한 프로토콜·포트·경로를 지키며, 범위 밖 서브도메인을 자동 등록하거나 수집하지 않습니다. Context 생성이나 passive rule 활성 확인에 실패하면 spider를 시작하지 않습니다.
 
 ### 일반적인 점검 흐름
 
