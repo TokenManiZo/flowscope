@@ -378,7 +378,7 @@ final class FlowScopeWebServerTest {
         assertEquals(405, get("/mcp", null, null).statusCode());
 
         JsonNode tools = json(mcp(list, server.mcpToken()));
-        assertEquals(5, tools.at("/result/tools").size());
+        assertEquals(6, tools.at("/result/tools").size());
 
         String send = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_cross_send_get\",\"arguments\":{\"evidence_id\":\"" + state.record.evidenceId + "\",\"account_id\":\"user-b\"}}}";
         JsonNode sent = json(mcp(send, server.mcpToken()));

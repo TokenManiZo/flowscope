@@ -1974,7 +1974,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
         if (mcpVerificationRunner == null) {
             mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
-                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker,
+                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker, webServer.mcpActivity(),
                     message -> api.logging().logToError(message));
         }
         return mcpVerificationRunner.start(accountId);

@@ -45,6 +45,7 @@ import {
   getLlmVerifyState,
   startLlmVerify,
   cancelLlmVerify,
+  getLlmFeed,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -60,6 +61,7 @@ export const queryKeys = {
   projects: ["projects"] as const,
   llmFindings: ["llm-findings"] as const,
   llmVerify: ["llm-verify"] as const,
+  llmFeed: ["llm-feed"] as const,
 }
 
 const pollingOptions = {
@@ -200,11 +202,16 @@ export function useLlmVerifyStateQuery(enabled: boolean, polling: boolean) {
 }
 export function useStartLlmVerifyMutation() {
   const client = useQueryClient()
-  return useMutation({ mutationFn: (accountId: string) => startLlmVerify(accountId),
+  return useMutation({ mutationFn: (sources: string) => startLlmVerify(sources),
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
 }
 export function useCancelLlmVerifyMutation() {
   const client = useQueryClient()
   return useMutation({ mutationFn: () => cancelLlmVerify(),
     onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
+}
+export function useLlmFeedQuery(enabled: boolean, polling: boolean) {
+  return useQuery({ queryKey: queryKeys.llmFeed, queryFn: ({ signal }) => getLlmFeed(0, signal),
+    enabled, staleTime: FLOW_SCOPE_STALE_TIME_MS, retry: 1,
+    refetchInterval: polling ? FLOW_SCOPE_POLL_INTERVAL_MS : false, refetchIntervalInBackground: false })
 }

@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.LlmFinding;
+import io.flowscope.core.McpActivityLog;
+import io.flowscope.core.RequestRecord;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.SessionBroker;
 
@@ -32,12 +34,14 @@ final class FlowScopeMcp {
     private final FlowScopeWebServer.State state;
     private final String token;
     private final int port;
+    private final McpActivityLog activity;
     private final ObjectMapper json = new ObjectMapper();
 
-    FlowScopeMcp(FlowScopeWebServer.State state, String token, int port) {
+    FlowScopeMcp(FlowScopeWebServer.State state, String token, int port, McpActivityLog activity) {
         this.state = state;
         this.token = token == null ? "" : token;
         this.port = port;
+        this.activity = activity;
     }
 
     LoopbackHttpServer.Response handle(LoopbackHttpServer.Request request) {
@@ -106,8 +110,13 @@ final class FlowScopeMcp {
         tools.add(tool("flowscope_get_status",
                 "현재 점검 범위, 계정·역할·세션 상태 요약을 반환한다. 인증값(쿠키·토큰)은 반환하지 않는다.", schema()));
         tools.add(tool("flowscope_list_recommendations",
-                "판정 매트릭스의 교차 테스트 추천 목록. GET만 자동 실행 대상이며 보내는 계정·근거 기록·사유를 포함한다.",
-                schema()));
+                "판정 매트릭스의 교차 테스트 추천 목록. scope로 bola·bfla·all을 거를 수 있다. "
+                        + "GET만 자동 실행 대상이며 보내는 계정·근거 기록·사유를 포함한다.",
+                recommendationSchema()));
+        tools.add(tool("flowscope_get_graph",
+                "관측된 점검 그래프 전체. 어느 계정이 어떤 API·객체에 접근해 어떤 응답을 받았는지와 객체 소유자를 반환한다. "
+                        + "scope=core면 주요 API만, all이면 전체(기본 all).",
+                graphSchema()));
         tools.add(tool("flowscope_get_evidence",
                 "요청 기록 하나의 요청/응답 원문과 메타데이터를 evidence_id로 읽는다.", evidenceSchema()));
         tools.add(tool("flowscope_cross_send_get",
@@ -127,7 +136,8 @@ final class FlowScopeMcp {
         try {
             return switch (name) {
                 case "flowscope_get_status" -> toolResult(getStatus(), false);
-                case "flowscope_list_recommendations" -> toolResult(listRecommendations(), false);
+                case "flowscope_list_recommendations" -> toolResult(listRecommendations(args), false);
+                case "flowscope_get_graph" -> toolResult(getGraph(args), false);
                 case "flowscope_get_evidence" -> toolResult(getEvidence(args), false);
                 case "flowscope_cross_send_get" -> toolResult(crossSendGet(args), false);
                 case "flowscope_submit_finding" -> toolResult(submitFinding(args), false);
@@ -149,6 +159,13 @@ final class FlowScopeMcp {
         summary.put("bflaTest", matrix.summary().bflaTestRecommendations());
         summary.put("bolaIdorTest", matrix.summary().bolaIdorTestRecommendations());
         ArrayNode accounts = result.putArray("accounts");
+        // 비로그인(anon)은 로그인이 필요 없고 항상 재전송할 수 있다.
+        ObjectNode anon = accounts.addObject();
+        anon.put("accountId", "anon");
+        anon.put("label", "비로그인");
+        anon.put("role", "ANONYMOUS");
+        anon.put("sessionStatus", "ANONYMOUS");
+        anon.put("usable", true);
         SessionBroker sessions = state.sessions();
         state.config().accounts().values().forEach(account -> {
             ObjectNode node = accounts.addObject();
@@ -157,22 +174,69 @@ final class FlowScopeMcp {
             node.put("service", account.service());
             node.put("role", account.role().name());
             String sessionStatus = "NONE";
+            boolean usable = false;
             if (sessions != null) {
-                sessionStatus = sessions.viewForAccount(account.id())
-                        .map(view -> view.status().name()).orElse("NONE");
+                var view = sessions.viewForAccount(account.id());
+                sessionStatus = view.map(value -> value.status().name()).orElse("NONE");
+                // 재전송 가능 여부는 상태명이 아니라 replayReady로 판단한다(CAPTURING이어도 응답 확인되면 가능).
+                usable = view.map(SessionBroker.SessionView::replayReady).orElse(false);
             }
             node.put("sessionStatus", sessionStatus);
+            node.put("usable", usable);
         });
         return result;
     }
 
-    private ObjectNode listRecommendations() {
+    private ObjectNode listRecommendations(JsonNode args) {
+        String scope = args == null ? "all" : args.path("scope").asText("all");
+        boolean bfla = scope.equals("all") || scope.equals("bfla");
+        boolean bola = scope.equals("all") || scope.equals("bola");
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
         ObjectNode result = json.createObjectNode();
         ArrayNode list = result.putArray("recommendations");
-        matrix.functions().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), null, cell.identity()));
-        matrix.objects().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), cell.resource(), cell.identity()));
+        if (bfla) matrix.functions().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), null, cell.identity()));
+        if (bola) matrix.objects().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), cell.resource(), cell.identity()));
+        log("read", "추천 목록 읽음 · scope=" + scope + " · " + list.size() + "건", false);
         return result;
+    }
+
+    /** 관측된 점검 그래프 전체: 접근 관측 + 객체 소유자. scope=core면 주요 API만(전체 응답 기준), all이면 전체. */
+    private ObjectNode getGraph(JsonNode args) {
+        String scope = args == null ? "all" : args.path("scope").asText("all");
+        boolean coreOnly = scope.equals("core");
+        var result = state.snapshot();
+        ObjectNode graph = json.createObjectNode();
+        ArrayNode scopeEntries = graph.putArray("scope");
+        state.scopeEntries().forEach(scopeEntries::add);
+
+        // 객체 소유자
+        ObjectNode owners = graph.putObject("owners");
+        result.objects.targets().forEach((resource, target) -> {
+            var owner = result.analysis.owners().get(resource);
+            ObjectNode node = owners.putObject(resource);
+            node.put("label", target.label());
+            node.put("kind", target.kind());
+            node.put("owner", owner == null || owner.identity() == null ? "" : owner.identity());
+        });
+
+        // 관측 접근: 관측(discovery) 기록만. 재전송·검증 트래픽은 그래프에서 제외(순수 관측 유지).
+        ArrayNode access = graph.putArray("access");
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (RequestRecord record : result.coverageRecords) {
+            if (!record.hasResponse || record.op == null) continue;
+            if (coreOnly && record.resource == null) continue;
+            String key = record.idn + "\u0000" + record.op + "\u0000" + record.resource + "\u0000" + record.status;
+            if (!seen.add(key)) continue;
+            ObjectNode node = access.addObject();
+            node.put("identity", record.idn);
+            node.put("method", record.method);
+            node.put("operation", record.op);
+            if (record.resource != null) node.put("resource", record.resource);
+            node.put("status", record.status);
+            node.put("source", record.source == null ? "" : record.source.name());
+        }
+        log("read", "점검 그래프 읽음 · scope=" + scope + " · 접근 " + access.size() + "건", false);
+        return graph;
     }
 
     private void addRecommendation(ArrayNode list, AuthorizationMatrix.TestRecommendation rec,
@@ -223,8 +287,11 @@ final class FlowScopeMcp {
         if (!"GET".equalsIgnoreCase(method)) {
             throw new IllegalArgumentException("flowscope_cross_send_get은 GET만 재전송합니다. 이 기록은 " + method + "입니다.");
         }
-        FlowScopeWebServer.RequestLabResult sent = state.sendRequestLab(evidenceId, requestText,
-                FlowScopeWebServer.CredentialMode.ACCOUNT, accountId);
+        // 비로그인(anon)은 세션이 없으므로 인증 헤더를 모두 지우는 ANONYMOUS 모드로 보낸다. 등록 계정은 세션값을 주입(ACCOUNT).
+        boolean anon = "anon".equalsIgnoreCase(accountId) || "ANONYMOUS".equalsIgnoreCase(accountId);
+        FlowScopeWebServer.CredentialMode mode = anon
+                ? FlowScopeWebServer.CredentialMode.ANONYMOUS : FlowScopeWebServer.CredentialMode.ACCOUNT;
+        FlowScopeWebServer.RequestLabResult sent = state.sendRequestLab(evidenceId, requestText, mode, anon ? "" : accountId);
         ObjectNode result = json.createObjectNode();
         result.put("newEvidenceId", sent.eventId());
         result.put("status", sent.status());
@@ -232,6 +299,7 @@ final class FlowScopeMcp {
         result.put("durationMs", sent.durationMs());
         String response = sent.response() == null ? "" : sent.response();
         result.put("responsePreview", response.length() > 4000 ? response.substring(0, 4000) : response);
+        log("resend", (anon ? "비로그인" : accountId) + "으로 " + firstLine(requestText) + " 재전송 → HTTP " + sent.status(), false);
         return result;
     }
 
@@ -250,10 +318,23 @@ final class FlowScopeMcp {
         LlmFinding finding = new LlmFinding(id, operation, identity, resource, verdict, confidence, note,
                 evidenceIds, System.currentTimeMillis());
         state.submitFinding(finding);
+        log("finding", (verdict.isBlank() ? "소견" : verdict) + " · " + identity + " · "
+                + (resource != null ? resource : operation), true);
         ObjectNode result = json.createObjectNode();
         result.put("saved", true);
         result.put("id", id);
         return result;
+    }
+
+    private void log(String type, String summary, boolean risk) {
+        if (activity != null) activity.record(type, summary, risk);
+    }
+
+    private static String firstLine(String requestText) {
+        if (requestText == null) return "";
+        int nl = requestText.indexOf('\n');
+        String line = (nl > 0 ? requestText.substring(0, nl) : requestText).strip();
+        return line.length() > 120 ? line.substring(0, 120) : line;
     }
 
     // ---- evidence helpers ----
@@ -311,6 +392,11 @@ final class FlowScopeMcp {
         node.put("name", name);
         node.put("description", description);
         node.set("inputSchema", schema);
+        // read-only 주석: 이 도구들은 사용자 머신·파일을 바꾸지 않는다(재전송은 GET, 소견은 FlowScope 로컬 저장).
+        // Codex가 비대화형에서 승인 없이 실행할 수 있게 한다. 실제 안전장치는 FlowScope 서버가 강제한다.
+        ObjectNode annotations = node.putObject("annotations");
+        annotations.put("readOnlyHint", true);
+        annotations.put("openWorldHint", false);
         return node;
     }
 
@@ -326,6 +412,22 @@ final class FlowScopeMcp {
         ObjectNode schema = schema();
         ((ObjectNode) schema.get("properties")).putObject("evidence_id").put("type", "string");
         ((ArrayNode) schema.get("required")).add("evidence_id");
+        return schema;
+    }
+
+    private ObjectNode recommendationSchema() {
+        ObjectNode schema = schema();
+        ObjectNode scope = ((ObjectNode) schema.get("properties")).putObject("scope");
+        scope.put("type", "string");
+        scope.putArray("enum").add("all").add("bola").add("bfla");
+        return schema;
+    }
+
+    private ObjectNode graphSchema() {
+        ObjectNode schema = schema();
+        ObjectNode scope = ((ObjectNode) schema.get("properties")).putObject("scope");
+        scope.put("type", "string");
+        scope.putArray("enum").add("all").add("core");
         return schema;
     }
 

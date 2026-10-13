@@ -262,13 +262,22 @@ export interface LlmFinding {
   createdAt: number
 }
 
-/** LLM 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
+/** LLM 판정 실행 상태. accountId 필드는 선택한 소스 범위 문자열을 담는다. */
 export interface LlmVerifyState {
   status: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED"
   accountId: string
   message: string
   startedAt?: number
   endedAt?: number
+}
+
+/** LLM 판정 작업 피드 항목. type: read·resend·finding·info, risk=true면 취약점 추천(위험 필터). */
+export interface LlmFeedEntry {
+  seq: number
+  timestamp: number
+  type: string
+  summary: string
+  risk: boolean
 }
 
 export interface ManagedSession {

@@ -295,6 +295,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private final State state;
     private final String capabilityToken = randomCapabilityToken();
     private final String mcpToken = randomCapabilityToken();
+    private final io.flowscope.core.McpActivityLog mcpActivity = new io.flowscope.core.McpActivityLog();
     private FlowScopeMcp mcp;
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
@@ -311,7 +312,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
         this.state = state;
         this.server = bindAvailable(requestedPort);
-        this.mcp = new FlowScopeMcp(state, mcpToken, server.port());
+        this.mcp = new FlowScopeMcp(state, mcpToken, server.port(), mcpActivity);
     }
 
     public void start() { server.start(); }
@@ -321,6 +322,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public String mcpUrl() { return "http://127.0.0.1:" + port() + "/mcp"; }
     /** MCP Bearer 토큰. 자식 프로세스 환경변수로만 전달하고 화면·로그·프로젝트에 넣지 않는다. */
     public String mcpToken() { return mcpToken; }
+    /** LLM 판정 작업 피드 로그. 실행기가 실행 시작·종료·Codex 출력을 기록하는 데 쓴다. */
+    public io.flowscope.core.McpActivityLog mcpActivity() { return mcpActivity; }
 
     private LoopbackHttpServer bindAvailable(int requestedPort) throws IOException {
         IOException last = null;
@@ -393,6 +396,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/owner" -> owner(request);
             case "/api/llm-findings" -> llmFindings(request);
             case "/api/llm-verify" -> llmVerify(request);
+            case "/api/llm-feed" -> llmFeed(request, target);
             default -> error(404, "Not found");
         };
     }
@@ -1810,15 +1814,38 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return json(200, body);
     }
 
-    /** LLM 검증 실행 시작(POST accountId)·상태 조회(GET). */
+    /** LLM 판정 작업 피드(활동 로그). after=마지막 seq 이후만 돌려준다. */
+    private LoopbackHttpServer.Response llmFeed(LoopbackHttpServer.Request request, URI target) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        long after = 0;
+        try { after = Long.parseLong(form(target.getRawQuery()).getOrDefault("after", "0")); }
+        catch (NumberFormatException ignored) { }
+        ObjectNode body = json.createObjectNode();
+        ArrayNode list = body.putArray("entries");
+        for (io.flowscope.core.McpActivityLog.Entry entry : mcpActivity.entriesAfter(after)) {
+            ObjectNode node = list.addObject();
+            node.put("seq", entry.seq());
+            node.put("timestamp", entry.timestamp());
+            node.put("type", entry.type());
+            node.put("summary", entry.summary());
+            node.put("risk", entry.risk());
+        }
+        return json(200, body);
+    }
+
+    /** LLM 판정 실행 시작(POST sources)·상태 조회(GET). */
     private LoopbackHttpServer.Response llmVerify(LoopbackHttpServer.Request request) throws IOException {
         try {
             LlmVerifyState verifyState;
             if (request.method().equals("POST")) {
                 Map<String, String> form = postForm(request);
                 if (form == null) return invalidForm(request);
-                verifyState = "cancel".equals(form.getOrDefault("action", "").trim())
-                        ? state.cancelLlmVerify() : state.startLlmVerify(required(form, "accountId"));
+                if ("cancel".equals(form.getOrDefault("action", "").trim())) {
+                    verifyState = state.cancelLlmVerify();
+                } else {
+                    mcpActivity.reset();
+                    verifyState = state.startLlmVerify(form.getOrDefault("sources", "").trim());
+                }
             } else if (request.method().equals("GET")) {
                 verifyState = state.llmVerifyState();
             } else {

@@ -25,6 +25,7 @@ import type {
   ProjectStatus,
   LlmFinding,
   LlmVerifyState,
+  LlmFeedEntry,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
@@ -135,12 +136,15 @@ export const saveOwner = (resource: string, identity: string) => postForm<ApiSuc
 /** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
 export const getLlmFindings = (signal?: AbortSignal) =>
   apiFetch<{ findings: readonly LlmFinding[] }>("/api/llm-findings", formSignal(signal))
-/** 보내는 계정 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-export const startLlmVerify = (accountId: string) =>
-  postForm<LlmVerifyState>("/api/llm-verify", { accountId })
-/** 실행 중인 LLM 검증을 중단한다. */
+/** 선택한 소스 범위로 LLM 판정(Codex) 실행을 시작한다. */
+export const startLlmVerify = (sources: string) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { sources })
+/** 실행 중인 LLM 판정을 중단한다. */
 export const cancelLlmVerify = () =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })
-/** 현재 LLM 검증 실행 상태. */
+/** 현재 LLM 판정 실행 상태. */
 export const getLlmVerifyState = (signal?: AbortSignal) =>
   apiFetch<LlmVerifyState>("/api/llm-verify", formSignal(signal))
+/** LLM 판정 작업 피드(활동 로그). after 이후만 가져온다. */
+export const getLlmFeed = (after = 0, signal?: AbortSignal) =>
+  apiFetch<{ entries: readonly LlmFeedEntry[] }>(`/api/llm-feed?after=${after}`, formSignal(signal))
