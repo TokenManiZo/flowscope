@@ -17,6 +17,7 @@ import type { RecordView } from "@/features/inspection/RecordView"
 import { SourcePassLayout } from "@/features/inspection/SourcePassLayout"
 import type { LlmFeedEntry, LlmFinding } from "@/lib/api/types"
 import { FindingResultCard } from "./FindingResultCard"
+import { matrixApiResolver } from "@/features/matrix/apiJudgmentProjection"
 import { findingStatus, findingStatusLabel, type FindingStatus } from "./findingResults"
 import {
   useCancelLlmVerifyMutation,
@@ -25,6 +26,7 @@ import {
   useExplorerRunQuery,
   useLlmFeedQuery,
   useLlmFindingsQuery,
+  useMatrixExclusionsQuery,
   useLlmVerifyStateQuery,
   useSnapshotQuery,
   useStartLlmJudgmentMutation,
@@ -123,6 +125,13 @@ export function LlmJudgmentPage() {
   const findingsQuery = useLlmFindingsQuery(true, running)
   const findings = findingsQuery.data?.findings ?? []
   const revision = snapshot.data?.datasetRevision ?? snapshot.data?.identityRevision ?? 0
+  const exclusionsQuery = useMatrixExclusionsQuery(revision)
+  const exclusionsReady = revision === 0 || exclusionsQuery.data?.datasetRevision === revision
+  const exclusions = exclusionsQuery.data?.datasetRevision === revision ? exclusionsQuery.data.entries ?? [] : []
+  const apiKey = matrixApiResolver(snapshot.data?.displayObjects)
+  const excludedFinding = (finding: LlmFinding) => exclusions.some(entry => entry.resource === null
+    ? entry.operation === finding.operation || entry.operation === apiKey(finding)
+    : entry.operation === finding.operation && entry.resource === finding.resource)
 
   // Codex 준비 상태와 모델 목록은 LLM 탐색과 같은 출처를 쓴다.
   const explorer = useExplorerRunQuery()
@@ -167,8 +176,9 @@ export function LlmJudgmentPage() {
     setEnlargedFinding(null)
   }
   // 현재 탭에 실제로 보이는 소견만 일괄 판정 대상으로 삼는다.
-  const pickedIds = shownFindings.map((finding) => finding.id).filter((id) => picked.has(id))
-  const allPicked = shownFindings.length > 0 && pickedIds.length === shownFindings.length
+  const eligibleFindings = exclusionsReady ? shownFindings.filter(finding => !excludedFinding(finding)) : []
+  const pickedIds = eligibleFindings.map((finding) => finding.id).filter((id) => picked.has(id))
+  const allPicked = eligibleFindings.length > 0 && pickedIds.length === eligibleFindings.length
   const judge = () => {
     if (pickedIds.length === 0) { setPickError(true); return }
     startJudgment.mutate({ findings: pickedIds, model: selectedModel })
@@ -317,17 +327,18 @@ export function LlmJudgmentPage() {
       {feedOpen && activeView === "unjudged" && shownFindings.length > 0 && <div className="shrink-0 border-b bg-muted/20">
         <div className="flex flex-wrap items-center gap-3 px-4 py-2">
           <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <Checkbox checked={allPicked} disabled={running} onCheckedChange={(value) => { setPickError(false); setPicked(value === true ? new Set(shownFindings.map((finding) => finding.id)) : new Set()) }} />보이는 항목 선택
+            <Checkbox checked={allPicked} disabled={running || eligibleFindings.length === 0} onCheckedChange={(value) => { setPickError(false); setPicked(value === true ? new Set(eligibleFindings.map((finding) => finding.id)) : new Set()) }} />보이는 항목 선택
           </label>
           <span className="text-sm text-muted-foreground">{pickedIds.length}건 선택됨</span>
+          {!exclusionsReady && <Button type="button" size="sm" variant="ghost" onClick={() => void exclusionsQuery.refetch()}>{exclusionsQuery.isError ? "제외 항목 다시 불러오기" : "제외 항목 확인 중"}</Button>}
           {pickError && <span role="alert" className="text-sm text-destructive">판정할 소견을 하나 이상 고르세요</span>}
-          <Button type="button" size="sm" className="ml-auto" disabled={running || startJudgment.isPending} onClick={judge}><Gavel className="size-4" />선택한 소견 판정</Button>
+          <Button type="button" size="sm" className="ml-auto" disabled={running || startJudgment.isPending || !exclusionsReady} onClick={judge}><Gavel className="size-4" />선택한 소견 판정</Button>
         </div>
       </div>}
       {feedOpen && activeView !== "progress" && <div id="llm-judgment-panel" role="tabpanel" className="min-h-0 flex-1 overflow-y-auto p-3" aria-label="LLM 판정 결과">
         {tabFindings.length === 0
           ? <div className="grid min-h-48 place-content-center gap-1 text-center"><p className="font-medium">{findingStatusLabel[activeView]} 항목이 없습니다.</p><p className="text-sm text-muted-foreground">다른 판정 탭이나 진행 기록을 확인해 보세요.</p></div>
-          : <><div className="grid gap-2">{shownFindings.map((finding) => <FindingResultCard key={finding.id} finding={finding} snapshot={snapshot.data} enlarged={enlargedFinding === finding.id} picked={picked.has(finding.id)} selectable={activeView === "unjudged"} disabled={running}
+          : <><div className="grid gap-2">{shownFindings.map((finding) => <FindingResultCard key={finding.id} finding={finding} snapshot={snapshot.data} enlarged={enlargedFinding === finding.id} picked={picked.has(finding.id)} selectable={activeView === "unjudged"} excluded={excludedFinding(finding)} disabled={running || !exclusionsReady}
               onEnlarge={() => setEnlargedFinding(finding.id)} onCloseEnlarged={() => setEnlargedFinding(null)}
               onPick={(value) => { setPickError(false); setPicked((current) => { const next = new Set(current); if (value) next.add(finding.id); else next.delete(finding.id); return next }) }}
               onOpenRequest={setRequestEvidenceId} onOpenGraph={id => openResendSelection(id, revision)} />)}</div>

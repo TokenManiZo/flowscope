@@ -31,6 +31,7 @@ interface Props {
   enlarged: boolean
   picked: boolean
   selectable: boolean
+  excluded?: boolean
   disabled: boolean
   onEnlarge(): void
   onCloseEnlarged(): void
@@ -39,7 +40,7 @@ interface Props {
   onOpenGraph(evidenceId: string): void
 }
 
-export function FindingResultCard({ finding, snapshot, enlarged, picked, selectable, disabled,
+export function FindingResultCard({ finding, snapshot, enlarged, picked, selectable, excluded = false, disabled,
   onEnlarge, onCloseEnlarged, onPick, onOpenRequest, onOpenGraph }: Props) {
   const [fullView, setFullView] = useState(false)
   const articleRef = useRef<HTMLElement>(null)
@@ -104,12 +105,13 @@ export function FindingResultCard({ finding, snapshot, enlarged, picked, selecta
     {fullView && <div className="fixed inset-0 z-40 bg-black/70" aria-hidden="true" onClick={() => setFullView(false)} />}
     <article ref={articleRef} data-finding-id={finding.id} role={fullView ? "dialog" : undefined} aria-modal={fullView ? true : undefined} aria-label={fullView ? `${operation} ${status === "unjudged" ? "소견 상세" : "판정 상세"}` : undefined} className={`overflow-hidden rounded-lg border border-border/80 bg-background ${statusEdge[status]} ${fullView ? "fixed inset-x-4 top-1/2 z-50 max-h-[calc(100vh-2rem)] -translate-y-1/2 overflow-y-auto shadow-2xl md:inset-x-8" : ""}`}>
     <div className={`flex items-center gap-3 ${fullView ? "border-b bg-muted/20 px-6 py-5" : "px-4 py-3"}`}>
-      {selectable && <Checkbox aria-label={`${finding.operation} 판정 선택`} checked={picked} disabled={disabled} onCheckedChange={value => onPick(value === true)} />}
+      {selectable && <Checkbox aria-label={`${finding.operation} 판정 선택`} checked={picked} disabled={disabled || excluded} onCheckedChange={value => onPick(value === true)} />}
       <button type="button" className="flex min-w-0 flex-1 items-center gap-3 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${operation} ${enlarged ? "상세 접기" : "상세 펼치기"}`} aria-expanded={enlarged} aria-controls={`finding-detail-${finding.id}`} onClick={fullView ? () => setFullView(false) : enlarged ? closeDetail : onEnlarge}>
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className={`min-w-0 break-words font-medium ${fullView ? "text-lg" : ""}`}>{operation}</span>
           <span className={`rounded border px-2 py-0.5 text-xs font-medium ${statusTone[status]}`}>{findingStatusLabel[status]}</span>
+          {excluded && <span className="rounded border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground" title="판정 매트릭스의 제외한 항목에서 복원할 수 있습니다.">LLM 검사 제외</span>}
         </span>
         {issueTitle && <span className="mt-1 block truncate text-sm font-medium text-foreground/85">{issueTitle}</span>}
         <span className="mt-1 block truncate text-xs text-muted-foreground">{service && `${service} · `}{identityLabel(finding.identity)}</span>

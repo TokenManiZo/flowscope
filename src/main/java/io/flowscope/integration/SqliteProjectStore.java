@@ -256,6 +256,30 @@ public final class SqliteProjectStore {
         } catch (SQLException error) { throw new IOException("FlowScope API marks save failed", error); }
     }
 
+    /** Persist exclusions atomically before acknowledging a UI change. */
+    public void saveMatrixExclusions(Path target, AnalysisConfig config) throws IOException {
+        Path absolute = target.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(absolute)) throw new IOException("project database is missing");
+        try (Connection connection = connect(absolute)) {
+            connection.setAutoCommit(false);
+            try (PreparedStatement delete = connection.prepareStatement("DELETE FROM policy_entries WHERE kind='matrix_exclusions'");
+                 PreparedStatement insert = connection.prepareStatement("INSERT INTO policy_entries(kind, entry_key, entry_value) VALUES(?,?,?)");
+                 PreparedStatement metadata = connection.prepareStatement("INSERT OR REPLACE INTO metadata(key, value) VALUES(?, ?)")) {
+                delete.executeUpdate();
+                for (var entry : config.matrixExclusions().entrySet()) {
+                    insert.setString(1, "matrix_exclusions"); insert.setString(2, entry.getKey());
+                    insert.setString(3, json.writeValueAsString(entry.getValue())); insert.addBatch();
+                }
+                insert.executeBatch();
+                putMetadata(metadata, "saved_at", java.time.Instant.now().toString());
+                try (Statement statement = connection.createStatement(); ResultSet size = statement.executeQuery("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")) {
+                    if (size.next() && size.getLong(1) > MAX_FILE_BYTES) throw new IllegalArgumentException("project database exceeds 100 MiB");
+                }
+                connection.commit();
+            } catch (SQLException | IOException | RuntimeException error) { connection.rollback(); throw error; }
+        } catch (SQLException error) { throw new IOException("FlowScope exclusion save failed", error); }
+    }
+
     private static void createRequestLabTables(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("CREATE TABLE IF NOT EXISTS request_lab_tabs (evidence_id TEXT PRIMARY KEY, next_id INTEGER NOT NULL, selected_id INTEGER NOT NULL)");
@@ -518,6 +542,7 @@ public final class SqliteProjectStore {
             writePolicyEntries(policy, "resource_policies", policyRoot.path("resource_policies"));
             writePolicyEntries(policy, "traffic_overrides", policyRoot.path("traffic_overrides"));
             writePolicyEntries(policy, "llm_findings", policyRoot.path("llm_findings"));
+            writePolicyEntries(policy, "matrix_exclusions", policyRoot.path("matrix_exclusions"));
             for (JsonNode value : policyRoot.path("accounts")) {
                 account.setString(1, required(value, "id"));
                 account.setString(2, required(value, "label"));
@@ -625,6 +650,7 @@ public final class SqliteProjectStore {
         readPolicyEntries(connection, policy, "resource_policies");
         readPolicyEntries(connection, policy, "traffic_overrides");
         readPolicyEntries(connection, policy, "llm_findings");
+        readPolicyEntries(connection, policy, "matrix_exclusions");
         readPolicyEntries(connection, policy, "account_start_urls");
         ArrayNode accounts = policy.putArray("accounts");
         try (Statement statement = connection.createStatement();
@@ -694,7 +720,7 @@ public final class SqliteProjectStore {
         for (var entry : values.properties()) {
             statement.setString(1, kind);
             statement.setString(2, entry.getKey());
-            statement.setString(3, entry.getValue().asText());
+            statement.setString(3, "matrix_exclusions".equals(kind) ? entry.getValue().toString() : entry.getValue().asText());
             statement.addBatch();
         }
         statement.executeBatch();

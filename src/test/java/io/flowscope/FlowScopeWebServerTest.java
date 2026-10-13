@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AnalysisConfig;
+import io.flowscope.core.MatrixExclusion;
 import io.flowscope.core.AccessRole;
 import io.flowscope.core.AccountProfile;
 import io.flowscope.core.BurpXmlParser;
@@ -64,6 +65,27 @@ final class FlowScopeWebServerTest {
         if (server != null) server.close();
         state.sessions.close();
         state.zapAccounts.close();
+    }
+
+    @Test void projectExclusionsRejectStaleOrFailedSavesAndRestoreWithoutDeletingTraffic() throws Exception {
+        start();
+        long dataset = state.datasetRevision();
+        String operation = "https://api.example.test:443 GET /v1/orders/{id}";
+        var entry = new MatrixExclusion(MatrixExclusion.keyFor("function", operation, null),
+                "function", operation, null, "GET /v1/orders/{id}");
+        String encoded = encode(JSON.writeValueAsString(List.of(entry)));
+        assertEquals(0, json(get("/api/matrix-exclusions", token, origin())).path("entries").size());
+        assertEquals(409, post("/api/matrix-exclusions", "datasetRevision=-1&entries=" + encoded, token).statusCode());
+        assertEquals(400, post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=" + encode("[{\"key\":\"bad\"}]"), token).statusCode());
+        state.rejectExclusionSave = true;
+        assertEquals(409, post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=" + encoded, token).statusCode());
+        assertTrue(state.config.matrixExclusions().isEmpty());
+        state.rejectExclusionSave = false;
+        assertEquals(1, json(post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=" + encoded, token)).path("entries").size());
+        assertEquals(entry, state.config.matrixExclusions().get(entry.key()));
+        assertEquals(0, json(post("/api/matrix-exclusions", "datasetRevision=" + dataset + "&entries=%5B%5D", token)).path("entries").size());
+        assertTrue(state.config.matrixExclusions().isEmpty());
+        assertFalse(state.records.isEmpty());
     }
 
     @Test void accountLoginDefaultsFollowTheProjectWithoutOverwritingIndividualUrls() throws Exception {
@@ -1871,6 +1893,7 @@ final class FlowScopeWebServerTest {
         private String projectStartUrl = "";
         @Override public String projectStartUrl() { return projectStartUrl; }
         private final AnalysisConfig config = new AnalysisConfig();
+        private boolean rejectExclusionSave;
         private final List<RequestRecord> records = new ArrayList<>();
         private final AtomicLong revision = new AtomicLong();
         private final AtomicBoolean opened = new AtomicBoolean();
@@ -1984,6 +2007,10 @@ final class FlowScopeWebServerTest {
             return io.flowscope.core.ApiManagement.prepare(request, result, result.records, config, List.of(), RequestLabWorkspace.empty()).preview();
         }
         @Override public AnalysisConfig config() { return config; }
+        @Override public void replaceMatrixExclusions(long dataset, List<MatrixExclusion> entries) {
+            if (dataset != datasetRevision() || rejectExclusionSave) throw new IllegalStateException("stale or failed exclusion save");
+            config.replaceMatrixExclusions(entries);
+        }
         private List<LegacyAssessment> archivedAssessments = List.of();
         private List<ValidationDecision> archivedValidations = List.of();
         @Override public List<LegacyAssessment> assessments() { return archivedAssessments; }

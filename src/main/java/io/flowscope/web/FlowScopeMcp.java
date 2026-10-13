@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.flowscope.core.AuthorizationMatrix;
 import io.flowscope.core.AuthorizationMatrixAnalyzer;
 import io.flowscope.core.LlmFinding;
+import io.flowscope.core.MatrixExclusionMatcher;
 import io.flowscope.core.McpActivityLog;
 import io.flowscope.core.RequestRecord;
 import io.flowscope.integration.LoopbackHttpServer;
@@ -165,9 +166,10 @@ final class FlowScopeMcp {
         ArrayNode scope = result.putArray("scope");
         state.scopeEntries().forEach(scope::add);
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
+        MatrixExclusionMatcher exclusions = new MatrixExclusionMatcher(state.config(), state.snapshot());
         ObjectNode summary = result.putObject("recommendationSummary");
-        summary.put("bflaTest", matrix.summary().bflaTestRecommendations());
-        summary.put("bolaIdorTest", matrix.summary().bolaIdorTestRecommendations());
+        summary.put("bflaTest", matrix.functions().stream().filter(cell -> cell.recommendation() != null && !exclusions.excluded(cell.operation(), null)).count());
+        summary.put("bolaIdorTest", matrix.objects().stream().filter(cell -> cell.recommendation() != null && !exclusions.excluded(cell.operation(), cell.resource())).count());
         ArrayNode accounts = result.putArray("accounts");
         // 비로그인(anon)은 로그인이 필요 없고 항상 재전송할 수 있다.
         ObjectNode anon = accounts.addObject();
@@ -202,10 +204,13 @@ final class FlowScopeMcp {
         boolean bfla = scope.equals("all") || scope.equals("bfla");
         boolean bola = scope.equals("all") || scope.equals("bola");
         AuthorizationMatrix matrix = AuthorizationMatrixAnalyzer.analyze(state.snapshot(), state.config(), state.validations());
+        MatrixExclusionMatcher exclusions = new MatrixExclusionMatcher(state.config(), state.snapshot());
         ObjectNode result = json.createObjectNode();
         ArrayNode list = result.putArray("recommendations");
-        if (bfla) matrix.functions().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), null, cell.identity()));
-        if (bola) matrix.objects().forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), cell.resource(), cell.identity()));
+        if (bfla) matrix.functions().stream().filter(cell -> !exclusions.excluded(cell.operation(), null))
+                .forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), null, cell.identity()));
+        if (bola) matrix.objects().stream().filter(cell -> !exclusions.excluded(cell.operation(), cell.resource()))
+                .forEach(cell -> addRecommendation(list, cell.recommendation(), cell.operation(), cell.resource(), cell.identity()));
         log("read", "추천 목록 읽음 · scope=" + scope + " · " + list.size() + "건", false);
         return result;
     }
@@ -215,6 +220,7 @@ final class FlowScopeMcp {
         String scope = args == null ? "all" : args.path("scope").asText("all");
         boolean coreOnly = scope.equals("core");
         var result = state.snapshot();
+        MatrixExclusionMatcher exclusions = new MatrixExclusionMatcher(state.config(), result);
         ObjectNode graph = json.createObjectNode();
         ArrayNode scopeEntries = graph.putArray("scope");
         state.scopeEntries().forEach(scopeEntries::add);
@@ -222,6 +228,7 @@ final class FlowScopeMcp {
         // 객체 소유자
         ObjectNode owners = graph.putObject("owners");
         result.objects.targets().forEach((resource, target) -> {
+            if (exclusions.excluded(target.operation(), resource)) return;
             var owner = result.analysis.owners().get(resource);
             ObjectNode node = owners.putObject(resource);
             node.put("label", target.label());
@@ -235,6 +242,9 @@ final class FlowScopeMcp {
         for (RequestRecord record : result.coverageRecords) {
             if (!record.hasResponse || record.op == null) continue;
             if (coreOnly && record.resource == null) continue;
+            if (exclusions.excluded(record.op, record.resource)) continue;
+            var observedResources = result.objects.resources(record.evidenceId);
+            if (!observedResources.isEmpty() && observedResources.stream().allMatch(resource -> exclusions.excluded(record.op, resource))) continue;
             String key = record.idn + "\u0000" + record.op + "\u0000" + record.resource + "\u0000" + record.status;
             if (!seen.add(key)) continue;
             ObjectNode node = access.addObject();
@@ -242,6 +252,10 @@ final class FlowScopeMcp {
             node.put("method", record.method);
             node.put("operation", record.op);
             if (record.resource != null) node.put("resource", record.resource);
+            if (!observedResources.isEmpty()) {
+                ArrayNode resources = node.putArray("resources");
+                observedResources.stream().filter(resource -> !exclusions.excluded(record.op, resource)).forEach(resources::add);
+            }
             node.put("status", record.status);
             node.put("source", record.source == null ? "" : record.source.name());
         }
@@ -273,6 +287,7 @@ final class FlowScopeMcp {
 
     private ObjectNode getEvidence(JsonNode args) {
         String evidenceId = required(args, "evidence_id");
+        requireIncludedEvidence(evidenceId, args.path("resource").isTextual() ? args.get("resource").asText() : null);
         FlowScopeWebServer.RequestLabDraft draft = state.requestLabDraft(evidenceId);
         ObjectNode result = json.createObjectNode();
         result.put("evidenceId", draft.eventId());
@@ -290,6 +305,7 @@ final class FlowScopeMcp {
         String accountId = required(args, "account_id");
         FlowScopeWebServer.RequestLabDraft draft = state.requestLabDraft(evidenceId);
         String requestText = draft.request();
+        requireIncludedEvidence(evidenceId, args.path("resource").isTextual() ? args.get("resource").asText() : null);
         if (requestText == null || requestText.isBlank()) {
             throw new IllegalStateException("이 기록은 재전송할 요청 원문이 없습니다.");
         }
@@ -313,16 +329,50 @@ final class FlowScopeMcp {
         return result;
     }
 
+    private void requireIncludedEvidence(String evidenceId, String selectedResource) {
+        var snapshot = state.snapshot();
+        RequestRecord basis = snapshot.coverageByEvidence.get(evidenceId);
+        if (basis == null) basis = snapshot.records.stream().filter(record -> evidenceId.equals(record.evidenceId)).findFirst().orElse(null);
+        if (basis == null || basis.op == null) {
+            if (!state.config().matrixExclusions().isEmpty()) throw new IllegalArgumentException("근거 요청을 찾을 수 없습니다.");
+            return;
+        }
+        MatrixExclusionMatcher matcher = new MatrixExclusionMatcher(state.config(), snapshot);
+        String operation = basis.op;
+        if (matcher.excluded(operation, null)) throw new IllegalArgumentException("매트릭스에서 제외한 API는 LLM 검사 대상이 아닙니다.");
+        java.util.Set<String> resources = new java.util.LinkedHashSet<>();
+        if (basis.resource != null) resources.add(basis.resource);
+        resources.addAll(snapshot.objects.resources(evidenceId));
+        if (selectedResource != null) {
+            if (!resources.contains(selectedResource)) throw new IllegalArgumentException("근거 요청에 없는 객체입니다.");
+            if (matcher.excluded(operation, selectedResource)) throw new IllegalArgumentException("매트릭스에서 제외한 객체는 LLM 검사 대상이 아닙니다.");
+        } else if (resources.stream().anyMatch(resource -> matcher.excluded(operation, resource))) {
+            throw new IllegalArgumentException("이 요청에 제외한 객체가 포함되어 있습니다. 허용된 추천의 resource를 명시하세요.");
+        }
+    }
+
     private ObjectNode submitFinding(JsonNode args) {
         String operation = required(args, "operation");
         String identity = required(args, "identity");
         String resource = args.path("resource").isTextual() ? args.get("resource").asText() : null;
+        MatrixExclusionMatcher exclusions = new MatrixExclusionMatcher(state.config(), state.snapshot());
+        if (exclusions.excluded(operation, resource) || resource == null && exclusions.hasObjectExclusion(operation))
+            throw new IllegalArgumentException("매트릭스에서 제외한 항목은 LLM 소견 대상이 아닙니다.");
         String verdict = args.path("verdict").asText("");
         String confidence = args.path("confidence").asText("");
         String note = args.path("note").asText("");
         java.util.List<String> evidenceIds = new java.util.ArrayList<>();
         if (args.path("evidence_ids").isArray()) {
             args.get("evidence_ids").forEach(value -> { if (value.isTextual()) evidenceIds.add(value.asText()); });
+        }
+        if (exclusions.hasObjectExclusion(operation)) {
+            var snapshot = state.snapshot();
+            if (evidenceIds.isEmpty() || resource == null || evidenceIds.stream().noneMatch(id ->
+                    snapshot.objects.resources(id).contains(resource)
+                            || snapshot.coverageByEvidence.containsKey(id)
+                            && resource.equals(snapshot.coverageByEvidence.get(id).resource))) {
+                throw new IllegalArgumentException("제외 범위와 구분할 수 있는 객체 근거 요청이 필요합니다.");
+            }
         }
         String id = "llm:" + operation + ":" + identity + ":" + (resource == null ? "" : resource);
         LlmFinding finding = new LlmFinding(id, operation, identity, resource, verdict, confidence, note,
@@ -370,6 +420,8 @@ final class FlowScopeMcp {
         }
         LlmFinding finding = state.findings().stream().filter(item -> item.id().equals(findingId)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("소견을 찾지 못했습니다: " + findingId));
+        if (new MatrixExclusionMatcher(state.config(), state.snapshot()).excluded(finding.operation(), finding.resource()))
+            throw new IllegalArgumentException("매트릭스에서 제외한 항목은 LLM 판정 대상이 아닙니다.");
         state.submitFinding(finding.withJudgment(verdict, reason, verificationResult, basis, title, evidenceIds, System.currentTimeMillis()));
         String label = switch (verdict) {
             case "vulnerable" -> "취약";
@@ -473,6 +525,7 @@ final class FlowScopeMcp {
     private ObjectNode evidenceSchema() {
         ObjectNode schema = schema();
         ((ObjectNode) schema.get("properties")).putObject("evidence_id").put("type", "string");
+        ((ObjectNode) schema.get("properties")).putObject("resource").put("type", "string");
         ((ArrayNode) schema.get("required")).add("evidence_id");
         return schema;
     }
@@ -498,6 +551,7 @@ final class FlowScopeMcp {
         ObjectNode props = (ObjectNode) schema.get("properties");
         props.putObject("evidence_id").put("type", "string");
         props.putObject("account_id").put("type", "string");
+        props.putObject("resource").put("type", "string");
         ArrayNode required = (ArrayNode) schema.get("required");
         required.add("evidence_id");
         required.add("account_id");

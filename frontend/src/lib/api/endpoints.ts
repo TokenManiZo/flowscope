@@ -56,6 +56,11 @@ export const saveRequestLabWorkspace = (values: { eventId: string; datasetRevisi
   }, undefined, signal)
 export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
+export type MatrixExclusionEntry = { key: string; view: "function" | "object"; operation: string; resource: string | null; label: string }
+export type MatrixExclusionsResponse = { datasetRevision: number; entries: MatrixExclusionEntry[] }
+export const getMatrixExclusions = (signal?: AbortSignal) => apiFetch<MatrixExclusionsResponse>("/api/matrix-exclusions", formSignal(signal))
+export const replaceMatrixExclusions = (datasetRevision: number, entries: readonly MatrixExclusionEntry[]) =>
+  postForm<MatrixExclusionsResponse>("/api/matrix-exclusions", { datasetRevision: String(datasetRevision), entries: JSON.stringify(entries) })
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
 const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promise<T> => {
   await prepareDatasetReplacement()

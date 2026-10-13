@@ -9,7 +9,8 @@ import { InfoHint } from "@/components/ui/info-hint"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { exclusionKey, groupApiJudgments, matrixApiResolver, loadMatrixExclusions, saveMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
+import { exclusionKey, groupApiJudgments, matrixApiResolver, loadMatrixExclusions, clearLegacyMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
+import { getMatrixExclusions, replaceMatrixExclusions } from "@/lib/api/endpoints"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
@@ -152,7 +153,9 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const scroll = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(0)
   const [api, setApi] = useState<string | null>(null)
-  const [exclusions, setExclusions] = useState(() => loadMatrixExclusions(storageScope))
+  const [exclusions, setExclusions] = useState<MatrixExclusion[]>([])
+  const [exclusionsDataset, setExclusionsDataset] = useState<number | null>(null)
+  const [exclusionPending, setExclusionPending] = useState(false)
   const [exclusionMessage, setExclusionMessage] = useState("")
   const [undo, setUndo] = useState<MatrixExclusion[] | null>(null)
   const [restoreOpen, setRestoreOpen] = useState(false)
@@ -167,12 +170,14 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const objectLabels = useMemo(() => new Map(snapshot.data?.displayObjects?.map(object => [`${object.operation.split(" ")[0]} observed-object:${object.objectKey}`, `${object.kind} · ${observedObjectLabel(object)}`])), [snapshot.data?.displayObjects])
   const rowObjectLabel = (resource: string) => objectLabels.get(resource) ?? withoutService(resource)
   const apiKey = useMemo(() => matrixApiResolver(snapshot.data?.displayObjects), [snapshot.data?.displayObjects])
-  const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.view === view).map(entry => entry.key)), [exclusions, view])
+  const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.resource === null || entry.view === view).map(entry => entry.key)), [exclusions, view])
   const includedRows = useMemo(() => projection?.rows.filter(row => !excludedKeys.has(exclusionKey(view, apiKey(row), null)) && !excludedKeys.has(exclusionKey(view, row.operation, null))
+    && !excludedKeys.has(exclusionKey(view === "object" ? "function" : "object", apiKey(row), null))
+    && !excludedKeys.has(exclusionKey(view === "object" ? "function" : "object", row.operation, null))
     && !excludedKeys.has(exclusionKey(view, row.operation, row.resource))) ?? [], [projection, view, excludedKeys, apiKey])
   const displayRows = useMemo(() => (api ? includedRows.filter(row => apiKey(row) === api) : groupApiJudgments(includedRows, apiKey))
     .filter(row => !attentionOnly || row.attention), [includedRows, api, attentionOnly, apiKey])
-  const excludedHere = exclusions.filter(entry => entry.view === view)
+  const excludedHere = exclusions.filter(entry => entry.view === view || entry.resource === null)
   const pageCount = Math.max(1, Math.ceil(displayRows.length / 50))
   const currentPage = Math.min(page, pageCount - 1)
   const visibleRows = displayRows.slice(currentPage * 50, (currentPage + 1) * 50)
@@ -189,22 +194,46 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
     setApi(operation); setPage(0); setSelectedId(null); setInspectorOpen(false)
   }
   const backToList = () => { pendingRestore.current = true; setApi(null); setPage(listPosition.current.page); setSelectedId(null); setInspectorOpen(false) }
-  const updateExclusions = (next: MatrixExclusion[]) => {
-    setExclusions(next)
-    return saveMatrixExclusions(storageScope, next)
+  useEffect(() => {
+    let active = true
+    if (!storageScope) return
+    void getMatrixExclusions().then(async current => {
+      if (!active) return
+      const legacy = loadMatrixExclusions(storageScope)
+      const saved = current.entries.length === 0 && legacy.length
+        ? await replaceMatrixExclusions(current.datasetRevision, legacy) : current
+      if (!active) return
+      clearLegacyMatrixExclusions(storageScope)
+      setExclusions(saved.entries)
+      setExclusionsDataset(saved.datasetRevision)
+    }).catch(error => { if (active) setExclusionMessage(error instanceof Error ? error.message : "제외 항목을 불러오지 못했습니다.") })
+    return () => { active = false }
+  }, [storageScope])
+  const updateExclusions = async (next: MatrixExclusion[]) => {
+    if (exclusionsDataset === null || exclusionPending) return false
+    setExclusionPending(true)
+    try {
+      const saved = await replaceMatrixExclusions(exclusionsDataset, next)
+      setExclusions(saved.entries)
+      return true
+    } catch (error) {
+      setExclusionMessage(error instanceof Error ? error.message : "제외 항목 저장에 실패했습니다.")
+      return false
+    } finally { setExclusionPending(false) }
   }
-  const exclude = (operation: string, resource: string | null) => {
-    const key = exclusionKey(view, operation, resource)
+  const exclude = async (operation: string, resource: string | null) => {
+    const entryView = view === "object" ? "object" : "function"
+    const key = exclusionKey(entryView, operation, resource)
     if (exclusions.some(entry => entry.key === key)) return
-    setUndo(exclusions)
     const label = resource ? `${withoutService(operation)} · ${rowObjectLabel(resource)}` : withoutService(operation)
-    const saved = updateExclusions([...exclusions, { key, view, operation, resource, label }])
-    setExclusionMessage(`${resource ? "객체 행을" : "API를"} 매트릭스에서 제외했습니다.${saved ? "" : " 설정은 현재 화면에서만 유지됩니다."}`)
+    if (!await updateExclusions([...exclusions, { key, view: entryView, operation, resource, label }])) return
+    setUndo(exclusions)
+    setExclusionMessage(`${resource ? "객체 행을" : "API를"} 매트릭스와 LLM 판정 대상에서 제외했습니다.`)
     setSelectedId(null); setInspectorOpen(false)
     if (api && resource === null) backToList()
   }
-  const restore = (key?: string) => {
-    updateExclusions(key ? exclusions.filter(entry => entry.key !== key) : exclusions.filter(entry => entry.view !== view))
+  const restore = async (key?: string) => {
+    if (!await updateExclusions(key ? exclusions.filter(entry => entry.key !== key) : exclusions.filter(entry => !excludedHere.includes(entry)))) return
     setUndo(null); setExclusionMessage("제외한 항목을 복원했습니다.")
   }
   const selected = matrix ? findJudgmentItem(matrix, selectedId) : null
@@ -220,11 +249,11 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
       <Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-8 gap-3 px-2 py-1" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">확인 필요한 결과만</span><span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-4" : "translate-x-0"}`} /></span></Button><InfoHint label="확인 필요한 결과만">취약점 의심, 추가 테스트 추천, 접근 기준·소유자 미확인, 요청 기록 없음 등 확인할 결과가 있는 API 행만 표시합니다. 같은 행의 다른 계정 결과도 함께 보여줍니다.</InfoHint>
     </div>
     <Popover open={restoreOpen} onOpenChange={setRestoreOpen}>
-      <PopoverTrigger asChild><Button size="sm" variant="outline" disabled={disabled || excludedHere.length === 0}><RotateCcw aria-hidden="true" className="size-3.5" />제외한 항목 {excludedHere.length}</Button></PopoverTrigger>
+      <PopoverTrigger asChild><Button size="sm" variant="outline" disabled={disabled || exclusionsDataset === null || excludedHere.length === 0}><RotateCcw aria-hidden="true" className="size-3.5" />제외한 항목 {excludedHere.length}</Button></PopoverTrigger>
       <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-0" aria-label="제외한 항목 복원">
-        <div className="flex items-center justify-between gap-3 border-b p-3"><p className="text-sm font-semibold">제외한 항목 {excludedHere.length}</p><Button size="sm" variant="ghost" disabled={disabled || excludedHere.length === 0} onClick={() => restore()}>전체 복원</Button></div>
-        <p className="px-3 pt-3 text-xs text-muted-foreground">매트릭스에서만 제외됩니다. 원본 요청과 판정 기록은 유지됩니다.</p>
-        <ul className="max-h-80 overflow-auto p-2">{excludedHere.map(entry => <li key={entry.key} className="flex items-center gap-3 rounded-md p-2"><span className="min-w-0 flex-1 break-all text-sm"><span className="mr-2 text-xs text-muted-foreground">{entry.resource ? "객체" : "API"}</span>{entry.label}</span><Button size="sm" variant="outline" disabled={disabled} aria-label={`${entry.label} 복원`} onClick={() => restore(entry.key)}>복원</Button></li>)}</ul>
+        <div className="flex items-center justify-between gap-3 border-b p-3"><p className="text-sm font-semibold">제외한 항목 {excludedHere.length}</p><Button size="sm" variant="ghost" disabled={disabled || exclusionPending || excludedHere.length === 0} onClick={() => void restore()}>전체 복원</Button></div>
+        <p className="px-3 pt-3 text-xs text-muted-foreground">매트릭스와 이후 LLM 검사에서 제외됩니다. 원본 요청과 기존 판정 기록은 유지됩니다.</p>
+        <ul className="max-h-80 overflow-auto p-2">{excludedHere.map(entry => <li key={entry.key} className="flex items-center gap-3 rounded-md p-2"><span className="min-w-0 flex-1 break-all text-sm"><span className="mr-2 text-xs text-muted-foreground">{entry.resource ? "객체" : "API"}</span>{entry.label}</span><Button size="sm" variant="outline" disabled={disabled || exclusionPending} aria-label={`${entry.label} 복원`} onClick={() => void restore(entry.key)}>복원</Button></li>)}</ul>
       </PopoverContent>
     </Popover>
   </div>
@@ -253,12 +282,12 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
         ["직접 확인 필요", summary.manualReviewPending],
         ["확정한 취약점", summary.humanConfirmed],
         ["정상·기각", summary.humanDismissed],
-      ].map(([label, value]) => <li key={String(label)} className="flex items-center gap-2 text-sm"><p className="text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{value}</p></li>)}<li><InfoHint label="전체 판정 집계">제외 여부와 관계없이 전체 판정 기록을 집계합니다. 제외는 매트릭스의 표시만 바꿉니다.</InfoHint></li></ul>}
+      ].map(([label, value]) => <li key={String(label)} className="flex items-center gap-2 text-sm"><p className="text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{value}</p></li>)}<li><InfoHint label="전체 판정 집계">기존 판정 기록의 전체 집계입니다. 제외한 항목은 매트릭스에서 숨기고 이후 LLM 검사에서 건너뜁니다.</InfoHint></li></ul>}
       {projection && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm">
         {api ? <nav aria-label="판정 매트릭스 경로" className="flex min-w-0 flex-wrap items-center gap-2"><Button size="sm" variant="ghost" onClick={backToList}><ArrowLeft aria-hidden="true" className="size-4" />목록으로</Button><ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" /><span className="break-all font-mono">{withoutService(api)}</span></nav> : <p className="text-muted-foreground">API {displayRows.length}개{view === "object" ? ` · 객체 ${displayRows.reduce((count, row) => count + (row as ApiJudgmentRow).objectCount, 0)}개` : ""}<InfoHint label="API별 판정 요약">수집된 객체의 판정 결과를 API별로 요약합니다. 의심·재현 결과를 우선 표시하며, API를 누르면 객체별 결과를 볼 수 있습니다. 요약은 API 전체의 정상 여부를 확정하지 않습니다.</InfoHint></p>}
-        {api && <Button size="sm" variant="outline" disabled={disabled} onClick={() => exclude(api, null)}>이 API 제외</Button>}
+        {api && <Button size="sm" variant="outline" disabled={disabled || exclusionPending || exclusionsDataset === null} onClick={() => void exclude(api, null)}>이 API 제외</Button>}
       </div>}
-      {exclusionMessage && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"><span>{exclusionMessage}</span>{undo && <Button size="sm" variant="ghost" disabled={disabled} onClick={() => { const saved = updateExclusions(undo); setUndo(null); setExclusionMessage(`제외를 취소했습니다.${saved ? "" : " 설정은 현재 화면에서만 유지됩니다."}`) }}>실행 취소</Button>}</div>}
+      {exclusionMessage && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"><span>{exclusionMessage}</span>{undo && <Button size="sm" variant="ghost" disabled={disabled || exclusionPending} onClick={() => void (async () => { if (await updateExclusions(undo)) { setUndo(null); setExclusionMessage("제외를 취소했습니다.") } })()}>실행 취소</Button>}</div>}
       {projection && pageCount > 1 && <nav aria-label="판정 매트릭스 페이지" className="flex shrink-0 items-center justify-between gap-3 text-sm"><span>{currentPage * 50 + 1}–{Math.min((currentPage + 1) * 50, displayRows.length)} / {displayRows.length}</span><div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>이전 페이지</Button><span>{currentPage + 1} / {pageCount}</span><Button size="sm" variant="outline" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>다음 페이지</Button></div></nav>}
       {projection && (displayRows.length ? <div ref={scroll} role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="min-h-40 min-w-0 max-w-full flex-1 overflow-auto rounded-md border overscroll-contain">
         <div className="relative min-h-full w-max min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}>
@@ -279,7 +308,7 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
                       <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">{group && group.objectCount > 0 ? <>객체 {group.objectCount}개<ChevronRight aria-hidden="true" className="size-3.5" /></> : group ? group.operations.length > 1 ? `요청 경로 ${group.operations.length}개` : "기능 판정" : "객체별 결과"}</span>
                       <div className="flex shrink-0 items-center gap-1">
                         <Button size="icon" variant="ghost" className="size-8" aria-label={`${withoutService(row.operation)} 최신 요청을 Request Lab에서 열기`} title="최신 요청 열기" disabled={disabled || !latest} onClick={() => setApiLabEvent(latest ?? null)}><ArrowUpRight aria-hidden="true" className="size-4" /></Button>
-                        <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스에서만 제외" disabled={disabled} onClick={() => exclude(row.operation, row.resource)}>제외</Button>
+                        <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스와 LLM 검사에서 제외" disabled={disabled || exclusionPending || exclusionsDataset === null} onClick={() => void exclude(row.operation, row.resource)}>제외</Button>
                       </div>
                     </div>
                   </div>

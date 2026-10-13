@@ -118,6 +118,7 @@ it("separates verdicts, limits long lists, and keeps the judgment action in unju
     const path = String(input)
     const value = path === "/api/snapshot" ? snapshotFixture
       : path === "/api/llm-findings" ? { findings }
+      : path === "/api/matrix-exclusions" ? { datasetRevision: 1, entries: [{ key: JSON.stringify(["function", "https://service.test GET /records/candidate", null]), view: "function", operation: "https://service.test GET /records/candidate", resource: null, label: "GET /records/candidate" }] }
       : path.startsWith("/api/llm-feed") ? { entries: [] }
       : path === "/api/llm-verify" ? { status: "SUCCEEDED", accountId: "", message: "완료" }
       : path === "/api/explorer-run" ? { run: { status: "IDLE", providerReadiness: "READY" }, accounts: [], scope: [] }
@@ -170,6 +171,8 @@ it("separates verdicts, limits long lists, and keeps the judgment action in unju
   expect(within(screen.getByLabelText("판정 요약")).getByRole("button", { name: "전체 보기" })).toBeInTheDocument()
   await user.click(screen.getByRole("tab", { name: /미판정/ }))
   expect(screen.getByRole("button", { name: "선택한 소견 판정" })).toBeInTheDocument()
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "https://service.test GET /records/candidate 판정 선택" })).toBeDisabled())
+  expect(screen.getByLabelText("LLM 판정 결과")).toHaveTextContent("LLM 검사 제외")
   await user.click(screen.getByRole("button", { name: "미판정 도움말" }))
   expect(screen.getByLabelText("미판정 설명")).toHaveTextContent("실행이 실패하거나 판정이 저장되지 않으면 미판정에 남습니다")
   await user.keyboard("{Escape}")

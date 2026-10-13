@@ -34,6 +34,7 @@ public final class AnalysisConfig {
     private final Map<String, String> resourceOwners = new LinkedHashMap<>();
     /** LLM 교차 검증 소견. key=finding id, value=소견 JSON 문자열. 판정이 아니라 사람 검토용 참고 자료다. */
     private final Map<String, String> llmFindings = new LinkedHashMap<>();
+    private final Map<String, MatrixExclusion> matrixExclusions = new LinkedHashMap<>();
     private final Map<String, ResourcePolicy> resourcePolicies = new LinkedHashMap<>();
     private final Map<String, AccountProfile> accounts = new LinkedHashMap<>();
     private final Map<String, String> sessionBindings = new LinkedHashMap<>();
@@ -271,6 +272,18 @@ public final class AnalysisConfig {
 
     public synchronized Map<String, String> llmFindings() { return Map.copyOf(llmFindings); }
 
+    public synchronized Map<String, MatrixExclusion> matrixExclusions() { return Map.copyOf(matrixExclusions); }
+
+    public synchronized AnalysisConfig replaceMatrixExclusions(java.util.Collection<MatrixExclusion> entries) {
+        if (entries == null || entries.size() > 5000) throw new IllegalArgumentException("제외 항목이 너무 많습니다.");
+        Map<String, MatrixExclusion> next = new LinkedHashMap<>();
+        for (MatrixExclusion entry : entries) {
+            if (next.putIfAbsent(entry.key(), entry) != null) throw new IllegalArgumentException("중복된 제외 항목입니다.");
+        }
+        matrixExclusions.clear(); matrixExclusions.putAll(next);
+        return this;
+    }
+
     /**
      * API 한 개와 객체 한 개 쌍의 정책 키. 그 API로 그 객체를 다룰 때만 적용된다
      * (예: 이 객체 조회만 공개 — 같은 객체의 수정·삭제와 같은 API의 다른 객체는 그대로 판정).
@@ -341,13 +354,14 @@ public final class AnalysisConfig {
         trafficOverrides.clear(); trafficOverrides.putAll(replacement.trafficOverrides());
         accountVerificationRules.clear(); accountVerificationRules.putAll(replacement.accountVerificationRules());
         llmFindings.clear(); llmFindings.putAll(replacement.llmFindings());
+        matrixExclusions.clear(); matrixExclusions.putAll(replacement.matrixExclusions());
     }
 
     private synchronized ConfigSnapshot snapshot() {
         return new ConfigSnapshot(Map.copyOf(identityRoles), Map.copyOf(endpointRequirements),
                 Map.copyOf(resourceOwners), Map.copyOf(resourcePolicies), Map.copyOf(accounts), Map.copyOf(sessionBindings),
                 Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules), apiState,
-                Map.copyOf(llmFindings));
+                Map.copyOf(llmFindings), Map.copyOf(matrixExclusions));
     }
 
     private record ConfigSnapshot(
@@ -360,10 +374,10 @@ public final class AnalysisConfig {
             Map<String, ReviewDecision> reviews,
             Map<String, TrafficOverride> trafficOverrides,
             Map<String, AccountVerificationRule> accountVerificationRules, ApiState apiState,
-            Map<String, String> llmFindings) {
+            Map<String, String> llmFindings, Map<String, MatrixExclusion> matrixExclusions) {
         static ConfigSnapshot empty() {
             return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-                    Map.of(), ApiState.empty(), Map.of());
+                    Map.of(), ApiState.empty(), Map.of(), Map.of());
         }
     }
 

@@ -48,6 +48,7 @@ import {
   askLlmJudgment,
   cancelLlmVerify,
   getLlmFeed,
+  getMatrixExclusions,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -64,6 +65,7 @@ export const queryKeys = {
   llmFindings: ["llm-findings"] as const,
   llmVerify: ["llm-verify"] as const,
   llmFeed: ["llm-feed"] as const,
+  matrixExclusions: (datasetRevision: number) => ["matrix-exclusions", datasetRevision] as const,
 }
 
 const pollingOptions = {
@@ -196,6 +198,10 @@ export function useLlmFindingsQuery(enabled: boolean, polling = false) {
   return useQuery({ queryKey: queryKeys.llmFindings, queryFn: ({ signal }) => getLlmFindings(signal),
     enabled, staleTime: FLOW_SCOPE_STALE_TIME_MS,
     refetchInterval: polling ? FLOW_SCOPE_POLL_INTERVAL_MS : false, refetchIntervalInBackground: false })
+}
+export function useMatrixExclusionsQuery(datasetRevision: number) {
+  return useQuery({ queryKey: queryKeys.matrixExclusions(datasetRevision), queryFn: ({ signal }) => getMatrixExclusions(signal),
+    enabled: datasetRevision > 0, staleTime: 0, refetchOnMount: "always", retry: 1 })
 }
 export function useLlmVerifyStateQuery(enabled: boolean, polling: boolean) {
   return useQuery({ queryKey: queryKeys.llmVerify, queryFn: ({ signal }) => getLlmVerifyState(signal),

@@ -85,6 +85,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("API 관리를 사용할 수 없습니다.");
         }
         AnalysisConfig config();
+        default void replaceMatrixExclusions(long dataset, List<io.flowscope.core.MatrixExclusion> entries) {
+            throw new UnsupportedOperationException("매트릭스 제외 저장을 사용할 수 없습니다.");
+        }
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
         /** LLM 교차 검증 소견(추천). 판정 엔진 결과와 분리된 참고 자료다. */
@@ -391,6 +394,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
             case "/api/requirement" -> requirement(request);
+            case "/api/matrix-exclusions" -> matrixExclusions(request);
             case "/api/resource-policy" -> resourcePolicy(request);
             case "/api/review" -> review(request);
             case "/api/traffic-override" -> trafficOverride(request);
@@ -895,6 +899,36 @@ public final class FlowScopeWebServer implements AutoCloseable {
         var projects = body.putArray("projects");
         status.projects().forEach(entry -> projects.add(projectEntry(entry)));
         return json(200, body);
+    }
+
+    private LoopbackHttpServer.Response matrixExclusions(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            long dataset = state.datasetRevision();
+            var entries = state.config().matrixExclusions().values();
+            if (dataset != state.datasetRevision()) return error(409, "프로젝트가 변경되었습니다. 다시 불러오세요.");
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", dataset);
+            body.set("entries", json.valueToTree(entries));
+            return json(200, body);
+        }
+        try {
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            JsonNode values = json.readTree(required(form, "entries"));
+            if (!values.isArray() || values.size() > 5000) throw new IllegalArgumentException("잘못된 제외 목록입니다.");
+            if (form.get("entries").length() > 2_000_000) throw new IllegalArgumentException("제외 목록이 너무 큽니다.");
+            List<io.flowscope.core.MatrixExclusion> entries = new java.util.ArrayList<>();
+            for (JsonNode value : values) entries.add(json.treeToValue(value, io.flowscope.core.MatrixExclusion.class));
+            long dataset = Long.parseLong(required(form, "datasetRevision"));
+            state.replaceMatrixExclusions(dataset, entries);
+            if (dataset != state.datasetRevision()) throw new IllegalStateException("프로젝트가 변경되었습니다. 다시 불러오세요.");
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", dataset);
+            body.set("entries", json.valueToTree(entries));
+            return json(200, body);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) { return error(400, "잘못된 제외 목록입니다."); }
+        catch (IllegalStateException error) { return error(409, error.getMessage()); }
+        catch (IllegalArgumentException error) { return error(400, error.getMessage()); }
     }
 
     private ObjectNode projectEntry(ProjectWorkspace.Entry entry) {
