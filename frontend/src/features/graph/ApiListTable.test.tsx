@@ -98,6 +98,24 @@ it("opens an object list under the row from the chip, marking only server-suspic
   expect(screen.queryByRole("table", { name: "orders 객체 목록" })).not.toBeInTheDocument()
 })
 
+it("counts each observed request target once instead of repeating its legacy resource", async () => {
+  const service = "https://demo.test", op = `${service} POST /api/orders/{id}/review`
+  const events = ["101", "102"].map((id, index) => event(`e${index}`, {
+    op, resource: `${service} orders:${id}`, path: `/api/orders/${id}/review`,
+  }))
+  const displayObjects = events.map((item, index) => ({ eventId: item.eventId, operation: op, apiKey: op,
+    groupKey: "orders", objectKey: `object-${index}`, kind: "PATH" as const, locations: ["PATH", "QUERY", "REQUEST_BODY"] as const,
+    fields: ["/segments/2"], legacyResource: item.resource, ordinal: index + 1 }))
+  const cells = events.flatMap((item, index) => [item.resource, `${service} observed-object:object-${index}`].map(resource => ({
+    idn: item.idn, op, resource, overall: "allow", evidenceIds: [item.eventId], perSource: { human: "allow" },
+  }) as unknown as Cell))
+  render(<ApiListTable operations={[operation(op, events.map(item => item.eventId))]}
+    snapshot={{ events, cells, owners: {}, displayObjects }} selectedId={null} onSelectApi={vi.fn()} onSelectObject={vi.fn()} />)
+  expect(screen.queryByRole("button", { name: /orders 객체/ })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole("button", { name: "observed-object 객체 2개 펼치기" }))
+  expect(within(screen.getByRole("table", { name: "observed-object 객체 목록" })).getAllByRole("row")).toHaveLength(3)
+})
+
 
 it("keeps the identity filter when opening Object rows and restores all rows when cleared", async () => {
   const op = "GET /orders/{id}"

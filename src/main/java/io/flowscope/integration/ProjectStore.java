@@ -711,6 +711,7 @@ public final class ProjectStore {
         policy.set("resource_policies", json.valueToTree(config.resourcePolicies()));
         policy.set("traffic_overrides", json.valueToTree(config.trafficOverrides()));
         policy.set("llm_findings", json.valueToTree(config.llmFindings()));
+        policy.set("matrix_exclusions", json.valueToTree(config.matrixExclusions()));
         ArrayNode accounts = policy.putArray("accounts");
         config.accounts().values().stream().sorted(java.util.Comparator.comparing(AccountProfile::id)).forEach(account -> {
             ObjectNode value = accounts.addObject();
@@ -758,6 +759,14 @@ public final class ProjectStore {
                 config.withTrafficOverride(e.getKey(), enumValue(TrafficOverride.class, e.getValue().asText())));
         value.path("llm_findings").properties().forEach(e ->
                 config.withLlmFinding(e.getKey(), e.getValue().asText()));
+        java.util.List<io.flowscope.core.MatrixExclusion> exclusions = new java.util.ArrayList<>();
+        value.path("matrix_exclusions").properties().forEach(e -> {
+            try {
+                JsonNode entry = e.getValue().isTextual() ? json.readTree(e.getValue().asText()) : e.getValue();
+                exclusions.add(json.treeToValue(entry, io.flowscope.core.MatrixExclusion.class));
+            } catch (Exception error) { throw new IllegalArgumentException("잘못된 매트릭스 제외 항목입니다.", error); }
+        });
+        config.replaceMatrixExclusions(exclusions);
         JsonNode accounts = value.path("accounts");
         if (accounts.isArray()) {
             for (JsonNode account : accounts) {

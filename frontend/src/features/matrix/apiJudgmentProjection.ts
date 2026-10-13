@@ -2,7 +2,7 @@ import type { DisplayObject } from "@/lib/api/types"
 import { operationShapeKey } from "@/features/graph/graphPathShape"
 import type { JudgmentCell, JudgmentRow, JudgmentView } from "./judgmentProjection"
 
-export interface MatrixExclusion { key: string; view: JudgmentView; operation: string; resource: string | null; label: string }
+export interface MatrixExclusion { key: string; view: "function" | "object"; operation: string; resource: string | null; label: string }
 export interface ApiJudgmentRow extends JudgmentRow { objectCount: number; operations: readonly string[]; countsByIdentity: Record<string, readonly { label: string; count: number }[]> }
 export const exclusionKey = (view: JudgmentView, operation: string, resource: string | null) => JSON.stringify([view, operation, resource])
 export function isExcluded(row: JudgmentRow, view: JudgmentView, exclusions: readonly MatrixExclusion[]) {
@@ -76,11 +76,6 @@ export function loadMatrixExclusions(scope: string | null): MatrixExclusion[] {
       && entry.key === exclusionKey(entry.view, entry.operation, entry.resource))
   } catch { return [] }
 }
-export function saveMatrixExclusions(scope: string | null, entries: readonly MatrixExclusion[]): boolean {
-  if (!scope) return false
-  try {
-    const raw = JSON.stringify(entries)
-    if (entries.length > MAX_EXCLUSIONS || raw.length > 2_000_000) return false
-    localStorage.setItem(storageKey(scope), raw); return true
-  } catch { return false }
+export function clearLegacyMatrixExclusions(scope: string | null) {
+  if (scope) try { localStorage.removeItem(storageKey(scope)) } catch { /* server state remains authoritative */ }
 }

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react"
-import { FileSearch, House, LayoutDashboard, Network, ScanSearch, Table2, UsersRound } from "lucide-react"
+import { Bot, FileSearch, House, LayoutDashboard, Network, ScanSearch, Table2, UsersRound } from "lucide-react"
 
 export type AppRoute =
   | "home"
@@ -8,6 +8,7 @@ export type AppRoute =
   | "graph"
   | "matrix"
   | "evidence"
+  | "llm-judgment"
   | "accounts"
 
 export interface AppRouteDefinition {
@@ -24,11 +25,12 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "graph", label: "점검 그래프", group: "analysis", icon: Network },
   { route: "matrix", label: "판정 매트릭스", group: "analysis", icon: Table2 },
   { route: "evidence", label: "요청 기록", group: "evidence", icon: FileSearch },
+  { route: "llm-judgment", label: "LLM 판정", group: "evidence", icon: Bot },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
 ]
 
 /** 점검 흐름 순서의 직접 링크. */
-export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "matrix", "evidence"] as const satisfies readonly AppRoute[]
+export const primaryNavigationRoutes = ["inspection", "accounts", "graph", "matrix", "evidence", "llm-judgment"] as const satisfies readonly AppRoute[]
 
 const routeSet = new Set<AppRoute>(appRoutes.map(({ route }) => route))
 

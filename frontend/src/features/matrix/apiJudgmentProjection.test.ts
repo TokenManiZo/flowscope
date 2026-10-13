@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest"
 import type { DisplayObject } from "@/lib/api/types"
 import type { JudgmentCell, JudgmentRow } from "./judgmentProjection"
-import { exclusionKey, groupApiJudgments, matrixApiResolver, isExcluded, loadMatrixExclusions, saveMatrixExclusions } from "./apiJudgmentProjection"
+import { exclusionKey, groupApiJudgments, matrixApiResolver, isExcluded, loadMatrixExclusions, clearLegacyMatrixExclusions } from "./apiJudgmentProjection"
 const op = "https://demo.test:443 GET /orders/{id}"
 const cell = (id: string, status: string, reviewStatus = "UNRESOLVED") => ({ id, status, reviewStatus }) as JudgmentCell
 const row = (resource: string, value: JudgmentCell, operation = op): JudgmentRow => ({ key: resource, resource, operation, policy: null, ownerLabel: "A", attention: value.status.includes("CANDIDATE"), cellsByIdentity: { a: value } })
@@ -32,14 +32,15 @@ it("excludes an exact object or entire API independently in each matrix view", (
 })
 it("isolates project storage, rejects invalid persisted data and tolerates unavailable storage", () => {
   const entry = { key: exclusionKey("object", op, null), view: "object" as const, operation: op, resource: null, label: "API" }
-  expect(saveMatrixExclusions("one", [entry])).toBe(true)
+  localStorage.setItem("flowscope.matrix.exclusions.v1:one", JSON.stringify([entry]))
   expect(loadMatrixExclusions("one")).toEqual([entry])
   expect(loadMatrixExclusions("two")).toEqual([])
   localStorage.setItem("flowscope.matrix.exclusions.v1:bad", JSON.stringify([{ ...entry, key: "wrong" }, null]))
   expect(loadMatrixExclusions("bad")).toEqual([])
-  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota") })
-  expect(saveMatrixExclusions("one", [])).toBe(false)
-  expect(saveMatrixExclusions(null, [])).toBe(false)
+  localStorage.setItem("flowscope.matrix.exclusions.v1:huge", JSON.stringify(Array.from({ length: 5001 }, () => entry)))
+  expect(loadMatrixExclusions("huge")).toEqual([])
+  clearLegacyMatrixExclusions("one")
+  expect(loadMatrixExclusions("one")).toEqual([])
 })
 
 it("shares the graph metadata for alphabetic IDs, static routes and nested API families", () => {

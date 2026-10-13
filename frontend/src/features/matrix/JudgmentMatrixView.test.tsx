@@ -8,6 +8,7 @@ import type { AuthorizationMatrix, MatrixConfigurationWarning, MatrixFunctionCel
 import { snapshotFixture } from "@/test/fixtures"
 import { renderWithQueryClient } from "@/test/render"
 import { JudgmentMatrixView } from "./JudgmentMatrixView"
+import type { MatrixExclusionEntry } from "@/lib/api/endpoints"
 
 class ResizeObserverStub { observe() {} unobserve() {} disconnect() {} }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub)
@@ -15,6 +16,11 @@ vi.stubGlobal("ResizeObserver", ResizeObserverStub)
 let current: Snapshot | undefined
 let queryError = false
 let projectId = "matrix-project"
+const exclusionStore = new Map<string, MatrixExclusionEntry[]>()
+const getMatrixExclusions = vi.fn(async () => ({ datasetRevision: 1, entries: exclusionStore.get(projectId) ?? [] }))
+const replaceMatrixExclusions = vi.fn(async (_dataset: number, entries: readonly MatrixExclusionEntry[]) => {
+  exclusionStore.set(projectId, [...entries]); return { datasetRevision: 1, entries: [...entries] }
+})
 const refetchSnapshot = vi.fn()
 const saveReview = vi.fn(async (itemId: string, status: string, note: string) => ({ success: true, message: `saved ${itemId} ${status} ${note}` }))
 const saveRequirement = vi.fn(async (operation: string, role: string) => ({ success: true, message: `requirement ${operation} ${role}` }))
@@ -40,6 +46,8 @@ vi.mock("@/lib/api/endpoints", async (importOriginal) => ({
   saveResourcePolicy: (target: string, policy: string) => saveResourcePolicy(target, policy),
   saveRole: (identity: string, role: string) => saveRole(identity, role),
   runAuthorizationReplay: (itemId: string, armed: boolean) => runAuthorizationReplay(itemId, armed),
+  getMatrixExclusions: () => getMatrixExclusions(),
+  replaceMatrixExclusions: (dataset: number, entries: readonly MatrixExclusionEntry[]) => replaceMatrixExclusions(dataset, entries),
 }))
 vi.mock("@/features/evidence/RequestLabDialog", () => ({ RequestLabDialog: ({ event }: { event: { eventId: string } }) => <div role="dialog" aria-label="Request Lab">{event.eventId}</div> }))
 
@@ -78,7 +86,7 @@ function renderView(ui: ReactElement) {
   return { ...result, rerender: (next: ReactElement) => result.rerender(<QueryClientProvider client={result.client}>{next}</QueryClientProvider>) }
 }
 
-beforeEach(() => { localStorage.clear(); projectId = "matrix-project"; current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); })
+beforeEach(() => { localStorage.clear(); exclusionStore.clear(); projectId = "matrix-project"; current = snapshot; queryError = false; humanRunActive = false; window.location.hash = ""; saveReview.mockClear(); refetchSnapshot.mockClear(); runAuthorizationReplay.mockClear(); getMatrixExclusions.mockClear(); replaceMatrixExclusions.mockClear(); })
 
 it("renders the compact server summary and matrix without row subtitles or P/E/O cell chips", async () => {
   renderView(<JudgmentMatrixView />)
@@ -443,7 +451,7 @@ it("summarizes APIs, drills into all related objects, excludes an object and res
   expect(within(table).queryByText("/api/products")).not.toBeInTheDocument()
   expect(within(table).getAllByRole("row")).toHaveLength(3)
   await user.click(screen.getByRole("button", { name: "orders:102 매트릭스에서 제외" }))
-  expect(within(table).queryByText(/orders:102/)).not.toBeInTheDocument()
+  await waitFor(() => expect(within(table).queryByText(/orders:102/)).not.toBeInTheDocument())
   await user.click(screen.getByRole("button", { name: "실행 취소" }))
   expect(within(table).getByText("orders:102 · 객체 소유자 A")).toBeVisible()
   await user.click(screen.getByRole("button", { name: "목록으로" }))
@@ -456,13 +464,13 @@ it("persists API exclusions only for the active project and restores individual 
   const user = userEvent.setup()
   const { rerender } = renderView(<JudgmentMatrixView />)
   await user.click(screen.getByRole("button", { name: "GET /api/admin/export 매트릭스에서 제외" }))
-  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole("table")).not.toBeInTheDocument())
   projectId = "different-project"
   rerender(<JudgmentMatrixView />)
   expect(screen.getByRole("table")).toBeVisible()
   projectId = "matrix-project"
   rerender(<JudgmentMatrixView />)
-  expect(screen.queryByRole("table")).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByRole("table")).not.toBeInTheDocument())
   await user.click(screen.getByRole("button", { name: "제외한 항목 1" }))
   await user.click(screen.getByRole("button", { name: "GET /api/admin/export 복원" }))
   expect(screen.getByRole("table")).toBeVisible()
@@ -472,6 +480,33 @@ it("persists API exclusions only for the active project and restores individual 
   await user.click(screen.getByRole("button", { name: "전체 복원" }))
   expect(screen.getByRole("table")).toBeVisible()
   expect(saveReview).not.toHaveBeenCalled()
+})
+
+it("keeps an item visible when the project save fails", async () => {
+  const user = userEvent.setup()
+  replaceMatrixExclusions.mockRejectedValueOnce(new Error("DB 저장 실패"))
+  renderView(<JudgmentMatrixView />)
+  const button = await screen.findByRole("button", { name: "GET /api/admin/export 매트릭스에서 제외" })
+  await waitFor(() => expect(button).toBeEnabled())
+  await user.click(button)
+  expect(screen.getByRole("table")).toBeVisible()
+  expect(await screen.findByRole("status")).toHaveTextContent("DB 저장 실패")
+  expect(exclusionStore.get(projectId)).toBeUndefined()
+})
+
+it("migrates legacy browser exclusions once and can restore them from the project", async () => {
+  const user = userEvent.setup()
+  const operation = `${service} GET /api/admin/export`
+  const entry = { key: JSON.stringify(["function", operation, null]), view: "function", operation, resource: null, label: "GET /api/admin/export" }
+  localStorage.setItem(`flowscope.matrix.exclusions.v1:${JSON.stringify(["/test/projects", projectId])}`, JSON.stringify([entry]))
+  renderView(<JudgmentMatrixView />)
+  await waitFor(() => expect(screen.queryByRole("table")).not.toBeInTheDocument())
+  expect(exclusionStore.get(projectId)).toEqual([entry])
+  await user.click(screen.getByRole("button", { name: "제외한 항목 1" }))
+  await user.click(screen.getByRole("button", { name: "GET /api/admin/export 복원" }))
+  await waitFor(() => expect(screen.getByRole("table")).toBeVisible())
+  expect(exclusionStore.get(projectId)).toEqual([])
+  expect(localStorage.getItem(`flowscope.matrix.exclusions.v1:${JSON.stringify(["/test/projects", projectId])}`)).toBeNull()
 })
 
 it("explains short statuses through a separate keyboard-accessible help button without opening the inspector", async () => {
@@ -507,14 +542,14 @@ it("uses the graph API key for opaque paths, preserves object reviews and latest
   await user.click(screen.getByRole("button", { name: "GET /api/posts/{id} 최신 요청을 Request Lab에서 열기" }))
   expect(screen.getByRole("dialog", { name: "Request Lab" })).toHaveTextContent("newest")
   await user.click(screen.getByRole("button", { name: "GET /api/posts/{id} 관련 결과 보기" }))
-  await user.click(screen.getByRole("button", { name: "BOLA/IDOR 후보: B · GET /api/posts/bbbb · PATH · OBJ 2" }))
+  await user.click(screen.getByRole("button", { name: "BOLA/IDOR 후보: B · GET /api/posts/bbbb · OBJ 2" }))
   await user.click(within(screen.getByRole("region", { name: "취약점 확인" })).getByRole("button", { name: "취약점으로 확정" }))
   await waitFor(() => expect(saveReview).toHaveBeenCalledWith("opaque-b", "CONFIRMED", ""))
   await user.click(screen.getByRole("button", { name: "이 API 제외" }))
-  expect(screen.queryByText("/api/posts/{id}")).not.toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByText("/api/posts/{id}")).not.toBeInTheDocument())
   current = { ...current!, revision: 5, authorizationMatrix: { ...matrix, objects: [...related, obj("opaque-new", "a", `${service} extra`, { operation: `${service} GET /api/posts/cccc` })] }, displayObjects: [...displayObjects, { ...displayObjects[0], operation: `${service} GET /api/posts/cccc`, objectKey: "key-c" }] }
   rerender(<JudgmentMatrixView />)
-  expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2)
+  await waitFor(() => expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2))
   await user.click(screen.getByRole("button", { name: "실행 취소" }))
   expect(screen.getByText("객체 3개")).toBeVisible()
 })

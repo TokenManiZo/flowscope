@@ -1,5 +1,5 @@
 import { observedObjectEntries, MAX_VISIBLE_OBJECTS } from "./observedObjects"
-import { observedObjectLabel } from "./observedObjectLabel"
+import { observedObjectDisplayLabel } from "./observedObjectLabel"
 import { graphAccountLabel } from "./graphAccounts"
 import type { Snapshot } from "@/lib/api/types"
 import type { GraphFilters } from "./graphProjection"
@@ -104,7 +104,7 @@ export function buildGraphSearchIndex(snapshot: Snapshot, filters: GraphFilters)
     const group = operationGroup(object.operation, resolveGroup), operation = representatives.get(object.apiKey)!
     const family = families.get(object.apiKey)
     const context = { groupId: group.id, groupLabel: group.label, operation, ...(family ? { expand: [`operation-group:${family}`] } : {}) }
-    if (visible) add("resource", group.service, object.objectKey, observedObjectLabel(object), context)
+    if (visible) add("resource", group.service, object.objectKey, observedObjectDisplayLabel(object), context)
     const label = object.kind === "PATH" ? (family?.match(/\{id_\d+\}/g)?.at(-1)?.slice(1, -1) ?? "id") : object.kind === "RESPONSE_BODY" ? "OBJ" : object.fields.join(" · ")
     add("object-group", group.service, object.groupKey, label, context)
   }

@@ -25,6 +25,7 @@ import type {
   ProjectStatus,
   LlmFinding,
   LlmVerifyState,
+  LlmFeedEntry,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
@@ -55,6 +56,11 @@ export const saveRequestLabWorkspace = (values: { eventId: string; datasetRevisi
   }, undefined, signal)
 export const getManualAttempts = (signal?: AbortSignal) => apiFetch<readonly ManualAttempt[]>("/api/manual-attempts", formSignal(signal))
 export const getProjects = (signal?: AbortSignal) => apiFetch<ProjectStatus>("/api/projects", formSignal(signal))
+export type MatrixExclusionEntry = { key: string; view: "function" | "object"; operation: string; resource: string | null; label: string }
+export type MatrixExclusionsResponse = { datasetRevision: number; entries: MatrixExclusionEntry[] }
+export const getMatrixExclusions = (signal?: AbortSignal) => apiFetch<MatrixExclusionsResponse>("/api/matrix-exclusions", formSignal(signal))
+export const replaceMatrixExclusions = (datasetRevision: number, entries: readonly MatrixExclusionEntry[]) =>
+  postForm<MatrixExclusionsResponse>("/api/matrix-exclusions", { datasetRevision: String(datasetRevision), entries: JSON.stringify(entries) })
 // Signal only after the server confirms replacement. A failed switch must preserve the current editor and dataset.
 const confirmedDatasetReplacement = async <T>(request: () => Promise<T>): Promise<T> => {
   await prepareDatasetReplacement()
@@ -131,16 +137,27 @@ export const completeExplorerBrowserLogin = (id: string) =>
 export const deleteExplorerAccount = (id: string) => postForm<ApiSuccess>("/api/explorer-accounts", { action: "delete", id })
 export const resetIdentities = () => postForm<ApiSuccess>("/api/identity-reset", {})
 export const saveOwner = (resource: string, identity: string) => postForm<ApiSuccess>("/api/owner", { resource, identity })
+export const saveObjectGroupOwner = (values: { groupKey: string; choice: string; datasetRevision: number }) =>
+  postForm<ApiSuccess>("/api/object-group-owner", { ...values, datasetRevision: String(values.datasetRevision) })
 
 /** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
 export const getLlmFindings = (signal?: AbortSignal) =>
   apiFetch<{ findings: readonly LlmFinding[] }>("/api/llm-findings", formSignal(signal))
-/** 보내는 계정 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-export const startLlmVerify = (accountId: string) =>
-  postForm<LlmVerifyState>("/api/llm-verify", { accountId })
-/** 실행 중인 LLM 검증을 중단한다. */
+/** 선택한 소스 범위·판정할 계정(쉼표, 비로그인=anon)·모델로 LLM 판정(Codex) 실행을 시작한다. */
+export const startLlmVerify = (values: { sources: string; accounts: string; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", values)
+/** 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다. */
+export const startLlmJudgment = (values: { findings: readonly string[]; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "judge", findings: JSON.stringify(values.findings), model: values.model })
+
+export const askLlmJudgment = (values: { message: string; model: string }) =>
+  postForm<LlmVerifyState>("/api/llm-verify", { action: "ask", message: values.message, model: values.model })
+/** 실행 중인 LLM 판정을 중단한다. */
 export const cancelLlmVerify = () =>
   postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })
-/** 현재 LLM 검증 실행 상태. */
+/** 현재 LLM 판정 실행 상태. */
 export const getLlmVerifyState = (signal?: AbortSignal) =>
   apiFetch<LlmVerifyState>("/api/llm-verify", formSignal(signal))
+/** LLM 판정 작업 피드(활동 로그). after 이후만 가져온다. */
+export const getLlmFeed = (after = 0, signal?: AbortSignal) =>
+  apiFetch<{ entries: readonly LlmFeedEntry[] }>(`/api/llm-feed?after=${after}`, formSignal(signal))

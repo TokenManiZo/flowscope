@@ -1,6 +1,6 @@
 import { identityLabel } from "@/lib/display/identityLabel"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { ArrowLeft, ArrowUpRight, ChevronRight, RotateCcw, ShieldCheck, Square, UserRound } from "lucide-react"
+import { ArrowLeft, ArrowUpRight, ChevronRight, RotateCcw, ShieldCheck, UserRound } from "lucide-react"
 
 import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysisWorkspace"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,23 +9,23 @@ import { InfoHint } from "@/components/ui/info-hint"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { exclusionKey, groupApiJudgments, matrixApiResolver, loadMatrixExclusions, saveMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
+import { exclusionKey, groupApiJudgments, matrixApiResolver, loadMatrixExclusions, clearLegacyMatrixExclusions, type ApiJudgmentRow, type MatrixExclusion } from "./apiJudgmentProjection"
+import { getMatrixExclusions, replaceMatrixExclusions } from "@/lib/api/endpoints"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { EventRecord, ReviewStatus, Snapshot } from "@/lib/api/types"
 import { wrapPath } from "@/lib/display/pathLines"
-import { useProjectsQuery, useRequirementMutation, useReviewMutation, useSnapshotQuery, useLlmFindingsQuery, useLlmVerifyStateQuery, useStartLlmVerifyMutation, useCancelLlmVerifyMutation } from "@/lib/query/hooks"
-import type { LlmFinding, LlmVerifyState, ManagedSession } from "@/lib/api/types"
-import { cn } from "@/lib/utils"
+import { useProjectsQuery, useRequirementMutation, useReviewMutation, useSnapshotQuery } from "@/lib/query/hooks"
 import { RequestLabDialog } from "@/features/evidence/RequestLabDialog"
-import { observedObjectLabel } from "@/features/graph/observedObjectLabel"
+import { observedObjectDisplayLabel } from "@/features/graph/observedObjectLabel"
 import { MatrixOwnerControl } from "./MatrixOwnerControl"
 import { OperationColumnResizeHandle, OPERATION_COLUMN_DEFAULT_WIDTH } from "./OperationColumnResizeHandle"
 import { latestOperationEvent, requestLabEvent } from "./requestLabEvent"
 import { findJudgmentItem, isReviewable, judgmentStatusDescription, judgmentStatusLabel, judgmentTone, projectJudgmentMatrix, quietStatusLabel, reviewSuffix, withoutService, type JudgmentItem, type JudgmentView } from "./judgmentProjection"
 
 function objectLabel(snapshot: Snapshot | undefined, resource: string) {
-  const object = snapshot?.displayObjects?.find(object => `${object.operation.split(" ")[0]} observed-object:${object.objectKey}` === resource)
-  return object ? `${object.kind} · ${observedObjectLabel(object)}` : withoutService(resource)
+  const objects = snapshot?.displayObjects?.filter(object => `${object.operation.split(" ")[0]} observed-object:${object.objectKey}` === resource) ?? []
+  if (!objects.length) return withoutService(resource)
+  return observedObjectDisplayLabel({ ...objects[0], locations: [...new Set(objects.flatMap(object => object.locations ?? [object.kind]))] })
 }
 
 const toneClass: Record<ReturnType<typeof judgmentTone>, string> = {
@@ -139,42 +139,6 @@ function JudgmentDetail({ item, requiredRole, disabled, snapshot }: { item: Judg
   </div>
 }
 
-/**
- * LLM 모드 계정 열 머리 버튼.
- * 세션 없음 → "로그인 필요"(계정·세션 화면에서 그 계정 로그인) → 세션 ACTIVE → "LLM 테스트" → 검증 중 "중단".
- */
-function LlmTestColumnButton({ identity, session, verify, findingCount, disabled, onStart, onCancel, canceling }: {
-  identity: { id: string; label: string }; session: ManagedSession | undefined;
-  verify: LlmVerifyState | undefined; findingCount: number; disabled: boolean;
-  onStart: (accountId: string) => void; onCancel: () => void; canceling: boolean }) {
-  const ready = session?.replayReady === true
-  const mine = verify?.accountId === identity.id
-  const running = verify?.status === "RUNNING" && mine
-  const anotherRunning = verify?.status === "RUNNING" && !mine
-  // 이 계정의 끝난 실행 결과(성공·실패·중단)를 열 머리에 남겨, 동작했는지 보이게 한다.
-  const outcome = mine && (verify?.status === "SUCCEEDED" || verify?.status === "FAILED" || verify?.status === "CANCELLED")
-    ? verify : undefined
-  if (running) return <div className="mt-2 grid gap-1">
-    <p className="flex items-center gap-1 text-xs text-foreground" role="status" aria-live="polite">
-      <ShieldCheck aria-hidden="true" className="size-3 animate-pulse" />검증 중 · 소견 {findingCount}건</p>
-    <Button size="sm" variant="outline" className="h-8 w-full border-destructive/40 text-destructive hover:text-destructive"
-      disabled={canceling} onClick={onCancel}><Square aria-hidden="true" className="size-3.5" />중단</Button>
-  </div>
-  return <div className="mt-2 grid gap-1">
-    {outcome && <p className={cn("text-[11px] leading-4", outcome.status === "FAILED" ? "text-destructive"
-      : outcome.status === "SUCCEEDED" ? "text-emerald-600" : "text-muted-foreground")} role="status">
-      {outcome.status === "SUCCEEDED" ? `검증 완료 · 소견 ${findingCount}건`
-        : outcome.status === "CANCELLED" ? "중단됨"
-        : `검증 실패: ${outcome.message}`}</p>}
-    {ready
-      ? <Button size="sm" className="h-8 w-full" disabled={disabled || anotherRunning} onClick={() => onStart(identity.id)}>
-          <ShieldCheck aria-hidden="true" className="size-3.5" />{outcome ? "다시 테스트" : "LLM 테스트"}</Button>
-      : <Button size="sm" variant="outline" className="h-8 w-full" disabled={disabled}
-          onClick={() => { window.location.hash = "#accounts/" + encodeURIComponent(identity.id) }}>로그인 필요</Button>}
-    {anotherRunning && <span className="text-[11px] text-muted-foreground">다른 계정 검증이 끝나면 실행할 수 있습니다.</span>}
-  </div>
-}
-
 export function JudgmentMatrixView() {
   const snapshot = useSnapshotQuery()
   const projects = useProjectsQuery()
@@ -190,7 +154,9 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const scroll = useRef<HTMLDivElement>(null)
   const [page, setPage] = useState(0)
   const [api, setApi] = useState<string | null>(null)
-  const [exclusions, setExclusions] = useState(() => loadMatrixExclusions(storageScope))
+  const [exclusions, setExclusions] = useState<MatrixExclusion[]>([])
+  const [exclusionsDataset, setExclusionsDataset] = useState<number | null>(null)
+  const [exclusionPending, setExclusionPending] = useState(false)
   const [exclusionMessage, setExclusionMessage] = useState("")
   const [undo, setUndo] = useState<MatrixExclusion[] | null>(null)
   const [restoreOpen, setRestoreOpen] = useState(false)
@@ -200,37 +166,29 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
-  const [mode, setMode] = useState<"standard" | "llm">("standard")
-  const verifyStatus = useLlmVerifyStateQuery(mode === "llm", mode === "llm")
-  const verifyRunning = verifyStatus.data?.status === "RUNNING"
-  // 검증이 도는 동안 소견을 계속 새로 불러와, 재전송·소견이 칸에 실시간으로 채워지는 걸 보여 준다.
-  const llmFindings = useLlmFindingsQuery(mode === "llm", verifyRunning)
-  const startVerify = useStartLlmVerifyMutation()
-  const cancelVerify = useCancelLlmVerifyMutation()
-  const sessionFor = (identityId: string): ManagedSession | undefined =>
-    snapshot.data?.managedSessions.find(session => session.accountId === identityId)
-  const findingMap = useMemo(() => {
-    const result = new Map<string, LlmFinding>()
-    for (const finding of llmFindings.data?.findings ?? []) {
-      result.set(`${finding.operation}\u0000${finding.identity}\u0000${finding.resource ?? ""}`, finding)
-    }
-    return result
-  }, [llmFindings.data])
-  const findingCountFor = (identityId: string) =>
-    (llmFindings.data?.findings ?? []).filter(finding => finding.identity === identityId).length
-  // 검증이 끝나면 소견을 한 번 더 불러온다.
-  useEffect(() => { if (verifyStatus.data?.status === "SUCCEEDED") void llmFindings.refetch() }, [verifyStatus.data?.status])
   const matrix = snapshot.data?.authorizationMatrix ?? null
   const projection = useMemo(() => matrix ? projectJudgmentMatrix(matrix, view, false) : null, [matrix, view])
-  const objectLabels = useMemo(() => new Map(snapshot.data?.displayObjects?.map(object => [`${object.operation.split(" ")[0]} observed-object:${object.objectKey}`, `${object.kind} · ${observedObjectLabel(object)}`])), [snapshot.data?.displayObjects])
+  const objectLabels = useMemo(() => {
+    const grouped = new Map<string, NonNullable<Snapshot["displayObjects"]>[number][]>()
+    for (const object of snapshot.data?.displayObjects ?? []) {
+      const resource = `${object.operation.split(" ")[0]} observed-object:${object.objectKey}`
+      const items = grouped.get(resource) ?? []
+      items.push(object)
+      grouped.set(resource, items)
+    }
+    return new Map([...grouped].map(([resource, objects]) => [resource,
+      observedObjectDisplayLabel({ ...objects[0], locations: [...new Set(objects.flatMap(object => object.locations ?? [object.kind]))] })]))
+  }, [snapshot.data?.displayObjects])
   const rowObjectLabel = (resource: string) => objectLabels.get(resource) ?? withoutService(resource)
   const apiKey = useMemo(() => matrixApiResolver(snapshot.data?.displayObjects), [snapshot.data?.displayObjects])
-  const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.view === view).map(entry => entry.key)), [exclusions, view])
+  const excludedKeys = useMemo(() => new Set(exclusions.filter(entry => entry.resource === null || entry.view === view).map(entry => entry.key)), [exclusions, view])
   const includedRows = useMemo(() => projection?.rows.filter(row => !excludedKeys.has(exclusionKey(view, apiKey(row), null)) && !excludedKeys.has(exclusionKey(view, row.operation, null))
+    && !excludedKeys.has(exclusionKey(view === "object" ? "function" : "object", apiKey(row), null))
+    && !excludedKeys.has(exclusionKey(view === "object" ? "function" : "object", row.operation, null))
     && !excludedKeys.has(exclusionKey(view, row.operation, row.resource))) ?? [], [projection, view, excludedKeys, apiKey])
   const displayRows = useMemo(() => (api ? includedRows.filter(row => apiKey(row) === api) : groupApiJudgments(includedRows, apiKey))
     .filter(row => !attentionOnly || row.attention), [includedRows, api, attentionOnly, apiKey])
-  const excludedHere = exclusions.filter(entry => entry.view === view)
+  const excludedHere = exclusions.filter(entry => entry.view === view || entry.resource === null)
   const pageCount = Math.max(1, Math.ceil(displayRows.length / 50))
   const currentPage = Math.min(page, pageCount - 1)
   const visibleRows = displayRows.slice(currentPage * 50, (currentPage + 1) * 50)
@@ -247,22 +205,46 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
     setApi(operation); setPage(0); setSelectedId(null); setInspectorOpen(false)
   }
   const backToList = () => { pendingRestore.current = true; setApi(null); setPage(listPosition.current.page); setSelectedId(null); setInspectorOpen(false) }
-  const updateExclusions = (next: MatrixExclusion[]) => {
-    setExclusions(next)
-    return saveMatrixExclusions(storageScope, next)
+  useEffect(() => {
+    let active = true
+    if (!storageScope) return
+    void getMatrixExclusions().then(async current => {
+      if (!active) return
+      const legacy = loadMatrixExclusions(storageScope)
+      const saved = current.entries.length === 0 && legacy.length
+        ? await replaceMatrixExclusions(current.datasetRevision, legacy) : current
+      if (!active) return
+      clearLegacyMatrixExclusions(storageScope)
+      setExclusions(saved.entries)
+      setExclusionsDataset(saved.datasetRevision)
+    }).catch(error => { if (active) setExclusionMessage(error instanceof Error ? error.message : "제외 항목을 불러오지 못했습니다.") })
+    return () => { active = false }
+  }, [storageScope])
+  const updateExclusions = async (next: MatrixExclusion[]) => {
+    if (exclusionsDataset === null || exclusionPending) return false
+    setExclusionPending(true)
+    try {
+      const saved = await replaceMatrixExclusions(exclusionsDataset, next)
+      setExclusions(saved.entries)
+      return true
+    } catch (error) {
+      setExclusionMessage(error instanceof Error ? error.message : "제외 항목 저장에 실패했습니다.")
+      return false
+    } finally { setExclusionPending(false) }
   }
-  const exclude = (operation: string, resource: string | null) => {
-    const key = exclusionKey(view, operation, resource)
+  const exclude = async (operation: string, resource: string | null) => {
+    const entryView = view === "object" ? "object" : "function"
+    const key = exclusionKey(entryView, operation, resource)
     if (exclusions.some(entry => entry.key === key)) return
-    setUndo(exclusions)
     const label = resource ? `${withoutService(operation)} · ${rowObjectLabel(resource)}` : withoutService(operation)
-    const saved = updateExclusions([...exclusions, { key, view, operation, resource, label }])
-    setExclusionMessage(`${resource ? "객체 행을" : "API를"} 매트릭스에서 제외했습니다.${saved ? "" : " 설정은 현재 화면에서만 유지됩니다."}`)
+    if (!await updateExclusions([...exclusions, { key, view: entryView, operation, resource, label }])) return
+    setUndo(exclusions)
+    setExclusionMessage(`${resource ? "객체 행을" : "API를"} 매트릭스와 LLM 판정 대상에서 제외했습니다.`)
     setSelectedId(null); setInspectorOpen(false)
     if (api && resource === null) backToList()
   }
-  const restore = (key?: string) => {
-    updateExclusions(key ? exclusions.filter(entry => entry.key !== key) : exclusions.filter(entry => entry.view !== view))
+  const restore = async (key?: string) => {
+    if (!await updateExclusions(key ? exclusions.filter(entry => entry.key !== key) : exclusions.filter(entry => !excludedHere.includes(entry)))) return
     setUndo(null); setExclusionMessage("제외한 항목을 복원했습니다.")
   }
   const selected = matrix ? findJudgmentItem(matrix, selectedId) : null
@@ -278,11 +260,11 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
       <Button type="button" role="switch" aria-checked={attentionOnly} variant="ghost" className="h-8 gap-3 px-2 py-1" onClick={() => setAttentionOnly((current) => !current)}><span className="text-sm font-normal">확인 필요한 결과만</span><span aria-hidden="true" className={`relative block h-5 w-9 shrink-0 rounded-full border transition-colors ${attentionOnly ? "border-primary bg-primary" : "border-input bg-muted"}`}><span className={`absolute top-0.5 left-0.5 block size-3.5 rounded-full bg-background shadow-sm transition-transform ${attentionOnly ? "translate-x-4" : "translate-x-0"}`} /></span></Button><InfoHint label="확인 필요한 결과만">취약점 의심, 추가 테스트 추천, 접근 기준·소유자 미확인, 요청 기록 없음 등 확인할 결과가 있는 API 행만 표시합니다. 같은 행의 다른 계정 결과도 함께 보여줍니다.</InfoHint>
     </div>
     <Popover open={restoreOpen} onOpenChange={setRestoreOpen}>
-      <PopoverTrigger asChild><Button size="sm" variant="outline" disabled={disabled || excludedHere.length === 0}><RotateCcw aria-hidden="true" className="size-3.5" />제외한 항목 {excludedHere.length}</Button></PopoverTrigger>
+      <PopoverTrigger asChild><Button size="sm" variant="outline" disabled={disabled || exclusionsDataset === null || excludedHere.length === 0}><RotateCcw aria-hidden="true" className="size-3.5" />제외한 항목 {excludedHere.length}</Button></PopoverTrigger>
       <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-0" aria-label="제외한 항목 복원">
-        <div className="flex items-center justify-between gap-3 border-b p-3"><p className="text-sm font-semibold">제외한 항목 {excludedHere.length}</p><Button size="sm" variant="ghost" disabled={disabled || excludedHere.length === 0} onClick={() => restore()}>전체 복원</Button></div>
-        <p className="px-3 pt-3 text-xs text-muted-foreground">매트릭스에서만 제외됩니다. 원본 요청과 판정 기록은 유지됩니다.</p>
-        <ul className="max-h-80 overflow-auto p-2">{excludedHere.map(entry => <li key={entry.key} className="flex items-center gap-3 rounded-md p-2"><span className="min-w-0 flex-1 break-all text-sm"><span className="mr-2 text-xs text-muted-foreground">{entry.resource ? "객체" : "API"}</span>{entry.label}</span><Button size="sm" variant="outline" disabled={disabled} aria-label={`${entry.label} 복원`} onClick={() => restore(entry.key)}>복원</Button></li>)}</ul>
+        <div className="flex items-center justify-between gap-3 border-b p-3"><p className="text-sm font-semibold">제외한 항목 {excludedHere.length}</p><Button size="sm" variant="ghost" disabled={disabled || exclusionPending || excludedHere.length === 0} onClick={() => void restore()}>전체 복원</Button></div>
+        <p className="px-3 pt-3 text-xs text-muted-foreground">매트릭스와 이후 LLM 검사에서 제외됩니다. 원본 요청과 기존 판정 기록은 유지됩니다.</p>
+        <ul className="max-h-80 overflow-auto p-2">{excludedHere.map(entry => <li key={entry.key} className="flex items-center gap-3 rounded-md p-2"><span className="min-w-0 flex-1 break-all text-sm"><span className="mr-2 text-xs text-muted-foreground">{entry.resource ? "객체" : "API"}</span>{entry.label}</span><Button size="sm" variant="outline" disabled={disabled || exclusionPending} aria-label={`${entry.label} 복원`} onClick={() => void restore(entry.key)}>복원</Button></li>)}</ul>
       </PopoverContent>
     </Popover>
   </div>
@@ -290,15 +272,7 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
 
   return <ReferenceAnalysisWorkspace ariaLabel="판정 매트릭스 분석 영역" context={null} contentOverflow="hidden" inspector={inspector} inspectorOpen={inspectorOpen} onInspectorOpenChange={(open) => { setInspectorOpen(open); if (!open) setSelectedId(null) }}>
     <section className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-4" aria-labelledby="judgment-title">
-      <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2"><h1 id="judgment-title" className="flex h-10 shrink-0 items-center text-lg font-semibold">판정 매트릭스</h1>{controls}
-        <div role="tablist" aria-label="판정 보기 모드" className="ml-auto flex h-10 items-center gap-1 rounded-md bg-muted/50 p-1">
-          {([["standard", "기존"], ["llm", "LLM"]] as const).map(([value, label]) => <button key={value} type="button" role="tab" aria-selected={mode === value}
-            onClick={() => { setMode(value); setSelectedId(null); setInspectorOpen(false) }}
-            className={cn("h-8 rounded px-3 text-sm font-medium", mode === value ? "bg-background shadow-none" : "text-muted-foreground hover:text-foreground")}>{label}</button>)}
-        </div>
-      </header>
-      {mode === "llm" && <p className="shrink-0 text-xs text-muted-foreground">각 계정 열의 <span className="font-medium text-foreground">LLM 테스트</span>를 누르면, 그 계정 세션으로 보내는 GET 추천만 재전송해 결과를 칸에 표시합니다. 쓰기 요청은 실행하지 않으며, 확정은 칸을 눌러 상세에서 합니다.</p>}
-      {mode === "llm" && startVerify.isError && <p role="alert" className="shrink-0 text-xs text-destructive">LLM 검증을 시작하지 못했습니다: {startVerify.error instanceof Error ? startVerify.error.message : "알 수 없는 오류"}</p>}
+      <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2"><h1 id="judgment-title" className="flex h-10 shrink-0 items-center text-lg font-semibold">판정 매트릭스</h1>{controls}</header>
       {snapshot.isError && <Alert variant="destructive"><AlertTitle>판정 매트릭스를 불러오지 못했습니다.</AlertTitle><AlertDescription>
         <p>{snapshot.error instanceof Error ? snapshot.error.message : "다시 시도하세요."}</p>
         {snapshot.data ? <><p>마지막으로 불러온 데이터를 표시하고 있습니다.</p><p>마지막 성공 시각: {snapshot.dataUpdatedAt > 0 && Number.isFinite(snapshot.dataUpdatedAt) ? <time dateTime={new Date(snapshot.dataUpdatedAt).toISOString()}>{new Date(snapshot.dataUpdatedAt).toLocaleString()}</time> : "기록 없음"}</p><p>갱신에 성공할 때까지 요청 기록 상세와 사람 판정 저장이 비활성화됩니다.</p></> : <p>서버 연결을 확인하고 다시 시도하세요. 아직 성공한 snapshot이 없습니다.</p>}
@@ -319,19 +293,19 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
         ["직접 확인 필요", summary.manualReviewPending],
         ["확정한 취약점", summary.humanConfirmed],
         ["정상·기각", summary.humanDismissed],
-      ].map(([label, value]) => <li key={String(label)} className="flex items-center gap-2 text-sm"><p className="text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{value}</p></li>)}<li><InfoHint label="전체 판정 집계">제외 여부와 관계없이 전체 판정 기록을 집계합니다. 제외는 매트릭스의 표시만 바꿉니다.</InfoHint></li></ul>}
+      ].map(([label, value]) => <li key={String(label)} className="flex items-center gap-2 text-sm"><p className="text-muted-foreground">{label}</p><p className="font-semibold tabular-nums">{value}</p></li>)}<li><InfoHint label="전체 판정 집계">기존 판정 기록의 전체 집계입니다. 제외한 항목은 매트릭스에서 숨기고 이후 LLM 검사에서 건너뜁니다.</InfoHint></li></ul>}
       {projection && <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 text-sm">
         {api ? <nav aria-label="판정 매트릭스 경로" className="flex min-w-0 flex-wrap items-center gap-2"><Button size="sm" variant="ghost" onClick={backToList}><ArrowLeft aria-hidden="true" className="size-4" />목록으로</Button><ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" /><span className="break-all font-mono">{withoutService(api)}</span></nav> : <p className="text-muted-foreground">API {displayRows.length}개{view === "object" ? ` · 객체 ${displayRows.reduce((count, row) => count + (row as ApiJudgmentRow).objectCount, 0)}개` : ""}<InfoHint label="API별 판정 요약">수집된 객체의 판정 결과를 API별로 요약합니다. 의심·재현 결과를 우선 표시하며, API를 누르면 객체별 결과를 볼 수 있습니다. 요약은 API 전체의 정상 여부를 확정하지 않습니다.</InfoHint></p>}
-        {api && <Button size="sm" variant="outline" disabled={disabled} onClick={() => exclude(api, null)}>이 API 제외</Button>}
+        {api && <Button size="sm" variant="outline" disabled={disabled || exclusionPending || exclusionsDataset === null} onClick={() => void exclude(api, null)}>이 API 제외</Button>}
       </div>}
-      {exclusionMessage && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"><span>{exclusionMessage}</span>{undo && <Button size="sm" variant="ghost" disabled={disabled} onClick={() => { const saved = updateExclusions(undo); setUndo(null); setExclusionMessage(`제외를 취소했습니다.${saved ? "" : " 설정은 현재 화면에서만 유지됩니다."}`) }}>실행 취소</Button>}</div>}
+      {exclusionMessage && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 rounded-md border bg-muted/40 px-3 py-2 text-sm"><span>{exclusionMessage}</span>{undo && <Button size="sm" variant="ghost" disabled={disabled || exclusionPending} onClick={() => void (async () => { if (await updateExclusions(undo)) { setUndo(null); setExclusionMessage("제외를 취소했습니다.") } })()}>실행 취소</Button>}</div>}
       {projection && pageCount > 1 && <nav aria-label="판정 매트릭스 페이지" className="flex shrink-0 items-center justify-between gap-3 text-sm"><span>{currentPage * 50 + 1}–{Math.min((currentPage + 1) * 50, displayRows.length)} / {displayRows.length}</span><div className="flex items-center gap-2"><Button size="sm" variant="outline" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>이전 페이지</Button><span>{currentPage + 1} / {pageCount}</span><Button size="sm" variant="outline" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>다음 페이지</Button></div></nav>}
       {projection && (displayRows.length ? <div ref={scroll} role="region" aria-label="판정 매트릭스 표" data-testid="judgment-matrix-scroll" tabIndex={0} className="min-h-40 min-w-0 max-w-full flex-1 overflow-auto rounded-md border overscroll-contain">
         <div className="relative min-h-full w-max min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}>
           <OperationColumnResizeHandle width={operationWidth} onWidthChange={setOperationWidth} />
           <Table containerClassName="w-max min-w-full overflow-visible" className="table-fixed min-w-full" style={{ width: operationWidth + projection.identities.length * 208 }}>
             <colgroup><col style={{ width: operationWidth }} />{projection.identities.map(identity => <col key={identity.id} />)}</colgroup>
-            <TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{api && view === "object" ? "객체" : "API"}<span className="mt-1 block text-xs font-normal text-muted-foreground">{api ? "결과를 누르면 상세 확인" : "API를 누르면 관련 결과 보기"}</span></TableHead>{projection.identities.map(identity => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span>{mode === "llm" && <LlmTestColumnButton identity={identity} session={sessionFor(identity.id)} verify={verifyStatus.data} findingCount={findingCountFor(identity.id)} disabled={disabled} onStart={(accountId) => startVerify.mutate(accountId)} onCancel={() => cancelVerify.mutate()} canceling={cancelVerify.isPending} />}</TableHead>)}</TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead className="sticky top-0 z-40 bg-background py-3 pr-6 text-base">{api && view === "object" ? "객체" : "API"}<span className="mt-1 block text-xs font-normal text-muted-foreground">{api ? "결과를 누르면 상세 확인" : "API를 누르면 관련 결과 보기"}</span></TableHead>{projection.identities.map(identity => <TableHead key={identity.id} className="sticky top-0 z-30 min-w-44 whitespace-normal bg-background py-3"><span className="break-all text-base">{identityLabel(identity.id, identity.label)}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{roleLabel[identity.role.toUpperCase()] ?? identity.role}</span></TableHead>)}</TableRow></TableHeader>
             <TableBody>{visibleRows.map(row => {
               const group = api ? null : row as ApiJudgmentRow
               const aggregated = !api && (view === "object" || (group?.operations.length ?? 0) > 1)
@@ -345,7 +319,7 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
                       <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">{group && group.objectCount > 0 ? <>객체 {group.objectCount}개<ChevronRight aria-hidden="true" className="size-3.5" /></> : group ? group.operations.length > 1 ? `요청 경로 ${group.operations.length}개` : "기능 판정" : "객체별 결과"}</span>
                       <div className="flex shrink-0 items-center gap-1">
                         <Button size="icon" variant="ghost" className="size-8" aria-label={`${withoutService(row.operation)} 최신 요청을 Request Lab에서 열기`} title="최신 요청 열기" disabled={disabled || !latest} onClick={() => setApiLabEvent(latest ?? null)}><ArrowUpRight aria-hidden="true" className="size-4" /></Button>
-                        <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스에서만 제외" disabled={disabled} onClick={() => exclude(row.operation, row.resource)}>제외</Button>
+                        <Button size="sm" variant="ghost" className="h-8 px-2 font-normal text-muted-foreground" aria-label={`${row.resource ? rowObjectLabel(row.resource) : withoutService(row.operation)} 매트릭스에서 제외`} title="매트릭스와 LLM 검사에서 제외" disabled={disabled || exclusionPending || exclusionsDataset === null} onClick={() => void exclude(row.operation, row.resource)}>제외</Button>
                       </div>
                     </div>
                   </div>
@@ -354,15 +328,9 @@ function JudgmentMatrixWorkspace({ snapshot, storageScope }: { snapshot: ReturnT
                   const cell = row.cellsByIdentity[identity.id]
                   const quiet = cell && cell.reviewStatus !== "CONFIRMED" && cell.reviewStatus !== "DISMISSED" ? quietStatusLabel[cell.status] : undefined
                   const counts = group?.countsByIdentity[identity.id]
-                  const finding = mode === "llm" && cell && !aggregated
-                    ? findingMap.get(`${cell.operation}\u0000${cell.identity}\u0000${"resource" in cell ? (cell.resource ?? "") : ""}`) : undefined
-                  const findingHttp = finding
-                    ? snapshot.data?.events.filter(event => finding.evidenceIds.includes(event.eventId))
-                        .reduce<number | undefined>((latest, event) => event.status, undefined) : undefined
                   return <TableCell key={identity.id} className="whitespace-normal px-3 py-3 align-middle">{cell ? <div className="relative"><button type="button" disabled={disabled} data-tone={judgmentTone(cell.status)} aria-pressed={!aggregated && cell.id === selectedId} aria-label={`${judgmentStatusLabel(cell)}${reviewSuffix(cell.reviewStatus)}: ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(aggregated ? row.operation : cell.operation)}${!aggregated && "resource" in cell ? ` · ${rowObjectLabel(cell.resource ?? "")}` : ""}`} title={judgmentStatusDescription(cell.status) ?? judgmentStatusLabel(cell)} className={quiet ? `flex h-24 w-full min-w-44 flex-col justify-center gap-1.5 rounded-md border border-border bg-muted/30 px-4 py-3 pr-10 text-left text-sm leading-5 text-muted-foreground hover:bg-muted/50 ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}` : `flex h-24 w-full min-w-44 flex-col justify-center gap-1.5 rounded-md border px-4 py-3 pr-10 text-left text-sm leading-5 ${cell.reviewStatus === "CONFIRMED" ? "border-red-500/50 bg-red-500/10" : toneClass[judgmentTone(cell.status)]} ${!aggregated && cell.id === selectedId ? "ring-2 ring-ring" : ""}`} onClick={() => aggregated ? openApi(row.operation) : select(cell.id)}>
                     <span className="line-clamp-2 text-base font-semibold leading-6">{quiet ?? judgmentStatusLabel(cell)}{reviewSuffix(cell.reviewStatus)}</span>
                     {aggregated && counts && (group.objectCount > 1 || group.operations.length > 1) && <span className="truncate text-sm font-normal leading-5 opacity-90" title={counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}>{counts.map(({ label, count }) => `${label} ${count}`).join(" · ")}</span>}
-                    {finding && <span className="mt-0.5 flex flex-col gap-0.5 border-t border-border/60 pt-1 text-xs font-normal leading-4" title={finding.note}><span className="flex items-center gap-1 font-medium"><ShieldCheck aria-hidden="true" className="size-3" />LLM: {finding.verdict || "소견"}</span>{findingHttp !== undefined && <span className="font-mono opacity-80">재전송 HTTP {findingHttp}</span>}</span>}
                   </button><span className="absolute top-3 right-3" title={judgmentStatusDescription(cell.status)}><InfoHint label={`${judgmentStatusLabel(cell)} · ${identityLabel(cell.identity, cell.identityLabel)} · ${withoutService(aggregated ? row.operation : cell.operation)}${!aggregated && row.resource ? ` · ${rowObjectLabel(row.resource)}` : ""}`}>{judgmentStatusDescription(cell.status)}</InfoHint></span></div> : <span className="flex h-24 min-w-44 items-center rounded-md border border-dashed border-border px-4 text-sm text-muted-foreground">데이터 없음</span>}</TableCell>
                 })}
               </TableRow>

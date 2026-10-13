@@ -33,7 +33,7 @@ function StatCells({ stats, rowKey, openObjects, onObject }: { stats: ApiRowStat
   </>
 }
 
-type TableSnapshot = Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix"> & Partial<Pick<Snapshot, "accounts">>
+type TableSnapshot = Pick<Snapshot, "events" | "cells" | "owners" | "apiMarks" | "authorizationMatrix"> & Partial<Pick<Snapshot, "accounts" | "displayObjects">>
 
 function ObjectRows({ operations, type, snapshot, selectedId, onSelectObject }: { operations: readonly string[]; type: string; snapshot: TableSnapshot; selectedId: string | null; onSelectObject(resource: string, cells: readonly Cell[]): void }) {
   const [all, setAll] = useState(false)

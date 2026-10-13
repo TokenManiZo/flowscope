@@ -114,10 +114,21 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         const bucket = objects.get(item.object.objectKey) ?? []; bucket.push(item); objects.set(item.object.objectKey, bucket)
       }
       const first = members[0].object, expanded = (filters.expandedObjectGroups ?? []).includes(`object-group:${groupKey}`)
-      const fields = [...new Set(first.fields.map(field => field.replace(/^\//, "").replace(/\//g, ".")))]
-      const fieldLabel = (fields.slice(0, 3).join(" · ") + (fields.length > 3 ? " …" : "")) || "OBJ"
-      const label = first.kind === "PATH" ? (family ? family.match(/\{id_\d+\}/g)?.at(-1)?.slice(1, -1) ?? "id" : "id") : first.kind === "RESPONSE_BODY" ? "OBJ" : fieldLabel
-      const groupNode = node("object-group", groupKey, label, { ...select(members), displayApiKey: api }, { displayObjectKind: first.kind, displayObjectFieldCount: first.fields.length, objectGroup: { key: label, members: [...objects.keys()], owners: {}, expanded } })
+      const locationOrder = ["PATH", "QUERY", "REQUEST_BODY", "RESPONSE_BODY"] as const
+      const fieldsByLocation = new Map<DisplayObject["kind"], Set<string>>()
+      for (const { object } of members) for (const location of object.locations ?? [object.kind]) {
+        const fields = fieldsByLocation.get(location) ?? new Set<string>()
+        for (const field of object.locationFields?.[location] ?? (location === object.kind ? object.fields : [])) fields.add(field)
+        fieldsByLocation.set(location, fields)
+      }
+      const groupLocations = locationOrder.filter(location => fieldsByLocation.has(location))
+      const fieldCounts = Object.fromEntries(groupLocations.filter(location => fieldsByLocation.get(location)!.size > 0)
+        .map(location => [location, fieldsByLocation.get(location)!.size])) as Partial<Record<DisplayObject["kind"], number>>
+      const fieldNames = groupLocations.flatMap(location => location === "PATH" ? [family?.match(/\{id_\d+\}/g)?.at(-1)?.slice(1, -1) ?? "id"]
+        : [...fieldsByLocation.get(location)!].map(field => field.replace(/^\//, "").replace(/\//g, ".").replace(/~1/g, "/").replace(/~0/g, "~")))
+      const uniqueNames = [...new Set(fieldNames)]
+      const label = (uniqueNames.slice(0, 3).join(" · ") + (uniqueNames.length > 3 ? " …" : "")) || "OBJ"
+      const groupNode = node("object-group", groupKey, label, { ...select(members), displayApiKey: api }, { displayObjectKind: first.kind, displayObjectLocations: groupLocations, displayObjectFieldCounts: fieldCounts, objectGroup: { key: label, members: [...objects.keys()], owners: {}, expanded } })
       edge("operation-resource", apiNode.id, groupNode.id, members)
       let shown = 0
       for (const [key, observations] of [...objects].sort((a, b) => a[1][0].object.ordinal - b[1][0].object.ordinal)) {
@@ -128,9 +139,10 @@ export function applyObservedObjects(snapshot: Snapshot, filters: GraphFilters, 
         visibleObjects++
         const selection = { ...select(observations, null, true), displayObjectKey: key, displayApiKey: api }
         const owner = snapshot.owners[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? snapshot.ownerOverrides?.[`${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] ?? null
+        const locations = [...new Set(observations.flatMap(observation => observation.object.locations ?? [observation.object.kind]))]
         const label = observedObjectLabel(observations[0].object)
         const publicRead = snapshot.resourcePolicyOverrides?.[`${observations[0].object.operation} @ ${observations[0].object.operation.split(" ")[0]} observed-object:${key}`] === "PUBLIC"
-        const objectNode = node("resource", key, label, selection, { owner, publicRead, displayObjectKind: first.kind })
+        const objectNode = node("resource", key, label, selection, { owner, publicRead, displayObjectKind: first.kind, displayObjectLocations: locations })
         edge("operation-resource", apiNode.id, objectNode.id, observations, true)
         if (navigation.level === "operation") list.push(objectNode)
       }

@@ -1946,15 +1946,31 @@ public final class FlowScopeExtension implements BurpExtension {
         scheduleDatabaseSave();
     }
 
-    /** 보내는 계정 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-    private FlowScopeWebServer.LlmVerifyState startMcpVerification(String accountId) {
+    /** 선택한 소스 범위·판정할 계정·모델로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+    private FlowScopeWebServer.LlmVerifyState startMcpVerification(String sources, String accounts, String model) {
         if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
         if (mcpVerificationRunner == null) {
             mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
-                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker,
+                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker, webServer.mcpActivity(),
                     message -> api.logging().logToError(message));
         }
-        return mcpVerificationRunner.start(accountId);
+        return mcpVerificationRunner.start(sources, accounts, model);
+    }
+
+    /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
+    private FlowScopeWebServer.LlmVerifyState startMcpJudgment(List<String> findingIds, String model) {
+        if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
+        var exclusions = new io.flowscope.core.MatrixExclusionMatcher(analysisConfig, latest);
+        for (var finding : currentLlmFindings()) {
+            if (findingIds.contains(finding.id()) && exclusions.excluded(finding.operation(), finding.resource()))
+                throw new IllegalArgumentException("제외한 소견은 복원한 뒤 판정할 수 있습니다.");
+        }
+        if (mcpVerificationRunner == null) {
+            mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
+                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker, webServer.mcpActivity(),
+                    message -> api.logging().logToError(message));
+        }
+        return mcpVerificationRunner.startJudgment(findingIds, model);
     }
 
     private void scheduleDatabaseSave() {
@@ -2148,10 +2164,33 @@ public final class FlowScopeExtension implements BurpExtension {
                 });
             }
             @Override public AnalysisConfig config() { return analysisConfig; }
+            @Override public void replaceMatrixExclusions(long dataset, List<io.flowscope.core.MatrixExclusion> entries) {
+                runProjectTask(() -> {
+                    if (shuttingDown.get() || dataset != datasetEpoch.get())
+                        throw new IllegalStateException("프로젝트가 변경되었습니다. 다시 불러오세요.");
+                    if (activeProjectDatabase == null)
+                        throw new IllegalStateException("먼저 프로젝트를 DB에 저장해 주세요.");
+                    AnalysisConfig next = analysisConfig.snapshotCopy().replaceMatrixExclusions(entries);
+                    sqliteProjectStore.saveMatrixExclusions(activeProjectDatabase, next);
+                    boolean dirty = databaseDirty();
+                    analysisConfig.replaceWith(next);
+                    revision.incrementAndGet();
+                    if (!dirty) markDatabaseSaved(revision.get());
+                    else scheduleDatabaseSave();
+                    return null;
+                });
+            }
             @Override public List<io.flowscope.core.LlmFinding> findings() { return currentLlmFindings(); }
             @Override public void submitFinding(io.flowscope.core.LlmFinding finding) { storeLlmFinding(finding); }
-            @Override public FlowScopeWebServer.LlmVerifyState startLlmVerify(String accountId) {
-                return startMcpVerification(accountId);
+            @Override public FlowScopeWebServer.LlmVerifyState startLlmVerify(String sources, String accounts, String model) {
+                return startMcpVerification(sources, accounts, model);
+            }
+            @Override public FlowScopeWebServer.LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
+                return startMcpJudgment(findingIds, model);
+            }
+            @Override public FlowScopeWebServer.LlmVerifyState askLlmJudgment(String message, String model) {
+                if (mcpVerificationRunner == null) throw new IllegalStateException("LLM 판정을 먼저 실행하세요.");
+                return mcpVerificationRunner.ask(message, model);
             }
             @Override public FlowScopeWebServer.LlmVerifyState llmVerifyState() {
                 return mcpVerificationRunner == null

@@ -12,7 +12,7 @@ export interface TrafficStats {
   humanApiOutsideRun?: number
 }
 
-/** Graph-only observations; these keys never identify matrix cells or replay requests. */
+/** One request target, shared by the graph and authorization matrix. */
 export interface DisplayObject {
   eventId: string
   operation: string
@@ -21,6 +21,9 @@ export interface DisplayObject {
   groupKey: string
   objectKey: string
   kind: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  locations?: readonly ("PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY")[]
+  locationFields?: Partial<Record<DisplayObject["kind"], readonly string[]>>
+  sourceObjectKeys?: readonly string[]
   fields: readonly string[]
   legacyResource: string | null
   ordinal: number
@@ -260,15 +263,34 @@ export interface LlmFinding {
   note: string
   evidenceIds: readonly string[]
   createdAt: number
+  /** LLM이 직접 내린 판정(MCP 설계 §11). 판정 전이면 빈 문자열. FlowScope 판정 규칙과 무관하다. */
+  judgment: "" | "vulnerable" | "not_vulnerable" | "inconclusive"
+  judgmentReason: string
+  verificationResult?: string
+  judgmentBasis?: string
+  issueTitle?: string
+  judgmentEvidenceIds: readonly string[]
+  judgedAt: number
 }
 
-/** LLM 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
+/** LLM 판정 실행 상태. accountId 필드는 선택한 소스 범위 문자열을 담는다. */
 export interface LlmVerifyState {
   status: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED"
   accountId: string
   message: string
   startedAt?: number
   endedAt?: number
+}
+
+/** LLM 판정 작업 피드 항목. type: read·resend·finding·info, risk=true면 취약점 추천(위험 필터). */
+export interface LlmFeedEntry {
+  seq: number
+  timestamp: number
+  type: string
+  summary: string
+  risk: boolean
+  findingId?: string
+  evidenceId?: string
 }
 
 export interface ManagedSession {
@@ -536,8 +558,11 @@ export interface Snapshot {
   owners: Readonly<Record<string, string>>
   /** 사용자가 직접 지정한 소유자. 자동 추정보다 우선한다. */
   ownerOverrides?: Readonly<Record<string, string>>
+  /** Stored values before group defaults and legacy aliases are projected onto children. */
+  directOwnerOverrides?: Readonly<Record<string, string>>
   /** API·객체별 직접 지정한 접근 정책. */
   resourcePolicyOverrides?: Readonly<Record<string, string>>
+  directResourcePolicyOverrides?: Readonly<Record<string, string>>
   /** Request Lab로 보낸 HUMAN 검증 응답. 탐색 관측과 분리돼 원본 Evidence에 연결된다. */
   manualVerifications?: readonly ManualVerification[]
   requiredRoles: Readonly<Record<string, string>>

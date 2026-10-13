@@ -28,7 +28,9 @@ class ObservedObjectAuthorityTest {
         var b = record("b", "POST", "/api/posts/7", "post_id=7", "{\"post_id\":7}", "{\"id\":7}");
         String original = a.reqText;
         var result = Pipeline.run(List.of(a,b), config);
-        assertEquals(Set.of("PATH", "QUERY", "REQUEST_BODY"), result.objects.targets().values().stream().map(ObservedObjectIndex.Target::kind).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(Set.of("PATH"), result.objects.targets().values().stream().map(ObservedObjectIndex.Target::kind).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(1, result.objects.targets().size());
+        assertTrue(result.objects.observations().stream().allMatch(object -> object.locations().equals(List.of("PATH", "QUERY", "REQUEST_BODY"))));
         assertEquals(ObservedObjectProjection.build(result.coverageRecords), result.objects.observations());
         Set<String> targets = result.objects.targets().keySet();
         var matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
@@ -38,7 +40,7 @@ class ObservedObjectAuthorityTest {
         result = Pipeline.run(List.of(a,b), config);
         assertTrue(result.analysis.owners().values().stream().allMatch(owner -> owner.identity().equals("a") && owner.confirmed()));
         var json = new ObjectMapper().readTree(new SnapshotJsonWriter().write(1, result, config, List.of(), List.of()));
-        assertEquals(6, json.path("displayObjects").size());
+        assertEquals(2, json.path("displayObjects").size());
         for (String key : targets) assertEquals("a", json.path("ownerOverrides").path(key).asText());
         assertEquals(original, a.reqText);
         assertFalse(a.resource.contains("observed-object:"), "compatibility metadata cannot overwrite the captured DTO");
@@ -62,21 +64,49 @@ class ObservedObjectAuthorityTest {
         events = new ObjectMapper().readTree(new SnapshotJsonWriter().write(2, result, config, List.of(), List.of())).path("events");
         for (var event : events) assertEquals("suspicious", event.path("verdict").asText(), "function violations remain visible");
     }
+    @Test void legacySecondaryLocationSettingsFollowTheSingleRequestObject() throws Exception {
+        var config = config();
+        var a = record("a", "GET", "/api/posts/7", "post_id=7", "{\"post_id\":7}", "{\"id\":7}");
+        var b = record("b", "GET", "/api/posts/7", "post_id=7", "{\"post_id\":7}", "{\"id\":7}");
+        var first = Pipeline.run(List.of(a, b), config);
+        var object = first.objects.observations().getFirst();
+        String canonical = ObservedObjectIndex.resource(object);
+        String legacyQuery = a.service + " observed-object:" + object.sourceObjectKeys().get(1);
+        assertNotEquals(canonical, legacyQuery);
+        assertEquals(canonical, first.objects.canonicalResource(legacyQuery));
+        config.withResourceOwner(legacyQuery, "a");
+        config.withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(object.operation(), legacyQuery), ResourcePolicy.PUBLIC);
+        config.withEndpointRequirement(object.operation(), AccessRole.USER);
+        var exclusion = new MatrixExclusion(MatrixExclusion.keyFor("object", object.operation(), legacyQuery),
+                "object", object.operation(), legacyQuery, "이전 QUERY 객체");
+        config.replaceMatrixExclusions(List.of(exclusion));
+        var result = Pipeline.run(List.of(a, b), config);
+        assertEquals("a", result.analysis.owners().get(canonical).identity());
+        assertTrue(new MatrixExclusionMatcher(config, result).excluded(object.operation(), canonical));
+        var matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
+        assertEquals(1, matrix.objects().stream().map(AuthorizationMatrix.ObjectCell::resource).distinct().count());
+        assertEquals(AuthorizationMatrix.Expected.ALLOW, matrix.objects().stream()
+                .filter(cell -> cell.identity().equals("b")).findFirst().orElseThrow().expected());
+        var json = new ObjectMapper().readTree(new SnapshotJsonWriter().write(1, result, config, List.of(), List.of()));
+        assertEquals("a", json.path("ownerOverrides").path(canonical).asText());
+        assertEquals("PUBLIC", json.path("resourcePolicyOverrides")
+                .path(AnalysisConfig.operationObjectPolicyKey(object.operation(), canonical)).asText());
+    }
     @Test void publicIsSharedByGraphAndMatrixAndScopedToOneApiAndObj() {
         var config = config();
         var a = record("a", "GET", "/api/posts/7", "post_id=7", null, "{\"id\":7}");
         var b = record("b", "GET", "/api/posts/7", "post_id=7", null, "{\"id\":7}");
         var result = Pipeline.run(List.of(a,b), config);
         result.objects.targets().keySet().forEach(key -> config.withResourceOwner(key, "a"));
-        var query = result.objects.targets().values().stream().filter(target -> target.kind().equals("QUERY")).findFirst().orElseThrow();
-        config.withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(query.operation(), query.resource()), ResourcePolicy.PUBLIC);
-        config.withEndpointRequirement(query.operation(), AccessRole.USER);
+        var object = result.objects.targets().values().iterator().next();
+        config.withResourcePolicy(AnalysisConfig.operationObjectPolicyKey(object.operation(), object.resource()), ResourcePolicy.PUBLIC);
+        config.withEndpointRequirement(object.operation(), AccessRole.USER);
         result = Pipeline.run(List.of(a,b), config);
         var matrix = AuthorizationMatrixAnalyzer.analyze(result, config, List.of());
-        var publicCell = matrix.objects().stream().filter(cell -> cell.identity().equals("b") && cell.resource().equals(query.resource())).findFirst().orElseThrow();
+        var publicCell = matrix.objects().stream().filter(cell -> cell.identity().equals("b") && cell.resource().equals(object.resource())).findFirst().orElseThrow();
         assertEquals(AuthorizationMatrix.Expected.ALLOW, publicCell.expected());
         assertFalse(publicCell.status().name().contains("CANDIDATE"));
-        assertTrue(result.analysis.findings().stream().anyMatch(finding -> finding.type() == AuthorizationAnalysis.FindingType.BOLA && !finding.cell().resource().equals(query.resource())));
+        assertTrue(result.analysis.findings().stream().noneMatch(finding -> finding.type() == AuthorizationAnalysis.FindingType.BOLA && finding.cell().resource().equals(object.resource())));
     }
     @Test void auxiliaryStaticReplayAndDeniedOnlyInputsCannotBecomeJudgmentTargets() {
         var api = record("a", "GET", "/api/items", "id=1", null, "{\"id\":1}");

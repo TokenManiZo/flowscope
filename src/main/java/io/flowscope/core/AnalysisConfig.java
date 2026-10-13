@@ -4,6 +4,9 @@ import java.net.URI;
 import java.util.Map;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.Optional;
 import java.time.Instant;
 
@@ -34,6 +37,7 @@ public final class AnalysisConfig {
     private final Map<String, String> resourceOwners = new LinkedHashMap<>();
     /** LLM 교차 검증 소견. key=finding id, value=소견 JSON 문자열. 판정이 아니라 사람 검토용 참고 자료다. */
     private final Map<String, String> llmFindings = new LinkedHashMap<>();
+    private final Map<String, MatrixExclusion> matrixExclusions = new LinkedHashMap<>();
     private final Map<String, ResourcePolicy> resourcePolicies = new LinkedHashMap<>();
     private final Map<String, AccountProfile> accounts = new LinkedHashMap<>();
     private final Map<String, String> sessionBindings = new LinkedHashMap<>();
@@ -249,6 +253,60 @@ public final class AnalysisConfig {
         return this;
     }
 
+    /** Stored parent setting for an observed OBJ group; individual OBJ keys always win. */
+    public static String objectGroupKey(String groupKey) {
+        return "observed-group:" + groupKey;
+    }
+
+    /** Project legacy location settings onto a single request OBJ without changing stored keys. */
+    public synchronized AnalysisConfig withCanonicalObjects(ObservedObjectIndex objects) {
+        Map<String, Set<String>> owners = new LinkedHashMap<>();
+        resourceOwners.forEach((resource, owner) -> {
+            String canonical = objects.canonicalResource(resource);
+            if (!canonical.equals(resource)) owners.computeIfAbsent(canonical, ignored -> new HashSet<>()).add(owner);
+        });
+        owners.forEach((resource, values) -> {
+            if (!resourceOwners.containsKey(resource) && values.size() == 1)
+                resourceOwners.put(resource, values.iterator().next());
+        });
+        Map<String, Set<ResourcePolicy>> policies = new LinkedHashMap<>();
+        resourcePolicies.forEach((target, policy) -> {
+            int separator = target.lastIndexOf(" @ ");
+            if (separator < 0) return;
+            String resource = target.substring(separator + 3);
+            String canonical = objects.canonicalResource(resource);
+            if (!canonical.equals(resource)) policies.computeIfAbsent(target.substring(0, separator + 3) + canonical,
+                    ignored -> new HashSet<>()).add(policy);
+        });
+        policies.forEach((target, values) -> {
+            if (!resourcePolicies.containsKey(target) && values.size() == 1)
+                resourcePolicies.put(target, values.iterator().next());
+        });
+        for (var object : objects.observations()) {
+            String group = objectGroupKey(object.groupKey());
+            String resource = ObservedObjectIndex.resource(object);
+            String pair = operationObjectPolicyKey(object.operation(), resource);
+            String childOwner = resourceOwners.get(resource);
+            String groupOwner = resourceOwners.get(group);
+            if (childOwner == null && groupOwner != null) resourceOwners.put(resource, groupOwner);
+            ResourcePolicy groupPolicy = resourcePolicies.get(group);
+            if (!resourcePolicies.containsKey(pair)) {
+                if (childOwner != null && groupPolicy == ResourcePolicy.PUBLIC)
+                    resourcePolicies.put(pair, ResourcePolicy.OWNER_ONLY);
+                else if (groupPolicy != null) resourcePolicies.put(pair, groupPolicy);
+            }
+        }
+        List<MatrixExclusion> canonicalExclusions = new ArrayList<>();
+        for (MatrixExclusion entry : matrixExclusions.values()) if (entry.resource() != null) {
+            String canonical = objects.canonicalResource(entry.resource());
+            if (!canonical.equals(entry.resource())) canonicalExclusions.add(new MatrixExclusion(
+                    MatrixExclusion.keyFor(entry.view(), entry.operation(), canonical), entry.view(),
+                    entry.operation(), canonical, entry.label()));
+        }
+        canonicalExclusions.forEach(entry -> matrixExclusions.putIfAbsent(entry.key(), entry));
+        return this;
+    }
+
     public synchronized AccessRole identityRole(String identity) {
         AccountProfile account = accounts.get(identity);
         if (account != null) return account.role();
@@ -270,6 +328,18 @@ public final class AnalysisConfig {
     }
 
     public synchronized Map<String, String> llmFindings() { return Map.copyOf(llmFindings); }
+
+    public synchronized Map<String, MatrixExclusion> matrixExclusions() { return Map.copyOf(matrixExclusions); }
+
+    public synchronized AnalysisConfig replaceMatrixExclusions(java.util.Collection<MatrixExclusion> entries) {
+        if (entries == null || entries.size() > 5000) throw new IllegalArgumentException("제외 항목이 너무 많습니다.");
+        Map<String, MatrixExclusion> next = new LinkedHashMap<>();
+        for (MatrixExclusion entry : entries) {
+            if (next.putIfAbsent(entry.key(), entry) != null) throw new IllegalArgumentException("중복된 제외 항목입니다.");
+        }
+        matrixExclusions.clear(); matrixExclusions.putAll(next);
+        return this;
+    }
 
     /**
      * API 한 개와 객체 한 개 쌍의 정책 키. 그 API로 그 객체를 다룰 때만 적용된다
@@ -341,13 +411,14 @@ public final class AnalysisConfig {
         trafficOverrides.clear(); trafficOverrides.putAll(replacement.trafficOverrides());
         accountVerificationRules.clear(); accountVerificationRules.putAll(replacement.accountVerificationRules());
         llmFindings.clear(); llmFindings.putAll(replacement.llmFindings());
+        matrixExclusions.clear(); matrixExclusions.putAll(replacement.matrixExclusions());
     }
 
     private synchronized ConfigSnapshot snapshot() {
         return new ConfigSnapshot(Map.copyOf(identityRoles), Map.copyOf(endpointRequirements),
                 Map.copyOf(resourceOwners), Map.copyOf(resourcePolicies), Map.copyOf(accounts), Map.copyOf(sessionBindings),
                 Map.copyOf(reviews), Map.copyOf(trafficOverrides), Map.copyOf(accountVerificationRules), apiState,
-                Map.copyOf(llmFindings));
+                Map.copyOf(llmFindings), Map.copyOf(matrixExclusions));
     }
 
     private record ConfigSnapshot(
@@ -360,10 +431,10 @@ public final class AnalysisConfig {
             Map<String, ReviewDecision> reviews,
             Map<String, TrafficOverride> trafficOverrides,
             Map<String, AccountVerificationRule> accountVerificationRules, ApiState apiState,
-            Map<String, String> llmFindings) {
+            Map<String, String> llmFindings, Map<String, MatrixExclusion> matrixExclusions) {
         static ConfigSnapshot empty() {
             return new ConfigSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
-                    Map.of(), ApiState.empty(), Map.of());
+                    Map.of(), ApiState.empty(), Map.of(), Map.of());
         }
     }
 

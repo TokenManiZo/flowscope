@@ -85,6 +85,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             throw new UnsupportedOperationException("API 관리를 사용할 수 없습니다.");
         }
         AnalysisConfig config();
+        default void replaceMatrixExclusions(long dataset, List<io.flowscope.core.MatrixExclusion> entries) {
+            throw new UnsupportedOperationException("매트릭스 제외 저장을 사용할 수 없습니다.");
+        }
         List<LegacyAssessment> assessments();
         List<ValidationDecision> validations();
         /** LLM 교차 검증 소견(추천). 판정 엔진 결과와 분리된 참고 자료다. */
@@ -93,9 +96,16 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default void submitFinding(io.flowscope.core.LlmFinding finding) {
             throw new UnsupportedOperationException("LLM 소견 저장을 사용할 수 없습니다.");
         }
-        /** 보내는 계정(accountId) 세션으로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-        default LlmVerifyState startLlmVerify(String accountId) {
+        /** 선택한 소스 범위·판정할 계정·모델로 GET 추천을 검증하는 Codex 실행을 시작한다. */
+        default LlmVerifyState startLlmVerify(String sources, String accounts, String model) {
             throw new UnsupportedOperationException("LLM 검증 실행을 사용할 수 없습니다.");
+        }
+        /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
+        default LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
+            throw new UnsupportedOperationException("LLM 판정 실행을 사용할 수 없습니다.");
+        }
+        default LlmVerifyState askLlmJudgment(String message, String model) {
+            throw new UnsupportedOperationException("LLM 후속 질문을 사용할 수 없습니다.");
         }
         /** 현재 LLM 검증 실행 상태. */
         default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
@@ -304,6 +314,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private final State state;
     private final String capabilityToken = randomCapabilityToken();
     private final String mcpToken = randomCapabilityToken();
+    private final io.flowscope.core.McpActivityLog mcpActivity = new io.flowscope.core.McpActivityLog();
     private FlowScopeMcp mcp;
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
@@ -320,7 +331,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
         this.state = state;
         this.server = bindAvailable(requestedPort);
-        this.mcp = new FlowScopeMcp(state, mcpToken, server.port());
+        this.mcp = new FlowScopeMcp(state, mcpToken, server.port(), mcpActivity);
     }
 
     public void start() { server.start(); }
@@ -330,6 +341,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public String mcpUrl() { return "http://127.0.0.1:" + port() + "/mcp"; }
     /** MCP Bearer 토큰. 자식 프로세스 환경변수로만 전달하고 화면·로그·프로젝트에 넣지 않는다. */
     public String mcpToken() { return mcpToken; }
+    /** LLM 판정 작업 피드 로그. 실행기가 실행 시작·종료·Codex 출력을 기록하는 데 쓴다. */
+    public io.flowscope.core.McpActivityLog mcpActivity() { return mcpActivity; }
 
     private LoopbackHttpServer bindAvailable(int requestedPort) throws IOException {
         IOException last = null;
@@ -381,6 +394,7 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/sample" -> sample(request);
             case "/api/role" -> role(request);
             case "/api/requirement" -> requirement(request);
+            case "/api/matrix-exclusions" -> matrixExclusions(request);
             case "/api/resource-policy" -> resourcePolicy(request);
             case "/api/review" -> review(request);
             case "/api/traffic-override" -> trafficOverride(request);
@@ -400,8 +414,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/identity-reset" -> identityReset(request);
             case "/api/import-har" -> importHar(request, target);
             case "/api/owner" -> owner(request);
+            case "/api/object-group-owner" -> objectGroupOwner(request);
             case "/api/llm-findings" -> llmFindings(request);
             case "/api/llm-verify" -> llmVerify(request);
+            case "/api/llm-feed" -> llmFeed(request, target);
             default -> error(404, "Not found");
         };
     }
@@ -884,6 +900,44 @@ public final class FlowScopeWebServer implements AutoCloseable {
         var projects = body.putArray("projects");
         status.projects().forEach(entry -> projects.add(projectEntry(entry)));
         return json(200, body);
+    }
+
+    private LoopbackHttpServer.Response matrixExclusions(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) {
+            long dataset = state.datasetRevision();
+            var objects = state.snapshot().objects;
+            var entries = new java.util.LinkedHashMap<String, io.flowscope.core.MatrixExclusion>();
+            for (var entry : state.config().matrixExclusions().values()) {
+                String resource = entry.resource() == null ? null : objects.canonicalResource(entry.resource());
+                var visible = java.util.Objects.equals(resource, entry.resource()) ? entry
+                        : new io.flowscope.core.MatrixExclusion(io.flowscope.core.MatrixExclusion.keyFor(
+                                entry.view(), entry.operation(), resource), entry.view(), entry.operation(), resource, entry.label());
+                entries.put(visible.key(), visible);
+            }
+            if (dataset != state.datasetRevision()) return error(409, "프로젝트가 변경되었습니다. 다시 불러오세요.");
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", dataset);
+            body.set("entries", json.valueToTree(entries.values()));
+            return json(200, body);
+        }
+        try {
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            JsonNode values = json.readTree(required(form, "entries"));
+            if (!values.isArray() || values.size() > 5000) throw new IllegalArgumentException("잘못된 제외 목록입니다.");
+            if (form.get("entries").length() > 2_000_000) throw new IllegalArgumentException("제외 목록이 너무 큽니다.");
+            List<io.flowscope.core.MatrixExclusion> entries = new java.util.ArrayList<>();
+            for (JsonNode value : values) entries.add(json.treeToValue(value, io.flowscope.core.MatrixExclusion.class));
+            long dataset = Long.parseLong(required(form, "datasetRevision"));
+            state.replaceMatrixExclusions(dataset, entries);
+            if (dataset != state.datasetRevision()) throw new IllegalStateException("프로젝트가 변경되었습니다. 다시 불러오세요.");
+            ObjectNode body = json.createObjectNode();
+            body.put("datasetRevision", dataset);
+            body.set("entries", json.valueToTree(entries));
+            return json(200, body);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) { return error(400, "잘못된 제외 목록입니다."); }
+        catch (IllegalStateException error) { return error(409, error.getMessage()); }
+        catch (IllegalArgumentException error) { return error(400, error.getMessage()); }
     }
 
     private ObjectNode projectEntry(ProjectWorkspace.Entry entry) {
@@ -1803,6 +1857,48 @@ public final class FlowScopeWebServer implements AutoCloseable {
         } catch (RuntimeException error) { return error(400, error.getMessage()); }
     }
 
+    /** Store the group default once; explicit child settings take precedence. */
+    private LoopbackHttpServer.Response objectGroupOwner(LoopbackHttpServer.Request request) throws IOException {
+        Map<String, String> form = postForm(request);
+        if (form == null) return invalidForm(request);
+        try {
+            String groupKey = required(form, "groupKey");
+            String choice = required(form, "choice");
+            long dataset = Long.parseLong(required(form, "datasetRevision"));
+            if (dataset != state.datasetRevision()) throw new IllegalArgumentException("프로젝트가 변경되었습니다. 화면을 새로고침하세요.");
+            var members = state.snapshot().objects.observations().stream()
+                    .filter(object -> groupKey.equals(object.groupKey()))
+                    .collect(java.util.stream.Collectors.toMap(
+                            object -> AnalysisConfig.operationObjectPolicyKey(object.operation(),
+                                    io.flowscope.core.ObservedObjectIndex.resource(object)),
+                            object -> object, (first, ignored) -> first, LinkedHashMap::new));
+            if (members.isEmpty()) throw new IllegalArgumentException("관측된 객체 묶음을 선택하세요.");
+            String service = members.values().iterator().next().operation().split(" ")[0];
+            if (members.values().stream().anyMatch(object -> !object.operation().startsWith(service + " ")))
+                throw new IllegalArgumentException("서로 다른 서비스의 객체가 섞여 있습니다.");
+            boolean publicRead = "PUBLIC".equals(choice);
+            if (publicRead && members.values().stream().anyMatch(object -> {
+                String method = object.operation().split(" ")[1];
+                return !method.equals("GET") && !method.equals("HEAD");
+            })) throw new IllegalArgumentException("조회 API만 공개로 설정할 수 있습니다.");
+            if (!publicRead && state.config().account(choice)
+                    .filter(account -> account.service().equals(service)).isEmpty())
+                throw new IllegalArgumentException("같은 서비스에 등록된 계정을 선택하세요.");
+            AnalysisConfig config = state.config();
+            synchronized (config) {
+                if (dataset != state.datasetRevision() || config != state.config())
+                    throw new IllegalArgumentException("프로젝트가 변경되었습니다. 화면을 새로고침하세요.");
+                AnalysisConfig next = config.snapshotCopy();
+                String group = AnalysisConfig.objectGroupKey(groupKey);
+                next.withResourcePolicy(group, publicRead ? ResourcePolicy.PUBLIC : ResourcePolicy.OWNER_ONLY);
+                next.withResourceOwner(group, publicRead ? "" : choice);
+                config.replaceWith(next);
+            }
+            state.rebuild();
+            return success("객체 묶음의 기본 설정을 저장했습니다. 개별 객체 설정이 우선합니다.");
+        } catch (RuntimeException error) { return error(400, error.getMessage()); }
+    }
+
     /** LLM 교차 검증 소견 목록(읽기). 프로젝트에 영속된 추천을 그대로 돌려준다. */
     private LoopbackHttpServer.Response llmFindings(LoopbackHttpServer.Request request) throws IOException {
         if (!request.method().equals("GET")) return method("GET");
@@ -1819,19 +1915,67 @@ public final class FlowScopeWebServer implements AutoCloseable {
             node.put("note", finding.note());
             node.set("evidenceIds", json.valueToTree(finding.evidenceIds()));
             node.put("createdAt", finding.createdAt());
+            node.put("judgment", finding.judgment());
+            node.put("judgmentReason", finding.judgmentReason());
+            node.put("verificationResult", finding.verificationResult());
+            node.put("judgmentBasis", finding.judgmentBasis());
+            node.put("issueTitle", finding.issueTitle());
+            node.set("judgmentEvidenceIds", json.valueToTree(finding.judgmentEvidenceIds()));
+            node.put("judgedAt", finding.judgedAt());
         }
         return json(200, body);
     }
 
-    /** LLM 검증 실행 시작(POST accountId)·상태 조회(GET). */
+    /** LLM 판정 작업 피드(활동 로그). after=마지막 seq 이후만 돌려준다. */
+    private LoopbackHttpServer.Response llmFeed(LoopbackHttpServer.Request request, URI target) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        long after = 0;
+        try { after = Long.parseLong(form(target.getRawQuery()).getOrDefault("after", "0")); }
+        catch (NumberFormatException ignored) { }
+        ObjectNode body = json.createObjectNode();
+        ArrayNode list = body.putArray("entries");
+        for (io.flowscope.core.McpActivityLog.Entry entry : mcpActivity.entriesAfter(after)) {
+            ObjectNode node = list.addObject();
+            node.put("seq", entry.seq());
+            node.put("timestamp", entry.timestamp());
+            node.put("type", entry.type());
+            node.put("summary", entry.summary());
+            node.put("risk", entry.risk());
+            if (entry.findingId() != null) node.put("findingId", entry.findingId());
+            if (entry.evidenceId() != null) node.put("evidenceId", entry.evidenceId());
+        }
+        return json(200, body);
+    }
+
+    /** LLM 판정 실행 시작(POST sources)·상태 조회(GET). */
     private LoopbackHttpServer.Response llmVerify(LoopbackHttpServer.Request request) throws IOException {
         try {
             LlmVerifyState verifyState;
             if (request.method().equals("POST")) {
                 Map<String, String> form = postForm(request);
                 if (form == null) return invalidForm(request);
-                verifyState = "cancel".equals(form.getOrDefault("action", "").trim())
-                        ? state.cancelLlmVerify() : state.startLlmVerify(required(form, "accountId"));
+                String action = form.getOrDefault("action", "").trim();
+                if ("cancel".equals(action)) {
+                    verifyState = state.cancelLlmVerify();
+                } else if ("ask".equals(action)) {
+                    verifyState = state.askLlmJudgment(required(form, "message"), form.getOrDefault("model", "").trim());
+                } else if ("judge".equals(action)) {
+                    List<String> findingIds = new java.util.ArrayList<>();
+                    JsonNode ids;
+                    try { ids = json.readTree(form.getOrDefault("findings", "[]")); }
+                    catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+                        throw new IllegalArgumentException("findings JSON을 읽지 못했습니다.");
+                    }
+                    if (!ids.isArray()) throw new IllegalArgumentException("findings는 소견 ID 배열이어야 합니다.");
+                    ids.forEach(value -> { if (value.isTextual() && !value.asText().isBlank()) findingIds.add(value.asText()); });
+                    if (findingIds.isEmpty()) throw new IllegalArgumentException("판정할 소견을 하나 이상 고르세요.");
+                    mcpActivity.reset();
+                    verifyState = state.startLlmJudgment(findingIds, form.getOrDefault("model", "").trim());
+                } else {
+                    mcpActivity.reset();
+                    verifyState = state.startLlmVerify(form.getOrDefault("sources", "").trim(),
+                            form.getOrDefault("accounts", "").trim(), form.getOrDefault("model", "").trim());
+                }
             } else if (request.method().equals("GET")) {
                 verifyState = state.llmVerifyState();
             } else {
