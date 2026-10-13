@@ -241,11 +241,13 @@ final class FlowScopeMcp {
         java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         for (RequestRecord record : result.coverageRecords) {
             if (!record.hasResponse || record.op == null) continue;
-            if (coreOnly && record.resource == null) continue;
-            if (exclusions.excluded(record.op, record.resource)) continue;
             var observedResources = result.objects.resources(record.evidenceId);
+            if (coreOnly && record.resource == null && observedResources.isEmpty()) continue;
+            if (exclusions.excluded(record.op, record.resource)) continue;
             if (!observedResources.isEmpty() && observedResources.stream().allMatch(resource -> exclusions.excluded(record.op, resource))) continue;
-            String key = record.idn + "\u0000" + record.op + "\u0000" + record.resource + "\u0000" + record.status;
+            String key = record.idn + "\u0000" + record.op + "\u0000" + record.resource + "\u0000" + record.status
+                    + "\u0000" + observedResources.stream().filter(resource -> !exclusions.excluded(record.op, resource))
+                    .sorted().collect(java.util.stream.Collectors.joining("\u0000"));
             if (!seen.add(key)) continue;
             ObjectNode node = access.addObject();
             node.put("identity", record.idn);

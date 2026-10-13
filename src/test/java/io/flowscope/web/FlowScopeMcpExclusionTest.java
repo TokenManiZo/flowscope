@@ -22,6 +22,28 @@ import static org.junit.jupiter.api.Assertions.*;
 final class FlowScopeMcpExclusionTest {
     private final ObjectMapper json = new ObjectMapper();
 
+    @Test void coreGraphKeepsDistinctObservedObjectsWithoutLegacyResources() throws Exception {
+        var first = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/lookup", 200, "anon");
+        first.query = "q=101";
+        first.hasResponse = true; first.body = "{\"id\":101}"; first.responseContentType = "application/json";
+        var second = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/lookup", 200, "anon");
+        second.query = "q=102";
+        second.hasResponse = true; second.body = "{\"id\":102}"; second.responseContentType = "application/json";
+        Pipeline.Result snapshot = Pipeline.run(List.of(first, second));
+        assertNull(snapshot.coverageRecords.getFirst().resource);
+        assertEquals(2, snapshot.objects.targets().size());
+        var state = (FlowScopeWebServer.State) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[] { FlowScopeWebServer.State.class }, (proxy, method, args) -> switch (method.getName()) {
+                    case "snapshot" -> snapshot;
+                    case "config" -> new AnalysisConfig();
+                    case "scopeEntries" -> List.of();
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+        var access = tool(new FlowScopeMcp(state, "secret", 17777, null), "flowscope_get_graph", Map.of("scope", "core")).path("access");
+        assertEquals(2, access.size());
+        assertNotEquals(access.get(0).path("resources").get(0).asText(), access.get(1).path("resources").get(0).asText());
+    }
+
     @Test void excludedApiDisappearsFromGraphAndCannotBecomeANewFindingUntilRestored() throws Exception {
         var record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/orders/101", 200, "anon");
         record.hasResponse = true; record.body = "{\"id\":101}"; record.responseContentType = "application/json";
