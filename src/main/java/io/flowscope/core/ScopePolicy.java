@@ -45,7 +45,10 @@ public final class ScopePolicy {
                 if (wildcard && !dnsHost(host)) {
                     throw new IllegalArgumentException("와일드카드는 DNS 도메인에만 사용할 수 있습니다: " + value);
                 }
-                entries.add(new ScopeEntry(scheme, host, port, path, wildcard));
+                String rawPath = uri.getRawPath();
+                if (rawPath == null || rawPath.isEmpty()) rawPath = "/";
+                if (rawPath.length() > 1 && rawPath.endsWith("/")) rawPath = rawPath.substring(0, rawPath.length() - 1);
+                entries.add(new ScopeEntry(scheme, host, port, path, rawPath, wildcard));
             }
         }
         return new ScopePolicy(entries);
@@ -111,14 +114,14 @@ public final class ScopePolicy {
                 && java.util.Arrays.stream(host.split("\\.")).allMatch(label -> label.length() <= 63);
     }
 
-    private record ScopeEntry(String scheme, String host, int port, String path, boolean wildcard) {
+    private record ScopeEntry(String scheme, String host, int port, String path, String rawPath, boolean wildcard) {
         boolean matches(String actualScheme, String actualHost, int actualPort, String actualPath) {
             boolean hostMatches = host.equals(actualHost) || wildcard && actualHost.endsWith("." + host);
             if (!scheme.equals(actualScheme) || !hostMatches || port != actualPort) return false;
             return path.equals("/") || actualPath.equals(path) || actualPath.startsWith(path + "/");
         }
 
-        String target() { return scheme + "://" + displayHost() + ":" + port + path; }
+        String target() { return scheme + "://" + displayHost() + ":" + port + rawPath; }
 
         String urlRegex() {
             String hostRegex = wildcard
@@ -129,8 +132,8 @@ public final class ScopePolicy {
             int defaultPort = scheme.equals("https") ? 443 : 80;
             if (port == defaultPort) regex.append("(?::").append(defaultPort).append(")?");
             else regex.append(Pattern.quote(":" + port));
-            if (path.equals("/")) regex.append("(?:/.*)?");
-            else regex.append(Pattern.quote(path)).append("(?:/.*)?");
+            if (rawPath.equals("/")) regex.append("(?:/.*)?");
+            else regex.append(Pattern.quote(rawPath)).append("(?:/.*)?");
             return regex.append("(?:\\?.*)?$").toString();
         }
 
@@ -140,7 +143,7 @@ public final class ScopePolicy {
         }
 
         @Override public String toString() {
-            return scheme + "://" + (wildcard ? "*." : "") + displayHost() + ":" + port + path;
+            return scheme + "://" + (wildcard ? "*." : "") + displayHost() + ":" + port + rawPath;
         }
     }
 }

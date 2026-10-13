@@ -70,8 +70,8 @@ public final class FatJarIsolationSmoke {
         try (URLClassLoader firstLoader = isolatedLoader(releaseJar);
              URLClassLoader secondLoader = isolatedLoader(releaseJar)) {
             assertVersionedClass(firstLoader,
-                    "io.flowscope.shaded.jackson.core.internal.shaded.fdp.v2_22_2.FastDoubleSwar",
-                    "io/flowscope/shaded/jackson/core/internal/shaded/fdp/v2_22_2/FastDoubleSwar.class",
+                    "io.flowscope.shaded.jackson.core.internal.shaded.fdp.v2_22_3.FastDoubleSwar",
+                    "io/flowscope/shaded/jackson/core/internal/shaded/fdp/v2_22_3/FastDoubleSwar.class",
                     "META-INF/versions/21/");
             assertVersionedClass(firstLoader,
                     "io.flowscope.shaded.jsoup.helper.HttpClientExecutor",

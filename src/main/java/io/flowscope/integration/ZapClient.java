@@ -303,7 +303,11 @@ public final class ZapClient {
     }
 
     public static String exactSubtreeRegex(String target) {
-        return io.flowscope.core.ScopePolicy.parse(target).urlRegex();
+        URI uri = URI.create(target);
+        if (uri.getRawFragment() != null) throw new IllegalArgumentException("ZAP context target must not contain a fragment");
+        // 로그인 URL의 쿼리는 인증 설정에 보존하고 Context의 경로 범위에서는 제외한다.
+        int query = target.indexOf('?');
+        return io.flowscope.core.ScopePolicy.parse(query < 0 ? target : target.substring(0, query)).urlRegex();
     }
 
     private String get(String path, String query) {

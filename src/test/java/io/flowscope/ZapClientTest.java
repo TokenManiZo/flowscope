@@ -146,6 +146,37 @@ class ZapClientTest {
     }
 
     @Test
+    void loginUrlQueryDoesNotBecomeAScopeRestriction() {
+        String login = "https://app.example.test/login?next=dashboard";
+        Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex(login));
+
+        assertTrue(pattern.matcher(login).matches());
+        assertTrue(pattern.matcher("https://app.example.test/login?next=profile").matches());
+        assertFalse(pattern.matcher("https://app.example.test/login-other").matches());
+        assertThrows(IllegalArgumentException.class,
+                () -> ZapClient.exactSubtreeRegex(login + "#fragment"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ZapClient.exactSubtreeRegex("https://user@app.example.test/login?next=dashboard"));
+    }
+
+    @Test
+    void encodedScopePathMatchesZapRequestsWithoutWideningTheSubtree() {
+        for (String host : java.util.List.of("example.test", "*.example.test")) {
+            String configured = "https://" + host + "/api%20v1/";
+            var scope = io.flowscope.core.ScopePolicy.parse(configured);
+            String target = "https://example.test/api%20v1/items?limit=1";
+            Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex(configured));
+
+            assertTrue(scope.allows(target));
+            assertTrue(pattern.matcher(target).matches());
+            assertFalse(pattern.matcher("https://example.test/api%20v10/items").matches());
+            assertFalse(pattern.matcher("https://example.test/api%20v1%2fadmin").matches());
+            assertTrue(io.flowscope.core.ScopePolicy.parse(scope.configuredEntries().getFirst()).allows(target));
+            assertTrue(Pattern.compile(scope.urlRegex()).matcher(scope.entries().getFirst()).matches());
+        }
+    }
+
+    @Test
     void exactSubtreeRegexUnionCoversEveryScopeEntryAndRejectsOutsiders() {
         // 다중 항목 scope: capability 헤더가 target 하위뿐 아니라 모든 in-scope 항목 요청에 붙어야 한다.
         Pattern pattern = Pattern.compile(ZapClient.exactSubtreeRegex(
