@@ -70,12 +70,17 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
   if (node.kind === "object-group" && "objectGroup" in node && node.objectGroup) {
     const { key, members, expanded } = node.objectGroup
     const isStatic = node.staticResource
-    const badge = isStatic ? "STATIC RESOURCE" : "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind) : "OBJECTS"
-    const fieldCount = "displayObjectFieldCount" in node ? node.displayObjectFieldCount : undefined
-    const footer = `${isStatic ? "자원" : "객체"} ${members.length}개${fieldCount ? ` · 필드 총 ${fieldCount}개` : ""}${members.length > 10 && (isStatic && !node.expandGroupId || "displayObjectKind" in node && node.displayObjectKind) ? " · 최대 10개 표시" : ""}`
+    const badge = isStatic ? "STATIC RESOURCE" : "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind, node.displayObjectLocations) : "OBJECTS"
+    const fieldCounts = "displayObjectFieldCounts" in node ? node.displayObjectFieldCounts : undefined
+    const fieldSummary = fieldCounts ? (["PATH", "QUERY", "REQUEST_BODY", "RESPONSE_BODY"] as const)
+      .filter(kind => fieldCounts[kind] !== undefined)
+      .map(kind => `${({ PATH: "PATH", QUERY: "QUERY", REQUEST_BODY: "BODY", RESPONSE_BODY: "RESPONSE" })[kind]} ${fieldCounts[kind]}`)
+      .join(" · ") : ""
+    const detail = fieldSummary ? `필드 ${fieldSummary}` : ""
+    const footer = `${isStatic ? "자원" : "객체"} ${members.length}개${members.length > 10 && (isStatic && !node.expandGroupId || "displayObjectKind" in node && node.displayObjectKind) ? " · 최대 10개 표시" : ""}`
     return {
-      kind: "target", badge, title: `${expanded ? "▾" : "▸"} ${key}`, titleLineLimit: 2, detail: "", footer, icon: "box",
-      accessibleLabel: `${key} 객체 묶음; ${footer}; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
+      kind: "target", badge, title: `${expanded ? "▾" : "▸"} ${key}`, titleLineLimit: 2, detail, footer, icon: "box",
+      accessibleLabel: `${key} 객체 묶음; ${detail}; ${footer}; ${expanded ? "펼침" : "접힘"}; 더블클릭하거나 Enter로 ${expanded ? "접기" : "펼치기"}`,
     }
   }
 
@@ -87,7 +92,7 @@ export function relationshipNodeCard(node: RelationshipNode, projection: Relatio
     const owner = "publicRead" in node && node.publicRead ? "Public" : "owner" in node ? identityLabel(node.owner ?? "UNKNOWN") : "UNKNOWN"
     return {
       // 자원 키 앞의 서비스 오리진("http://host:port ")은 카드에서 뺀다. 전체 키는 접근 이름에 남는다.
-      kind: "target", badge: "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind) : "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: node.selection.displayObjectKey ? evidenceFooter(node) : `owner: ${owner}`, icon: "box",
+      kind: "target", badge: "displayObjectKind" in node ? objectKindBadge(node.displayObjectKind, node.displayObjectLocations) : "RESOURCE", title: node.label.replace(/^https?:\/\/\S+\s+/i, "") || node.label, detail: "", footer: node.selection.displayObjectKey ? evidenceFooter(node) : `owner: ${owner}`, icon: "box",
       accessibleLabel: `${node.label}; Resource; verdict ${node.verdictText}; owner: ${owner}; ${evidenceFooter(node)}`,
     }
   }
@@ -132,6 +137,9 @@ export function relationshipRouteCandidateCard(candidate: GraphRouteCandidate): 
   }
 }
 
-function objectKindBadge(kind?: string): string {
-  return ({ PATH: "PATH PARAM", QUERY: "QUERY PARAM", REQUEST_BODY: "REQUEST BODY", RESPONSE_BODY: "RESPONSE BODY" } as Record<string, string>)[kind ?? ""] ?? "OBJECTS"
+function objectKindBadge(kind?: string, locations?: readonly string[]): string {
+  const order = ["PATH", "QUERY", "REQUEST_BODY", "RESPONSE_BODY"]
+  const values = (locations?.length ? [...new Set(locations)] : kind ? [kind] : []).sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  if (values.length > 1) return values.map(value => ({ PATH: "PATH", QUERY: "QUERY", REQUEST_BODY: "BODY", RESPONSE_BODY: "RESPONSE" } as Record<string, string>)[value] ?? value).join(" · ")
+  return ({ PATH: "PATH PARAM", QUERY: "QUERY PARAM", REQUEST_BODY: "REQUEST BODY", RESPONSE_BODY: "RESPONSE BODY" } as Record<string, string>)[values[0] ?? ""] ?? "OBJECTS"
 }

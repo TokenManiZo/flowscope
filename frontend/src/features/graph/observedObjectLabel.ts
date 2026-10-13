@@ -9,7 +9,8 @@ export function observedObjectLabel(object: DisplayObject): string {
 export function observedObjectLocations(object: DisplayObject): string {
   const locations = object.locations?.length ? object.locations : [object.kind]
   if (locations.length < 2) return ""
-  return locations
+  const order = ["PATH", "QUERY", "REQUEST_BODY", "RESPONSE_BODY"]
+  return [...locations].sort((a, b) => order.indexOf(a) - order.indexOf(b))
     .map(kind => kind === "REQUEST_BODY" ? "BODY" : kind === "RESPONSE_BODY" ? "RESPONSE" : kind)
     .join(" · ")
 }

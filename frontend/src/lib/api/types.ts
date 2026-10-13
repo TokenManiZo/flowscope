@@ -22,6 +22,7 @@ export interface DisplayObject {
   objectKey: string
   kind: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
   locations?: readonly ("PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY")[]
+  locationFields?: Partial<Record<DisplayObject["kind"], readonly string[]>>
   sourceObjectKeys?: readonly string[]
   fields: readonly string[]
   legacyResource: string | null

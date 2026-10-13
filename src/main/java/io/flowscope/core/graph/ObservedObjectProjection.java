@@ -32,7 +32,8 @@ public final class ObservedObjectProjection {
     private ObservedObjectProjection() {}
     public record ObjectObservation(String eventId, String operation, String apiKey, String groupKey,
             String objectKey, String kind, List<String> fields, String legacyResource, int ordinal, String apiFamily,
-            String integerLabel, int displayOrdinal, List<String> locations, List<String> sourceObjectKeys) {}
+            String integerLabel, int displayOrdinal, List<String> locations, List<String> sourceObjectKeys,
+            Map<String, List<String>> locationFields) {}
     private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(128).maxStringLength(1_000_000).build()).build())
@@ -135,10 +136,13 @@ public final class ObservedObjectProjection {
                     })).orElseThrow();
             List<String> locations = candidates.stream().map(ObjectObservation::kind).distinct().toList();
             List<String> sourceKeys = candidates.stream().map(ObjectObservation::objectKey).distinct().toList();
+            Map<String, List<String>> locationFields = new LinkedHashMap<>();
+            for (ObjectObservation candidate : candidates)
+                locationFields.put(candidate.kind(), candidate.fields());
             collapsed.add(new ObjectObservation(primary.eventId(), primary.operation(), primary.apiKey(),
                     primary.groupKey(), primary.objectKey(), primary.kind(), primary.fields(),
                     primary.legacyResource(), primary.ordinal(), primary.apiFamily(), primary.integerLabel(),
-                    primary.displayOrdinal(), locations, sourceKeys));
+                    primary.displayOrdinal(), locations, sourceKeys, locationFields));
         }
         Set<String> successfulObjects = new HashSet<>();
         for (ObjectObservation object : collapsed) if (successful(unique.get(object.eventId()))) {
@@ -155,7 +159,7 @@ public final class ObservedObjectProjection {
                     ? labels.computeIfAbsent(object.objectKey(), ignored -> labels.size() + 1) : 0;
             return new ObjectObservation(object.eventId(), object.operation(), object.apiKey(), object.groupKey(),
                     object.objectKey(), object.kind(), object.fields(), object.legacyResource(), ordinal, object.apiFamily(),
-                    object.integerLabel(), displayOrdinal, object.locations(), object.sourceObjectKeys());
+                    object.integerLabel(), displayOrdinal, object.locations(), object.sourceObjectKeys(), object.locationFields());
         }).toList();
     }
 
@@ -369,7 +373,7 @@ public final class ObservedObjectProjection {
             String apiFamily, String integerLabel) {
         var members = ordinals.computeIfAbsent(group, ignored -> new LinkedHashMap<>());
         int number = members.computeIfAbsent(object, ignored -> members.size() + 1);
-        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily, integerLabel, number, List.of(kind), List.of(object)));
+        out.add(new ObjectObservation(r.evidenceId, r.op, api, group, object, kind, fields, legacy, number, apiFamily, integerLabel, number, List.of(kind), List.of(object), Map.of(kind, fields)));
     }
     private static String key(String... parts) {
         StringBuilder framed = new StringBuilder();

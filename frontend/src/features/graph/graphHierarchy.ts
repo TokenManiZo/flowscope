@@ -2,7 +2,7 @@ import { applyObservedObjects } from "./observedObjects"
 import { applyStaticResources, staticResourceEntries } from "./staticResourceGraph"
 import { graphAccountIdentities, graphAccountLabel } from "./graphAccounts"
 import { operationShapeKey } from "./graphPathShape"
-import type { Cell, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
+import type { Cell, DisplayObject, RouteCandidate, Snapshot, Source } from "@/lib/api/types"
 import { manualResendDetails } from "./resendGraph"
 import { graphCellKey, graphCellSelection, projectRouteCandidates, sourceStyles, verdictStyles, wrapOperationLabel, type GraphCellSelection, type GraphEdge, type GraphFilters, type GraphNode, type GraphRouteCandidate, type GraphView } from "./graphProjection"
 
@@ -41,7 +41,9 @@ export interface HierarchyNode extends Omit<GraphNode, "kind" | "selection"> {
   /** Browser-observed host metadata, without API or authorization Evidence. */
   displayObjectCount?: number
   displayObjectKind?: "PATH" | "QUERY" | "REQUEST_BODY" | "RESPONSE_BODY"
+  displayObjectLocations?: readonly DisplayObject["kind"][]
   displayObjectFieldCount?: number
+  displayObjectFieldCounts?: Partial<Record<DisplayObject["kind"], number>>
   displayOperations?: readonly string[]
   owner?: string | null
   /** 이 객체를 조회하는 API가 공개 정책(PUBLIC)이면 true. 카드·패널이 소유자 대신 Public으로 보여 준다. */

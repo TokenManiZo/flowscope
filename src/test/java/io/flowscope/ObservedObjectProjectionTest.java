@@ -57,6 +57,9 @@ class ObservedObjectProjectionTest {
         assertEquals(2, observations.stream().filter(o -> o.kind().equals("PATH")).count());
         assertEquals(2, observations.size());
         assertEquals(List.of("PATH", "QUERY", "REQUEST_BODY"), observations.get(1).locations());
+        assertEquals(List.of("/segments/1"), observations.get(1).locationFields().get("PATH"));
+        assertEquals(List.of("/page"), observations.get(1).locationFields().get("QUERY"));
+        assertEquals(List.of("/orderId"), observations.get(1).locationFields().get("REQUEST_BODY"));
         var failed = record("/orders/202", 2, Source.HUMAN, 404);
         var secondSuccess = record(success.path, 3); secondSuccess.idn = "user-b";
         var confirmed = ObservedObjectProjection.build(List.of(success, secondSuccess, failed));
