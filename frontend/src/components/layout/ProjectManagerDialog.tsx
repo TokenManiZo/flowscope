@@ -14,20 +14,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDeleteProjectMutation, useOpenProjectMutation, useProjectsQuery, useResetProjectTrafficMutation, useStartProjectMutation, useUpdateProjectMutation } from "@/lib/query/hooks"
 import { cn } from "@/lib/utils"
 
-/** Bare DNS names default to HTTPS; the server still receives an exact URL scope. */
+/** Bare DNS names default to HTTPS; a leading *. remains an explicit wildcard scope. */
 export function normalizeScopeEntry(raw: string): { entry: string | null; note?: string } {
   const value = raw.trim()
   if (!value) return { entry: null }
   try {
-    const bareDomain = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i.test(value)
+    const domainPattern = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
+    const bareDomain = new RegExp(`^${domainPattern}$`, "i").test(value)
       && !/^[0-9.]+$/.test(value)
-    const url = new URL(bareDomain ? `https://${value}` : value)
+    const bareWildcard = new RegExp(`^\\*\\.${domainPattern}$`, "i").test(value)
+    const url = new URL(bareDomain || bareWildcard ? `https://${value}` : value)
     if (url.username || url.password) return { entry: null, note: "사용자정보가 포함된 주소는 등록할 수 없습니다." }
     if (url.protocol !== "http:" && url.protocol !== "https:") return { entry: null, note: "http 또는 https 주소만 등록할 수 있습니다." }
+    const wildcard = url.hostname.startsWith("*.")
+    if (wildcard && !new RegExp(`^\\*\\.${domainPattern}$`, "i").test(url.hostname)) return { entry: null, note: "와일드카드는 *.example.com 형식으로 입력하세요." }
+    if (!wildcard && url.hostname.includes("*")) return { entry: null, note: "와일드카드는 *.example.com 형식으로 입력하세요." }
     const port = url.port || (url.protocol === "https:" ? "443" : "80")
     const path = url.pathname === "/" ? "" : url.pathname.replace(/\/+$/, "")
     const entry = `${url.protocol}//${url.hostname}:${port}${path}`
-    return bareDomain ? { entry, note: "HTTPS로 등록했습니다. 브라우저에서 사용한 하위 도메인을 자동으로 발견합니다." }
+    return wildcard ? { entry, note: `루트 도메인과 모든 하위 도메인을 ${url.protocol === "https:" ? "HTTPS" : "HTTP"} 범위로 등록했습니다.` }
+      : bareDomain ? { entry, note: "HTTPS로 등록했습니다. 브라우저에서 사용한 하위 도메인을 자동으로 발견합니다." }
       : url.search || url.hash ? { entry, note: "쿼리와 뒷부분은 제외하고 등록했습니다." } : { entry }
   } catch {
     return { entry: null, note: "주소 형식이 올바르지 않습니다. 예: http://127.0.0.1:8888" }
@@ -39,7 +45,7 @@ function suggestName(scopes: readonly string[]): string {
   if (!first) return ""
   try {
     const url = new URL(first)
-    return `${url.hostname}-${url.port || (url.protocol === "https:" ? "443" : "80")}`
+    return `${url.hostname.replace(/^\*\./, "")}-${url.port || (url.protocol === "https:" ? "443" : "80")}`
   } catch {
     return first.replace(/^https?:\/\//, "").replace(/[:/]/g, "-")
   }

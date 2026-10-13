@@ -367,7 +367,7 @@ public final class ZapCampaign implements AutoCloseable {
             contextCreated = true;
             contextId = context.path("contextId").asText();
             if (contextId.isBlank()) throw new IllegalStateException("ZAP did not create an isolated target context");
-            requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+            requireZapOk(state.zap().includeInContext(contextName, state.scope().urlRegex()),
                     "include the exact target subtree in context");
             requireZapOk(state.zap().setContextInScope(contextName), "mark the target context in scope");
 
@@ -521,9 +521,7 @@ public final class ZapCampaign implements AutoCloseable {
         String description = "flowscope-capability-" + runId + "-" + Long.toUnsignedString(System.nanoTime(), 36);
         // 8081은 스캐너 레인의 모든 in-scope 요청에 capability를 요구한다. target 하위에만 헤더를 붙이면
         // 다중 항목 scope에서 브라우저 크롤러가 형제 항목을 부를 때 헤더 없이 도착해 캠페인이 격리 오류로 끝난다.
-        List<String> capabilityCoverage = new ArrayList<>(state.scope().entries());
-        if (!capabilityCoverage.contains(target)) capabilityCoverage.add(target);
-        requireZapOk(state.zap().addRequestHeaderRule(description, ZapClient.exactSubtreeRegex(capabilityCoverage),
+        requireZapOk(state.zap().addRequestHeaderRule(description, state.scope().urlRegex(),
                 "X-FlowScope-Scanner-Capability", capability, CAPABILITY_INITIATORS),
                 "install its scanner provenance capability");
         synchronized (this) {
@@ -639,7 +637,7 @@ public final class ZapCampaign implements AutoCloseable {
             contextCreated = true;
             String contextId = context.path("contextId").asText();
             if (contextId.isBlank()) throw new IllegalStateException("ZAP did not create an isolated target context");
-            requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+            requireZapOk(state.zap().includeInContext(contextName, state.scope().urlRegex()),
                     "include the exact target subtree in context");
             requireZapOk(state.zap().setContextInScope(contextName), "mark the target context in scope");
 
@@ -800,9 +798,7 @@ public final class ZapCampaign implements AutoCloseable {
      * 요청에 주입 헤더가 실리지 않았다. scanner capability와 같은 범위·initiator의 Replacer 규칙으로 요청마다 붙인다.
      */
     private void installInjectedHeaders(String runId, String target, char[] headers) {
-        List<String> coverage = new ArrayList<>(state.scope().entries());
-        if (!coverage.contains(target)) coverage.add(target);
-        String urlRegex = ZapClient.exactSubtreeRegex(coverage);
+        String urlRegex = state.scope().urlRegex();
         int index = 0;
         try {
             for (String line : new String(headers).split("\n")) {
@@ -882,7 +878,7 @@ public final class ZapCampaign implements AutoCloseable {
                     throw new IllegalStateException("ZAP did not create an isolated target context");
                 }
                 recordZapHeartbeat(runId, index, "exact-scope Context 설정 중");
-                requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+                requireZapOk(state.zap().includeInContext(contextName, state.scope().urlRegex()),
                         "include the exact target subtree in context");
                 requireZapOk(state.zap().setContextInScope(contextName), "mark the target context in scope");
                 requireZapOk(state.zap().enablePassiveScan(), "enable passive scanning");
@@ -2150,7 +2146,7 @@ public final class ZapCampaign implements AutoCloseable {
         if (context.path("contextId").asText().isBlank()) {
             throw new IllegalStateException("ZAP did not create an exact-scope context");
         }
-        requireZapOk(state.zap().includeInContext(contextName, ZapClient.exactSubtreeRegex(target)),
+        requireZapOk(state.zap().includeInContext(contextName, state.scope().urlRegex()),
                 "include the exact target subtree in context");
         requireZapOk(state.zap().setContextInScope(contextName), "mark the exact target context in scope");
         return contextName;

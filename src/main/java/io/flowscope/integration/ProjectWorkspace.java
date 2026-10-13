@@ -107,7 +107,7 @@ public final class ProjectWorkspace {
         Files.createDirectory(directory);
         restrictDirectory(directory);
         ProjectStore.ProjectContext context = new ProjectStore.ProjectContext(
-                displayName, parsed.entries(), now);
+                displayName, parsed.configuredEntries(), now);
         return new Allocation(directory.getFileName().toString(), directory,
                 directory.resolve(DATABASE_NAME), context);
     }
@@ -123,7 +123,7 @@ public final class ProjectWorkspace {
         String displayName = requestedName == null ? "" : requestedName.trim();
         if (displayName.length() > 120) throw new IllegalArgumentException("프로젝트 이름은 120자 이하여야 합니다.");
         if (displayName.isBlank()) displayName = current.name().isBlank() ? defaultName(parsed.entries().getFirst()) : current.name();
-        return new ProjectStore.ProjectContext(displayName, parsed.entries(), current.createdAt());
+        return new ProjectStore.ProjectContext(displayName, parsed.configuredEntries(), current.createdAt());
     }
 
     public Path resolveDatabase(String id) {
