@@ -14,7 +14,7 @@
 
 ### `zap-up`이 `Docker Desktop is required.` / `Docker is required.` / `Docker Compose v2 is required.`로 멈춘다
 
-Docker가 없거나 Compose v2가 없습니다. [README의 Docker 설치](../README.md#4-docker-설치하기-zap을-쓸-때만)를 따라 설치한 뒤 **새 터미널**을 열어 다시 실행하세요.
+Docker가 없거나 Compose v2가 없습니다. [README의 Docker 설치](../README.md#3-docker-설치하기-zap을-쓸-때만)를 따라 설치한 뒤 **새 터미널**을 열어 다시 실행하세요.
 
 ### `Docker Compose could not start FlowScope ZAP.` / `ZAP did not become ready.`
 
@@ -58,7 +58,7 @@ ZAP API key가 없거나 FlowScope와 ZAP 컨테이너가 서로 다른 key를 �
 
 FlowScope는 Burp가 시작될 때의 PATH와 `~/.local/bin`, npm, WinGet, Homebrew 설치 폴더에서 `codex`를 찾습니다.
 
-1. [README의 Codex 설치](../README.md#6-codex-설치하기-llm-탐색을-쓸-때만)대로 설치합니다.
+1. [README의 Codex 설치](../README.md#5-codex-설치하기-llm-탐색을-쓸-때만)대로 설치합니다.
 2. Burp를 **다시 시작**합니다. Burp가 켜진 채로 설치하면 새 PATH를 모릅니다. Windows 공식 설치 프로그램은 `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`에 설치하고 PATH만 바꾸므로 특히 재시작이 필요합니다.
 3. 그래도 못 찾으면 Burp JVM 옵션에 `-Dflowscope.llm.codex.path=<codex 실행 파일 경로>`를 넣습니다.
 4. 화면의 **다시 확인**을 누릅니다.
@@ -107,7 +107,7 @@ Get-ChildItem -Recurse | Unblock-File
 
 ### Windows에서 `doctor.ps1`이 `node.exe : Logged in using ChatGPT`와 `NativeCommandError`를 내고 멈춘다
 
-Windows에 기본으로 있는 Windows PowerShell 5.1에서 실행했을 때 나옵니다. Codex는 로그인 결과를 오류 출력 쪽으로 내보내는데, 5.1은 이것을 오류로 보고 스크립트를 멈춥니다. Codex 로그인에는 문제가 없습니다. 시작 메뉴의 **PowerShell 7**(`pwsh`)을 열고 다시 실행하세요. PowerShell 7 설치 방법은 [README의 내려받기](../README.md#1-내려받기)에 있습니다.
+Windows에 기본으로 있는 Windows PowerShell 5.1에서 실행했을 때 나옵니다. Codex는 로그인 결과를 오류 출력 쪽으로 내보내는데, 5.1은 이것을 오류로 보고 스크립트를 멈춥니다. Codex 로그인에는 문제가 없습니다. 시작 메뉴의 **PowerShell 7**(`pwsh`)을 열고 다시 실행하세요. PowerShell 7 설치 안내는 [README의 요구사항](../README.md#요구사항)을 참고하세요.
 
 ### 확장이 로드되지 않는다
 
