@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.font.PDType0Font;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -191,16 +192,12 @@ final class DiagnosisReports {
     }
 
     private static byte[] pdf(String markdown) throws IOException {
-        Path fontPath = Stream.of(
-                Path.of("C:/Windows/Fonts/NotoSansKR-Regular.ttf"),
-                Path.of("C:/Windows/Fonts/malgun.ttf"),
-                Path.of("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
-                Path.of("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-                Path.of("/Library/Fonts/Arial Unicode.ttf"))
-                .filter(Files::isRegularFile).findFirst()
-                .orElseThrow(() -> new IOException("한국어 PDF 글꼴을 찾지 못했습니다. Noto Sans KR 글꼴을 설치하세요."));
         try (PDDocument document = new PDDocument()) {
-            PDType0Font font = PDType0Font.load(document, fontPath.toFile());
+            PDType0Font font;
+            try (InputStream bundledFont = DiagnosisReports.class.getResourceAsStream("/fonts/NotoSansKR-Regular.ttf")) {
+                if (bundledFont == null) throw new IOException("번들 한국어 PDF 글꼴이 없습니다.");
+                font = PDType0Font.load(document, bundledFont);
+            }
             PDPage page = new PDPage(PDRectangle.A4);
             document.addPage(page);
             PDPageContentStream stream = new PDPageContentStream(document, page);
