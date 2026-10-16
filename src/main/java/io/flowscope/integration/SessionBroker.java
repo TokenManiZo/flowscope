@@ -469,19 +469,45 @@ public final class SessionBroker implements AutoCloseable {
     public synchronized Map<String, String> headersForVerifiedAccount(String accountId, URI target,
                                                                        ScopePolicy scope, Instant now) {
         String handle = handleForAccount(accountId);
-        ManagedSession session = required(handle);
-        if (!session.verificationSource.strong()) {
-            throw new IllegalStateException("account session is not strongly verified: " + accountId
-                    + " (" + session.verificationSource + ")");
+        if (!verifiedReplayReady(accountId, now)) {
+            throw new IllegalStateException("account session is not strongly verified: " + accountId);
         }
         return headers(handle, target, scope, now);
     }
 
+    /** Credentials for the account's configured login-proof GET only. A capture may have credentials
+     * before it has proof, so this must never be used for ordinary Request Lab or MCP replay. */
+    public synchronized Map<String, String> headersForLoginVerification(String accountId, URI target,
+                                                                         ScopePolicy scope, Instant now) {
+        return headers(handleForAccount(accountId), target, scope, now, true);
+    }
+
+    public synchronized boolean verifiedReplayReady(String accountId, Instant now) {
+        ManagedSession session = byHandle.get(handleByAccount.get(accountId));
+        if (session == null || session.credentialConflict) return false;
+        Instant time = now == null ? Instant.now() : now;
+        pruneExpired(session, time);
+        if (!hasMaterial(session, time)) {
+            invalidate(session, Status.REAUTH_REQUIRED);
+            return false;
+        }
+        return (session.status == Status.ACTIVE && session.verificationSource.strong())
+                || (session.capturing && session.responseConfirmed && session.pendingVerificationSource.strong());
+    }
+
     public synchronized Map<String, String> headers(String handle, URI target, ScopePolicy scope, Instant now) {
+        return headers(handle, target, scope, now, false);
+    }
+
+    private Map<String, String> headers(String handle, URI target, ScopePolicy scope, Instant now,
+                                        boolean loginVerification) {
         if (scope == null || !scope.allows(target.toString())) {
             throw new IllegalArgumentException("target is outside configured scope");
         }
         ManagedSession session = requiredForTarget(handle, target);
+        if (loginVerification && session.credentialConflict) {
+            throw new IllegalStateException("account session has conflicting credentials: " + session.account.id());
+        }
         Instant time = now == null ? Instant.now() : now;
         pruneExpired(session, time);
         if (!hasMaterial(session, time)) {
@@ -490,7 +516,8 @@ public final class SessionBroker implements AutoCloseable {
         }
         // A running capture that already saw an accepted response replays its latest credentials.
         boolean capturingReady = session.capturing && session.responseConfirmed;
-        if (session.status != Status.ACTIVE && !capturingReady) {
+        if (session.status != Status.ACTIVE && !capturingReady
+                && !(loginVerification && session.capturing && session.status == Status.CAPTURING)) {
             throw new IllegalStateException("account session is not active: " + session.account.id()
                     + " (" + session.status + ")");
         }

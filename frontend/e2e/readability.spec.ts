@@ -12,33 +12,26 @@ async function syntheticApi(page:Page){
  await page.addInitScript(()=>{localStorage.setItem("flowscope-theme","dark");localStorage.setItem("flowscope.sidebar","open")})
  const snapshot={...snapshotFixture,datasetRevision:1,events:[event],cells:[cell],activeSources:["human"],evidenceOrdinals:{[event.eventId]:1},accounts:[{id:"user-a",label:"USER A",role:"USER",target:"https://shop.synthetic.test",color:"",authArtifactCount:0}]}
  const values:Record<string,unknown>={"/api/snapshot":snapshot,"/api/projects":{active:null,projects:[],saveState:"UNMANAGED"},"/api/human-run":humanRunFixture,"/api/scanner-run":scannerRunFixture,"/api/zap-status":zapStatusFixture,"/api/explorer-run":{run:{status:"IDLE",providerReadiness:"READY",unresolved:[],activities:[],accountIds:[],anonymous:false},accounts:[],scope:[]},"/api/explorer-models":{configuredModel:"synthetic",models:[{id:"synthetic",label:"합성 모델",recommended:true}]},"/api/llm-findings":{findings:[finding]},"/api/llm-verify":{status:"SUCCEEDED",accountId:"",message:"합성 검증",startedAt:1,endedAt:2},"/api/llm-feed":{entries:[{seq:1,timestamp:1,type:"assistant",summary:"Codex 답변: 합성 예시의 긴 답변입니다. ".repeat(8),risk:false},{seq:2,timestamp:1,type:"resend",summary:"재전송: GET /api/orders/101 · HTTP 200",risk:false,evidenceId:event.eventId},{seq:3,timestamp:1,type:"verdict",summary:"합성 판정 열기",risk:false,findingId:finding.id}]},"/api/matrix-exclusions":{datasetRevision:1,entries:[]},"/api/graph-workspace":{datasetRevision:1,revision:1,workspace:emptyGraphWorkspace}}
+ values["/api/mcp"]={datasetRevision:1,url:"http://127.0.0.1:17777/mcp",scope:["https://shop.synthetic.test/"],methods:{GET:true,POST:false,PUT:false,PATCH:false,DELETE:false},clients:[],accounts:[{accountId:"a",label:"USER A",role:"USER",usable:true,sessionStatus:"ACTIVE",loginUrl:"#accounts/a?from=ai-tools"},{accountId:"b",label:"USER B",role:"USER",usable:false,sessionStatus:"NONE",reason:"로그인 필요",loginUrl:"#accounts/b?from=ai-tools"}]}
  await page.route("**/api/**",route=>{const path=new URL(route.request().url()).pathname;return path.startsWith("/api/")?route.fulfill({json:values[path]??{}}):route.continue()})
 }
-for(const width of [600,1280,1920,2560]){
- test(`LLM sizing and reading layout at ${width}px`,async({page},info)=>{
+for(const width of [390,600,1280,1920,2560]){
+ test(`MCP connection and opinions fit at ${width}px`,async({page},info)=>{
   await page.setViewportSize({width,height:1080});await syntheticApi(page);await page.goto("./#llm-judgment")
-  await expect(page.getByRole("button",{name:"합성 판정 열기"})).toBeVisible()
-  const rows=page.getByLabel("LLM 판정 진행 기록").locator("article")
-  for(const row of await rows.all()){
-   const time=row.locator(":scope > span:last-child")
-   expect(await time.evaluate(el=>getComputedStyle(el).whiteSpace)).toBe("nowrap")
-   const positions=await row.evaluate(el=>{const rect=el.getBoundingClientRect(),badge=el.firstElementChild!.getBoundingClientRect();return{row:rect.y+rect.height/2,badge:badge.y+badge.height/2}})
-   expect(Math.abs(positions.row-positions.badge)).toBeLessThan(2)
-  }
-  const send=rows.filter({hasText:"재전송: GET"});const badge=send.getByText("200",{exact:true})
-  expect(await badge.evaluate(el=>el.closest("article")!.children[1].contains(el))).toBe(true)
-  await page.getByRole("button",{name:/^판정 범위/}).click()
-  expect(await page.getByText("판정 매트릭스에서 가져오기",{exact:true}).evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(18)
-  await page.getByRole("button",{name:"합성 판정 열기"}).click()
-  const summary=page.getByRole("region",{name:"판정 요약"})
-  expect(await summary.getByRole("heading").evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(22)
-  expect(await summary.locator("li > span").first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBe(20)
-  await page.getByRole("button",{name:"전체 보기",exact:true}).click()
-  const dialog=page.getByRole("dialog"),regions=await dialog.locator('section[aria-label]').all()
-  const bounds=await Promise.all(regions.map(region=>region.boundingBox()))
-  expect(bounds[1]!.y).toBeGreaterThan(bounds[0]!.y)
-  expect((await dialog.boundingBox())!.width).toBeGreaterThan(width*.85)
-  await page.screenshot({path:info.outputPath("llm-detail.png")})
+  await expect(page.getByRole("heading",{name:"AI 취약점 진단",exact:true})).toBeVisible()
+  await expect(page).toHaveURL(/#ai-tools$/)
+  await expect(page.getByRole("button",{name:"USER B 로그인"})).toBeVisible()
+  await expect(page.getByRole("checkbox")).toHaveCount(5)
+  await expect(page.getByRole("checkbox",{name:"GET"})).toBeChecked()
+  await expect(page.getByRole("checkbox",{name:"POST"})).not.toBeChecked()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  await page.screenshot({path:info.outputPath("mcp-connection.png")})
+  await page.getByRole("tab",{name:"진단 결과"}).click()
+  const summary=page.locator("details summary").filter({hasText:"정책 확인 필요"})
+  await expect(summary).toBeVisible();await summary.click()
+  await expect(page.getByText("이 데이터는 읽기 화면 확인용 합성 예시입니다.",{exact:true})).toBeVisible()
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+  await page.screenshot({path:info.outputPath("mcp-findings.png")})
  })
 }
 test("graph help, input padding, quiet actions and persistent minimap",async({page},info)=>{

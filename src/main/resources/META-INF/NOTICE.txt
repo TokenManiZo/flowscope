@@ -5,6 +5,14 @@ Licensed under the MIT License (see LICENSE in the source repository).
 This distribution bundles third-party software:
 
 --------------------------------------------------------------------
+Noto Sans KR Regular
+  Resource : fonts/NotoSansKR-Regular.ttf
+  Source   : https://github.com/google/fonts/tree/main/ofl/notosanskr
+  License  : SIL Open Font License 1.1 — full text in
+             META-INF/LICENSE-noto-sans-kr.txt
+  Copyright 2014-2021 Adobe, with Reserved Font Name 'Source'
+
+--------------------------------------------------------------------
 Frontend production dependencies
   Resource : META-INF/NOTICE-frontend.txt
   Source   : generated from the installed frontend production dependency graph

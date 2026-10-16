@@ -11,12 +11,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ZapStartupScriptTest {
     @TempDir Path temporaryDirectory;
+    private static String bash() { return System.getProperty("flowscope.test.bash", "bash"); }
 
     @Test
     void permitsTheBrowserExtensionsZapHostWithoutPermittingOtherHosts() throws Exception {
         Path routes = temporaryDirectory.resolve("browser-route");
         Files.writeString(routes, "Iface\tDestination\tGateway\neth0\t00000000\t01001EAC\n");
-        Process process = new ProcessBuilder("bash", "-c",
+        Process process = new ProcessBuilder(bash(), "-c",
                 "source \"$1\"; flowscope_default_api_allowed_regex 192.168.65.254 \"$2\"",
                 "zap-browser-host", Path.of("infra/zap/start-zap.sh").toAbsolutePath().toString(),
                 routes.toString()).start();
@@ -32,7 +33,7 @@ final class ZapStartupScriptTest {
         Path routes = temporaryDirectory.resolve("route");
         Files.writeString(routes, "Iface\tDestination\tGateway\neth0\t00000000\t01001EAC\n");
         Path script = Path.of("infra/zap/start-zap.sh").toAbsolutePath();
-        ProcessBuilder process = new ProcessBuilder("bash", "-c",
+        ProcessBuilder process = new ProcessBuilder(bash(), "-c",
                 "source \"$1\"; flowscope_default_api_allowed_regex \"$2\" \"$3\"",
                 "bash", script.toString(), "192.168.65.254", routes.toString());
         Process started = process.start();
@@ -97,7 +98,7 @@ final class ZapStartupScriptTest {
 
     private void assertDriverCheck(Path browser, Path driver, int expected, String expectedMessage) throws Exception {
         Path script = Path.of("infra/zap/start-zap.sh").toAbsolutePath();
-        Process started = new ProcessBuilder("bash", "-c",
+        Process started = new ProcessBuilder(bash(), "-c",
                 "source \"$1\"; flowscope_check_chromium_runtime \"$2\" \"$3\"",
                 "bash", script.toString(), browser.toString(), driver.toString()).redirectErrorStream(true).start();
         String output = new String(started.getInputStream().readAllBytes());

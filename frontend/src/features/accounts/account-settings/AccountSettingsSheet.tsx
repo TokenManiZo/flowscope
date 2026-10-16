@@ -1,5 +1,5 @@
 import { normalizeStartUrl } from "@/lib/scopeInput";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -37,9 +37,10 @@ export interface AccountSettingsSheetProps {
   observedSessions?: readonly ObservedSession[];
   /** 처음 열 메뉴. 점검의 ZAP [설정]은 ZAP 로그인 메뉴로 바로 연다. */
   initialTab?: "basic" | "human" | "zap";
+  humanActions?: (onClose: () => void) => ReactNode;
 }
 
-export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved, observedSessions = [], zapRuntimeAvailable = false, initialTab = "basic" }: AccountSettingsSheetProps) {
+export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, onDeleted, onSaved, observedSessions = [], zapRuntimeAvailable = false, initialTab = "basic", humanActions }: AccountSettingsSheetProps) {
   const [settings, setSettings] = useState<AccountSettings | null>(null);
   const [draft, setDraft] = useState<AccountSettingsDraft | null>(null);
   const [zapPassword, setZapPassword] = useState("");
@@ -131,15 +132,16 @@ export function AccountSettingsSheet({ accountId, adapter, open, onOpenChange, o
   return <>
     <Dialog open={open} onOpenChange={requestClose}><DialogContent aria-describedby={undefined} className="flex h-[min(680px,88vh)] w-full max-w-[880px] flex-col gap-0 overflow-hidden p-0 sm:max-w-[880px]">
       <header className="grid gap-1 border-b border-border px-5 py-4 pr-12"><div className="flex items-center gap-2"><DialogTitle className="text-lg font-semibold">{settings?.label ?? "등록 계정"}<span className="sr-only"> 계정 설정</span></DialogTitle>{settings && <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">{settings.role}</span>}</div>{settings && <p className="font-mono text-xs text-muted-foreground">{settings.target}</p>}</header>
-      {!settings || !draft ? <p className="p-5 text-sm text-muted-foreground">{error ?? "계정 설정을 불러오는 중…"}</p> : <Tabs value={tab} onValueChange={setTab} orientation="vertical" className="min-h-0 flex-1 gap-0">
-        <nav className="flex w-52 shrink-0 flex-col border-r border-border bg-muted/40 p-3">
-          <TabsList variant="line" className="w-full gap-1 p-0">
-            {navItems(settings).map(([value, label, meta]) => <TabsTrigger key={value} value={value} className="h-auto justify-between rounded-md px-3 py-2 text-sm data-active:bg-background data-active:shadow-sm after:hidden"><span>{label}</span>{meta && <span className={cn("text-[11px] font-normal", meta.tone === "ok" ? "text-emerald-600 dark:text-emerald-400" : meta.tone === "idle" ? "text-muted-foreground" : meta.tone === "bad" ? "text-destructive" : "text-amber-600 dark:text-amber-400")}>{meta.label}</span>}</TabsTrigger>)}
+      {!settings || !draft ? <p className="p-5 text-sm text-muted-foreground">{error ?? "계정 설정을 불러오는 중…"}</p> : <Tabs value={tab} onValueChange={setTab} orientation="vertical" className="min-h-0 flex-1 flex-col gap-0 sm:flex-row">
+        <nav className="flex w-full shrink-0 flex-col border-b border-border bg-muted/40 p-2 sm:w-52 sm:border-r sm:border-b-0 sm:p-3">
+          <TabsList variant="line" className="w-full gap-1 p-0 group-data-vertical/tabs:flex-row sm:group-data-vertical/tabs:flex-col">
+            {navItems(settings).map(([value, label, meta]) => <TabsTrigger key={value} value={value} className="h-auto justify-between rounded-md px-3 py-2 text-sm data-active:bg-background data-active:shadow-sm after:hidden"><span>{label}</span>{meta && <span className={cn("hidden text-[11px] font-normal sm:inline", meta.tone === "ok" ? "text-emerald-600 dark:text-emerald-400" : meta.tone === "idle" ? "text-muted-foreground" : meta.tone === "bad" ? "text-destructive" : "text-amber-600 dark:text-amber-400")}>{meta.label}</span>}</TabsTrigger>)}
           </TabsList>
-          <div className="mt-auto border-t border-border pt-3"><button type="button" className="px-3 text-sm text-destructive hover:underline disabled:opacity-50" disabled={pending} onClick={() => setConfirmDelete(true)}>계정 삭제</button></div>
+          <div className="mt-2 border-t border-border pt-2 sm:mt-auto sm:pt-3"><button type="button" className="px-3 text-sm text-destructive hover:underline disabled:opacity-50" disabled={pending} onClick={() => setConfirmDelete(true)}>계정 삭제</button></div>
         </nav>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-5">
         <BasicAccountTab settings={settings} draft={draft} patch={patch} targetError={targetError} pending={pending} />
+        {tab === "human" && humanActions?.(() => requestClose(false))}
         <HumanAccountTab settings={settings} draft={draft} patch={patch} pathError={pathError} markError={markError} pending={pending} run={run} adapter={adapter} />
         <ZapAccountTab settings={settings} draft={draft} patch={patch} password={zapPassword} setPassword={setZapPassword} pending={pending} run={run} adapter={adapter} credentialsMissing={zapCredentialsMissing} unsaved={changes.zap} runtimeAvailable={zapRuntimeAvailable} onGoToHumanTab={() => setTab("human")} />
         {error && <p role="alert" className="mt-4 text-xs text-destructive">{error}</p>}

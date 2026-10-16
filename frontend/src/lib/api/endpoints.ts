@@ -1,4 +1,4 @@
-import { apiFetch, postForm } from "./client"
+import { apiBlob, apiFetch, postForm } from "./client"
 import { notifyDatasetReplacing, notifyProjectOpened, prepareDatasetReplacement } from "@/lib/security/datasetBoundary"
 import type {
   AccountSaveResult,
@@ -24,11 +24,34 @@ import type {
   ReviewStatus,
   ProjectStatus,
   LlmFinding,
-  LlmVerifyState,
   LlmFeedEntry,
+  McpSettings, McpConnection, McpMethod,
+  LlmDiagnosisStatus,
+  LlmChatMessage,
+  LlmReport,
 } from "./types"
 
 const formSignal = (signal?: AbortSignal): RequestInit => signal === undefined ? {} : { signal }
+
+export const getMcpSettings = (signal?: AbortSignal) => apiFetch<McpSettings>("/api/mcp", formSignal(signal))
+export const getMcpConnection = () => postForm<McpConnection>("/api/mcp", { action: "connection" })
+export const setMcpPermission = (values: { datasetRevision: number; method: McpMethod; enabled: boolean }) =>
+  postForm<McpSettings>("/api/mcp", { action: "permission", datasetRevision: String(values.datasetRevision), method: values.method, enabled: String(values.enabled) })
+export const disconnectMcp = () => postForm<McpSettings>("/api/mcp", { action: "disconnect" })
+export const verifyMcpSession = (account: string, datasetRevision: number) =>
+  postForm<McpSettings>("/api/mcp", { action: "verify-session", account, datasetRevision: String(datasetRevision) })
+export const getLlmDiagnosis = (signal?: AbortSignal) => apiFetch<LlmDiagnosisStatus>("/api/llm-verify", formSignal(signal))
+export const startLlmDiagnosis = (values: { datasetRevision: number; model: string }) =>
+  postForm<LlmDiagnosisStatus>("/api/llm-verify", { action: "start", datasetRevision: String(values.datasetRevision), model: values.model }, [202])
+export const cancelLlmDiagnosis = () => postForm<LlmDiagnosisStatus>("/api/llm-verify", { action: "cancel" })
+export const getLlmChat = (signal?: AbortSignal) =>
+  apiFetch<{ messages: readonly LlmChatMessage[] }>("/api/llm-chat", formSignal(signal))
+export const sendLlmChat = (values: { datasetRevision: number; message: string }) =>
+  postForm<LlmChatMessage>("/api/llm-chat", { datasetRevision: String(values.datasetRevision), message: values.message }, [202])
+export const getLlmReports = (signal?: AbortSignal) =>
+  apiFetch<{ projectId?: string; reports: readonly LlmReport[] }>("/api/llm-reports", formSignal(signal))
+export const downloadLlmReport = (id: string, format: "md" | "pdf") =>
+  apiBlob(`/api/llm-reports?${new URLSearchParams({ id, format })}`)
 
 export const getSnapshot = (signal?: AbortSignal) => apiFetch<Snapshot>("/api/snapshot", formSignal(signal))
 export const getEvidence = (operation: string, offset = 0, limit = 200, signal?: AbortSignal) =>
@@ -144,21 +167,6 @@ export const saveObjectGroupOwner = (values: { groupKey: string; choice: string;
 /** LLM 교차 검증 소견(추천) 목록. 판정 엔진 결과와 분리된 참고 자료다. */
 export const getLlmFindings = (signal?: AbortSignal) =>
   apiFetch<{ findings: readonly LlmFinding[] }>("/api/llm-findings", formSignal(signal))
-/** 선택한 소스 범위·판정할 계정(쉼표, 비로그인=anon)·모델로 LLM 판정(Codex) 실행을 시작한다. */
-export const startLlmVerify = (values: { sources: string; accounts: string; model: string }) =>
-  postForm<LlmVerifyState>("/api/llm-verify", values)
-/** 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다. */
-export const startLlmJudgment = (values: { findings: readonly string[]; model: string }) =>
-  postForm<LlmVerifyState>("/api/llm-verify", { action: "judge", findings: JSON.stringify(values.findings), model: values.model })
-
-export const askLlmJudgment = (values: { message: string; model: string }) =>
-  postForm<LlmVerifyState>("/api/llm-verify", { action: "ask", message: values.message, model: values.model })
-/** 실행 중인 LLM 판정을 중단한다. */
-export const cancelLlmVerify = () =>
-  postForm<LlmVerifyState>("/api/llm-verify", { action: "cancel" })
-/** 현재 LLM 판정 실행 상태. */
-export const getLlmVerifyState = (signal?: AbortSignal) =>
-  apiFetch<LlmVerifyState>("/api/llm-verify", formSignal(signal))
 /** LLM 판정 작업 피드(활동 로그). after 이후만 가져온다. */
 export const getLlmFeed = (after = 0, signal?: AbortSignal) =>
   apiFetch<{ entries: readonly LlmFeedEntry[] }>(`/api/llm-feed?after=${after}`, formSignal(signal))

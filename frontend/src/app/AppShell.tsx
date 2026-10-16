@@ -7,7 +7,7 @@ import { AccountsPage } from "@/features/accounts/AccountsPage"
 import { EvidencePage } from "@/features/evidence/EvidencePage"
 import { GraphPage } from "@/features/graph/GraphPage"
 import { MatrixPage } from "@/features/matrix/MatrixPage"
-import { LlmJudgmentPage } from "@/features/llm-judgment/LlmJudgmentPage"
+import { AiToolsPage } from "@/features/llm-judgment/AiToolsPage"
 import { routeLabel, type AppRoute } from "./routes"
 import { useEffect } from "react"
 
@@ -33,7 +33,7 @@ export function AppShell({ route = "home" }: { route?: AppRoute }) {
     }
   }, [])
 
-  const routeContent = route === "home" ? <HomePage /> : route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "evidence" ? <EvidencePage /> : route === "llm-judgment" ? <LlmJudgmentPage /> : route === "accounts" ? <AccountsPage /> : <RoutePlaceholder route={route} />
+  const routeContent = route === "home" ? <HomePage /> : route === "dashboard" ? <DashboardPage /> : route === "inspection" ? <InspectionPage /> : route === "graph" ? <GraphPage /> : route === "matrix" ? <MatrixPage /> : route === "evidence" ? <EvidencePage /> : route === "llm-judgment" ? <AiToolsPage /> : route === "accounts" ? <AccountsPage /> : <RoutePlaceholder route={route} />
 
   return <ReferenceAppShell route={route}>{routeContent}</ReferenceAppShell>
 }

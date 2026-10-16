@@ -388,7 +388,6 @@ public final class FlowScopeExtension implements BurpExtension {
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     private final AnalysisPublicationGate analysisPublication = new AnalysisPublicationGate();
     private volatile Path activeProjectDatabase;
-    private volatile io.flowscope.explorer.McpVerificationRunner mcpVerificationRunner;
     private static final com.fasterxml.jackson.databind.ObjectMapper LLM_FINDING_JSON =
             new com.fasterxml.jackson.databind.ObjectMapper();
     private volatile ProjectStore.ProjectContext activeProjectContext = ProjectStore.ProjectContext.empty();
@@ -1946,33 +1945,6 @@ public final class FlowScopeExtension implements BurpExtension {
         scheduleDatabaseSave();
     }
 
-    /** 선택한 소스 범위·판정할 계정·모델로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-    private FlowScopeWebServer.LlmVerifyState startMcpVerification(String sources, String accounts, String model) {
-        if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
-        if (mcpVerificationRunner == null) {
-            mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
-                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker, webServer.mcpActivity(),
-                    message -> api.logging().logToError(message));
-        }
-        return mcpVerificationRunner.start(sources, accounts, model);
-    }
-
-    /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
-    private FlowScopeWebServer.LlmVerifyState startMcpJudgment(List<String> findingIds, String model) {
-        if (webServer == null) throw new IllegalStateException("웹 서버가 아직 준비되지 않았습니다.");
-        var exclusions = new io.flowscope.core.MatrixExclusionMatcher(analysisConfig, latest);
-        for (var finding : currentLlmFindings()) {
-            if (findingIds.contains(finding.id()) && exclusions.excluded(finding.operation(), finding.resource()))
-                throw new IllegalArgumentException("제외한 소견은 복원한 뒤 판정할 수 있습니다.");
-        }
-        if (mcpVerificationRunner == null) {
-            mcpVerificationRunner = new io.flowscope.explorer.McpVerificationRunner(
-                    webServer.mcpUrl(), webServer.mcpToken(), sessionBroker, webServer.mcpActivity(),
-                    message -> api.logging().logToError(message));
-        }
-        return mcpVerificationRunner.startJudgment(findingIds, model);
-    }
-
     private void scheduleDatabaseSave() {
         if (shuttingDown.get()) return;
         if (activeProjectDatabase == null || !databaseDirty()) return;
@@ -2182,24 +2154,6 @@ public final class FlowScopeExtension implements BurpExtension {
             }
             @Override public List<io.flowscope.core.LlmFinding> findings() { return currentLlmFindings(); }
             @Override public void submitFinding(io.flowscope.core.LlmFinding finding) { storeLlmFinding(finding); }
-            @Override public FlowScopeWebServer.LlmVerifyState startLlmVerify(String sources, String accounts, String model) {
-                return startMcpVerification(sources, accounts, model);
-            }
-            @Override public FlowScopeWebServer.LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
-                return startMcpJudgment(findingIds, model);
-            }
-            @Override public FlowScopeWebServer.LlmVerifyState askLlmJudgment(String message, String model) {
-                if (mcpVerificationRunner == null) throw new IllegalStateException("LLM 판정을 먼저 실행하세요.");
-                return mcpVerificationRunner.ask(message, model);
-            }
-            @Override public FlowScopeWebServer.LlmVerifyState llmVerifyState() {
-                return mcpVerificationRunner == null
-                        ? FlowScopeWebServer.LlmVerifyState.idle() : mcpVerificationRunner.state();
-            }
-            @Override public FlowScopeWebServer.LlmVerifyState cancelLlmVerify() {
-                return mcpVerificationRunner == null
-                        ? FlowScopeWebServer.LlmVerifyState.idle() : mcpVerificationRunner.cancel();
-            }
             @Override public List<LegacyAssessment> assessments() {
                 return archivedAssessments;
             }
@@ -2430,6 +2384,33 @@ public final class FlowScopeExtension implements BurpExtension {
                     String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
                     String accountId) {
                 return executeHumanRequestLab(evidenceId, null, request, credentialMode, accountId);
+            }
+            @Override public FlowScopeWebServer.RequestLabResult sendMcpRequest(
+                    String evidenceId, String request, FlowScopeWebServer.CredentialMode credentialMode,
+                    String accountId) {
+                return executeRequestLab(evidenceId, null, request, credentialMode, accountId, Source.LLM);
+            }
+            @Override public void verifyMcpSession(String accountId) {
+                var rule = analysisConfig.verificationRule(accountId).orElseThrow(() ->
+                        new IllegalStateException("HUMAN의 로그인 확인 규칙에 계정별 확인 주소와 응답 표식을 저장하세요."));
+                if (!rule.method().equals("GET")) throw new IllegalStateException("자동 로그인 확인은 GET 규칙만 지원합니다. 수집 브라우저에서 확인 주소에 접근하세요.");
+                long epoch = datasetEpoch.get();
+                String handle = sessionBroker.handleForAccount(accountId);
+                URI target = URI.create(rule.origin() + rule.path());
+                String raw = "GET " + target.getRawPath() + " HTTP/1.1\r\nHost: " + target.getRawAuthority()
+                        + "\r\nAccept: application/json, text/html\r\n\r\n";
+                var result = executeRequestLab(null, rule.origin(), raw,
+                        FlowScopeWebServer.CredentialMode.ACCOUNT, accountId, Source.HUMAN, true);
+                RequestRecord record = evidenceRecord(result.eventId());
+                synchronized (records) {
+                    if (epoch != datasetEpoch.get() || !handle.equals(sessionBroker.handleForAccount(accountId)))
+                        throw new DatasetReplacedException();
+                    sessionBroker.observeResponse(handle, target, record.status, record.location,
+                            record.responseBodyForAnalysis(), List.of(), java.time.Instant.now(),
+                            rule.evaluate(record.method, target, record.responseBodyForAnalysis()));
+                }
+                if (!sessionBroker.verifiedReplayReady(accountId, java.time.Instant.now()))
+                    throw new IllegalStateException("로그인 확인에 실패했습니다. 계정 로그인과 응답 표식을 확인하세요.");
             }
             @Override public FlowScopeWebServer.RequestLabResult sendRequestLabForService(
                     String service, String request, FlowScopeWebServer.CredentialMode credentialMode,
@@ -2873,7 +2854,6 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (!shuttingDown.compareAndSet(false, true)) return;
             }
         }
-        if (mcpVerificationRunner != null) mcpVerificationRunner.close();
         if (webServer != null) webServer.close();
         if (explorer != null) explorer.close();
         if (zapCampaign != null) zapCampaign.close();
@@ -2922,6 +2902,23 @@ public final class FlowScopeExtension implements BurpExtension {
     private FlowScopeWebServer.RequestLabResult executeHumanRequestLab(
             String evidenceId, String candidateService, String requestText,
             FlowScopeWebServer.CredentialMode credentialMode, String accountId) {
+        return executeRequestLab(evidenceId, candidateService, requestText, credentialMode, accountId, Source.HUMAN);
+    }
+
+    private FlowScopeWebServer.RequestLabResult executeRequestLab(
+            String evidenceId, String candidateService, String requestText,
+            FlowScopeWebServer.CredentialMode credentialMode, String accountId, Source actor) {
+        return executeRequestLab(evidenceId, candidateService, requestText, credentialMode, accountId, actor, false);
+    }
+
+    private FlowScopeWebServer.RequestLabResult executeRequestLab(
+            String evidenceId, String candidateService, String requestText,
+            FlowScopeWebServer.CredentialMode credentialMode, String accountId, Source actor,
+            boolean loginVerification) {
+        if (loginVerification && (evidenceId != null || credentialMode != FlowScopeWebServer.CredentialMode.ACCOUNT
+                || actor != Source.HUMAN || !requestText.startsWith("GET "))) {
+            throw new IllegalArgumentException("로그인 확인은 계정별 GET 요청만 허용합니다.");
+        }
         RequestRecord seed = evidenceId == null ? null : evidenceRecord(evidenceId);
         String service = seed != null ? seed.service : candidateService;
         if (service == null || service.isBlank()) {
@@ -2930,7 +2927,7 @@ public final class FlowScopeExtension implements BurpExtension {
         if (seed == null && credentialMode == FlowScopeWebServer.CredentialMode.ORIGINAL) {
             throw new IllegalArgumentException("원본 모드는 캡처된 요청에만 쓸 수 있습니다.");
         }
-        String runId = "human-request-lab-" + java.util.UUID.randomUUID();
+        String runId = (actor == Source.LLM ? "mcp-replay-" : "human-request-lab-") + java.util.UUID.randomUUID();
         // 전송은 분석 워커 밖에서 기다린다. 대신 응답을 기록하는 순간 프로젝트가 그대로인지 확인한다.
         long epoch = datasetEpoch.get();
         long started = System.nanoTime();
@@ -2944,7 +2941,15 @@ public final class FlowScopeExtension implements BurpExtension {
                     throw new IllegalStateException("전송 전 차단: 종료 중이거나 요청 기록 저장 상한에 도달했습니다.");
                 }
             }
-            request = prepareHumanRequest(service, seed, requestText, credentialMode, accountId);
+            request = prepareHumanRequest(service, seed, requestText, credentialMode, accountId, loginVerification);
+            if (actor == Source.LLM && credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT) {
+                Map<String, String> verified = sessionBroker.headersForVerifiedAccount(
+                        accountId, URI.create(request.url()), scope, java.time.Instant.now());
+                for (String header : SessionBroker.managedHeaderNames()) request = request.withRemovedHeader(header);
+                for (Map.Entry<String, String> header : verified.entrySet())
+                    request = request.withHeader(header.getKey(), header.getValue());
+            }
+            if (epoch != datasetEpoch.get()) throw new IllegalStateException("프로젝트가 변경됐습니다.");
 
             var options = RequestOptions.requestOptions().withRedirectionMode(RedirectionMode.NEVER)
                     .withResponseTimeout(30_000);
@@ -2965,13 +2970,13 @@ public final class FlowScopeExtension implements BurpExtension {
                     ? HttpMessageTextCodec.decode(response.toByteArray().getBytes(), response.bodyOffset(),
                     response.headerValue("Content-Type")).text() : null;
             RequestRecord record = recordFrom(exchange.request(), response,
-                    new PortProfile(Source.HUMAN, SourceDetail.MANUAL_HTTP),
+                    new PortProfile(actor, actor == Source.LLM ? SourceDetail.LLM_VALIDATION : SourceDetail.MANUAL_HTTP),
                     System.currentTimeMillis(), false, runId, null);
             record.originEvidenceId = evidenceId;
             record.durationMillis = durationMs;
             record.phase = RunPhase.VALIDATION;
             record.executionTrust = io.flowscope.core.ExecutionTrust.CONTROLLED;
-            record.orchestrator = Orchestrator.HUMAN;
+            record.orchestrator = actor == Source.LLM ? Orchestrator.LLM : Orchestrator.HUMAN;
             record.tool = ToolKind.BURP;
             recordRequestLabResponse(record, credentialMode == FlowScopeWebServer.CredentialMode.ACCOUNT ? accountId : null,
                     epoch, () -> retainRawExchange(record, exchange.request(), response));
@@ -2980,7 +2985,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 if ((evidenceId != null && !retainedEvidence(evidenceId)) || !retainedEvidence(published.evidenceId)) {
                     throw new IllegalStateException("요청 기록이 삭제되어 결과를 저장할 수 없습니다.");
                 }
-                executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), request.method(), request.url(),
+                executionLedger.record(actor, runId, emptyToNull(accountId), request.method(), request.url(),
                         RunExecutionLedger.Outcome.HTTP_RESPONSE, published.status, published.evidenceId,
                         java.time.Instant.now(), durationMs, evidenceId);
                 revision.incrementAndGet();
@@ -3000,7 +3005,7 @@ public final class FlowScopeExtension implements BurpExtension {
                 if (evidenceId != null && !retainedEvidence(evidenceId)) throw error;
                 String failedMethod = request != null ? request.method() : seed != null ? seed.method : "UNKNOWN";
                 String failedTarget = request != null ? request.url() : seed != null ? seed.service + seed.path : service;
-                executionLedger.record(Source.HUMAN, runId, emptyToNull(accountId), failedMethod,
+                executionLedger.record(actor, runId, emptyToNull(accountId), failedMethod,
                         failedTarget, outcome, 0, null,
                         java.time.Instant.now(), TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started), evidenceId);
                 revision.incrementAndGet();
@@ -3307,6 +3312,12 @@ public final class FlowScopeExtension implements BurpExtension {
     private HttpRequest prepareHumanRequest(String serviceUrl, RequestRecord seed, String requestText,
                                             FlowScopeWebServer.CredentialMode credentialMode,
                                             String accountId) {
+        return prepareHumanRequest(serviceUrl, seed, requestText, credentialMode, accountId, false);
+    }
+
+    private HttpRequest prepareHumanRequest(String serviceUrl, RequestRecord seed, String requestText,
+                                            FlowScopeWebServer.CredentialMode credentialMode,
+                                            String accountId, boolean loginVerification) {
         if (requestText == null || requestText.isBlank()) {
             throw new IllegalArgumentException("HTTP 요청 전문이 필요합니다.");
         }
@@ -3342,8 +3353,11 @@ public final class FlowScopeExtension implements BurpExtension {
             if (accountId == null || accountId.isBlank()) {
                 throw new IllegalArgumentException("등록 계정을 선택하세요.");
             }
-            Map<String, String> sessionHeaders = sessionBroker.headersForAccount(
-                    accountId, URI.create(request.url()), scope, java.time.Instant.now());
+            Map<String, String> sessionHeaders = loginVerification
+                    ? sessionBroker.headersForLoginVerification(accountId, URI.create(request.url()), scope,
+                            java.time.Instant.now())
+                    : sessionBroker.headersForAccount(accountId, URI.create(request.url()), scope,
+                            java.time.Instant.now());
             for (Map.Entry<String, String> header : sessionHeaders.entrySet()) {
                 request = request.withHeader(header.getKey(), header.getValue());
             }

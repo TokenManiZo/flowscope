@@ -13,6 +13,7 @@ export function createPlaywrightConfig(externalOrigin: string | undefined = proc
     use: {
       ...devices["Desktop Chrome"],
       browserName: "chromium",
+      launchOptions: process.env.FLOWSCOPE_E2E_CHROME ? { executablePath: process.env.FLOWSCOPE_E2E_CHROME } : undefined,
       baseURL,
       trace: "on-first-retry",
     },

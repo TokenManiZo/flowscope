@@ -63,6 +63,14 @@ export const apiFetch: ApiFetch = async (path, init = {}, expectedStatuses = def
   return decodeSuccess(response)
 }
 
+export const apiBlob = async (path: `/api/${string}`, init: RequestInit = {}): Promise<Blob> => {
+  const headers = new Headers(init.headers)
+  capabilityHeader(path, headers)
+  const response = await fetch(path, { ...init, headers })
+  if (response.status !== 200) throw await errorFor(response)
+  return response.blob()
+}
+
 export const postForm: PostForm = (path, values, expectedStatuses = defaultStatuses, signal) => {
   const headers = new Headers({ "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" })
   return apiFetch(path, {
