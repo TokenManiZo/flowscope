@@ -74,6 +74,12 @@
     </dependency>
 
     <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>3.0.8</version>
+    </dependency>
+
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <version>${junit.version}</version>
@@ -229,6 +235,7 @@
         <version>3.6.0</version>
         <executions>
           <execution>
+          <id>package-fat-jar</id>
             <phase>package</phase>
             <goals><goal>shade</goal></goals>
             <configuration>
@@ -255,6 +262,18 @@
                 <relocation>
                   <pattern>org.jsoup</pattern>
                   <shadedPattern>io.flowscope.shaded.jsoup</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.pdfbox</pattern>
+                  <shadedPattern>io.flowscope.shaded.pdfbox</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.fontbox</pattern>
+                  <shadedPattern>io.flowscope.shaded.fontbox</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.commons.logging</pattern>
+                  <shadedPattern>io.flowscope.shaded.commons.logging</shadedPattern>
                 </relocation>
                 <relocation>
                   <pattern>org.yaml.snakeyaml</pattern>

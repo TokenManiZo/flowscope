@@ -36,6 +36,7 @@ import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.OutputStream;
 import java.net.URI;
@@ -45,6 +46,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -406,7 +409,11 @@ final class FlowScopeWebServerTest {
         assertEquals(405, get("/mcp", null, null).statusCode());
 
         JsonNode tools = json(mcp(list, server.mcpToken()));
-        assertEquals(8, tools.at("/result/tools").size());
+        assertEquals(15, tools.at("/result/tools").size());
+
+        var account = new AccountProfile("user-b", "USER B", state.record.service, AccessRole.USER);
+        state.config.upsertAccount(account);
+        state.sessions.registerAssertedSession(account, Map.of("Cookie", "sid=account-b"), java.time.Instant.now());
 
         String send = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"flowscope_cross_send_get\",\"arguments\":{\"evidence_id\":\"" + state.record.evidenceId + "\",\"account_id\":\"user-b\"}}}";
         JsonNode sent = json(mcp(send, server.mcpToken()));
@@ -451,6 +458,63 @@ final class FlowScopeWebServerTest {
         assertTrue(json(mcp(invalid, server.mcpToken())).at("/result/isError").asBoolean());
         String unknown = verdict.replace(findingId, "llm:none");
         assertTrue(json(mcp(unknown, server.mcpToken())).at("/result/isError").asBoolean());
+    }
+
+    @Test
+    void mcpSettingsAreUiAuthenticatedAndControlReplayForDiagnosis() throws Exception {
+        start();
+        assertEquals(403, get("/api/mcp", null, null).statusCode());
+        JsonNode settings = json(get("/api/mcp", token, origin()));
+        assertTrue(settings.at("/methods/GET").asBoolean());
+        assertFalse(settings.at("/methods/POST").asBoolean());
+        assertFalse(settings.has("token"));
+        assertEquals(server.mcpToken(), json(post("/api/mcp", "action=connection", token)).path("token").asText());
+        state.draftRequest = "POST /v1/orders HTTP/1.1\r\nHost: api.example.test\r\n\r\n{}";
+        String replay = JSON.writeValueAsString(Map.of("jsonrpc", "2.0", "id", 1, "method", "tools/call", "params",
+                Map.of("name", "flowscope_replay", "arguments", Map.of("evidence_id", state.record.evidenceId, "account_id", "anon"))));
+        assertTrue(json(mcp(replay, server.mcpToken())).at("/result/isError").asBoolean());
+        String permission = "action=permission&method=POST&enabled=true&datasetRevision=" + state.datasetRevision();
+        assertEquals(200, post("/api/mcp", permission, token).statusCode());
+        assertFalse(json(mcp(replay, server.mcpToken())).at("/result/isError").asBoolean());
+        assertEquals(FlowScopeWebServer.CredentialMode.ANONYMOUS, state.manualCredentialMode);
+        state.datasetEpoch++;
+        assertEquals(400, post("/api/mcp", permission, token).statusCode());
+        assertFalse(json(get("/api/mcp", token, origin())).at("/methods/POST").asBoolean());
+        String oldKey = server.mcpToken();
+        assertEquals(200, post("/api/mcp", "action=disconnect", token).statusCode());
+        assertNotEquals(oldKey, server.mcpToken());
+        assertEquals(401, mcp(replay, oldKey).statusCode());
+        assertEquals("IDLE", json(get("/api/llm-verify", token, origin())).path("status").asText());
+        assertEquals(403, get("/api/llm-chat", null, null).statusCode());
+        assertEquals(0, json(get("/api/llm-chat", token, origin())).path("messages").size());
+        assertEquals(0, json(get("/api/llm-reports", token, origin())).path("reports").size());
+        assertEquals(409, post("/api/llm-chat", "datasetRevision=0&message=question", token).statusCode());
+        assertEquals(409, post("/api/llm-verify", "action=start&datasetRevision=0", token).statusCode());
+    }
+
+    @Test
+    void reportCreatedThroughMcpCanBeDownloadedInBothFormats(@TempDir Path projectRoot) throws Exception {
+        Path directory = Files.createDirectory(projectRoot.resolve("project-one"));
+        Files.writeString(directory.resolve(ProjectWorkspace.DATABASE_NAME), "database");
+        ProjectWorkspace.Entry active = new ProjectWorkspace.Entry("project-one", "Report test", List.of("https://api.example.test:443/"),
+                "", 0, 0, true, true, true);
+        state.projectStatus = new ProjectWorkspace.Status(projectRoot.toString(), active, List.of(active));
+        start();
+        assertEquals(403, get("/api/llm-reports", null, null).statusCode());
+        String creation = JSON.writeValueAsString(Map.of("jsonrpc", "2.0", "id", 8, "method", "tools/call", "params",
+                Map.of("name", "flowscope_create_report", "arguments", Map.of("title", "권한 검증 보고서",
+                        "summary", "수집한 요청을 검토했습니다.", "evidence_ids", List.of(state.record.evidenceId)))));
+        JsonNode created = json(mcp(creation, server.mcpToken()));
+        assertFalse(created.at("/result/isError").asBoolean(), created.toString());
+        String id = created.at("/result/structuredContent/id").asText();
+        assertTrue(id.startsWith("report-"));
+        assertEquals(id, json(get("/api/llm-reports", token, origin())).at("/reports/0/id").asText());
+        assertTrue(get("/api/llm-reports?id=" + id + "&format=md", token, origin()).body().contains(state.record.evidenceId));
+        HttpRequest pdfRequest = HttpRequest.newBuilder(URI.create(server.url() + "api/llm-reports?id=" + id + "&format=pdf"))
+                .header("X-FlowScope-Token", token).GET().build();
+        HttpResponse<byte[]> pdf = HttpClient.newHttpClient().send(pdfRequest, HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(200, pdf.statusCode());
+        assertEquals("%PDF", new String(pdf.body(), 0, 4, StandardCharsets.US_ASCII));
     }
 
     @Test
@@ -2260,6 +2324,10 @@ final class FlowScopeWebServerTest {
             }
             return new FlowScopeWebServer.RequestLabResult("ev-manual", 204,
                     "HTTP/1.1 204 No Content\r\n\r\n", 17, request.length(), 27);
+        }
+        @Override public FlowScopeWebServer.RequestLabResult sendMcpRequest(String evidenceId, String request,
+                FlowScopeWebServer.CredentialMode mode, String accountId) {
+            return sendRequestLab(evidenceId, request, mode, accountId);
         }
         @Override public FlowScopeWebServer.RequestLabResult sendRequestLabForService(String service, String request,
                                                                                       FlowScopeWebServer.CredentialMode mode,

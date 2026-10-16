@@ -65,7 +65,7 @@ final class ChromiumLoginBrowserTest {
         assertTrue(arguments.contains("--disable-blink-features=AutomationControlled"), arguments.toString());
         // No Burp listener: this window's traffic can never be mistaken for HUMAN collection.
         assertTrue(arguments.contains("--no-proxy-server"), arguments.toString());
-        assertTrue(arguments.contains("--user-data-dir=/tmp/profile"), arguments.toString());
+        assertTrue(arguments.contains("--user-data-dir=" + Path.of("/tmp/profile")), arguments.toString());
         assertTrue(arguments.contains("--remote-debugging-port=0"), arguments.toString());
         assertEquals("https://app.example.test/login", arguments.getLast());
     }

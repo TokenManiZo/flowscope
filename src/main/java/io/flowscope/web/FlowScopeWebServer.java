@@ -35,6 +35,7 @@ import io.flowscope.integration.ZapCampaign;
 import io.flowscope.integration.ZapAccountVault;
 import io.flowscope.explorer.ExplorerAccountVault;
 import io.flowscope.explorer.ExplorerCoordinator;
+import io.flowscope.explorer.McpDiagnosisRunner;
 import io.flowscope.explorer.ExplorerProvider;
 import io.flowscope.integration.CrossIdentityReplayOrchestrator;
 import io.flowscope.integration.LiveCrossIdentityReplayCoordinator;
@@ -96,21 +97,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default void submitFinding(io.flowscope.core.LlmFinding finding) {
             throw new UnsupportedOperationException("LLM 소견 저장을 사용할 수 없습니다.");
         }
-        /** 선택한 소스 범위·판정할 계정·모델로 GET 추천을 검증하는 Codex 실행을 시작한다. */
-        default LlmVerifyState startLlmVerify(String sources, String accounts, String model) {
-            throw new UnsupportedOperationException("LLM 검증 실행을 사용할 수 없습니다.");
-        }
-        /** 사용자가 고른 소견을 LLM이 직접 판정하는 Codex 실행을 시작한다(MCP 설계 §11). */
-        default LlmVerifyState startLlmJudgment(List<String> findingIds, String model) {
-            throw new UnsupportedOperationException("LLM 판정 실행을 사용할 수 없습니다.");
-        }
-        default LlmVerifyState askLlmJudgment(String message, String model) {
-            throw new UnsupportedOperationException("LLM 후속 질문을 사용할 수 없습니다.");
-        }
-        /** 현재 LLM 검증 실행 상태. */
-        default LlmVerifyState llmVerifyState() { return LlmVerifyState.idle(); }
-        /** 실행 중인 LLM 검증을 중단한다. */
-        default LlmVerifyState cancelLlmVerify() { return llmVerifyState(); }
         RunContextRegistry contexts();
         default void humanRunStarted(String runId) {}
         default void humanRunStopped(String runId) {}
@@ -135,6 +121,13 @@ public final class FlowScopeWebServer implements AutoCloseable {
         default RequestLabResult sendRequestLab(String evidenceId, String request,
                                                 CredentialMode credentialMode, String accountId) {
             throw new UnsupportedOperationException("request lab is unavailable");
+        }
+        default RequestLabResult sendMcpRequest(String evidenceId, String request,
+                                                CredentialMode credentialMode, String accountId) {
+            throw new UnsupportedOperationException("MCP replay is unavailable");
+        }
+        default void verifyMcpSession(String accountId) {
+            throw new UnsupportedOperationException("로그인 확인을 사용할 수 없습니다.");
         }
         /** 캡처된 요청이 없는 경로 후보를 대상 서비스(host)만으로 처음 전송한다. 원본 모드는 쓸 수 없다. */
         default RequestLabResult sendRequestLabForService(String service, String request,
@@ -297,12 +290,6 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public record RequestLabResult(String eventId, int status, String response, long durationMs,
                                    int requestBytes, int responseBytes) {}
 
-    /** LLM 교차 검증 실행 상태. accountId = 보내는 계정(testIdentity). */
-    public record LlmVerifyState(String status, String accountId, String message,
-                                 Long startedAt, Long endedAt) {
-        public static LlmVerifyState idle() { return new LlmVerifyState("IDLE", "", "실행 대기", null, null); }
-    }
-
     /** Live header values for the current editor only; never stored or snapshotted. */
     public record RequestLabCredentialHeader(String name, String value) {}
 
@@ -316,6 +303,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     private final String mcpToken = randomCapabilityToken();
     private final io.flowscope.core.McpActivityLog mcpActivity = new io.flowscope.core.McpActivityLog();
     private FlowScopeMcp mcp;
+    private final McpDiagnosisRunner diagnosis;
+    private final DiagnosisReports reports;
     private final ObjectMapper json = new ObjectMapper();
     private final SnapshotJsonWriter snapshots = new SnapshotJsonWriter();
     private final ClasspathWebAssets webAssets = new ClasspathWebAssets();
@@ -331,7 +320,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public FlowScopeWebServer(State state, int requestedPort) throws IOException {
         this.state = state;
         this.server = bindAvailable(requestedPort);
-        this.mcp = new FlowScopeMcp(state, mcpToken, server.port(), mcpActivity);
+        this.reports = new DiagnosisReports(state);
+        this.mcp = new FlowScopeMcp(state, mcpToken, server.port(), mcpActivity, reports);
+        this.diagnosis = new McpDiagnosisRunner(mcpUrl(), mcp::token, state::datasetRevision, mcpActivity);
     }
 
     public void start() { server.start(); }
@@ -339,8 +330,8 @@ public final class FlowScopeWebServer implements AutoCloseable {
     public String url() { return "http://127.0.0.1:" + port() + "/"; }
     /** Codex가 접속할 MCP 엔드포인트 URL. loopback 전용. */
     public String mcpUrl() { return "http://127.0.0.1:" + port() + "/mcp"; }
-    /** MCP Bearer 토큰. 자식 프로세스 환경변수로만 전달하고 화면·로그·프로젝트에 넣지 않는다. */
-    public String mcpToken() { return mcpToken; }
+    /** Process-local MCP connection key. */
+    public String mcpToken() { return mcp.token(); }
     /** LLM 판정 작업 피드 로그. 실행기가 실행 시작·종료·Codex 출력을 기록하는 데 쓴다. */
     public io.flowscope.core.McpActivityLog mcpActivity() { return mcpActivity; }
 
@@ -368,8 +359,10 @@ public final class FlowScopeWebServer implements AutoCloseable {
         if (!request.remoteAddress().isLoopbackAddress() || !validHost(request.header("Host"))) {
             return error(403, "localhost 요청만 허용됩니다.");
         }
+        boolean diagnosisDatasetChanged = diagnosis.cancelIfDatasetChanged();
         if (path.equals("/app")) return appRedirect(request);
         // MCP는 자체 Bearer 토큰(Authorization 헤더)으로 인증하므로 UI capability 토큰 검사(authorized) 밖에 둔다.
+        if (path.equals("/mcp") && diagnosisDatasetChanged) return error(409, "프로젝트가 변경되어 진단을 중단했습니다.");
         if (path.equals("/mcp")) return mcp.handle(request);
         Optional<ClasspathWebAssets.Asset> asset = webAssets.resolve(target.getRawPath());
         if (asset.isPresent()) return staticAsset(request, asset.orElseThrow());
@@ -417,6 +410,9 @@ public final class FlowScopeWebServer implements AutoCloseable {
             case "/api/object-group-owner" -> objectGroupOwner(request);
             case "/api/llm-findings" -> llmFindings(request);
             case "/api/llm-verify" -> llmVerify(request);
+            case "/api/llm-chat" -> llmChat(request);
+            case "/api/llm-reports" -> llmReports(request, target);
+            case "/api/mcp" -> mcpSettings(request);
             case "/api/llm-feed" -> llmFeed(request, target);
             default -> error(404, "Not found");
         };
@@ -1947,47 +1943,99 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return json(200, body);
     }
 
-    /** LLM 판정 실행 시작(POST sources)·상태 조회(GET). */
+    /** Built-in diagnosis uses the same loopback MCP server and method permissions as an external client. */
     private LoopbackHttpServer.Response llmVerify(LoopbackHttpServer.Request request) throws IOException {
         try {
-            LlmVerifyState verifyState;
-            if (request.method().equals("POST")) {
+            McpDiagnosisRunner.Status status;
+            boolean started = false;
+            if (request.method().equals("GET")) {
+                status = diagnosis.state();
+            } else if (request.method().equals("POST")) {
                 Map<String, String> form = postForm(request);
                 if (form == null) return invalidForm(request);
-                String action = form.getOrDefault("action", "").trim();
-                if ("cancel".equals(action)) {
-                    verifyState = state.cancelLlmVerify();
-                } else if ("ask".equals(action)) {
-                    verifyState = state.askLlmJudgment(required(form, "message"), form.getOrDefault("model", "").trim());
-                } else if ("judge".equals(action)) {
-                    List<String> findingIds = new java.util.ArrayList<>();
-                    JsonNode ids;
-                    try { ids = json.readTree(form.getOrDefault("findings", "[]")); }
-                    catch (com.fasterxml.jackson.core.JsonProcessingException error) {
-                        throw new IllegalArgumentException("findings JSON을 읽지 못했습니다.");
-                    }
-                    if (!ids.isArray()) throw new IllegalArgumentException("findings는 소견 ID 배열이어야 합니다.");
-                    ids.forEach(value -> { if (value.isTextual() && !value.asText().isBlank()) findingIds.add(value.asText()); });
-                    if (findingIds.isEmpty()) throw new IllegalArgumentException("판정할 소견을 하나 이상 고르세요.");
-                    mcpActivity.reset();
-                    verifyState = state.startLlmJudgment(findingIds, form.getOrDefault("model", "").trim());
-                } else {
-                    mcpActivity.reset();
-                    verifyState = state.startLlmVerify(form.getOrDefault("sources", "").trim(),
-                            form.getOrDefault("accounts", "").trim(), form.getOrDefault("model", "").trim());
-                }
-            } else if (request.method().equals("GET")) {
-                verifyState = state.llmVerifyState();
-            } else {
-                return method("GET, POST");
+                String action = required(form, "action");
+                if (action.equals("cancel")) status = diagnosis.cancel();
+                else if (action.equals("start")) {
+                    long dataset = Long.parseLong(required(form, "datasetRevision"));
+                    if (state.snapshot().records.isEmpty()) throw new IllegalStateException("먼저 요청·응답 근거를 수집하세요.");
+                    status = diagnosis.start(form.getOrDefault("model", ""), mcp.enabledMethodsSnapshot(), dataset);
+                    started = true;
+                } else throw new IllegalArgumentException("지원하지 않는 진단 동작입니다.");
+            } else return method("GET, POST");
+            ObjectNode body = json.valueToTree(status);
+            body.put("chatReady", diagnosis.chatReady());
+            return json(started ? 202 : 200, body);
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            return error(409, error.getMessage());
+        }
+    }
+
+    /** Messages adjust or question the active diagnosis turn without pausing it. */
+    private LoopbackHttpServer.Response llmChat(LoopbackHttpServer.Request request) throws IOException {
+        try {
+            if (request.method().equals("GET"))
+                return json(200, json.valueToTree(Map.of("messages", diagnosis.chat())));
+            if (!request.method().equals("POST")) return method("GET, POST");
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            McpDiagnosisRunner.ChatMessage message = diagnosis.steer(required(form, "message"),
+                    Long.parseLong(required(form, "datasetRevision")));
+            return json(202, json.valueToTree(message));
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            return error(409, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response llmReports(LoopbackHttpServer.Request request, URI target) throws IOException {
+        if (!request.method().equals("GET")) return method("GET");
+        try {
+            Map<String, String> query = form(target.getRawQuery());
+            if (!query.containsKey("id")) {
+                ProjectWorkspace.Status project = state.projectStatus();
+                return json(200, json.valueToTree(Map.of("projectId",
+                        project.active() == null ? "" : project.active().id(), "reports", reports.list())));
             }
-            ObjectNode body = json.createObjectNode();
-            body.put("status", verifyState.status());
-            body.put("accountId", verifyState.accountId());
-            body.put("message", verifyState.message());
-            if (verifyState.startedAt() != null) body.put("startedAt", verifyState.startedAt());
-            if (verifyState.endedAt() != null) body.put("endedAt", verifyState.endedAt());
-            return json(200, body);
+            String id = query.get("id");
+            String format = query.getOrDefault("format", "md");
+            byte[] body = reports.download(id, format);
+            String type = "pdf".equals(format) ? "application/pdf" : "text/markdown; charset=utf-8";
+            return new LoopbackHttpServer.Response(200,
+                    headers(type, Map.of("Content-Disposition", "attachment; filename=\"" + id + "." + format + "\"")), body);
+        } catch (IllegalArgumentException | IllegalStateException error) {
+            return error(400, error.getMessage());
+        }
+    }
+
+    private LoopbackHttpServer.Response mcpSettings(LoopbackHttpServer.Request request) throws IOException {
+        if (request.method().equals("GET")) return json(200, mcp.settings());
+        if (!request.method().equals("POST")) return method("GET, POST");
+        try {
+            Map<String, String> form = postForm(request);
+            if (form == null) return invalidForm(request);
+            switch (required(form, "action")) {
+                case "connection" -> { return json(200, mcp.connectionInfo()); }
+                case "permission" -> {
+                    if ("RUNNING".equals(diagnosis.state().status()) || "CHATTING".equals(diagnosis.state().status()))
+                        throw new IllegalStateException("AI 작업 중에는 재전송 메서드를 변경할 수 없습니다.");
+                    String enabled = required(form, "enabled");
+                    if (!enabled.equals("true") && !enabled.equals("false"))
+                        throw new IllegalArgumentException("enabled must be true or false");
+                    mcp.permission(Long.parseLong(required(form, "datasetRevision")),
+                            required(form, "method"), Boolean.parseBoolean(enabled));
+                }
+                case "disconnect" -> {
+                    if ("RUNNING".equals(diagnosis.state().status()) || "CHATTING".equals(diagnosis.state().status()))
+                        throw new IllegalStateException("AI 작업 중에는 연결 키를 재발급할 수 없습니다.");
+                    mcp.disconnect();
+                }
+                case "verify-session" -> {
+                    if (Long.parseLong(required(form, "datasetRevision")) != state.datasetRevision())
+                        throw new IllegalStateException("프로젝트가 변경됐습니다.");
+                    state.verifyMcpSession(required(form, "account"));
+                }
+                default -> throw new IllegalArgumentException("알 수 없는 MCP 설정 작업입니다.");
+            }
+            return json(200, mcp.settings());
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException error) {
             return error(400, error.getMessage());
         }
@@ -2138,5 +2186,5 @@ public final class FlowScopeWebServer implements AutoCloseable {
         return HexFormat.of().formatHex(bytes);
     }
 
-    @Override public void close() { closed = true; server.close(); }
+    @Override public void close() { closed = true; diagnosis.close(); server.close(); }
 }

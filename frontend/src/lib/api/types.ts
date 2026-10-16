@@ -273,15 +273,6 @@ export interface LlmFinding {
   judgedAt: number
 }
 
-/** LLM 판정 실행 상태. accountId 필드는 선택한 소스 범위 문자열을 담는다. */
-export interface LlmVerifyState {
-  status: "IDLE" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED"
-  accountId: string
-  message: string
-  startedAt?: number
-  endedAt?: number
-}
-
 /** LLM 판정 작업 피드 항목. type: read·resend·finding·info, risk=true면 취약점 추천(위험 필터). */
 export interface LlmFeedEntry {
   seq: number
@@ -312,6 +303,47 @@ export interface ManagedSession {
   replayReady?: boolean
   /** 이 세션으로 마지막 요청이 기록된 시각(ISO). */
   lastRecordedAt?: string | null
+}
+
+export type McpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+export interface McpSettings {
+  projectId?: string
+  datasetRevision: number
+  url: string
+  scope: readonly string[]
+  methods: Record<McpMethod, boolean>
+  clients: readonly { name: string; version: string; lastSeenAt: number }[]
+  accounts: readonly { accountId: string; label: string; role: string; service?: string; sessionStatus: string; usable: boolean; reason?: string; loginUrl?: string; proofConfigured?: boolean }[]
+}
+export interface McpConnection extends McpSettings {
+  token: string
+  config: { mcpServers: { flowscope: { type: string; url: string; headers: { Authorization: string } } } }
+}
+
+export interface LlmDiagnosisStatus {
+  status: "IDLE" | "RUNNING" | "CHATTING" | "SUCCEEDED" | "FAILED" | "CANCELLED"
+  message: string
+  datasetRevision: number
+  startedAt: number | null
+  endedAt: number | null
+  chatReady?: boolean
+}
+
+export interface LlmReport {
+  id: string
+  title: string
+  createdAt: number
+  datasetRevision: number
+  findingCount: number
+  evidenceCount: number
+}
+
+export interface LlmChatMessage {
+  seq: number
+  timestamp: number
+  role: "USER" | "ASSISTANT"
+  text: string
+  status: "QUEUED" | "SENT" | "DELIVERED" | "FAILED" | "ANSWERED"
 }
 
 export interface RouteProvenance {

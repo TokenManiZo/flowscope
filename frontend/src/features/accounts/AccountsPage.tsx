@@ -4,7 +4,9 @@ import { ReferenceAnalysisWorkspace } from "@/components/layout/ReferenceAnalysi
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InfoHint } from "@/components/ui/info-hint"
 import { Button } from "@/components/ui/button"
-import { Pause, Play, Plus, Square } from "lucide-react"
+import { ArrowLeft, CheckCircle2, LogIn, Pause, Play, Plus, RefreshCw, Square } from "lucide-react"
+import { verifyMcpSession } from "@/lib/api/endpoints"
+import { useMcpSettingsQuery } from "@/lib/query/hooks"
 import { cn } from "@/lib/utils"
 import { useAccountSaveMutation, useHumanRunMutation, useHumanRunQuery, useScannerRunQuery, useSnapshotQuery, useZapStatusQuery } from "@/lib/query/hooks"
 import type { AccountSettings } from "./account-settings/types"
@@ -40,6 +42,10 @@ export function AccountsPage() {
   const [settingsAccountId, setSettingsAccountId] = useState<string | null>(null)
   const [registrationOpen, setRegistrationOpen] = useState(false)
   const [accountSettings, setAccountSettings] = useState<Record<string, AccountSettings>>({})
+  const [fromAiTools, setFromAiTools] = useState(false)
+  const [verificationPending, setVerificationPending] = useState(false)
+  const [verificationError, setVerificationError] = useState("")
+  const mcp = useMcpSettingsQuery()
 
   const accounts = snapshot.data?.accounts ?? []
   const sessions = snapshot.data?.sessions ?? []
@@ -48,7 +54,10 @@ export function AccountsPage() {
     const openFromHash = () => {
       const hash = window.location.hash
       if (!hash.startsWith("#accounts/")) return
-      const id = decodeURIComponent(hash.slice("#accounts/".length))
+      const [encodedId, query] = hash.slice("#accounts/".length).split("?")
+      let id: string
+      try { id = decodeURIComponent(encodedId) } catch { return }
+      setFromAiTools(new URLSearchParams(query).get("from") === "ai-tools")
       if (id) setSettingsAccountId(id)
       window.history.replaceState(null, "", "#accounts")
     }
@@ -57,6 +66,7 @@ export function AccountsPage() {
     return () => window.removeEventListener("hashchange", openFromHash)
   }, [])
   useEffect(() => {
+    if (!snapshot.data) return
     let active = true
     void Promise.all(accounts.map(async (account) => [account.id, await settingsAdapter.load(account.id)] as const)).then((entries) => {
       if (active) setAccountSettings(Object.fromEntries(entries))
@@ -73,6 +83,17 @@ export function AccountsPage() {
   const totals = accountObservations(events, cardAccounts.map((account) => account.id))
   const zapTotals = accountObservations(events.filter((event) => event.sourceDetail !== "AUTHORIZATION_REPLAY" && event.phase !== "AUTHORIZATION_REPLAY"), cardAccounts.map((account) => account.id))
   const activeRuns = human.data?.runs ?? (human.data?.active ? [human.data] : [])
+  const selectedRun = activeRuns.find(run => run.accountId === settingsAccountId)
+  const selectedReady = mcp.data?.accounts.find(account => account.accountId === settingsAccountId)?.usable
+  const humanActions = fromAiTools ? (close: () => void) => <section aria-label="MCP 로그인 연결" className="mb-4 space-y-3 border-b border-border pb-4">
+    <div className="flex items-center gap-2 text-sm font-medium">{selectedReady && <CheckCircle2 className="size-4 text-emerald-500" />}{selectedReady ? "MCP 재전송 사용 가능" : "MCP 로그인 확인 필요"}</div>
+    <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={login.isPending || !settingsAccountId || human.isPending || human.isError || !!selectedRun} onClick={() => settingsAccountId && login.mutate({ action: "begin", account: settingsAccountId })}><LogIn />로그인 브라우저 열기</Button><Button variant="outline" disabled={verificationPending || !settingsAccountId || !mcp.data} onClick={() => {
+      if (!settingsAccountId || !mcp.data) return
+      setVerificationPending(true); setVerificationError("")
+      void verifyMcpSession(settingsAccountId, mcp.data.datasetRevision).catch(cause => setVerificationError(errorMessage(cause) ?? "로그인 확인 실패")).finally(() => { setVerificationPending(false); void mcp.refetch() })
+    }}><RefreshCw className={cn(verificationPending && "animate-spin")} />로그인 확인</Button>{selectedRun && <Button variant="outline" disabled={login.isPending} onClick={() => login.mutate({ action: "end", runId: selectedRun.runId })}><Square />수집 종료</Button>}<Button variant="ghost" onClick={close}><ArrowLeft />AI 취약점 진단</Button></div>
+    {(verificationError || login.isError) && <p role="alert" className="text-sm text-destructive">{verificationError || errorMessage(login.error)}</p>}
+  </section> : undefined
   const viewRecords = () => {
     try { sessionStorage.setItem(INSPECTION_RECORD_HANDOFF, "records") } catch { /* 저장소가 막히면 계정 미리 선택만 생략한다. */ }
     window.location.hash = "#inspection"
@@ -127,7 +148,7 @@ export function AccountsPage() {
       <button type="button" onClick={() => setRegistrationOpen(true)} className="grid min-h-56 place-items-center rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:border-ring/60 hover:text-foreground"><span className="flex items-center gap-2"><Plus className="size-4" aria-hidden="true" />계정 추가</span></button>
     </section>
     <AccountRegistrationSheet open={registrationOpen} defaultTarget={scanner.data?.scope?.[0] ? originOf(scanner.data.scope[0]) : ""} pending={save.isPending} saveError={errorMessage(save.error)} onOpenChange={setRegistrationOpen} onSave={(values) => save.mutateAsync(values)} onCreated={() => { setRegistrationOpen(false); void snapshot.refetch() }} />
-    <AccountSettingsSheet zapRuntimeAvailable={zapStatus.data ? (zapStatus.data.managedRuntime ?? zapStatus.data.connected) : false} accountId={settingsAccountId} adapter={settingsAdapter} open={settingsAccountId !== null} observedSessions={sessions} onOpenChange={(open) => { if (!open) setSettingsAccountId(null) }} onSaved={() => void snapshot.refetch()} onDeleted={() => { setSettingsAccountId(null); void snapshot.refetch() }} />
+    <AccountSettingsSheet initialTab={fromAiTools ? "human" : "basic"} humanActions={humanActions} zapRuntimeAvailable={zapStatus.data ? (zapStatus.data.managedRuntime ?? zapStatus.data.connected) : false} accountId={settingsAccountId} adapter={settingsAdapter} open={settingsAccountId !== null} observedSessions={sessions} onOpenChange={(open) => { if (!open) { setSettingsAccountId(null); if (fromAiTools) window.location.hash = "#ai-tools" } }} onSaved={() => { void snapshot.refetch(); void mcp.refetch() }} onDeleted={() => { setSettingsAccountId(null); void snapshot.refetch() }} />
   </section></ReferenceAnalysisWorkspace>
 }
 

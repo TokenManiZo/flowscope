@@ -23,7 +23,7 @@ class HumanChromiumBrowserTest {
         assertTrue(args.contains("--proxy-server=http://127.0.0.1:18080"));
         assertTrue(args.contains("--proxy-bypass-list=<-loopback>"));
         assertTrue(args.contains("--incognito"));
-        assertTrue(args.contains("--user-data-dir=/profile-A"));
+        assertTrue(args.contains("--user-data-dir=" + Path.of("/profile-A")));
         assertFalse(args.contains("--no-proxy-server"));
         assertEquals("about:blank", args.getLast());
     }

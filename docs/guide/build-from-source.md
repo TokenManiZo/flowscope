@@ -15,6 +15,16 @@
 
 소스에서 직접 빌드할 때는 JDK 21과 Maven 3.9.x로 `mvn clean verify`를 실행합니다. JDK 22 이상은 `--release 21`이어도 다른 bytecode를 만들 수 있으므로 빌드가 초기에 거부됩니다. Maven이 고정된 Node.js/npm을 `target/frontend-runtime`에 내려받아 React 테스트·typecheck·고지 생성·Vite 빌드를 수행하므로 시스템 Node.js를 따로 설치할 필요는 없습니다. 최초 빌드는 Maven/npm 의존성을 내려받을 네트워크가 필요합니다. 결과는 Burp용 `target/flowscope-<버전>.jar`와 다운로드용 `target/flowscope-<버전>-bundle.zip`입니다(`<버전>`은 `pom.xml`의 `<version>`). bundle에는 JAR, ZAP Dockerfile/Compose/helper, macOS·Linux·Windows doctor가 들어 있습니다. 빌드는 사용 플러그인 버전을 고정하고 JAR과 bundle의 반복 SHA-256을 CI에서 비교합니다.
 
+### Windows 빌드
+
+Windows에서 ZAP 셸 테스트가 `WSL ... /bin/bash ... No such file or directory`로 실패하면, 설치된 Git for Windows의 Bash를 명시하세요. PowerShell에서는 공백이 있는 옵션 전체를 따옴표로 묶습니다.
+
+```powershell
+mvn "-Dflowscope.test.bash=C:\Program Files\Git\bin\bash.exe" clean verify
+```
+
+전체 빌드 중에는 Vite 개발 서버를 종료하세요. Windows에서 실행 중인 서버가 `node_modules`의 네이티브 모듈을 잡고 있으면 `npm ci`가 `EPERM unlink`로 실패할 수 있습니다.
+
 ### 저장소 구조
 
 - [`src/main`](../../src/main) — Burp 확장, 분석 코어, 로컬 Web 작업면, ZAP 통합, 번들 고지

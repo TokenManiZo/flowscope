@@ -13,3 +13,9 @@ it("does not expose the removed surface page through an old hash", () => {
   expect(routeFromHash("#surface")).toBe("home")
   expect(canonicalHash("#surface")).toBe("#home")
 })
+
+it("preserves old AI bookmarks and account login handoffs", () => {
+  expect(routeFromHash("#ai-tools")).toBe("llm-judgment")
+  expect(canonicalHash("#llm-judgment")).toBe("#ai-tools")
+  expect(canonicalHash("#accounts/user-b?from=ai-tools")).toBe("#accounts/user-b?from=ai-tools")
+})

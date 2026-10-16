@@ -25,11 +25,12 @@ function snapshot() { return { ...snapshotFixture,
   managedSessions: [{ handle: "active", accountId: "account-a", accountLabel: "계정 A", service, status: "ACTIVE", verificationSource: "OPERATOR_ASSERTED", createdAt: "", lastUsedAt: null, expiresAtHint: null, hasAuthorization: true, cookieCount: 1, capturing: false, credentialConflict: false }],
 } }
 function postBodies(fetchStub: ReturnType<typeof vi.fn>, path: string) { return fetchStub.mock.calls.filter(([called, init]) => called === path && (init as RequestInit).method === "POST").map(([, init]) => ((init as RequestInit).body as URLSearchParams).toString()) }
-function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot(), activeRuns: { runId: string; accountId: string; proxy: string; paused?: boolean }[] = []) {
+function renderAccounts(errors: Partial<Record<string, string>> = {}, data = snapshot(), activeRuns: { runId: string; accountId: string; proxy: string; paused?: boolean }[] = [], snapshotDelay = 0) {
   const meta = document.createElement("meta"); meta.name = "flowscope-capability"; meta.content = rawSecret; document.head.append(meta)
   const fetchStub = vi.fn((path: string, init?: RequestInit) => {
+    if (path === "/api/mcp") return Promise.resolve(response({ datasetRevision: 1, accounts: [{ accountId: "account-a", usable: init?.method === "POST" }], methods: {}, clients: [], scope: [] }))
     if (path === "/api/human-run" && !init?.method) return Promise.resolve(response({ active: activeRuns.length > 0, runs: activeRuns, completed: false, runId: "", accountId: "", proxy: "" }))
-    if (path === "/api/snapshot") return Promise.resolve(response(data))
+    if (path === "/api/snapshot") return snapshotDelay ? new Promise(resolve => setTimeout(() => resolve(response(data)), snapshotDelay)) : Promise.resolve(response(data))
     if (path === "/api/scanner-run") return Promise.resolve(response({ run: { status: "NOT_STARTED" }, accounts: [], scope: ["http://127.0.0.1:9000/"] }))
     if (path === "/api/zap-status") return Promise.resolve(response({ connected: true, managedRuntime: true, state: "READY", message: "ready" }))
     if (path.startsWith("/api/account-settings?")) { const id = new URL(path, "http://local").searchParams.get("account") ?? ""; return Promise.resolve(response(settings(id, id === "account-a" ? "계정 A" : "다른 서비스", id === "account-a" ? service : otherService))) }
@@ -311,5 +312,25 @@ describe("account and session management", () => {
     expect(postBodies(fetchStub, "/api/account-delete")).toEqual([])
     await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "삭제" }))
     await waitFor(() => expect(postBodies(fetchStub, "/api/account-delete")).toEqual(["id=account-a"]))
+  })
+
+  it("opens the HUMAN login handoff, verifies the selected account and returns to AI tools", async () => {
+    window.location.hash = "#accounts/account-a?from=ai-tools"
+    const user = userEvent.setup(); const fetchStub = renderAccounts()
+    const sheet = await screen.findByRole("dialog", undefined, { timeout: 10_000 })
+    expect(await within(sheet).findByRole("tab", { name: /^HUMAN/ })).toHaveAttribute("aria-selected", "true")
+    await user.click(within(sheet).getByRole("button", { name: "로그인 브라우저 열기" }))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/human-run")).toEqual(["action=begin&account=account-a"]))
+    await user.click(within(sheet).getByRole("button", { name: "로그인 확인" }))
+    await waitFor(() => expect(postBodies(fetchStub, "/api/mcp")).toEqual(["action=verify-session&account=account-a&datasetRevision=1"]))
+    await user.click(within(sheet).getByRole("button", { name: "AI 취약점 진단" }))
+    expect(window.location.hash).toBe("#ai-tools")
+  })
+
+  it("waits for the first snapshot before loading account settings on a cold login handoff", async () => {
+    window.location.hash = "#accounts/account-a?from=ai-tools"
+    renderAccounts({}, snapshot(), [], 80)
+    expect(await screen.findByRole("button", { name: "로그인 브라우저 열기" }, { timeout: 10_000 })).toBeVisible()
+    expect(await screen.findByRole("tab", { name: /^HUMAN/ })).toHaveAttribute("aria-selected", "true")
   })
 })

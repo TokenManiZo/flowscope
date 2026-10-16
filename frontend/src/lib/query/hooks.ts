@@ -43,13 +43,12 @@ import {
   deleteProject,
   runAuthorizationReplay,
   getLlmFindings,
-  getLlmVerifyState,
-  startLlmVerify,
-  startLlmJudgment,
-  askLlmJudgment,
-  cancelLlmVerify,
   getLlmFeed,
   getMatrixExclusions,
+  getMcpSettings,
+  getLlmDiagnosis,
+  getLlmChat,
+  getLlmReports,
 } from "@/lib/api/endpoints"
 import type { ReviewStatus, Snapshot } from "@/lib/api/types"
 import { FLOW_SCOPE_POLL_INTERVAL_MS, FLOW_SCOPE_STALE_TIME_MS } from "./client"
@@ -64,8 +63,11 @@ export const queryKeys = {
   explorerModels: ["explorer-models"] as const,
   projects: ["projects"] as const,
   llmFindings: ["llm-findings"] as const,
-  llmVerify: ["llm-verify"] as const,
   llmFeed: ["llm-feed"] as const,
+  mcp: ["mcp"] as const,
+  llmDiagnosis: ["llm-diagnosis"] as const,
+  llmChat: ["llm-chat"] as const,
+  llmReports: ["llm-reports"] as const,
   matrixExclusions: (datasetRevision: number) => ["matrix-exclusions", datasetRevision] as const,
 }
 
@@ -121,6 +123,19 @@ export function useHumanRunQuery() {
   return useQuery({ queryKey: queryKeys.humanRun, queryFn: ({ signal }) => getHumanRun(signal), ...pollingOptions })
 }
 
+export function useMcpSettingsQuery() {
+  return useQuery({ queryKey: queryKeys.mcp, queryFn: ({ signal }) => getMcpSettings(signal), ...pollingOptions })
+}
+export function useLlmDiagnosisQuery() {
+  return useQuery({ queryKey: queryKeys.llmDiagnosis, queryFn: ({ signal }) => getLlmDiagnosis(signal), ...pollingOptions })
+}
+export function useLlmChatQuery() {
+  return useQuery({ queryKey: queryKeys.llmChat, queryFn: ({ signal }) => getLlmChat(signal), ...pollingOptions })
+}
+export function useLlmReportsQuery() {
+  return useQuery({ queryKey: queryKeys.llmReports, queryFn: ({ signal }) => getLlmReports(signal), ...pollingOptions })
+}
+
 export function useZapStatusQuery() {
   return useQuery({ queryKey: queryKeys.zapStatus, queryFn: ({ signal }) => getZapStatus(signal), ...pollingOptions })
 }
@@ -149,7 +164,7 @@ function useInvalidatingMutation<TData, TVariables>(
 }
 
 const projectInvalidations = [queryKeys.projects, queryKeys.snapshot, queryKeys.humanRun,
-  queryKeys.scannerRun, queryKeys.explorerRun] as const
+  queryKeys.scannerRun, queryKeys.explorerRun, queryKeys.mcp, queryKeys.llmDiagnosis, queryKeys.llmFindings, queryKeys.llmFeed, queryKeys.llmChat, queryKeys.llmReports] as const
 export function useStartProjectMutation() { return useInvalidatingMutation(startProject, projectInvalidations) }
 export function useUpdateProjectMutation() { return useInvalidatingMutation(updateProject, projectInvalidations) }
 export function useOpenProjectMutation() { return useInvalidatingMutation(openProject, projectInvalidations) }
@@ -204,34 +219,6 @@ export function useLlmFindingsQuery(enabled: boolean, polling = false) {
 export function useMatrixExclusionsQuery(datasetRevision: number) {
   return useQuery({ queryKey: queryKeys.matrixExclusions(datasetRevision), queryFn: ({ signal }) => getMatrixExclusions(signal),
     enabled: datasetRevision > 0, staleTime: 0, refetchOnMount: "always", retry: 1 })
-}
-export function useLlmVerifyStateQuery(enabled: boolean, polling: boolean) {
-  return useQuery({ queryKey: queryKeys.llmVerify, queryFn: ({ signal }) => getLlmVerifyState(signal),
-    enabled, staleTime: FLOW_SCOPE_STALE_TIME_MS, retry: 1,
-    refetchInterval: polling ? FLOW_SCOPE_POLL_INTERVAL_MS : false, refetchIntervalInBackground: false })
-}
-export function useStartLlmVerifyMutation() {
-  const client = useQueryClient()
-  return useMutation({ mutationFn: (values: { sources: string; accounts: string; model: string }) => startLlmVerify(values),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
-}
-export function useStartLlmJudgmentMutation() {
-  const client = useQueryClient()
-  return useMutation({ mutationFn: (values: { findings: readonly string[]; model: string }) => startLlmJudgment(values),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
-}
-export function useAskLlmJudgmentMutation() {
-  const client = useQueryClient()
-  return useMutation({ mutationFn: (values: { message: string; model: string }) => askLlmJudgment(values),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.llmVerify })
-      void client.invalidateQueries({ queryKey: queryKeys.llmFeed })
-    } })
-}
-export function useCancelLlmVerifyMutation() {
-  const client = useQueryClient()
-  return useMutation({ mutationFn: () => cancelLlmVerify(),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.llmVerify }) } })
 }
 export function useLlmFeedQuery(enabled: boolean, polling: boolean) {
   return useQuery({ queryKey: queryKeys.llmFeed, queryFn: ({ signal }) => getLlmFeed(0, signal),

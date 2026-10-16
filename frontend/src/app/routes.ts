@@ -25,7 +25,7 @@ export const appRoutes: readonly AppRouteDefinition[] = [
   { route: "graph", label: "점검 그래프", group: "analysis", icon: Network },
   { route: "matrix", label: "판정 매트릭스", group: "analysis", icon: Table2 },
   { route: "evidence", label: "요청 기록", group: "evidence", icon: FileSearch },
-  { route: "llm-judgment", label: "LLM 판정", group: "evidence", icon: Bot },
+  { route: "llm-judgment", label: "AI 취약점 진단", group: "evidence", icon: Bot },
   { route: "accounts", label: "계정·세션", group: "operations", icon: UsersRound },
 ]
 
@@ -41,6 +41,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (candidate === "parameter-map") return "graph"
   if (candidate === "explorer") return "inspection"
   if (candidate === "evidence-review") return "evidence"
+  if (candidate === "ai-tools") return "llm-judgment"
   // #accounts/<id>: 특정 계정 로그인 창을 바로 여는 별칭.
   if (candidate.startsWith("accounts/")) return "accounts"
   return routeSet.has(candidate as AppRoute) ? candidate as AppRoute : "home"
@@ -53,6 +54,7 @@ export function canonicalHash(hash: string): string {
 }
 
 export function routeHash(route: AppRoute): string {
+  if (route === "llm-judgment") return "#ai-tools"
   return `#${route}`
 }
 

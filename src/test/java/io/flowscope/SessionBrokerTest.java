@@ -315,6 +315,32 @@ final class SessionBrokerTest {
 
     // --- Stage 6: verification source (ACTIVE ⊥ proof strength) ---
 
+    @Test
+    void loginVerificationCanUseCapturedCredentialsBeforeFirstConfirmedResponse() {
+        try (var broker = new SessionBroker()) {
+            var account = new AccountProfile("acct-a", "USER A", "https://api.test:443", AccessRole.USER);
+            URI proof = URI.create("https://api.test/me");
+            ScopePolicy scope = ScopePolicy.parse("https://api.test/");
+            String handle = broker.beginCapture(account, Instant.EPOCH);
+            assertThrows(IllegalStateException.class, () -> broker.headersForLoginVerification(
+                    account.id(), proof, scope, Instant.ofEpochSecond(1)));
+
+            broker.observeRequest(handle, URI.create("https://api.test/login"),
+                    Map.of("Authorization", "Bearer captured-token"), Instant.ofEpochSecond(1));
+            assertThrows(IllegalStateException.class, () -> broker.headersForAccount(
+                    account.id(), proof, scope, Instant.ofEpochSecond(2)));
+            assertFalse(broker.verifiedReplayReady(account.id(), Instant.ofEpochSecond(2)));
+            assertEquals("Bearer captured-token", broker.headersForLoginVerification(
+                    account.id(), proof, scope, Instant.ofEpochSecond(2)).get("Authorization"));
+            assertThrows(IllegalArgumentException.class, () -> broker.headersForLoginVerification(
+                    account.id(), URI.create("https://outside.test/me"), scope, Instant.ofEpochSecond(2)));
+
+            broker.observeResponse(handle, proof, 200, null, "{\"id\":\"acct-a\"}",
+                    List.of(), Instant.ofEpochSecond(3), VerificationOutcome.MATCHED);
+            assertTrue(broker.verifiedReplayReady(account.id(), Instant.ofEpochSecond(3)));
+        }
+    }
+
     private static String captureLegacyActive(SessionBroker broker, String accountId) {
         AccountProfile account = new AccountProfile(accountId, accountId,
                 "https://api.test:443", AccessRole.USER);
