@@ -40,7 +40,15 @@ public record AuthorizationAnalysis(
             String identity,
             int confidence,
             String basis,
-            boolean confirmed) {
+            boolean confirmed,
+            List<String> evidenceIds) {
+        public OwnerInfo(String resource, String identity, int confidence, String basis, boolean confirmed) {
+            this(resource, identity, confidence, basis, confirmed, List.of());
+        }
+
+        public OwnerInfo {
+            evidenceIds = evidenceIds == null ? List.of() : List.copyOf(evidenceIds);
+        }
         public boolean decisionGrade() {
             return identity != null && confidence >= 50;
         }

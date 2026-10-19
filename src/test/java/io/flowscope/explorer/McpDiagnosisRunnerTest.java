@@ -43,6 +43,8 @@ class McpDiagnosisRunnerTest {
             assertEquals("RUNNING", runner.start("", List.of("GET", "POST"), 4).status());
             JsonNode turn = fake.await("turn/start");
             assertTrue(turn.path("params").path("input").get(0).path("text").asText().contains("재전송 허용 메서드: GET, POST"));
+            assertTrue(turn.path("params").path("input").get(0).path("text").asText().contains("취약 확정 기준"));
+            assertTrue(turn.path("params").path("input").get(0).path("text").asText().contains("ownerChain"));
             assertEquals("never", turn.path("params").path("approvalPolicy").asText());
             assertTrue(command.get().contains("app-server"));
             assertTrue(command.get().stream().anyMatch(value -> value.contains("mcp_servers.flowscope.url")));

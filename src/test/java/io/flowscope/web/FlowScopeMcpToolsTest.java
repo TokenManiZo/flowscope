@@ -2,6 +2,7 @@ package io.flowscope.web;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.flowscope.CoreObjectFixture;
 import io.flowscope.core.*;
 import io.flowscope.integration.LoopbackHttpServer;
 import io.flowscope.integration.ProjectWorkspace;
@@ -53,6 +54,49 @@ final class FlowScopeMcpToolsTest {
         assertTrue(result.path("structuredContent").path("request").asText().contains("Authorization: Bearer full-token"));
         assertTrue(result.path("structuredContent").path("request").asText().contains("sid=full-cookie"));
         assertTrue(result.path("structuredContent").path("response").asText().contains("next=full-value"));
+        assertEquals("HUMAN", result.at("/structuredContent/source").asText());
+        assertEquals(record.evidenceId, result.at("/structuredContent/evidenceId").asText());
+        assertTrue(result.at("/structuredContent/ownerChain").isArray());
+    }
+
+    @Test void evidenceExposesActualOwnerAttributionAndSourceChain() throws Exception {
+        RequestRecord owner = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/api/orders/101", 200, "A");
+        owner.collectionAccountId = "user-a";
+        owner.sourceDetail = SourceDetail.BROWSER;
+        owner.hasResponse = true;
+        owner.body = "{\"id\":101,\"owner\":\"user-a\"}";
+        RequestRecord cross = new RequestRecord(Source.LLM, owner.service, "GET", "/api/orders/101", 200, "B");
+        cross.collectionAccountId = "user-b";
+        cross.sourceDetail = SourceDetail.LLM_VALIDATION;
+        cross.hasResponse = true;
+        cross.body = owner.body;
+        var observed = Pipeline.run(CoreObjectFixture.corroborated(List.of(owner, cross)));
+        assertFalse(observed.analysis.owners().isEmpty(), "객체 소유자 분석 근거가 필요합니다: " + observed.objects.targets().keySet());
+        FlowScopeWebServer.State fixture = (FlowScopeWebServer.State) Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class<?>[]{FlowScopeWebServer.State.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "snapshot" -> observed;
+                    case "config" -> new AnalysisConfig();
+                    case "scopeEntries" -> List.of(owner.service + "/");
+                    case "requestLabDraft" -> new FlowScopeWebServer.RequestLabDraft(cross.evidenceId, cross.service,
+                            "GET /api/orders/101 HTTP/1.1\r\nAuthorization: Bearer original-secret\r\n\r\n",
+                            "HTTP/1.1 200 OK\r\n\r\n" + cross.body, true, true, true,
+                            "UTF-8", "UTF-8", "user-b", "", "", "", "user-b");
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+        FlowScopeMcp server = new FlowScopeMcp(fixture, "secret", 17777, null);
+        JsonNode evidence = call(server, "flowscope_get_evidence", Map.of("evidence_id", cross.evidenceId));
+        assertFalse(evidence.path("isError").asBoolean(), evidence.toString());
+        JsonNode raw = evidence.path("structuredContent");
+        assertEquals("LLM", raw.path("source").asText());
+        assertEquals("LLM_VALIDATION", raw.path("sourceDetail").asText());
+        assertTrue(raw.path("request").asText().contains("original-secret"));
+        JsonNode chain = raw.path("ownerChain").get(0);
+        assertEquals("user-a", chain.path("ownerIdentity").asText(), raw.path("ownerChain").toString()
+                + " analyzed=" + observed.analysis.owners());
+        assertEquals("user-b", chain.path("accessIdentity").asText());
+        assertTrue(chain.path("ownerEvidenceIds").toString().contains(owner.evidenceId));
+        assertTrue(chain.path("objectEvidenceIds").toString().contains(owner.evidenceId));
     }
 
     @Test void everyWriteMethodMustBeEnabledAndGetCanAlsoBeDisabled() throws Exception {
@@ -131,10 +175,14 @@ final class FlowScopeMcpToolsTest {
     }
 
     private JsonNode call(String name, Map<String, ?> args) throws Exception {
+        return call(mcp, name, args);
+    }
+
+    private JsonNode call(FlowScopeMcp server, String name, Map<String, ?> args) throws Exception {
         var request = new LoopbackHttpServer.Request("POST", "/mcp", null,
-                Map.of("host", "localhost:17777", "authorization", "Bearer " + mcp.token()),
+                Map.of("host", "localhost:17777", "authorization", "Bearer " + server.token()),
                 json.writeValueAsBytes(Map.of("jsonrpc", "2.0", "id", 1, "method", "tools/call", "params", Map.of("name", name, "arguments", args))));
-        var response = mcp.handle(request);
+        var response = server.handle(request);
         assertEquals(200, response.status());
         return json.readTree(response.body()).path("result");
     }

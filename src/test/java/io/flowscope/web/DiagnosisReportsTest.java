@@ -28,7 +28,7 @@ final class DiagnosisReportsTest {
         Path directory = Files.createDirectory(root.resolve("project-one"));
         Files.writeString(directory.resolve(ProjectWorkspace.DATABASE_NAME), "database");
         RequestRecord record = new RequestRecord(Source.HUMAN, "https://api.test:443", "GET", "/vehicles/42", 200, "anon");
-        record.reqText = "GET /vehicles/42 HTTP/1.1\r\nAuthorization: Bearer private-token\r\n\r\n";
+        record.reqText = "GET /vehicles/42 HTTP/1.1\r\nAuthorization: Bearer private-token\r\nCookie: sid=hidden-cookie-value\r\n\r\n";
         Pipeline.Result snapshot = Pipeline.run(List.of(record));
         String evidenceId = snapshot.records.getFirst().evidenceId;
         LlmFinding finding = new LlmFinding("finding-1", "GET /vehicles/{id}", "user-a", "vehicle:42",
@@ -47,7 +47,7 @@ final class DiagnosisReportsTest {
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
         DiagnosisReports reports = new DiagnosisReports(state);
-        var input = json.valueToTree(Map.of("title", "차량 권한 검증 보고서", "summary", "수집 근거를 비교했습니다. Authorization: Bearer summary-secret",
+        var input = json.valueToTree(Map.of("title", "차량 권한 검증 보고서", "summary", "수집 근거를 비교했습니다. private-token과 hidden-cookie-value는 제외\nAuthorization: Bearer summary-secret",
                 "finding_ids", List.of("finding-1"), "evidence_ids", List.of(evidenceId),
                 "recommendations", "서버에서 소유자를 검증하세요."));
         DiagnosisReports.Report saved = reports.create(input);
@@ -59,12 +59,17 @@ final class DiagnosisReportsTest {
         assertTrue(markdown.contains(evidenceId));
         assertFalse(markdown.contains("private-token"));
         assertFalse(markdown.contains("summary-secret"));
+        assertFalse(markdown.contains("hidden-cookie-value"));
         assertTrue(markdown.contains("Authorization: [REDACTED]"));
         byte[] pdf = reports.download(saved.id(), "pdf");
         assertEquals("%PDF", new String(pdf, 0, 4, StandardCharsets.US_ASCII));
         try (var document = Loader.loadPDF(pdf)) {
             assertTrue(document.getNumberOfPages() >= 1);
-            assertTrue(new PDFTextStripper().getText(document).contains("차량 권한 검증 보고서"));
+            String pdfText = new PDFTextStripper().getText(document);
+            assertTrue(pdfText.contains("차량 권한 검증 보고서"));
+            assertFalse(pdfText.contains("private-token"));
+            assertFalse(pdfText.contains("hidden-cookie-value"));
+            assertFalse(pdfText.contains("summary-secret"));
         }
         assertThrows(IllegalArgumentException.class, () -> reports.download("../../project-one", "md"));
         assertThrows(IllegalArgumentException.class, () -> reports.create(json.valueToTree(Map.of(

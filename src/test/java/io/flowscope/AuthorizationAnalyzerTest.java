@@ -24,6 +24,7 @@ class AuthorizationAnalyzerTest {
         AuthorizationAnalysis analysis = result.analysis;
 
         assertEquals("user-a", analysis.owners().values().iterator().next().identity());
+        assertTrue(analysis.owners().values().iterator().next().evidenceIds().contains(records.getFirst().evidenceId));
         assertTrue(analysis.findings().stream().anyMatch(f -> f.type() == AuthorizationAnalysis.FindingType.BOLA));
         AuthorizationAnalysis.CoverageCell cross = analysis.cells().stream()
                 .filter(c -> c.key().resource() != null && c.key().identity().equals("user-b")).findFirst().orElseThrow();
@@ -102,6 +103,7 @@ class AuthorizationAnalyzerTest {
         assertFalse(owner.confirmed(), "생성 요청자는 명시 소유필드 O3가 아니라 O2다");
         assertTrue(owner.decisionGrade());
         assertTrue(owner.basis().contains("생성 요청자"));
+        assertEquals(List.of(create.evidenceId), owner.evidenceIds(), "생성 요청을 소유자 체인에 연결한다");
         assertEquals(Verdict.SUSPICIOUS, cross.overall());
     }
 

@@ -56,10 +56,13 @@ final class DiagnosisReports {
         state.snapshot().records.forEach(record -> records.put(record.evidenceId, record));
         for (String id : evidenceIds)
             if (!records.containsKey(id)) throw new IllegalArgumentException("현재 프로젝트에서 근거를 찾지 못했습니다: " + id);
+        List<RequestRecord> citedRecords = evidenceIds.stream().map(records::get).toList();
         String id = "report-" + UUID.randomUUID();
         long at = Instant.now().toEpochMilli();
-        Report report = new Report(id, title, at, dataset, selectedFindings.size(), evidenceIds.size());
-        String markdown = markdown(report, summary, methodology, recommendations, selectedFindings, evidenceIds, records);
+        Report report = new Report(id, redactReport(title, citedRecords), at, dataset,
+                selectedFindings.size(), evidenceIds.size());
+        String markdown = redactReport(markdown(report, summary, methodology, recommendations,
+                selectedFindings, evidenceIds, records), citedRecords);
         try {
             byte[] pdf = pdf(markdown);
             ProjectWorkspace.Status current = state.projectStatus();
@@ -153,9 +156,32 @@ final class DiagnosisReports {
     }
 
     private static String redactSecrets(String value) {
-        return value.replaceAll("(?im)\\b(Authorization|Proxy-Authorization|Cookie|Set-Cookie)\\s*:\\s*[^\\r\\n]*", "$1: [REDACTED]")
+        return value.replaceAll("(?im)\\b(Authorization|Proxy-Authorization|Cookie|Set-Cookie|X-Api-Key|X-Auth-Token)\\s*:\\s*[^\\r\\n]*", "$1: [REDACTED]")
                 .replaceAll("(?i)\\bBearer\\s+[A-Za-z0-9._~+/-]+", "Bearer [REDACTED]")
-                .replaceAll("(?i)\\b(access[_-]?token|refresh[_-]?token|id[_-]?token)\\s*[:=]\\s*[\\\"']?[^\\s,\\\"'}]+", "$1=[REDACTED]");
+                .replaceAll("(?i)\\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|session[_-]?id|password)\\s*[:=]\\s*[\\\"']?[^\\s,\\\"'}]+", "$1=[REDACTED]");
+    }
+
+    private static String redactReport(String markdown, java.util.Collection<RequestRecord> records) {
+        java.util.Set<String> secrets = new LinkedHashSet<>();
+        var header = java.util.regex.Pattern.compile("(?im)^(?:Authorization|Proxy-Authorization|Cookie|Set-Cookie|X-Api-Key|X-Auth-Token)\\s*:\\s*([^\\r\\n]+)");
+        for (RequestRecord record : records) {
+            for (String exchange : List.of(record.requestTextForEvidence() == null ? "" : record.requestTextForEvidence(),
+                    record.responseTextForEvidence() == null ? "" : record.responseTextForEvidence())) {
+                var matcher = header.matcher(exchange);
+                while (matcher.find()) {
+                    String value = matcher.group(1).trim();
+                    if (value.length() >= 6) secrets.add(value);
+                    for (String part : value.split("[;,\\s]+")) {
+                        String token = part.contains("=") ? part.substring(part.indexOf('=') + 1) : part;
+                        if (token.length() >= 8 && !token.equalsIgnoreCase("Bearer")) secrets.add(token);
+                    }
+                }
+            }
+        }
+        String sanitized = redactSecrets(markdown);
+        for (String secret : secrets.stream().sorted((left, right) -> Integer.compare(right.length(), left.length())).toList())
+            sanitized = sanitized.replace(secret, "[REDACTED]");
+        return sanitized;
     }
 
     private static String markdown(Report report, String summary, String methodology, String recommendations,

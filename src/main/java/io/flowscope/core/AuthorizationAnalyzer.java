@@ -163,26 +163,42 @@ public final class AuthorizationAnalyzer {
             List<RequestRecord> ownerEvidence = target.kind().equals("PATH")
                     ? byPath.getOrDefault(first.service + "\0" + first.path, evidence) : evidence;
             Set<String> explicit = new LinkedHashSet<>(), creators = new LinkedHashSet<>(), members = new LinkedHashSet<>();
+            Map<String, Set<String>> explicitEvidence = new LinkedHashMap<>(), creatorEvidence = new LinkedHashMap<>(), memberEvidence = new LinkedHashMap<>();
             for (RequestRecord record : ownerEvidence) if (isSuccessful(record) && !isMetadataMethod(record.method))
                 for (String value : ownerValues(record.responseBodyForAnalysis()))
-                    explicit.addAll(aliases.getOrDefault(record.service, Map.of()).getOrDefault(value.toLowerCase(Locale.ROOT), Set.of()));
+                    for (String identity : aliases.getOrDefault(record.service, Map.of()).getOrDefault(value.toLowerCase(Locale.ROOT), Set.of())) {
+                        explicit.add(identity);
+                        explicitEvidence.computeIfAbsent(identity, ignored -> new LinkedHashSet<>()).add(record.evidenceId);
+                    }
             if (target.kind().equals("PATH")) {
                 String collectionPath = first.path.substring(0, first.path.lastIndexOf('/'));
                 String identifier = target.responseReference().substring(target.responseReference().lastIndexOf(':') + 1);
                 for (RequestRecord record : byPath.getOrDefault(first.service + "\0" + collectionPath, List.of())) {
                     if (!isSuccessful(record) || isMetadataMethod(record.method) || Fingerprints.ANONYMOUS.equals(record.idn)) continue;
-                    if (record.method.equalsIgnoreCase("POST") && createdIds(record.responseBodyForAnalysis()).contains(identifier)) creators.add(record.idn);
-                    if (record.method.equalsIgnoreCase("GET") && ResponseEvidence.showsObject(record.responseBodyForAnalysis(), target.responseReference(), record.idn)) members.add(record.idn);
+                    if (record.method.equalsIgnoreCase("POST") && createdIds(record.responseBodyForAnalysis()).contains(identifier)) {
+                        creators.add(record.idn);
+                        creatorEvidence.computeIfAbsent(record.idn, ignored -> new LinkedHashSet<>()).add(record.evidenceId);
+                    }
+                    if (record.method.equalsIgnoreCase("GET") && ResponseEvidence.showsObject(record.responseBodyForAnalysis(), target.responseReference(), record.idn)) {
+                        members.add(record.idn);
+                        memberEvidence.computeIfAbsent(record.idn, ignored -> new LinkedHashSet<>()).add(record.evidenceId);
+                    }
                 }
             }
             Set<String> candidates = !explicit.isEmpty() ? explicit : !creators.isEmpty() ? creators : members;
             String basis = !explicit.isEmpty() ? "응답 본문의 명시적 소유 필드" : !creators.isEmpty() ? "생성 요청자(생성 응답이 이 객체 ID를 반환)" : "단일 계정 컬렉션 멤버십(교차 확인)";
             int confidence = !explicit.isEmpty() ? 100 : !creators.isEmpty() ? CREATION_CONFIDENCE : COLLECTION_MEMBERSHIP_CONFIDENCE;
-            if (candidates.size() == 1) owners.put(target.resource(), new OwnerInfo(target.resource(), candidates.iterator().next(), confidence, basis, !explicit.isEmpty()));
-            else if (candidates.size() > 1) owners.put(target.resource(), new OwnerInfo(target.resource(), null, 0,
-                    !explicit.isEmpty() ? "소유 필드 충돌" : !creators.isEmpty() ? "생성 응답 충돌" : "컬렉션 멤버십 공유/공개", false));
+            Map<String, Set<String>> provenance = !explicit.isEmpty() ? explicitEvidence : !creators.isEmpty() ? creatorEvidence : memberEvidence;
+            if (candidates.size() == 1) {
+                String identity = candidates.iterator().next();
+                owners.put(target.resource(), new OwnerInfo(target.resource(), identity, confidence, basis,
+                        !explicit.isEmpty(), List.copyOf(provenance.getOrDefault(identity, Set.of()))));
+            } else if (candidates.size() > 1) owners.put(target.resource(), new OwnerInfo(target.resource(), null, 0,
+                    !explicit.isEmpty() ? "소유 필드 충돌" : !creators.isEmpty() ? "생성 응답 충돌" : "컬렉션 멤버십 공유/공개", false,
+                    provenance.values().stream().flatMap(Set::stream).distinct().toList()));
             else evidence.stream().filter(record -> isSuccessful(record) && !isMetadataMethod(record.method)).findFirst()
-                    .ifPresent(record -> owners.put(target.resource(), new OwnerInfo(target.resource(), record.idn, 20, "첫 성공 접근자(저신뢰 후보, 판정 제외)", false)));
+                    .ifPresent(record -> owners.put(target.resource(), new OwnerInfo(target.resource(), record.idn, 20,
+                            "첫 성공 접근자(저신뢰 후보, 판정 제외)", false, List.of(record.evidenceId))));
         }
         return owners;
     }
